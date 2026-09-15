@@ -1557,6 +1557,300 @@ PNGs, 464 kB, under `public/brand/`. Nothing gates them (`check:skins` scans its
 folder); if the brand grows, a `check:brand` in the shape of `check:skins` is the next
 line to write.
 
+### Playtest report (2026-09-16) — proposed: the chrome, the player card, and Create-a-Class round 3
+
+The human's report against the shipped tree, seventeen items over the two screens the brand
+landed on: five on the menu and twelve on Create-a-Class. Nothing in it is a gameplay change,
+nothing touches `shared/` or `server/`, and every layout item is measured by the probe that
+already holds both screens. **No product code was written in this session**; the causes
+below were read from the tree and, where the pane could reach them, measured in it (the real
+client at 1280×600, `--ui-scale` 0.556 — a maximised browser with its own chrome above it is
+this shape, wider than 16:9, which is the human's *"not in fullscreen"*).
+
+**Four groups, in build order.** **R1** the chrome — the header and the footer belong to the
+window, not the frame; the status line goes and a line goes in its place; the PLAY hover.
+**R2** the player card — one card on both screens, and the profile panel behind its gear.
+**R3** the editor's frame — the mark, the card, the class strip on a second row, *Save and
+exit* under the list, the arrows gone, the fling. **R4** the editor's list and stage — peers
+that read as peers, the unlocked rule, SAVE / CANCEL centred, the finish on the operator's
+weapon, the camo bars painted. R2 depends on R1 (the card sits in the window's header); R3
+on R2 (the editor's header *is* the card); R4 on nothing but R3.5's arithmetic. Decisions
+9–13 in the table below are this report's.
+
+#### R1 — the chrome
+
+**R1.1 The brand is not at the window's edge.** *"When I am not in fullscreen the title at
+the top left sits at the top as it should, but it is not pinned left."* Measured: the frame
+**1 067 px wide with a 107 px gutter each side**, the brand's left edge **142 px** from the
+window's (the gutter plus the frame's 64 px padding at 0.556), the player card 142 from the
+right, the footer the same. At 16:9 the gutter is 0 and only the padding stands between the
+brand and the edge, which is why fullscreen looks right. Cause: `frameScale = min(vw / 1920,
+vh / 1080)` and `.op-screen { justify-content: center }` — A1's frame is a 16:9 box centred
+in whatever the window is, by design (*"an ultrawide window gets more sky, not black bars"*
+— the sky is there; the header is not on it).
+
+Fix — **the header and the footer belong to the window; the body belongs to the frame.**
+`createScreen` returns a third box, `viewport`: the window's size *in frame pixels*
+(`--frame-w = vw / scale`, `--frame-h = vh / scale`, written by `applyFrameScale` beside
+`--ui-scale`; both ≥ 1920 / 1080 by construction and one of them exact), carrying the `zoom`
+**and the frame's ramp tokens** — they sit on `.op-frame` today, and a header outside the
+frame would otherwise read the HUD's 13 px body — with the 1920×1080 `.op-frame` centred
+inside it and no zoom of its own. The menu and the editor mount their header, and the menu
+its footer, on the viewport: `position: absolute`, `left` / `right` the frame's padding from
+the *window's* edges, `top` the *frame's* top (`calc((var(--frame-h) - 1080px) / 2)`), so at
+a wider window the header spreads to the window's corners over the backdrop the fade was
+drawn for, and at a taller one it stays level with the body rather than rising away from it.
+Everything else stays in the frame: the menu's stage was centred and reserves nothing; the
+editor's frame keeps the header's 72 px as top padding in place of its `head` row. At 16:9
+the viewport *is* the frame and nothing moves. No `vw` / `vh` enters the CSS — the two
+variables are written by the same listener as the scale, which is A1's rule kept (*"nothing
+inside the frame may vary with the window"* — the viewport is not inside the frame). The
+probe's skip list (`layout.ts`, the layer and the frame) gains the viewport box; the
+*outside* rule holds unchanged, the window being the window. Rejected: the frame filling the
+window (every `1fr` on every screen would stretch with the aspect — the editor's bars 916
+wide at 16:9 and 1 350 at 1366×626 — which is A1's uniformity given back); `position: fixed`
+inside the zoom (works in Chrome, and the probe could no longer say what box a thing is in).
+
+**R1.2 PLAY does not light under the pointer.** *"It does not glow like the buttons under
+it until I click somewhere else."* Measured: `paint()` ends with `focus.focus()` on PLAY (on
+PLAY SOLO where no server is configured, which is what the pane had), and the focused
+button **matches `:focus-visible`** — script-moved focus does in Chrome — so it is already
+wearing the hover declarations: background `rgba(40, 45, 54)`, rule `--c-text-dim`, type
+`#f4f6f8`, and the sweep's `::after` **parked at 656 px** (its `110%` resting place) before
+the pointer arrives. `.op-nav:hover, .op-nav:focus-visible` is one rule (`app.css`), so
+hovering the focused button changes nothing, and clicking elsewhere blurs it back to rest,
+where hover works again — the report exactly. Fix: the two states stop being one rule. Hover
+keeps the lift and the sweep; `:focus-visible` gets its own mark — the accent rule and the
+top hairline, no lift — so a focused PLAY reads as where the keyboard is, not where the
+pointer is. The sweep becomes a keyframe `animation` on `:hover::after` (and once on
+`:focus-visible::after`, under a second name for the same keyframes, because a changed
+`animation-name` is what restarts one) rather than a `transition` on `left`: it runs each
+time the pointer enters, and never plays backwards on leave. The focus itself stays; the
+menu is keyboard-navigable because of it.
+
+**R1.3 The status line goes.** *"FOUNDRY · 48 brushes · 76 props — I do not know what that
+means; remove it."* `Game.statusLine()`, a build-stat line from M1 the footer inherited;
+nothing else reads it. Deleted with `MenuDeps.statusLine` and the probe fixture's
+`'LAYOUT PROBE'`. `PauseMenu`'s `pauseStatusLine` is a different line (the mode and the
+score) and stays.
+
+**R1.4 A line at the bottom left.** The human's examples — *"Never back down"*, *"Fight ·
+survive · win."* — or one of ours. Recommendation (decision 9): **FIGHT · SURVIVE · WIN** —
+the human's own, and already in the house style: every label on these screens is capitals
+separated by `·`. Two alternates if it reads flat on the display: **NEVER BACK DOWN**;
+**HOLD THE LINE**. One line, static, `op-label` weight, in the footer's left corner, which
+has been empty since A2; the right corner is empty after R1.3 and stays so.
+
+#### R2 — the player card, and the profile behind it
+
+**R2.1 The card.** *"A picture of the operator I have chosen, with a small green dot as if I
+am online; beside it the name, under it the level, and that is all — clean. Then a divider
+like the one on the left, then a gear."* Today the card is a CALLSIGN field and the profile
+line (`LEVEL 1 · 4,182 XP TO NEXT · ASSAULT · 0/0 WON`): six facts where the ask is two.
+`ui/PlayerCard.ts`, right-aligned in the window's header on both screens: the **avatar** is
+the chosen skin's thumbnail (`characterDefinition(profile.skinId).thumbUrl` — B5's 320×400
+render, which is a portrait of who the player is), `object-fit: cover` from the top into a
+64 px square, with the **presence dot** on its corner; the **callsign** as the name,
+`--t-lead` heavy, with **LEVEL N** (PRESTIGE ★ N over 55) beneath in `op-label`; a vertical
+**rule** (`.op-menu__rule`'s class, promoted); and the **gear** — a sixth glyph in `GLYPH`,
+drawn as the other five are — that opens the panel. The callsign is no longer edited here
+(R2.2). `MenuDeps` loses `profileLine` and `displayName` / `onDisplayName` and gains
+`profile`, as the editor already has it; `GameLoadout.profileLine` goes with its only reader.
+The dot (decision 10): green when `serverConfigured()` is true, grey when not — the fact
+PLAY's disabled state already states, so the dot never says *online* on a build with no
+server to be online to. Always-green is one line less and one fiction more; the human's
+word was *"as if"*, so this is a recommendation, not a reading.
+
+**R2.2 The profile panel.** *"Not the general settings — a player profile: level,
+achievements, edit the picture, edit the name, and so on."* `ui/ProfilePanel.ts`: a panel
+over the current frame (a `section.op-setup`-shaped box, the play panel's slide), opened by
+the card's gear on either screen, closed by its own ✕ and by Escape — `Game.onEscape` asks
+the editor first, the way it asks SETTINGS about an armed binding, and on the menu the panel
+is Escape's only customer. **Not a `GameStateId`** (decision 12): it reads and writes the
+profile and nothing about it needs the state machine; a `PROFILE` state is a
+`shared/core/GameStates.ts` change with a transition table to argue, for a thing the menu
+already has a shape for. Tabs: **OVERVIEW** — the avatar large (the thumbnail at 160×200),
+the callsign field (moved from the card; the same rules — prefilled, written on every
+keystroke, never a gate, `keydown` stopped), level with the XP bar and *N XP TO NEXT* (moved
+from the editor's header, R3.2), prestige and tokens, the record (`matchesWon /
+matchesPlayed`); **ACHIEVEMENTS** — the thirty challenges (`CHALLENGES`;
+`Profile.challengeRows()`, which only the debug panel reads today) as name, description,
+`progress / target`, done in the accent, the camo one awards as its swatch — by category in
+sub-tabs (COMBAT · PRECISION · MOVEMENT · TACTICAL · MASTERY · CAMO), because thirty rows do
+not fit a panel and five do; **APPEARANCE** — the seven skins as a grid of B5's thumbnails,
+picking through `Profile.setSkin` exactly as the editor's strip does; the strip itself is
+untouched (R3.8). A host screen's `refresh` runs on the panel's close, so a skin or a name
+picked in it is on the disc and on the card when it closes. Three probe surfaces —
+`menu/profile`, `menu/profile/achievements`, `menu/profile/appearance` — at eight viewports.
+
+#### R3 — the editor's frame
+
+**R3.1 The mark.** *"My mark should stay at the top left — it simply removed it."* The
+editor's header is a title and a subtitle; the mark is the menu's. R1's header is one
+component, `ui/ScreenHeader.ts`: the mark, then the *place* — the wordmark with `ARENA FPS`
+on the menu, **CREATE A CLASS** with its subtitle on the editor (*"only the name of the place
+changes on the left"*) — and R2.1's card on the right. Settings keeps its own title: not
+asked, and it has no card's business.
+
+**R3.2 The right of the header.** *"Remove everything there — the level and the save
+button — and put exactly what the menu has."* `paintLevel` (the number, the bar, the XP to
+go) and `paintActions` leave the header; the level is on the card, the bar is in the
+panel's OVERVIEW, *Save and exit* is R3.4.
+
+**R3.3 The class strip, one floor down.** *"The 1–5, the name for saving and the equipped
+mark do not belong on the bar; one floor down at most; think of a way that is not busy."*
+Today: five 48 px tabs whose names are `title`s, a 220 px rename field and an *Equip* button
+in the header's middle, the equipped one a 6 px dot. Recommendation (decision 13): a
+**second row under the header, spanning the frame** — five plates in the nav's torn cut,
+**44 px** tall, each carrying its number in mono and **its class's name** (`1 · ASSAULT`,
+`2 · RECON` …), so the five are read at once rather than hovered for; the open one in the
+accent (`is-on`); the equipped one carrying **EQUIPPED** as a tag at its right end in place
+of the dot — and when the open plate is not the equipped one, that end holds the **EQUIP**
+action instead, so *Equip* is where the decision is and nowhere else. **The name is edited
+on the plate**: the open plate's name is the callsign's kind of field — no box, a rule
+beneath while it is being written, the accent on focus — and the other four are labels; the
+`keydown` stop stays (keys 1–5 are the range's). Five plates at 300 px with four 24 px gaps
+are 1 596 of the 1 824 the frame has inside its padding. Cost: the row is **44 + 16 = 60 px**
+off the body (the frame's row gap is 16), 928 → **868**; the arithmetic is R3.5.
+
+**R3.4 *Save and exit*, bottom right.** *"Under the list."* The right column gains a foot
+track: `op-actions`, right-aligned, the primary button at `lo-equip`'s padding (12 / 24,
+**48 px** tall — the frame-ramp `op-btn` is 68, which the column cannot spare). Escape and
+the button keep the one destination, and the exit handler keeps the flush (B5).
+
+**R3.5 The arithmetic.** The right column was 928: 44 head, 860 list, 152 band, and two
+12 px gaps that count whether or not a track is empty; the list held **8 bars at 88 with
+12 gaps (788 + 8 padding = 796 in 860)**, **7 with the band (696 in 708)**, and the six
+category bars 740 with the head hidden. After R3.3 and R3.4 the column is **868**, four
+tracks (head · list · band · foot), three gaps, and the head goes **44 → 40**: categories
+showing, 868 − 36 − 48 = **784**, the six bars 740 (44 slack, 5.6 %); open, **744** without
+the band and **592** with. Two ways to fit, and the plan takes the first (decision 11):
+**option bars 88 → 80, gap 12 → 8** — 8 × 80 + 56 + 8 = **704 in 744** (40, 5.4 %) and
+6 × 80 + 40 + 8 = **528 in 592** (64, 10.8 %), pages **8 / 6**; or bars kept at 88 and pages
+**7 / 5** — 696 in 744 (6.5 %) and 496 in 592 (16 %). Eight pixels off a bar the human
+asked to be big is the smaller loss against every attachments list going to a second page;
+both keep the 5 % slack B1–B4 learned the hard way, and **the probe takes the numbers before
+R3.3 is styled** — a sum on paper fit by one pixel last time. `PAGE_WITH_BAND` /
+`PAGE_FULL`, the `.lo-right` comment and the `.lo .op-frame` comment (`72 + 16 + 44 + 16 +
+868 = 1016`) are the four places the sum lives. The stage column: **800 canvas + 12 + 56
+actions = 868**, exact, with the arrow bar gone (R3.6).
+
+**R3.6 The arrows go.** *"Drag is enough."* `arrowButton` × 2, `.lo-stage__bar`, `nudge()`
+and `NUDGE` deleted; `.lo-arrow` stays, the pager's. The status (`LOADING OPERATOR…`)
+becomes a label over the canvas's foot; `.lo-skins`' `bottom: 68px` — the bar's height —
+re-bases to the canvas's foot.
+
+**R3.7 The fling.** *"When I spin it hard and let go it stops dead and then continues — it
+should carry the spin I gave it."* `pointerup` sets `dragging = false` and nothing else;
+`tick` then adds `IDLE_TURN · dt` and eases `angle` toward `target` with `SETTLE` — but a
+drag writes `angle = target` on every move, so there is nothing to ease and no velocity to
+carry: the turntable goes from the hand's speed to 0.1 rad/s in one frame. Fix:
+`pointermove` keeps a velocity — the last delta over its `dt`, blended `0.7 · prev + 0.3 ·
+new` so a hand that stalled before letting go reads as stalled; `pointerup` hands it to
+`spin`, clamped at ±12 rad/s; `tick` turns by `(IDLE_TURN + spin) · dt` and decays `spin` by
+`exp(−FLING_DAMPING · dt)`, `FLING_DAMPING = 2.2` (a 6 rad/s fling is under the idle rate in
+about 1.9 s). A fling against the idle direction decays *through* zero and the idle takes
+over, which is the human's *"until it resets to its regular track"*. `SETTLE` and `target`
+go with the arrows — nothing eases toward anything any more — and `hold()` sets `angle`
+alone. `prefers-reduced-motion` does not apply: the player made the motion.
+
+**R3.8 CHANGE A SKIN, centred.** *"The bar it opens is excellent; the button is odd — at the
+side, half the figure's length, stuck. Do not change the bar."* `.lo-skins__toggle
+{ align-self: flex-start }` puts the toggle at the column's left edge under a figure that
+stands at its centre (measured: 125 window px wide at the column's `left`, the canvas 478).
+`align-self: center`; the strip's `order`, grid and tiles untouched.
+
+#### R4 — the editor's list and stage
+
+**R4.1 Peers read as peers.** *"Two grenades, one large and white, the other looking like
+its attachment; only the first killstreak looks like one."* `paintBoxValue`: `i === 0 ?
+'lo-chip lo-chip--lead lo-metal' : 'lo-chip'` — the first chip of *every* box is the lead
+and the rest are detail chips, which is right for a weapon (name; then finish and
+attachments) and wrong for the other four, where the items are peers. Measured: KILLSTREAKS
+`UAV` at 22 px metal, `CARE PACKAGE` and `MORTAR STRIKE` at 16 px in chip borders;
+EQUIPMENT `FRAG` lead, `FLASHBANG` a chip. Fix: chips carry a rank — `lead` / `peer` /
+`detail` — set by the box: weapons `lead + detail…`; equipment, perks and streaks all
+`peer`; field `lead`. A peer is the lead's type at `--t-body` (18 px) with the metal, in a
+row separated by thin rules rather than boxed each, so three streaks read as three things
+of one kind; the streaks keep their key in the tooltip; an empty tier's `—` is a dim peer.
+
+**R4.2 The unlocked rule.** *"Open and locked differ only by colour intensity; give the open
+ones a blue bar at the left end."* Measured on PRIMARY: locked and unlocked bars share the
+rule `rgb(57, 64, 75)` (`--c-line-hi`); the whole difference is `opacity: 0.55` and the
+`LEVEL N` at the right. Fix, three rules: **unlocked** `border-left-color:
+var(--c-accent-dim)` — the bar is the player's to take; **equipped** the full accent and the
+glow, as now; **locked** the rule `transparent`, the opacity kept, and a padlock glyph (a
+ninth path in `CategoryIcons`) before the requirement. The category bars keep the neutral
+rule: they are not options.
+
+**R4.3 SAVE / CANCEL centred.** *"They sit at the side under the picture, not under the
+platform's middle."* `.lo-stage__actions { justify-content: flex-end }`; measured, the pair's
+centre 108 window px right of the stage's (≈ 194 frame px). `center`.
+
+**R4.4 The finish on the operator's weapon.** *"I pick a skin, it paints the weapon in the
+weapon view; back on the operator the weapon is the plain one, though in a match it works."*
+`refreshStage` calls `stage.setWeapon(equipped.weaponId)` — no camo — and
+`CharacterStage.heldWeapon` builds every held weapon with `heldWeaponMaterial(anisotropy)`,
+which is `sharedWeaponSurfaces(anisotropy).get('gunmetal')`: the *default* set's gunmetal,
+by design for a body at twenty metres (*"three draw calls buying a difference nobody can
+resolve"*). On the stage the body is at four. Fix: `heldWeaponMaterial(anisotropy, camo =
+null)` → `sharedSurfaces(anisotropy, camo)` — the camo set's gunmetal *is* the pattern
+(`buildCamoSurfaces`), so the material is already built and cached per process;
+`CharacterStage.setWeapon(weaponId, camo)` keys its asset cache by `weaponId|camo`;
+`refreshStage` passes `equipped.camo`. `BotRenderer` keeps the plain gunmetal: the wire
+carries no camo (`EntitySnapshot` is `weaponIndex` and `heightScale`), so a match body has no
+finish to show; the stage shows the player's own class, which is what the screen is for.
+
+**R4.5 The camo bars, painted.** *"The skins are not visual — a written explanation only.
+Paint each bar with its skin from the right toward the middle, where it fades to black, and
+the explanation in white on the black."* The SKIN tab's tiles carry `glyphIcon('camo')` and
+the bar's dark gradient (`optionsFor`, `case 'camo'`); the only colour is on the
+`WeaponPreview` after a click. Fix: `tile()` takes an optional `picture` (a CSS
+`background-image`), and the camo list passes the pattern itself — `camoTexture(id,
+anisotropy).image` is the 256 px canvas `CamoTextures` already draws for the material, and
+`toDataURL()` on it once per camo per process is a data URI a bar's CSS can hold (six camos,
+~40 kB each, built on the first SKIN tab and kept in `CamoTextures` beside the textures).
+`.lo-bar--camo`: the pattern on the right **45 %** of the bar under `linear-gradient(to
+right, rgb(10 12 15) 0 40%, transparent 62%)`, so it fades into the bar's own dark at the
+middle; the glyph slot collapses (the picture is the bar); the name and the requirement in
+plain white (`#f4f6f8`, not `.lo-metal`) on the dark left. `is-on` keeps the accent rule and
+puts the glow *under* the pattern rather than in its place (two background layers, not
+one); the hover lift is unchanged; NONE keeps the glyph and a swatch of the plain gunmetal.
+A locked camo bar's 55 % dims the pattern too, which is right.
+
+#### What it breaks, the gate, the order
+
+**Breaks.** `Menus.ts` loses the header, the footer, the callsign and `statusLine` (~110
+lines) and gains the panel's mount; `LoadoutEditor.ts` loses `paintHeader`'s three parts and
+the arrows (~130) and gains the strip and the camo bars (~120); `CharacterStage.ts` loses
+`nudge` / `SETTLE` and gains the fling; `Frame.ts` gains the viewport box and two variables,
+and its "What is *not* in the frame" paragraph gains the header; `tokens.css` moves the
+frame's ramp to the viewport; `WeaponMesh.heldWeaponMaterial` gains a parameter;
+`CamoTextures` gains the data-URI cache; `probes/layout.ts` gains the viewport in its skip
+list and three surfaces; `Game.ts` loses `statusLine`, and its Escape path asks the editor
+first. Three new files under `ui/`: `ScreenHeader.ts`, `PlayerCard.ts`, `ProfilePanel.ts`.
+Nothing in `shared/` or `server/`: the seeded harness and the content probe are byte-identical
+by construction; `progression` untouched; `check:unlocks` still finds its six accessors.
+
+**Gate.** `npm run layout` **PASS** at eight viewports on every surface, the three new ones
+included, R3.5's numbers restated as measured; `npm run check` green. **Pane:** at 1280×600
+the brand's rect `64 · scale` from the window's left edge (was 142) and the card the same
+from the right; the focused PLAY *not* wearing the hover declarations (the rest gradient,
+`::after` at −45 %) and wearing them under `:hover`; `CharacterStage` **5 g / 11 t** flat over
+20 MENU ↔ LOADOUT cycles with a camo'd weapon held — the material is shared, so the count
+must not move; the fling's `spin` sampled by `loop.frame` at release, 1 s and 2 s, monotone
+toward the idle rate; the camo data URIs six, built once (a counter in `CamoTextures`).
+**Needs a browser:** whether the peers' row reads as three things or one line; the padlock
+at 55 %; the pattern's fade at the bar's middle; 2.2 as the fling's damping; the line at the
+bottom left; the plates' torn cut at 44 px.
+
+**Order.** R1.1 alone first, run through the probe before anything mounts on the viewport,
+so the eight-viewport list is a measurement; then R1.2–R1.4 and R2 together (the card is the
+header's right half); then R3, with R3.5's numbers taken by the probe before R3.3 is styled;
+then R4 in any order, each item its own commit, none depending on another. Every commit:
+`npm run layout` and `npm run check` green; the pane numbers in this record when each group
+closes, as a `done` subsection under this one.
+
 ## What each item breaks
 
 - **B1/B2's fix is replaced, not removed.** The `safe center` + `overflow: auto` reasoning in
@@ -1589,6 +1883,11 @@ line to write.
 | 6 | ~~Phase E: run the fight behind the menu, or stop at the dolly?~~ **Taken: proceed**, provided the three numbers hold — the leak count flat, the sim's ms per frame, the bundle delta. E ships on them or not at all | — |
 | 7 | ~~QUIT in a browser: a `MENU → BOOT` edge, or leave the button out?~~ **Taken: no QUIT button.** A tab closes itself; the menu has four entries | — |
 | 8 | ~~The intro on Search & Destroy rounds two onward?~~ **Taken: round one only.** The freeze is round one only and exists for the class pick | — |
+| 9 | ~~The line at the bottom left of the menu (R1.4)?~~ **Taken (2026-09-16): FIGHT · SURVIVE · WIN.** The human's own, in the house style | — |
+| 10 | ~~The presence dot on the card (R2.1): honest, or always green?~~ **Taken: honest** — green when a server is configured, the fact PLAY's disabled state already states | — |
+| 11 | ~~The option bars under the class strip and the foot (R3.5): 80 px and pages 8 / 6, or 88 px and pages 7 / 5?~~ **Taken: 80 px, pages 8 / 6.** The probe takes the numbers before R3.3 is styled | — |
+| 12 | ~~The profile as a panel over the frame, or a `PROFILE` state (R2.2)?~~ **Taken: a panel.** No `shared/` change; Play Solo is the precedent | — |
+| 13 | ~~The class strip as five named plates with EQUIPPED / EQUIP on the open one, or the five tabs kept and moved down (R3.3)?~~ **Taken: the plates.** The name on each is what makes five classes readable without hovering | — |
 
 ## Dependency order
 
@@ -1624,3 +1923,12 @@ a row in the index, the way M13 and M14 closed — `npm run check:plan` holds th
 The milestone after opens on B6: `characterIndex: u8` on `EntitySnapshot` and the join,
 `RandomCharacterSelector` as the fallback for a body that declared none, `check:authority`
 and the netharness over it — the one `shared/net` change M15 deliberately did not make.
+
+**Before the close, one more round (2026-09-16).** The human's third playtest report — the
+chrome, the player card and Create-a-Class round 3 — is proposed above in full, with its causes
+measured and decisions 9–13 in the table; it is built in four groups (R1–R4) in the order its
+last paragraph gives, each recorded as a `done` subsection under it, and the milestone closes
+after it. **The five decisions were taken the same day, every one on the recommendation**
+(FIGHT · SURVIVE · WIN; the dot honest; bars 80 px at 8 / 6; a panel; the plates), so nothing
+is waiting: the next thing built is **R1.1**, alone, through the probe, then the rest in the
+order the report gives.

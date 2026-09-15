@@ -26,7 +26,7 @@ git push -u origin main
    | Field | Value |
    |---|---|
    | Runtime | `Node` |
-   | Build Command | `npm install && npm run build` |
+   | Build Command | `npm install --include=dev && npm run build` |
    | Start Command | `npm start` |
    | Instance Type | `Free` |
 
@@ -40,6 +40,11 @@ Under **Environment**, add:
 | `NODE_VERSION` | `22` | The build targets Node 22. |
 
 **Do not set `PORT`.** Render sets it, and the server reads it (`src/server/Config.ts`).
+
+**Do not set `NODE_ENV`.** Nothing in the server reads it, and `NODE_ENV=production` makes
+`npm install` skip the devDependencies the build's gate runs on — the deploy then fails at
+`sh: 1: vitest: not found`. The build command's `--include=dev` guards against it, but the
+variable still buys nothing.
 
 ### 4. Deploy
 

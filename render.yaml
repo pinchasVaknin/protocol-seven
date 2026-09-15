@@ -14,8 +14,11 @@ services:
     runtime: node
     plan: free
     # `npm run build` is the gate, then the client into dist/, then the server into
-    # dist-server/. Render installs devDependencies for the build automatically.
-    buildCommand: npm install && npm run build
+    # dist-server/. The gate needs the devDependencies (vitest, vite, typescript), and
+    # `--include=dev` asks for them whatever the environment says: a `NODE_ENV=production` set
+    # by hand in the dashboard makes `npm install` skip them, and the build then fails at
+    # `vitest: not found` (2026-09-15). Do not set NODE_ENV; nothing here reads it.
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     # Render pings this to decide the service is up. `serve.js` answers it before it touches
     # the disk, so it stays true even if the client build is missing.

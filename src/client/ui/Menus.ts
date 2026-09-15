@@ -5,8 +5,11 @@ import {
 } from '../../shared/ai/DifficultyTiers';
 import type { GameModeId } from '../../shared/modes/GameMode';
 import { MAPS, MODES, modesForMap } from '../../shared/modes/ModeRegistry';
+import type { Profile } from '../meta/Profile';
 import { createScreen } from './Frame';
 import { makeLockup, makeMark } from './Emblem';
+import { PlayerCard } from './PlayerCard';
+import { ProfilePanel } from './ProfilePanel';
 import { makeIconSvg } from './WeaponIcons';
 
 /**
@@ -15,8 +18,9 @@ import { makeIconSvg } from './WeaponIcons';
  * ## Two halves, and the chrome on the window
  *
  * A header, a stage and a footer. The **header** is the wordmark on the left and the player
- * card on the right — the callsign, editable in place, and the profile line under it — where
- * the references put them. The **stage** is the left half, which is nothing but the backdrop
+ * card on the right (`PlayerCard.ts`: the skin's portrait, the callsign, the level, and the
+ * gear that opens the profile panel, `ProfilePanel.ts`, over this screen) — where the
+ * references put them. The **stage** is the left half, which is nothing but the backdrop
  * (the canvas underneath, which A3 fills with a map on a dolly), and the right half, which
  * holds the navigation: four buttons, and only four, because that is how many places there
  * are to go — PLAY (multiplayer, primary, one click to the arena as §6.1 requires), PLAY
@@ -79,17 +83,16 @@ export interface MenuDeps {
   readonly onLaunch: () => void;
   /** M11 (§6.1): connect and drop straight into the warmup arena. No intermediate screen. */
   readonly onPlayMultiplayer: () => void;
-  /** Whether an address is configured at all. False disables the button with a reason. */
+  /** Whether an address is configured at all. False disables the button with a reason, and greys the card's dot. */
   readonly serverConfigured: () => boolean;
-  /** The persisted callsign, prefilled so it never blocks entry (§6.1). */
-  readonly displayName: () => string;
+  /** The player: the card reads it, the profile panel reads and writes it. */
+  readonly profile: Profile;
+  /** The callsign's writer, for the panel's field (§6.1: written on every keystroke, never a gate). */
   readonly onDisplayName: (name: string) => void;
   /** M6: enter the `LOADOUT` state. */
   readonly onLoadout: () => void;
   /** M8: enter the `SETTINGS` state. */
   readonly onSettings: () => void;
-  /** M6: level, class and record. Redrawn every time the menu is shown. */
-  readonly profileLine: () => string;
 }
 
 type Page = 'MAIN' | 'PLAY';
@@ -123,6 +126,8 @@ export class Menus {
   private readonly viewport: HTMLElement;
   /** The 1920x1080 box the stage is painted into (M15, A1). */
   private readonly frame: HTMLElement;
+  private readonly card: PlayerCard;
+  private readonly panel: ProfilePanel;
   private page: Page = 'MAIN';
 
   constructor(deps: MenuDeps) {
@@ -132,6 +137,17 @@ export class Menus {
     this.viewport = viewport;
     this.frame = frame;
     this.screen.hidden = true;
+    this.panel = new ProfilePanel({
+      profile: deps.profile,
+      onDisplayName: deps.onDisplayName,
+      onChange: () => this.card.refresh(),
+      onClose: () => this.card.refresh(),
+    });
+    this.card = new PlayerCard({
+      profile: deps.profile,
+      online: deps.serverConfigured,
+      onOpenProfile: () => this.panel.open(),
+    });
     deps.host.appendChild(this.screen);
   }
 
@@ -180,11 +196,23 @@ export class Menus {
   show(): void {
     this.page = 'MAIN';
     this.screen.hidden = false;
+    this.panel.close();
     this.paint();
   }
 
   hide(): void {
     this.screen.hidden = true;
+    this.panel.close();
+  }
+
+  /** Escape closes the profile panel if it is open, and is consumed by it; nothing else on the menu answers Escape. */
+  handleEscape(): boolean {
+    return this.panel.handleEscape();
+  }
+
+  /** Open the profile panel on a tab — for the layout probe, which measures each one. */
+  openProfile(tab: 'overview' | 'achievements' | 'appearance' = 'overview'): void {
+    this.panel.open(tab);
   }
 
   get isVisible(): boolean {
@@ -204,9 +232,10 @@ export class Menus {
     stage.className = 'op-menu__stage';
     const focus = this.page === 'MAIN' ? this.paintNav(stage) : this.paintSetup(stage);
     // The bars on the viewport, the stage in the frame — see the class comment. The frame is
-    // re-appended between them so the order is head, frame, foot whatever was there before.
+    // re-appended between them so the order is head, frame, foot whatever was there before;
+    // the profile panel's overlay sits last, over all three.
     this.frame.replaceChildren(stage);
-    this.viewport.replaceChildren(this.header(), this.frame, this.footer());
+    this.viewport.replaceChildren(this.header(), this.frame, this.footer(), this.panel.element);
     focus.focus();
   }
 
@@ -228,46 +257,10 @@ export class Menus {
     // The mark to the left of the name, its eyes breathing (`Emblem.ts`).
     brand.append(makeMark('op-menu__mark'), wordmark, rule, tag);
 
-    head.append(brand, this.playerCard());
+    // The card is built once and re-read here: the level or the skin may have changed since.
+    this.card.refresh();
+    head.append(brand, this.card.element);
     return head;
-  }
-
-  /**
-   * The player card: the display name (§6.1) and the profile line.
-   *
-   * *"A display name is requested but a default is generated so a player can be in the arena
-   * in one click."* So the callsign is a field, not a gate: it starts filled, it is never
-   * validated before entry, and nothing about it can stop PLAY working. The value is written
-   * straight back to the profile on every keystroke, which is also how it survives a reload.
-   */
-  private playerCard(): HTMLElement {
-    const card = document.createElement('div');
-    card.className = 'op-menu__player';
-
-    const field = document.createElement('label');
-    field.className = 'op-menu__callsign';
-    const label = document.createElement('span');
-    label.className = 'op-label';
-    label.textContent = 'CALLSIGN';
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'op-input op-menu__name';
-    input.maxLength = 20;
-    input.value = this.deps.displayName();
-    input.spellcheck = false;
-    input.autocomplete = 'off';
-    input.addEventListener('input', () => this.deps.onDisplayName(input.value));
-    // The menu is a DOM surface over a canvas that owns the keyboard. Without this, typing
-    // "W" in the callsign field also walks the player forward.
-    input.addEventListener('keydown', (e) => e.stopPropagation());
-    field.append(label, input);
-
-    const profile = document.createElement('p');
-    profile.className = 'op-menu__profile op-label';
-    profile.textContent = this.deps.profileLine();
-
-    card.append(field, profile);
-    return card;
   }
 
   private footer(): HTMLElement {

@@ -279,11 +279,10 @@ const menus = new Menus({
   // True, because a disabled Play Multiplayer button is one control shorter and therefore a
   // shorter menu. The probe has to measure the taller of the two.
   serverConfigured: () => true,
-  displayName: () => profile.settings.callsign,
+  profile,
   onDisplayName: noop,
   onLoadout: noop,
   onSettings: noop,
-  profileLine: () => 'LEVEL 1 · ASSAULT · 0 / 500 XP',
 });
 
 const settings = new Settings({
@@ -547,6 +546,16 @@ const SURFACES: readonly Readonly<{ name: string; show: () => HTMLElement; hide:
     },
     hide: () => menus.hide(),
   },
+  /** The profile panel over the menu (R2.2), on each of its tabs; ACHIEVEMENTS on its first category. */
+  ...(['overview', 'achievements', 'appearance'] as const).map((tab) => ({
+    name: `menu/profile/${tab}`,
+    show: (): HTMLElement => {
+      menus.show();
+      menus.openProfile(tab);
+      return layerOf(PLAIN_SCREEN);
+    },
+    hide: (): void => menus.hide(),
+  })),
   ...(['CONTROLS', 'BINDINGS', 'AUDIO', 'VIDEO', 'INFO'] as const).map((tab) => ({
     name: `settings/${tab}`,
     show: (): HTMLElement => {

@@ -594,7 +594,6 @@ export class Game {
       },
       onPlayMultiplayer: () => void this.playMultiplayer(),
       serverConfigured: () => isServerConfigured(window.location.search),
-      displayName: () => this.profile.settings.callsign,
       onDisplayName: (name) => this.profile.patchSettings({ callsign: name }),
       onLoadout: () => this.transitionTo('LOADOUT'),
       onSettings: () => this.transitionTo('SETTINGS'),
@@ -2731,6 +2730,9 @@ export class Game {
     // panel must not be thrown back into a firefight, and one cancelling a mortar mark must
     // not be dropped onto the pause screen.
     if (this.cancelMortarOverlay()) return;
+    // The profile panel over the menu (R2.2): Escape closes it and stops, the way a panel
+    // over a match closes and stops above.
+    if (this.state === 'MENU' && this.screens.menus.handleEscape()) return;
     if (this.state === 'SETTINGS') {
       // A binding row that is waiting for a key eats Escape as "cancel the capture"; only
       // once nothing is armed does Escape leave the screen.

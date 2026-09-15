@@ -440,40 +440,110 @@ body.op-locked #viewport {
   color: var(--c-text-faint);
 }
 
-.op-menu__player {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--s-2);
-  text-align: right;
-}
+/* ---- the player card (playtest round 3, R2.1; PlayerCard.ts) ------------------- */
 
-.op-menu__callsign {
+/*
+ * The skin's portrait with the presence dot on its corner, the callsign over the level, a
+ * rule, and the gear. Two facts and a door, where the card was a field and a six-fact line.
+ * The same element stands on the menu and on Create-a-Class (R3), so the header persists
+ * across the screens and only the place's name on its left changes.
+ */
+.op-card {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-4);
 }
 
-/* The callsign is a name, not a form: no box, a rule beneath, the accent when it is being written. */
-.op-menu__name {
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--c-line-hi);
-  border-radius: 0;
-  padding: var(--s-1) 0;
-  min-width: 300px;
+.op-card__portrait {
+  position: relative;
+  flex: none;
+  width: 64px;
+  height: 64px;
+}
+
+/* B5's 320x400 render, cropped from the top so the face is what is left of it. */
+.op-card__avatar {
+  display: block;
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  object-position: top;
+  border-radius: var(--radius);
+  border: 1px solid var(--c-line-hi);
+  background: radial-gradient(ellipse at 50% 70%, var(--c-surface-hi), var(--c-void));
+  user-select: none;
+}
+
+/* Honest (decision 10): green with a server configured, grey without — PLAY's own fact. */
+.op-card__dot {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--c-void);
+  background: var(--c-text-faint);
+}
+
+.op-card__dot.is-online {
+  background: var(--c-positive);
+  box-shadow: 0 0 8px rgba(111, 208, 140, 0.7);
+}
+
+.op-card__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.op-card__name {
   font-size: var(--t-lead);
   font-weight: var(--w-heavy);
-  text-align: right;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.op-menu__name:focus-visible {
-  border-bottom-color: var(--c-accent);
-}
-
-.op-menu__profile {
-  margin: 0;
+.op-card__level {
   color: var(--c-text-dim);
+}
+
+/* The brand's rule, on the other side. */
+.op-card__rule {
+  width: 1px;
+  height: 40px;
+  background: var(--c-line-hi);
+}
+
+.op-card__gear {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--c-text-dim);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.op-card__gear:hover,
+.op-card__gear:focus-visible {
+  color: var(--c-accent);
+  background: var(--c-surface);
+  outline: none;
+}
+
+.op-card__gear-icon {
+  width: 28px;
+  height: 28px;
+  fill: currentColor;
+  fill-rule: evenodd;
 }
 
 /*
@@ -730,12 +800,341 @@ body.op-locked #viewport {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .op-setup {
+  .op-setup,
+  .op-profile__panel {
     animation: none;
   }
   .op-nav:hover::after {
     animation: none;
   }
+}
+
+/* ---- the profile panel (playtest round 3, R2.2; ProfilePanel.ts) ---------------- */
+
+/*
+ * An overlay on the screen's viewport — the scrim, and the panel centred in it — so it stands
+ * in the window's middle on any screen the card is on. The panel is the play panel's shape
+ * (its width, its accent rule, its slide); the body holds one tab at a time at one height, so
+ * switching tabs does not move the panel's foot.
+ */
+.op-profile {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 8, 10, 0.6);
+}
+
+.op-profile[hidden] {
+  display: none;
+}
+
+.op-profile__panel {
+  width: 1380px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-6) 48px var(--s-8);
+  background: rgba(12, 14, 17, 0.96);
+  border: 1px solid var(--c-line);
+  border-left: 2px solid var(--c-accent);
+  animation: op-panel-in var(--dur-med) var(--ease);
+}
+
+.op-profile__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.op-profile__title {
+  color: var(--c-accent);
+}
+
+.op-profile__close {
+  appearance: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--c-line-hi);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--c-text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--t-body);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.op-profile__close:hover,
+.op-profile__close:focus-visible {
+  color: var(--c-text);
+  background: var(--c-surface-hi);
+  outline: none;
+}
+
+.op-profile__tabs {
+  margin-bottom: 0;
+}
+
+/* The tallest tab — COMBAT, five rows of two-line challenges — so switching tabs moves nothing. */
+.op-profile__body {
+  min-height: 660px;
+}
+
+/* OVERVIEW: the portrait large on the left; the name, the level and the record on the right. */
+.op-profile__overview {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 48px;
+  align-items: start;
+}
+
+.op-profile__portrait {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.op-profile__portrait-img {
+  display: block;
+  width: 240px;
+  height: 300px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--c-line-hi);
+  background: radial-gradient(ellipse at 50% 70%, var(--c-surface-hi), var(--c-void));
+  user-select: none;
+}
+
+.op-profile__facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+}
+
+.op-profile__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+/* The callsign is a name, not a form: no box, a rule beneath, the accent while it is being written. */
+.op-profile__name {
+  appearance: none;
+  color: var(--c-text);
+  font-family: var(--font-ui);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--c-line-hi);
+  border-radius: 0;
+  padding: var(--s-1) 0;
+  width: 420px;
+  font-size: var(--t-title);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+.op-profile__name:focus-visible {
+  border-bottom-color: var(--c-accent);
+  outline: none;
+}
+
+.op-profile__level {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.op-profile__level-num {
+  font-size: 64px;
+  font-weight: var(--w-heavy);
+  line-height: 1;
+  color: var(--c-accent);
+}
+
+.op-profile__level-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  width: 420px;
+}
+
+.op-profile__bar {
+  height: 6px;
+  border-radius: var(--radius);
+  background: var(--c-surface-hi);
+  overflow: hidden;
+}
+
+.op-profile__bar > i {
+  display: block;
+  height: 100%;
+  background: var(--c-accent);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+
+.op-profile__dim {
+  color: var(--c-text-dim);
+}
+
+.op-profile__rows {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: var(--s-2) var(--s-4);
+  align-items: baseline;
+  margin: 0;
+}
+
+.op-profile__rows dd {
+  margin: 0;
+}
+
+.op-profile__value {
+  font-size: var(--t-body);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+/* ACHIEVEMENTS: a category's challenges as rows — the name and what it asks, the progress, the reward. */
+.op-profile__achievements {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.op-profile__cats {
+  margin-bottom: 0;
+}
+
+/* Two columns: COMBAT holds nine challenges, and nine 88 px rows in one column is a 1 230 px
+ * panel in a 1 080 px frame. Five rows tall, the tallest category, is 488. */
+.op-profile__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row;
+  gap: var(--s-2) var(--s-4);
+}
+
+.op-profile__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px 140px;
+  gap: var(--s-4);
+  align-items: center;
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--c-line);
+  border-left: 3px solid var(--c-line-hi);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(28, 32, 39, 0.92), rgba(16, 19, 24, 0.92));
+}
+
+.op-profile__row.is-done {
+  border-left-color: var(--c-accent);
+}
+
+.op-profile__row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.op-profile__row-name {
+  font-size: var(--t-body);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+
+.op-profile__row.is-done .op-profile__row-name {
+  color: var(--c-accent);
+}
+
+/* Two lines, clamped: a half-width row cannot hold a description on one, and a clamp is a
+ * designed truncation the probe knows (B1–B4). */
+.op-profile__row-desc {
+  font-size: var(--t-small);
+  line-height: 1.3;
+  color: var(--c-text-dim);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.op-profile__row-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.op-profile__row-progress .op-profile__bar {
+  flex: 1 1 auto;
+}
+
+.op-profile__row-reward {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px var(--s-2);
+  text-align: right;
+}
+
+.op-profile__swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--c-line-hi);
+}
+
+/* APPEARANCE: the seven skins, B5's thumbnails, the chosen one in the accent. */
+.op-profile__skins {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--s-3);
+}
+
+.op-profile__skin {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border: 2px solid var(--c-line);
+  border-radius: var(--radius);
+  background: var(--c-surface);
+  color: var(--c-text-dim);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.op-profile__skin:hover,
+.op-profile__skin:focus-visible {
+  border-color: var(--c-line-hi);
+  outline: none;
+}
+
+.op-profile__skin.is-on {
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+.op-profile__skin-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  border-radius: var(--radius);
+  background: radial-gradient(ellipse at 50% 70%, var(--c-surface-hi), var(--c-void));
+  user-select: none;
 }
 
 /* ---- mode / map / difficulty pickers (M4; difficulty at round 4, F1) ---- */

@@ -1,5 +1,4 @@
 import type { ProceduralAudio } from './engine/ProceduralAudio';
-import { profileLine } from './GameLoadout';
 import type { Match } from './ClientMatch';
 import type { Profile } from './meta/Profile';
 import type { CharacterAssetService } from './characters/CharacterAssetService';
@@ -43,7 +42,7 @@ export interface GameScreensDeps {
   /** M11 (§6.1): connect and drop into the warmup arena. */
   readonly onPlayMultiplayer: () => void;
   readonly serverConfigured: () => boolean;
-  readonly displayName: () => string;
+  /** The callsign's writer — the profile panel's field (R2.2), where the menu's header's was. */
   readonly onDisplayName: (name: string) => void;
   /** The menu's Create-a-Class button. The only door into the editor (round 4, B8). */
   readonly onLoadout: () => void;
@@ -94,11 +93,10 @@ export class GameScreens {
       onLaunch: deps.onLaunch,
       onPlayMultiplayer: deps.onPlayMultiplayer,
       serverConfigured: deps.serverConfigured,
-      displayName: deps.displayName,
+      profile: deps.profile,
       onDisplayName: deps.onDisplayName,
       onLoadout: deps.onLoadout,
       onSettings: deps.onSettings,
-      profileLine: () => profileLine(deps.profile),
     });
 
     this.loadoutEditor = new LoadoutEditor({

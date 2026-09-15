@@ -1,4 +1,3 @@
-import { prestigeLabel } from '../shared/meta/Levels';
 import type { ResolvedLoadout } from '../shared/meta/Loadouts';
 import type { Profile } from './meta/Profile';
 import type { GameModeId } from '../shared/modes/GameMode';
@@ -70,19 +69,4 @@ function copyWeaponDefInto(src: WeaponDef, dst: WeaponDef): void {
 /** A stored mode id that no longer exists falls back to the default rather than throwing. */
 export function asModeId(id: string): GameModeId {
   return MODES.some((m) => m.id === id) ? (id as GameModeId) : DEFAULT_MODE_ID;
-}
-
-/** Level, class and lifetime record, for the line under the menu's title. */
-export function profileLine(profile: Profile): string {
-  const progress = profile.progress;
-  const badge = profile.prestige > 0 ? `PRESTIGE ${prestigeLabel(profile.prestige)} · ` : '';
-  const level = progress.atCap ? 'LEVEL 55 (MAX)' : `LEVEL ${progress.level}`;
-  const next = progress.atCap
-    ? 'PRESTIGE AVAILABLE'
-    : `${(progress.span - Math.floor(progress.into)).toLocaleString()} XP TO NEXT`;
-  const record = profile.save.profile;
-  return (
-    `${badge}${level} · ${next} · ${profile.equippedLoadout().name} · ` +
-    `${record.matchesWon}/${record.matchesPlayed} WON`
-  );
 }

@@ -106,6 +106,8 @@ export class GameScreens {
       anisotropy: deps.anisotropy,
       unrestricted: deps.unrestricted,
       characterAssets: deps.characterAssets,
+      serverConfigured: deps.serverConfigured,
+      onDisplayName: deps.onDisplayName,
     });
 
     this.xpSummary = new XpSummary({ audio: deps.audio });

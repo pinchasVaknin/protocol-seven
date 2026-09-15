@@ -2741,7 +2741,9 @@ export class Game {
       return;
     }
     if (this.state === 'LOADOUT') {
-      // One destination, same as the button's. The state's exit handler does the saving.
+      // The profile panel first (R2.2); then one destination, same as the button's. The
+      // state's exit handler does the saving.
+      if (this.screens.loadoutEditor.handleEscape()) return;
       this.transitionTo('MENU');
       return;
     }

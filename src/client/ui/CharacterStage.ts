@@ -65,7 +65,7 @@ export interface StageOptions {
   readonly camera: { readonly y: number; readonly z: number; readonly lookY: number };
   /** B1's disc and ring under one body, or a platform this wide and deep under a lineup. */
   readonly platform: 'disc' | { readonly width: number; readonly depth: number };
-  /** Whether the stage turns on its own, can be dragged and nudged. A lineup stands still. */
+  /** Whether the stage turns on its own and can be dragged. A lineup stands still. */
   readonly turntable: boolean;
 }
 
@@ -117,12 +117,19 @@ export const LINEUP_STAGE: StageOptions = {
 
 /** Radians per second when nobody is holding it. */
 const IDLE_TURN = 0.1;
-/** How fast a nudge or a drag settles. Per second of the remaining angle. */
-const SETTLE = 6;
-/** One arrow press, in radians. */
-const NUDGE = Math.PI / 4;
 /** Radians of turn per pixel of drag, in frame pixels. */
 const DRAG_RADIANS_PER_PX = 0.008;
+/**
+ * The fling (playtest round 3, R3.7). A drag that lets go at speed keeps that speed and loses
+ * it as `exp(-FLING_DAMPING · t)`: at 2.2 a 6 rad/s fling is under the idle rate in about
+ * 1.9 s, and one thrown against the idle direction decays through zero and the idle takes
+ * over — *"until it resets to its regular track"*. The hand's speed is read from the last
+ * move, blended so a hand that stalled before letting go reads as stalled, and clamped so a
+ * pointer that jumped across the canvas in one event does not spin the disc for a minute.
+ */
+const FLING_DAMPING = 2.2;
+const FLING_MAX = 12;
+const FLING_BLEND = 0.3;
 
 const STANDING_ARMED: ActorAnimationInput = {
   stance: 'STAND',
@@ -157,14 +164,16 @@ export class CharacterStage {
   private readonly weapons = new Map<string, HeldWeaponAsset>();
 
   /**
-   * Where the turntable is and where it is going. Starts at a half turn: a body at yaw 0 faces
-   * -Z, the camera stands on +Z, and a stage that opens on the operator's back is a stage
-   * that opens wrong.
+   * Where the turntable is. Starts at a half turn: a body at yaw 0 faces -Z, the camera stands
+   * on +Z, and a stage that opens on the operator's back is a stage that opens wrong.
    */
   private angle = Math.PI;
-  private target = Math.PI;
   private dragging = false;
   private dragLastX = 0;
+  private dragLastMs = 0;
+  /** The hand's angular speed while it drags, and what the disc keeps when it lets go. Radians per second, over the idle. */
+  private dragSpeed = 0;
+  private spin = 0;
   /** A held pose: no idle turn, no easing. The thumbnail renderer's, and nothing else's. */
   private held = false;
   private lastSeenWidth = 0;
@@ -202,7 +211,6 @@ export class CharacterStage {
     if (!options.turntable) {
       // Still, facing the lens: the figures carry their own yaw.
       this.angle = 0;
-      this.target = 0;
       this.turntable.rotation.y = 0;
       return;
     }
@@ -210,21 +218,36 @@ export class CharacterStage {
     this.canvas.addEventListener('pointerdown', (e) => {
       this.dragging = true;
       this.dragLastX = e.clientX;
+      this.dragLastMs = e.timeStamp;
+      this.dragSpeed = 0;
+      this.spin = 0;
       this.canvas.setPointerCapture(e.pointerId);
     });
     this.canvas.addEventListener('pointermove', (e) => {
       if (!this.dragging) return;
       const scale = this.canvas.getBoundingClientRect().width / options.width || 1;
       const dx = (e.clientX - this.dragLastX) / scale;
+      const dt = Math.max(1, e.timeStamp - this.dragLastMs) / 1000;
       this.dragLastX = e.clientX;
-      this.target += dx * DRAG_RADIANS_PER_PX;
-      this.angle = this.target;
+      this.dragLastMs = e.timeStamp;
+      const turned = dx * DRAG_RADIANS_PER_PX;
+      this.angle += turned;
+      this.dragSpeed = this.dragSpeed * (1 - FLING_BLEND) + (turned / dt) * FLING_BLEND;
     });
-    const release = (): void => {
+    const release = (e: PointerEvent): void => {
+      if (!this.dragging) return;
       this.dragging = false;
+      // A hand that stopped and then let go has no speed to hand over: the last move is stale.
+      const held = e.timeStamp - this.dragLastMs > 80;
+      this.spin = held ? 0 : Math.max(-FLING_MAX, Math.min(FLING_MAX, this.dragSpeed - IDLE_TURN));
     };
     this.canvas.addEventListener('pointerup', release);
     this.canvas.addEventListener('pointercancel', release);
+  }
+
+  /** The surplus over the idle turn the disc is carrying from a fling, radians per second. For the record's measurement. */
+  get flingSpeed(): number {
+    return this.spin;
   }
 
   /** Whether every figure asked for is on the stage. False while any is still loading, and with none asked for. */
@@ -276,11 +299,6 @@ export class CharacterStage {
     return { u: (point.x + 1) / 2, v: (1 - point.y) / 2 };
   }
 
-  /** One arrow press: an eighth of a turn, eased. */
-  nudge(direction: -1 | 1): void {
-    this.target += NUDGE * direction;
-  }
-
   /**
    * Hold the turntable at an angle and stop it turning (M15, B5: `scripts/skin-thumbs.mjs`
    * renders every skin at one pose so the strip's thumbnails match). Radians, 0 facing -Z.
@@ -288,7 +306,7 @@ export class CharacterStage {
   hold(angle: number, distance = 4.4): void {
     this.held = true;
     this.angle = angle;
-    this.target = angle;
+    this.spin = 0;
     // Closer for a portrait: the stage's own distance leaves a 320×400 thumbnail half air.
     this.camera.position.set(0, 1.35 - (4.4 - distance) * 0.09, distance);
     this.camera.lookAt(0, 0.95, 0);
@@ -316,10 +334,11 @@ export class CharacterStage {
     }
 
     if (this.dragging || this.held || !this.options.turntable) {
-      // The hand is on it, a script is, or it does not turn: no idle turn, no easing.
+      // The hand is on it, a script is, or it does not turn: no idle turn, no fling.
     } else {
-      this.target += IDLE_TURN * dt;
-      this.angle += (this.target - this.angle) * Math.min(1, SETTLE * dt);
+      this.angle += (IDLE_TURN + this.spin) * dt;
+      this.spin *= Math.exp(-FLING_DAMPING * dt);
+      if (Math.abs(this.spin) < 1e-3) this.spin = 0;
     }
     this.turntable.rotation.y = this.angle;
 

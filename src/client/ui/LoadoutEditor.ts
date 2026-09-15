@@ -1,7 +1,6 @@
 import { ALL_EQUIPMENT, equipmentDef, type EquipmentId } from '../../shared/equipment/EquipmentDefs';
 import { camoDef, CAMO_IDS } from '../../shared/meta/Camos';
 import { fieldUpgradeDef, FIELD_UPGRADE_IDS } from '../../shared/meta/FieldUpgrades';
-import { levelProgress, prestigeLabel } from '../../shared/meta/Levels';
 import { resolveLoadout, type LoadoutSlot } from '../../shared/meta/Loadouts';
 import type { Profile } from '../meta/Profile';
 import { attachmentsForWeapon, weaponLevelProgress } from '../../shared/meta/Unlocks';
@@ -15,6 +14,9 @@ import { categoryIcon, CATEGORY_VIEWBOX, type CategoryIconId } from './CategoryI
 import { CharacterStage } from './CharacterStage';
 import { createScreen } from './Frame';
 import { LoadoutStats } from './LoadoutStats';
+import { PlayerCard } from './PlayerCard';
+import { ProfilePanel } from './ProfilePanel';
+import { makeScreenHeader } from './ScreenHeader';
 import { ICON_VIEWBOX, iconFor, makeIconSvg } from './WeaponIcons';
 import { WeaponPreview } from './WeaponPreview';
 
@@ -34,7 +36,22 @@ import { WeaponPreview } from './WeaponPreview';
  * tabs stands over the list where a category holds more than one thing to choose — WEAPON /
  * ATTACHMENTS / SKIN for the two weapons, LETHAL / TACTICAL, PERK 1 / 2 / 3, KEY 3 / 4 / 5 —
  * and a pager beside them, because a list longer than the column is **paged**, never
- * scrolled. The five class slots are tabs across the top, with the slot's name beside them.
+ * scrolled.
+ *
+ * ## The header, the strip, the foot (playtest round 3, R3)
+ *
+ * The header is the shared one (`ScreenHeader.ts`): the mark, CREATE A CLASS, and the player
+ * card with its gear and profile panel — exactly the menu's, with the place's name changed,
+ * mounted on the viewport so the mark stands at the window's edge (R1.1). The level and its
+ * bar left it for the card and the panel; *Save and exit* left it for the foot of the right
+ * column, under the list. The five classes are a **strip** of plates on a second row under
+ * the header, spanning the frame: each plate carries its number and its name, so the five
+ * are read at once rather than hovered for; the open one takes the accent and its name is
+ * the field it is renamed in; the equipped one carries EQUIPPED at its right end, and the
+ * open one that is not equipped carries the EQUIP action there instead, so the decision is
+ * where it is read and nowhere else. The stage lost its two arrows — a drag is enough, and
+ * the drag now carries its fling (`CharacterStage`) — and CHANGE A SKIN stands centred in
+ * the foot row that SAVE / CANCEL take over while a category is open.
  *
  * ## Three states, and the stage answers the list
  *
@@ -89,6 +106,10 @@ export interface LoadoutEditorDeps {
   readonly anisotropy: () => number;
   /** The skins, for the stage. The same service the match draws bodies from. */
   readonly characterAssets: CharacterAssetService;
+  /** Whether a server is configured — the card's dot (R2.1). */
+  readonly serverConfigured: () => boolean;
+  /** The callsign's writer, for the profile panel's field (R2.2). */
+  readonly onDisplayName: (name: string) => void;
 }
 
 type WeaponSlot = 'primary' | 'secondary';
@@ -191,8 +212,12 @@ function showsBand(list: ListKind): boolean {
 export class LoadoutEditor {
   private readonly deps: LoadoutEditorDeps;
   private readonly screen: HTMLElement;
-  /** The 1920x1080 box the editor is painted into (M15, A1). `screen` is the layer. */
+  /** The window-sized box the header mounts on (R1.1). `screen` is the layer. */
+  private readonly viewport: HTMLElement;
+  /** The 1920x1080 box the editor is painted into (M15, A1). */
   private readonly frame: HTMLElement;
+  private readonly card: PlayerCard;
+  private readonly panel: ProfilePanel;
   private readonly stats = new LoadoutStats();
   private readonly preview: WeaponPreview;
   private readonly stage: CharacterStage;
@@ -222,9 +247,9 @@ export class LoadoutEditor {
   private opts: HTMLElement | null = null;
   /** The stat band under the list, shown for the weapon lists. */
   private band: HTMLElement | null = null;
-  /** The stage's parts the weapon preview replaces, and the SAVE / CANCEL row. */
+  /** The stage's parts the weapon preview replaces; the skin toggle; the SAVE / CANCEL row. */
   private stageParts: HTMLElement[] = [];
-  private stageBar: HTMLElement | null = null;
+  private stageSkins: HTMLElement | null = null;
   private stageActions: HTMLElement | null = null;
   private readonly boxElements = new Map<BoxKind, HTMLElement>();
   /**
@@ -244,13 +269,30 @@ export class LoadoutEditor {
       className: 'lo-preview--stage',
     });
     this.stage = new CharacterStage({ characterAssets: deps.characterAssets, anisotropy: deps.anisotropy });
-    const { layer, frame } = createScreen('op-screen lo');
+    const { layer, viewport, frame } = createScreen('op-screen lo');
     this.screen = layer;
+    this.viewport = viewport;
     this.frame = frame;
     this.screen.hidden = true;
     this.tip = document.createElement('div');
     this.tip.className = 'lo-tip';
     this.tip.hidden = true;
+    // A skin or a name picked in the panel is on the disc and on the card when it closes.
+    this.panel = new ProfilePanel({
+      profile: deps.profile,
+      onDisplayName: deps.onDisplayName,
+      onChange: () => this.card.refresh(),
+      onClose: () => {
+        this.card.refresh();
+        this.stage.show(deps.profile.skinId);
+        this.refresh();
+      },
+    });
+    this.card = new PlayerCard({
+      profile: deps.profile,
+      online: deps.serverConfigured,
+      onOpenProfile: () => this.panel.open(),
+    });
     deps.host.appendChild(this.screen);
   }
 
@@ -261,6 +303,7 @@ export class LoadoutEditor {
     this.hoveredWeaponId = null;
     this.screen.hidden = false;
     this.skinsOpen = false;
+    this.panel.close();
     this.paint();
     this.stage.show(this.deps.profile.skinId);
   }
@@ -268,8 +311,14 @@ export class LoadoutEditor {
   hide(): void {
     this.screen.hidden = true;
     this.hideTip();
+    this.panel.close();
     this.preview.release();
     this.stage.release();
+  }
+
+  /** Escape closes the profile panel if it is open, and is consumed by it; otherwise the screen's one exit is `Game`'s. */
+  handleEscape(): boolean {
+    return this.panel.handleEscape();
   }
 
   /**
@@ -351,18 +400,17 @@ export class LoadoutEditor {
     band.appendChild(this.stats.element);
     this.band = band;
 
-    right.append(head, list, band);
+    right.append(head, list, band, this.paintFoot());
 
-    this.frame.replaceChildren(this.paintHeader(), stage, right, this.tip);
+    // The header on the viewport, the rest in the frame (R1.1); the panel's overlay last.
+    this.frame.replaceChildren(this.paintStrip(), stage, right, this.tip);
+    this.viewport.replaceChildren(this.paintHeader(), this.frame, this.panel.element);
     this.staticRefresherCount = this.refreshers.length;
     this.refresh();
   }
 
-  /** The title, the five class tabs with the slot's name, the level, and the one action. */
+  /** The shared header (`ScreenHeader.ts`): the mark, CREATE A CLASS with its subtitle, the player card. */
   private paintHeader(): HTMLElement {
-    const head = document.createElement('header');
-    head.className = 'lo-head';
-
     const titles = document.createElement('div');
     titles.className = 'lo-head__titles';
     const title = document.createElement('h1');
@@ -374,135 +422,125 @@ export class LoadoutEditor {
       ? 'SHOOTING RANGE — ALL CONTENT UNLOCKED, NO PROGRESS BANKED'
       : 'CUSTOMISE YOUR LOADOUT';
     titles.append(title, sub);
-
-    head.append(titles, this.paintSlots(), this.paintLevel(), this.paintActions());
-    return head;
+    this.card.refresh();
+    return makeScreenHeader('op-head--editor', [titles], this.card.element);
   }
 
   /**
-   * The five slots as tabs, the equipped one marked, and the open one's name beside them.
+   * The class strip (R3.3): five plates under the header, one per slot, each with its number
+   * and its name.
    *
-   * Changing slot closes the open zone and refreshes; it does not repaint. The tabs, the
-   * boxes and the zone are the same shape whichever class is selected — only their *values*
-   * differ — so a rebuild would throw the screen away to change a dozen strings.
+   * The open plate takes the accent, and its name is the field it is renamed in — the
+   * callsign's kind of field, a rule beneath while it is being written; the other four names
+   * are labels. The equipped plate carries EQUIPPED at its right end; the open plate that is
+   * not equipped carries the EQUIP action there instead. Changing slot closes the open list
+   * and refreshes; it does not repaint — the plates, the boxes and the list are the same shape
+   * whichever class is selected, only their *values* differ.
    */
-  private paintSlots(): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.className = 'lo-slots';
+  private paintStrip(): HTMLElement {
+    const strip = document.createElement('div');
+    strip.className = 'lo-strip';
+    strip.setAttribute('role', 'tablist');
+    strip.setAttribute('aria-label', 'Classes');
 
-    const tabs = document.createElement('div');
-    tabs.className = 'lo-tabs';
-    tabs.setAttribute('role', 'tablist');
     this.deps.profile.loadouts.forEach((_slot, index) => {
-      const tab = document.createElement('button');
-      tab.type = 'button';
-      tab.className = 'lo-tab';
-      tab.textContent = String(index + 1);
-      tab.setAttribute('role', 'tab');
-      tab.addEventListener('click', () => {
+      const plate = document.createElement('div');
+      plate.className = 'lo-plate';
+      plate.setAttribute('role', 'tab');
+      plate.tabIndex = 0;
+      const select = (): void => {
+        if (index === this.slotIndex) return;
         this.slotIndex = index;
         this.closeList();
         this.refresh();
+      };
+      plate.addEventListener('click', select);
+      plate.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          select();
+        }
       });
+
+      const num = document.createElement('span');
+      num.className = 'lo-plate__num op-num';
+      num.textContent = String(index + 1);
+
+      const name = document.createElement('input');
+      name.type = 'text';
+      name.className = 'lo-plate__name';
+      name.maxLength = 16;
+      name.spellcheck = false;
+      name.autocomplete = 'off';
+      name.setAttribute('aria-label', `Class ${index + 1} name`);
+      name.addEventListener('change', () => {
+        const next = name.value.trim().toUpperCase().slice(0, 16);
+        if (next.length === 0) return;
+        this.edit((slot) => {
+          slot.name = next;
+        });
+      });
+      // The editor is a DOM surface over a canvas that owns the keyboard: without this, typing
+      // "W" in the name walks nobody, but the shortcut keys 1-5 would change the slot — and
+      // Enter or Space in the field must not re-select the plate.
+      name.addEventListener('keydown', (e) => e.stopPropagation());
+
+      const tag = document.createElement('span');
+      tag.className = 'lo-plate__tag op-label';
+      tag.textContent = 'EQUIPPED';
+      const equip = document.createElement('button');
+      equip.type = 'button';
+      equip.className = 'lo-plate__equip';
+      equip.textContent = 'EQUIP';
+      equip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.deps.profile.equipLoadout(index);
+        this.refresh();
+      });
+
+      plate.append(num, name, tag, equip);
+
       // Looked up rather than captured: `Profile.importSave` and `resetProgress` replace the
       // whole save object, and a closure holding the old slot would keep painting a class that
-      // no longer exists.
+      // no longer exists. The name is never written over what is being typed: the field is its
+      // own writer while it holds focus.
       this.refreshers.push(() => {
         const on = index === this.slotIndex;
-        tab.classList.toggle('is-on', on);
-        tab.classList.toggle('is-equipped', index === this.deps.profile.equippedIndex);
-        tab.setAttribute('aria-selected', on ? 'true' : 'false');
-        tab.title = this.deps.profile.loadouts[index]?.name ?? '';
+        const equipped = index === this.deps.profile.equippedIndex;
+        plate.classList.toggle('is-on', on);
+        plate.classList.toggle('is-equipped', equipped);
+        plate.setAttribute('aria-selected', on ? 'true' : 'false');
+        name.readOnly = !on;
+        name.tabIndex = on ? 0 : -1;
+        tag.hidden = !equipped;
+        equip.hidden = equipped || !on;
+        if (document.activeElement === name) return;
+        const value = this.deps.profile.loadouts[index]?.name ?? '';
+        if (name.value !== value) name.value = value;
       });
-      tabs.appendChild(tab);
+      strip.appendChild(plate);
     });
-
-    const rename = document.createElement('input');
-    rename.type = 'text';
-    rename.className = 'lo-rename';
-    rename.maxLength = 16;
-    rename.setAttribute('aria-label', 'Class name');
-    rename.addEventListener('change', () => {
-      const next = rename.value.trim().toUpperCase().slice(0, 16);
-      if (next.length === 0) return;
-      this.edit((slot) => {
-        slot.name = next;
-      });
-    });
-    // The menu is a DOM surface over a canvas that owns the keyboard: without this, typing
-    // "W" in the name walks nobody, but the shortcut keys 1-5 would change the slot.
-    rename.addEventListener('keydown', (e) => e.stopPropagation());
-    // Written from the slot, but never over what is being typed: the field is its own writer
-    // while it holds focus, and this one would fight it on every keystroke of a rename.
-    this.refreshers.push(() => {
-      if (document.activeElement === rename) return;
-      const name = this.slot.name;
-      if (rename.value !== name) rename.value = name;
-    });
-
-    const equip = button('Equip', () => {
-      this.deps.profile.equipLoadout(this.slotIndex);
-      this.refresh();
-    });
-    equip.classList.add('op-btn--quiet', 'lo-equip');
-    this.refreshers.push(() => {
-      const isEquipped = this.slotIndex === this.deps.profile.equippedIndex;
-      equip.textContent = isEquipped ? 'Equipped' : 'Equip';
-      equip.disabled = isEquipped;
-    });
-
-    wrap.append(tabs, rename, equip);
-    return wrap;
+    return strip;
   }
 
-  /** Level, XP bar, prestige and tokens — the reason any of the rest is locked. */
-  private paintLevel(): HTMLElement {
-    const profile = this.deps.profile;
-    const progress = levelProgress(profile.xp);
-
-    const wrap = document.createElement('div');
-    wrap.className = 'lo-level';
-
-    const num = document.createElement('span');
-    num.className = 'lo-level__num op-num';
-    num.textContent = String(progress.level);
-    const cap = document.createElement('span');
-    cap.className = 'op-label';
-    cap.textContent = profile.prestige > 0 ? `PRESTIGE ${prestigeLabel(profile.prestige)}` : 'LEVEL';
-
-    const bar = document.createElement('div');
-    bar.className = 'lo-level__bar';
-    const fill = document.createElement('i');
-    fill.style.transform = `scaleX(${progress.fraction.toFixed(4)})`;
-    bar.appendChild(fill);
-
-    const detail = document.createElement('span');
-    detail.className = 'op-label lo-level__detail';
-    detail.textContent = progress.atCap
-      ? `MAX LEVEL · ${profile.unlockTokens} TOKEN(S)`
-      : `${progress.into.toLocaleString()} / ${progress.span.toLocaleString()} XP TO ${progress.level + 1}`;
-
-    const text = document.createElement('div');
-    text.className = 'lo-level__text';
-    text.append(cap, bar, detail);
-    wrap.append(num, text);
-    return wrap;
-  }
-
-  private paintActions(): HTMLElement {
-    const actions = document.createElement('div');
-    actions.className = 'op-actions lo-actions';
-    /**
-     * The one action (playtest round 4, B5): it reads "Save and exit" rather than "Back"
-     * because that is what it does. There is one destination, so there is one button.
-     */
+  /**
+   * The foot of the right column: the one action (playtest round 4, B5), under the list where
+   * the human asked for it (R3.4). It reads "Save and exit" rather than "Back" because that
+   * is what it does; there is one destination, so there is one button.
+   */
+  private paintFoot(): HTMLElement {
+    const foot = document.createElement('div');
+    foot.className = 'op-actions lo-foot';
     const exit = button('Save and exit', () => this.deps.onSaveAndExit());
-    exit.classList.add('op-btn--primary');
-    actions.appendChild(exit);
-    return actions;
+    exit.classList.add('op-btn--primary', 'lo-exit');
+    foot.appendChild(exit);
+    return foot;
   }
 
-  /** The operator on the disc, and the two arrows that turn it. */
+  /**
+   * The operator on the disc. The two arrows that turned it are gone (R3.6): a drag turns it,
+   * and the drag carries its fling. The status line stands over the canvas's foot.
+   */
   private paintStage(): HTMLElement {
     const wrap = document.createElement('section');
     wrap.className = 'lo-stage';
@@ -512,17 +550,11 @@ export class LoadoutEditor {
     status.textContent = 'LOADING OPERATOR…';
     this.stageStatus = status;
 
-    const left = arrowButton('‹', 'Turn left', () => this.stage.nudge(-1));
-    const right = arrowButton('›', 'Turn right', () => this.stage.nudge(1));
-    const bar = document.createElement('div');
-    bar.className = 'lo-stage__bar';
-    bar.append(left, status, right);
-
     const skins = this.paintSkins();
-    // The operator's three parts, hidden together while a weapon stands in their place; the
-    // arrow bar also steps aside for SAVE / CANCEL while a category is open (a drag still turns).
-    this.stageParts = [this.stage.canvas, skins, bar];
-    this.stageBar = bar;
+    // The operator's parts, hidden together while a weapon stands in their place; the skin
+    // toggle also steps aside for SAVE / CANCEL, which take its row while a category is open.
+    this.stageParts = [this.stage.canvas, status, skins];
+    this.stageSkins = skins;
 
     // SAVE keeps the picks and returns to the categories; CANCEL restores the snapshot first.
     const actions = document.createElement('div');
@@ -535,14 +567,15 @@ export class LoadoutEditor {
     actions.append(cancel, save);
     this.stageActions = actions;
 
-    wrap.append(this.stage.canvas, this.preview.element, skins, bar, actions);
+    wrap.append(this.stage.canvas, status, this.preview.element, skins, actions);
     return wrap;
   }
 
   /**
-   * CHANGE A SKIN (B5): a bar over the stage's foot, and the strip of every skin it opens.
+   * CHANGE A SKIN (B5): a toggle in the stage's foot row, centred under the figure (R3.8),
+   * and the strip of every skin it opens.
    *
-   * The strip lies *over* the canvas rather than under the bar, so the column's height never
+   * The strip lies *over* the canvas rather than under the toggle, so the column's height never
    * changes and the frame never has to. The thumbnails are `scripts/skin-thumbs.mjs`'s renders
    * — seven live stages would be seven contexts and the whole library fetched to open a menu.
    * Picking writes the profile (a setting, kept across a progress reset like the callsign) and
@@ -1268,7 +1301,8 @@ export class LoadoutEditor {
     const onStage = this.weaponOnStage();
 
     for (const part of this.stageParts) part.hidden = onStage;
-    if (this.stageBar !== null) this.stageBar.hidden = onStage || this.open !== null;
+    // The skin toggle and SAVE / CANCEL share the foot row: one or the other, never both.
+    if (this.stageSkins !== null) this.stageSkins.hidden = onStage || this.open !== null;
     this.preview.element.hidden = !onStage;
     if (this.stageActions !== null) this.stageActions.hidden = this.open === null;
 
@@ -1295,8 +1329,13 @@ export class LoadoutEditor {
 const STAGE_PREVIEW_WIDTH = 860;
 const STAGE_PREVIEW_HEIGHT = 480;
 
-/** Option bars a page holds: with the stat band under the list, and without. */
-const PAGE_WITH_BAND = 7;
+/**
+ * Option bars a page holds: with the stat band under the list, and without (R3.5, decision 11:
+ * 80 px bars with 8 px gaps — 8 × 80 + 7 × 8 + 8 = 704 in the 744 the list has without the
+ * band, 6 × 80 + 5 × 8 + 8 = 528 in the 592 with one; the CSS comment at `.lo-right` carries
+ * the same sum from the other side).
+ */
+const PAGE_WITH_BAND = 6;
 const PAGE_FULL = 8;
 
 /** The glyph a category bar shows when it has no weapon to show. */
@@ -1352,6 +1391,7 @@ function button(text: string, onClick: () => void): HTMLButtonElement {
   return b;
 }
 
+/** The pager's arrows (the stage's went in R3.6). */
 function arrowButton(text: string, label: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';

@@ -334,6 +334,8 @@ const loadout = new LoadoutEditor({
   unrestricted: () => false,
   anisotropy: () => 1,
   characterAssets,
+  serverConfigured: () => true,
+  onDisplayName: noop,
 });
 
 /**

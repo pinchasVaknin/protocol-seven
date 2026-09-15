@@ -7,9 +7,10 @@ import type { GameModeId } from '../../shared/modes/GameMode';
 import { MAPS, MODES, modesForMap } from '../../shared/modes/ModeRegistry';
 import type { Profile } from '../meta/Profile';
 import { createScreen } from './Frame';
-import { makeLockup, makeMark } from './Emblem';
+import { makeLockup } from './Emblem';
 import { PlayerCard } from './PlayerCard';
 import { ProfilePanel } from './ProfilePanel';
+import { makeScreenHeader } from './ScreenHeader';
 import { makeIconSvg } from './WeaponIcons';
 
 /**
@@ -239,13 +240,8 @@ export class Menus {
     focus.focus();
   }
 
-  /** The wordmark and the player card. */
+  /** The shared header (`ScreenHeader.ts`): the mark, the wordmark and `ARENA FPS`, the player card. */
   private header(): HTMLElement {
-    const head = document.createElement('header');
-    head.className = 'op-menu__head';
-
-    const brand = document.createElement('div');
-    brand.className = 'op-menu__brand';
     const wordmark = document.createElement('h1');
     wordmark.className = 'op-menu__wordmark';
     wordmark.textContent = 'PROTOCOL SEVEN';
@@ -254,13 +250,9 @@ export class Menus {
     const tag = document.createElement('span');
     tag.className = 'op-menu__tag';
     tag.textContent = 'ARENA FPS';
-    // The mark to the left of the name, its eyes breathing (`Emblem.ts`).
-    brand.append(makeMark('op-menu__mark'), wordmark, rule, tag);
-
     // The card is built once and re-read here: the level or the skin may have changed since.
     this.card.refresh();
-    head.append(brand, this.card.element);
-    return head;
+    return makeScreenHeader('op-head--menu', [wordmark, rule, tag], this.card.element);
   }
 
   private footer(): HTMLElement {

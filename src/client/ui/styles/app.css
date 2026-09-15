@@ -496,14 +496,20 @@ body.op-locked #viewport {
   gap: 18px;
 }
 
+/* The line at the bottom left (R1.4); the right corner is empty since the status line went (R1.3). */
 .op-menu__foot {
   position: absolute;
   bottom: 36px;
   left: 64px;
   right: 64px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: flex-end;
+}
+
+.op-menu__line {
+  color: var(--c-text-dim);
+  letter-spacing: 0.3em;
 }
 
 /*
@@ -518,8 +524,17 @@ body.op-locked #viewport {
  *    bottom. The same cut on every button; the eye reads them as one set of damaged plates.
  *  - The palette is the Create-a-Class bars' — the same dark gradient, the same left rule, the
  *    same grey-white type — so the two screens are one material.
- *  - `::after` is a skewed band of light that sweeps the length of the button on hover and on
- *    keyboard focus.
+ *  - `::after` is a skewed band of light that sweeps the length of the button on hover.
+ *
+ * Hover and keyboard focus are two states, not one rule (playtest round 3, R1.2). They were
+ * one: `paint()` focuses PLAY, a script-focused button matches `:focus-visible` in Chrome,
+ * and so PLAY stood already lit with the sweep parked at its far end before the pointer
+ * arrived — hovering it changed nothing, and it only lit under the pointer after a click
+ * elsewhere had blurred it, which was the report. Now `:hover` is the lift and the sweep,
+ * and `:focus-visible` is a mark — the accent on the leading rule and the top hairline — so
+ * a focused button reads as where the keyboard is, not as where the pointer is. The sweep is
+ * a keyframe animation rather than a transition on `left`: it runs each time the pointer
+ * enters and does not play backwards when it leaves.
  *
  * `overflow: hidden` keeps the sweep inside the clip. `grid` places the glyph, the label and
  * the chevron on one line without a flex gap that would change with the label's length.
@@ -585,25 +600,40 @@ body.op-locked #viewport {
   width: 40%;
   background: linear-gradient(100deg, rgba(232, 234, 238, 0) 0%, rgba(232, 234, 238, 0.14) 50%, rgba(232, 234, 238, 0) 100%);
   transform: skewX(-18deg);
-  transition: left 0.55s var(--ease);
   pointer-events: none;
 }
 
-.op-nav:hover,
-.op-nav:focus-visible {
+@keyframes op-nav-sweep {
+  from {
+    left: -45%;
+  }
+  to {
+    left: 110%;
+  }
+}
+
+.op-nav:hover {
   background: linear-gradient(180deg, rgba(40, 45, 54, 0.96), rgba(22, 26, 32, 0.96));
   border-left-color: var(--c-text-dim);
   color: #f4f6f8;
+}
+
+/* The keyboard's mark: the accent on the rule and the hairline, no lift, no sweep. */
+.op-nav:focus-visible {
   outline: none;
+  border-left-color: var(--c-accent);
+}
+
+.op-nav:focus-visible::before {
+  border-top-color: var(--c-accent);
 }
 
 .op-nav:active:not(:disabled) {
   background: linear-gradient(180deg, rgba(30, 60, 70, 0.96), rgba(18, 34, 40, 0.96));
 }
 
-.op-nav:hover::after,
-.op-nav:focus-visible::after {
-  left: 110%;
+.op-nav:hover::after {
+  animation: op-nav-sweep 0.55s var(--ease) forwards;
 }
 
 .op-nav:disabled {
@@ -648,9 +678,9 @@ body.op-locked #viewport {
   background: linear-gradient(100deg, rgba(63, 169, 199, 0) 0%, rgba(63, 169, 199, 0.35) 50%, rgba(63, 169, 199, 0) 100%);
 }
 
-.op-nav--primary:hover,
-.op-nav--primary:focus-visible {
+.op-nav--primary:hover {
   background: linear-gradient(90deg, rgba(63, 169, 199, 0.3), rgba(22, 26, 32, 0.96) 60%);
+  border-left-color: var(--c-accent);
   color: #ffffff;
 }
 
@@ -703,8 +733,8 @@ body.op-locked #viewport {
   .op-setup {
     animation: none;
   }
-  .op-nav::after {
-    transition: none;
+  .op-nav:hover::after {
+    animation: none;
   }
 }
 

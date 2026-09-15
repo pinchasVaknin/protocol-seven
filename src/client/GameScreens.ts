@@ -65,7 +65,6 @@ export interface GameScreensDeps {
   /** The summary's secondary: leave the server for the main menu (playtest round 4, B4). */
   readonly onExitSummary: () => void;
 
-  readonly statusLine: () => string;
   readonly pauseStatusLine: () => string;
   /** Whether the selected mode lifts unlock gates (the Shooting Range does). */
   readonly unrestricted: () => boolean;
@@ -99,7 +98,6 @@ export class GameScreens {
       onDisplayName: deps.onDisplayName,
       onLoadout: deps.onLoadout,
       onSettings: deps.onSettings,
-      statusLine: deps.statusLine,
       profileLine: () => profileLine(deps.profile),
     });
 

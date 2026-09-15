@@ -22,7 +22,9 @@ import { makeIconSvg } from './WeaponIcons';
  * are to go — PLAY (multiplayer, primary, one click to the arena as §6.1 requires), PLAY
  * SOLO, CREATE A CLASS and SETTINGS. The reference has six; ZOMBIES and STORE do not exist
  * here and QUIT is out by decision 7, a tab being a thing that closes itself. The **footer**
- * carries the status line.
+ * carries one line, bottom left — FIGHT · SURVIVE · WIN, the human's (playtest round 3,
+ * decision 9) — where it used to carry `Game.statusLine()`'s map, brush and prop counts, an
+ * M1 build stat nobody reading a menu could use (R1.3).
  *
  * The stage is in the frame; the header and the footer are on the **viewport** (playtest
  * round 3, R1.1). The frame is a 16:9 box centred in the window, and a window wider than
@@ -86,13 +88,14 @@ export interface MenuDeps {
   readonly onLoadout: () => void;
   /** M8: enter the `SETTINGS` state. */
   readonly onSettings: () => void;
-  /** Shown in the footer: build stats, or whatever the caller wants to say. */
-  readonly statusLine: () => string;
   /** M6: level, class and record. Redrawn every time the menu is shown. */
   readonly profileLine: () => string;
 }
 
 type Page = 'MAIN' | 'PLAY';
+
+/** The one line on the menu's footer (playtest round 3, decision 9): the human's own words, in the house style. */
+const MENU_LINE = 'FIGHT · SURVIVE · WIN';
 
 /**
  * The four glyphs, one path each in a 24-box, filled with `currentColor` (`fill-rule:
@@ -270,10 +273,10 @@ export class Menus {
   private footer(): HTMLElement {
     const foot = document.createElement('footer');
     foot.className = 'op-menu__foot';
-    const status = document.createElement('span');
-    status.className = 'op-label';
-    status.textContent = this.deps.statusLine();
-    foot.appendChild(status);
+    const line = document.createElement('span');
+    line.className = 'op-label op-menu__line';
+    line.textContent = MENU_LINE;
+    foot.appendChild(line);
     return foot;
   }
 

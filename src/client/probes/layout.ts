@@ -283,7 +283,6 @@ const menus = new Menus({
   onDisplayName: noop,
   onLoadout: noop,
   onSettings: noop,
-  statusLine: () => 'LAYOUT PROBE',
   profileLine: () => 'LEVEL 1 · ASSAULT · 0 / 500 XP',
 });
 

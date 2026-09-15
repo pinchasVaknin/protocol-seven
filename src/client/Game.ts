@@ -605,7 +605,6 @@ export class Game {
       onCheatCode: (code) => this.requestCheat(code),
       onLeaveSummary: () => this.leaveSummary(),
       onExitSummary: () => this.exitSummary(),
-      statusLine: () => this.statusLine(),
       pauseStatusLine: () => this.pauseStatusLine(),
       unrestricted: () => findMode(this.selection.modeId).unrestricted,
       anisotropy: () => this.textures.anisotropy,
@@ -2679,12 +2678,6 @@ export class Game {
   }
 
   // -- events --------------------------------------------------------------
-
-  private statusLine(): string {
-    const map = this.mapEntry();
-    return `${map.name} · ${map.def.brushes.length} brushes · ${map.def.props.length} props`;
-  }
-
 
   /**
    * The cursor was released — almost always Esc (M5, from the M4 playtest notes).

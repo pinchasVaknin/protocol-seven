@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FRAME_HEIGHT, FRAME_WIDTH, frameScale } from './Frame';
+import { FRAME_HEIGHT, FRAME_WIDTH, frameScale, frameViewport } from './Frame';
 
 /**
  * The design frame's one number (M15, Phase A1). Pure, so it is tested here; the element half
@@ -24,5 +24,37 @@ describe('frameScale', () => {
   it('has no lower clamp — the rule holds below the floor', () => {
     expect(frameScale(800, 600)).toBeCloseTo(800 / 1920, 12);
     expect(frameScale(0, 0)).toBe(0);
+  });
+});
+
+/**
+ * The viewport box (playtest round 3, R1.1): the window over the scale, so a header mounted
+ * on it reaches the window's edges. At least the frame on both axes, exact on the one that
+ * set the scale.
+ */
+describe('frameViewport', () => {
+  it('is the frame at the design size and at any 16:9 window', () => {
+    expect(frameViewport(1920, 1080)).toEqual({ scale: 1, width: 1920, height: 1080 });
+    const box = frameViewport(1280, 720);
+    expect(box.width).toBeCloseTo(1920, 9);
+    expect(box.height).toBeCloseTo(1080, 9);
+  });
+
+  it('is wider than the frame where the window is wider than 16:9, and exactly as tall', () => {
+    // The maximised-browser shape the round-3 report was made on: 107 px of gutter each side.
+    const box = frameViewport(1280, 600);
+    expect(box.height).toBeCloseTo(1080, 9);
+    expect(box.width).toBeCloseTo(2304, 9);
+    expect(box.width * box.scale).toBeCloseTo(1280, 9);
+  });
+
+  it('is taller than the frame where the window is taller, and exactly as wide', () => {
+    const box = frameViewport(375, 812);
+    expect(box.width).toBeCloseTo(1920, 9);
+    expect(box.height).toBeCloseTo(812 / (375 / 1920), 9);
+  });
+
+  it('is the frame for a window that has no size yet', () => {
+    expect(frameViewport(0, 0)).toEqual({ scale: 0, width: FRAME_WIDTH, height: FRAME_HEIGHT });
   });
 });

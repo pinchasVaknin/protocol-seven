@@ -156,8 +156,9 @@ function measure(screen: string, layer: HTMLElement, scale: number): ScreenRepor
     const r = el.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) continue;
     laid.push(el);
-    // The layer is the window and the frame is the frame; the content is what is in it.
-    if (el === layer || el.classList.contains('op-frame')) continue;
+    // The layer is the window, the viewport is the window in frame pixels and the frame is the
+    // frame; the content is what is in them.
+    if (el === layer || el.classList.contains('op-viewport') || el.classList.contains('op-frame')) continue;
     top = Math.min(top, r.top);
     bottom = Math.max(bottom, r.bottom);
     left = Math.min(left, r.left);

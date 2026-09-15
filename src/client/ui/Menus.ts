@@ -12,17 +12,27 @@ import { makeIconSvg } from './WeaponIcons';
 /**
  * The front end (brief S6.7; rebuilt on the design frame by M15, A2): main -> play -> match.
  *
- * ## Two halves
+ * ## Two halves, and the chrome on the window
  *
- * The frame is a header, a stage and a footer. The **header** is the wordmark on the left and
- * the player card on the right — the callsign, editable in place, and the profile line under
- * it — where the references put them. The **stage** is the left half, which is nothing but
- * the backdrop (the canvas underneath, which A3 fills with a map on a dolly), and the right
- * half, which holds the navigation: four buttons, and only four, because that is how many
- * places there are to go — PLAY (multiplayer, primary, one click to the arena as §6.1
- * requires), PLAY SOLO, CREATE A CLASS and SETTINGS. The reference has six; ZOMBIES and STORE
- * do not exist here and QUIT is out by decision 7, a tab being a thing that closes itself.
- * The **footer** carries the status line.
+ * A header, a stage and a footer. The **header** is the wordmark on the left and the player
+ * card on the right — the callsign, editable in place, and the profile line under it — where
+ * the references put them. The **stage** is the left half, which is nothing but the backdrop
+ * (the canvas underneath, which A3 fills with a map on a dolly), and the right half, which
+ * holds the navigation: four buttons, and only four, because that is how many places there
+ * are to go — PLAY (multiplayer, primary, one click to the arena as §6.1 requires), PLAY
+ * SOLO, CREATE A CLASS and SETTINGS. The reference has six; ZOMBIES and STORE do not exist
+ * here and QUIT is out by decision 7, a tab being a thing that closes itself. The **footer**
+ * carries the status line.
+ *
+ * The stage is in the frame; the header and the footer are on the **viewport** (playtest
+ * round 3, R1.1). The frame is a 16:9 box centred in the window, and a window wider than
+ * that — a maximised browser under its own bar — leaves a gutter each side of it, so a header
+ * laid out in the frame stood 142 px from the window's edge where the eye expects the
+ * padding. The viewport is the window's own size in frame pixels (`Frame.ts`); the two bars
+ * are absolute against it, flush with the window's sides, and the menu's frame is the one
+ * that fills the viewport (`app.css`, `.op-menu`: there is no fixed body here to keep
+ * uniform, and a column held to 16:9 would stand inside the card above it). At 16:9 nothing
+ * moves.
  *
  * The controls card, the fullscreen hint and the reset control that used to stack under the
  * buttons are in Settings → INFO now (A4, `KeyCard.ts`): the menu has no room for fourteen
@@ -106,14 +116,17 @@ const GLYPH = {
 export class Menus {
   private readonly deps: MenuDeps;
   private readonly screen: HTMLElement;
-  /** The 1920x1080 box the pages are painted into (M15, A1). `screen` is the layer. */
+  /** The window-sized box the header and the footer mount on (R1.1). `screen` is the layer. */
+  private readonly viewport: HTMLElement;
+  /** The 1920x1080 box the stage is painted into (M15, A1). */
   private readonly frame: HTMLElement;
   private page: Page = 'MAIN';
 
   constructor(deps: MenuDeps) {
     this.deps = deps;
-    const { layer, frame } = createScreen('op-screen op-screen--menu');
+    const { layer, viewport, frame } = createScreen('op-screen op-screen--menu');
     this.screen = layer;
+    this.viewport = viewport;
     this.frame = frame;
     this.screen.hidden = true;
     deps.host.appendChild(this.screen);
@@ -130,6 +143,8 @@ export class Menus {
     this.screen.hidden = false;
     this.frame.classList.remove('op-menu');
     this.frame.classList.add('op-boot');
+    // The chrome of a previous menu paint, if any, comes off the viewport with the page.
+    this.viewport.replaceChildren(this.frame);
     // The logo, on the black the canvas clears to until the map lands: the game opens on it.
     this.frame.replaceChildren(makeLockup(), subtitle(message));
   }
@@ -154,6 +169,7 @@ export class Menus {
     const body = document.createElement('p');
     body.className = 'op-screen__note';
     body.textContent = detail;
+    this.viewport.replaceChildren(this.frame);
     this.frame.replaceChildren(makeLockup(), subtitle(headline), body);
   }
 
@@ -184,7 +200,10 @@ export class Menus {
     const stage = document.createElement('div');
     stage.className = 'op-menu__stage';
     const focus = this.page === 'MAIN' ? this.paintNav(stage) : this.paintSetup(stage);
-    this.frame.replaceChildren(this.header(), stage, this.footer());
+    // The bars on the viewport, the stage in the frame — see the class comment. The frame is
+    // re-appended between them so the order is head, frame, foot whatever was there before.
+    this.frame.replaceChildren(stage);
+    this.viewport.replaceChildren(this.header(), this.frame, this.footer());
     focus.focus();
   }
 

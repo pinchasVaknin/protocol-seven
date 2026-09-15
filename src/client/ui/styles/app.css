@@ -83,8 +83,9 @@ body.op-locked #viewport {
    * the crosshair and the vignettes paint over the top of it.
    */
   z-index: 10;
-  /* Centres the frame's *scaled* box: a zoomed child is laid out by its parent at its zoomed
-   * size, so an ultrawide window gets equal gutters and a 16:10 one equal bands. */
+  /* Centres the viewport's *scaled* box: a zoomed child is laid out by its parent at its
+   * zoomed size. The viewport is the window's own size, so this is exact; the gutters an
+   * ultrawide window has, and the bands a 16:10 one has, are inside it, around the frame. */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -94,8 +95,28 @@ body.op-locked #viewport {
 }
 
 /*
- * The frame. 1920x1080 in its own pixels, `zoom`ed to the window; `--ui-scale` is written on
- * `#ui-root` by `applyFrameScale` and inherited from there.
+ * The viewport box (playtest round 3, R1.1): the window's own size in frame pixels, `zoom`ed
+ * to the window. `--ui-scale`, `--frame-w` and `--frame-h` are written on `#ui-root` by
+ * `applyFrameScale` and inherited from there; the frame's ramp (`tokens.css`) sits on this
+ * box so that a header mounted here reads the same type as the frame it stands over. The
+ * frame is centred inside it; a header or a footer is `position: absolute` against it and
+ * reaches the window's edges, which the frame — a 16:9 box in whatever the window is — cannot.
+ * At 16:9 the two boxes are the same size. `Frame.ts` says why.
+ */
+.op-viewport {
+  flex: none;
+  position: relative;
+  width: var(--frame-w, 1920px);
+  height: var(--frame-h, 1080px);
+  zoom: var(--ui-scale, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/*
+ * The frame. 1920x1080 in its own pixels, centred by the viewport and scaled with it.
  *
  * `overflow: hidden` rather than `visible` is deliberate and is a *measurement*, not a fix:
  * a screen that is taller than the frame is clipped at the frame's edge, where the probe's
@@ -109,7 +130,6 @@ body.op-locked #viewport {
   flex: none;
   width: 1920px;
   height: 1080px;
-  zoom: var(--ui-scale, 1);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -268,29 +288,46 @@ body.op-locked #viewport {
 }
 
 /*
- * The menu frame is a grid — a header, a stage and a footer — rather than the centred column
- * the other screens use. `display: grid` here overrides the frame's flex, and the areas are
- * named so the three pieces cannot end up in the wrong order.
+ * The menu frame is the stage alone since R1.1: the header and the footer are on the viewport
+ * (below), so a window wider than 16:9 has them at its own edges rather than at the frame's.
+ * And the frame itself fills the viewport here — the one screen that does — because the menu
+ * has no fixed body to keep uniform: its layout is edge-anchored (the backdrop on the left,
+ * a 600 px column on the right), and a column held to the 16:9 box would stand 107 px inside
+ * the card above it at 1280×600, a seam for nothing. So the stage reaches the window's edges
+ * with the bars, the Play Solo panel centres in the window, and at 16:9 — where the viewport
+ * is the frame — nothing has moved. `display: grid` here overrides the frame's flex; the
+ * padding is the inset the two bars use.
  */
 .op-menu {
+  width: 100%;
+  height: 100%;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: minmax(0, 1fr);
   /* `minmax(0, 1fr)` and `stretch`: the frame's own `safe center` would otherwise size the one
-   * column to its content and centre it, and the header would be as wide as the wordmark. */
+   * column to its content and centre it. */
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas:
-    "head"
-    "stage"
-    "foot";
+  grid-template-areas: "stage";
   justify-content: stretch;
   justify-items: stretch;
   align-items: stretch;
   gap: 0;
-  padding: 40px 64px 36px;
+  /* The bars' insets plus their heights — the 84 px mark above, the 20 px label below — so the
+   * stage is the box between them that it was when they were rows of this grid, and the Play
+   * Solo panel centres between the bars rather than in the whole frame (it came within 15 px
+   * of the header otherwise). */
+  padding: 124px 64px 56px;
 }
 
+/*
+ * The two bars, absolute on the viewport at the frame's own padding. The menu's frame fills
+ * the viewport, so the window's edges are the frame's; a screen whose body stays 1920×1080
+ * (the editor, R3) sets its header level with the frame's top instead.
+ */
 .op-menu__head {
-  grid-area: head;
+  position: absolute;
+  top: 40px;
+  left: 64px;
+  right: 64px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -460,7 +497,10 @@ body.op-locked #viewport {
 }
 
 .op-menu__foot {
-  grid-area: foot;
+  position: absolute;
+  bottom: 36px;
+  left: 64px;
+  right: 64px;
   display: flex;
   justify-content: flex-end;
   align-items: flex-end;

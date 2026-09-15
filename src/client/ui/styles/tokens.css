@@ -80,9 +80,11 @@
  * hand.
  *
  * So the frame carries its own ramp. Custom properties inherit, and every front-end rule
- * already resolves to a token, so redefining the tokens on `.op-frame` rescales every screen
- * inside it and nothing outside — the HUD, the scoreboard overlay, the killfeed and the debug
- * layer are not in a frame and keep the ramp above. Type is about 1.4x (13 → 18 body, 11 → 16
+ * already resolves to a token, so redefining the tokens on the viewport box (`.op-viewport`,
+ * the frame's parent since R1.1 — it was `.op-frame` itself until a header moved out of the
+ * frame and stopped inheriting them) rescales every screen inside it and nothing outside —
+ * the HUD, the scoreboard overlay, the killfeed and the debug layer are not in a frame and
+ * keep the ramp above. Type is about 1.4x (13 → 18 body, 11 → 16
  * small, 10 → 14 labels); spacing is 1.5x, a 6 px grid, so the air around the larger type
  * grows with it. The fixed widths of frame content (`.op-settings`, `.op-pickers`, the pause
  * stack, the sliders, the binding buttons) are scaled by hand in `app.css` where they stand.
@@ -92,7 +94,7 @@
  * frame, and a clipped screen is worse than a small one. Both are on this ramp now; nothing
  * inside a frame pins the old values.
  */
-.op-frame {
+.op-viewport {
   --t-micro: 14px;
   --t-small: 16px;
   --t-body: 18px;

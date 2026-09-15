@@ -462,9 +462,14 @@ export function buildHeldWeapon(weaponId: string): HeldWeaponGeometry {
  * draw calls buying a difference nobody can resolve, so the whole weapon takes the receiver's
  * finish. It is the *shared* gunmetal, already built for the viewmodel — a held weapon
  * allocates no material of its own.
+ *
+ * With a camo (playtest round 3, R4.4) it is the camo set's gunmetal, which *is* the pattern
+ * (`buildCamoSurfaces`), from the same per-process cache the viewmodel fills. The editor's
+ * stage asks for it, because a body four metres from the lens shows its finish; a match body
+ * does not — the wire carries no camo, so there is none to show.
  */
-export function heldWeaponMaterial(anisotropy: number): THREE.Material {
-  const material = sharedWeaponSurfaces(anisotropy).get('gunmetal');
+export function heldWeaponMaterial(anisotropy: number, camo: CamoId | null = null): THREE.Material {
+  const material = sharedSurfaces(anisotropy, camo).get('gunmetal');
   if (material === undefined) throw new Error('The shared weapon surfaces have no gunmetal.');
   return material;
 }

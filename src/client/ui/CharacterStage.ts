@@ -4,6 +4,7 @@ import type { ActorAvatar, HeldWeaponAsset } from '../characters/ActorAvatar';
 import type { CharacterAvatarProvider } from '../characters/CharacterAvatarProvider';
 import { characterDefinition, type CharacterId } from '../characters/CharacterCatalog';
 import type { CharacterAssetService } from '../characters/CharacterAssetService';
+import type { CamoId } from '../../shared/meta/Camos';
 import { buildHeldWeapon, heldWeaponMaterial } from '../weapons/WeaponMesh';
 
 /**
@@ -20,9 +21,9 @@ import { buildHeldWeapon, heldWeaponMaterial } from '../weapons/WeaponMesh';
  * the same asset a bot carries. So the operator on this screen is the operator other players
  * see, by construction rather than by a second model kept in step with the first.
  *
- * What it does not show is the camo. A held weapon is one mesh in one shared material, which
- * is right at the distance a body is seen; the finish is the viewmodel's business, and the
- * editor's SKIN tab shows it on the `WeaponPreview` that already knows how.
+ * It shows the camo too (playtest round 3, R4.4): a held weapon is one mesh in one shared
+ * material, and with a finish that material is the camo set's gunmetal — the pattern — from
+ * the cache the viewmodel fills. A match body stays plain: the wire carries no camo.
  *
  * ## One class, one figure or five
  *
@@ -73,6 +74,8 @@ export interface StageOptions {
 export interface StageFigure {
   readonly characterId: CharacterId;
   readonly weaponId: string | null;
+  /** The weapon's finish; a lineup's bodies carry none (the wire has none to give them). */
+  readonly camo?: CamoId | null;
   /** Metres from the stage's centre; +Z is toward the camera. */
   readonly x: number;
   readonly z: number;
@@ -159,8 +162,10 @@ export class CharacterStage {
 
   private renderer: THREE.WebGLRenderer | null = null;
   private slots: Slot[] = [];
-  /** The one-figure API's weapon, so `setWeapon` before or after `show` means the same thing. */
+  /** The one-figure API's weapon and its finish, so `setWeapon` before or after `show` means the same thing. */
   private weaponId: string | null = null;
+  private camo: CamoId | null = null;
+  /** Keyed by weapon and finish: a camo'd weapon is a different asset with the same geometry. */
   private readonly weapons = new Map<string, HeldWeaponAsset>();
 
   /**
@@ -259,16 +264,17 @@ export class CharacterStage {
   show(characterId: CharacterId): void {
     const only = this.slots.length === 1 ? this.slots[0] : undefined;
     if (only !== undefined && only.figure.characterId === characterId) return;
-    this.showLineup([{ characterId, weaponId: this.weaponId, x: 0, z: 0, yaw: 0 }]);
+    this.showLineup([{ characterId, weaponId: this.weaponId, camo: this.camo, x: 0, z: 0, yaw: 0 }]);
   }
 
-  /** The weapon in the one figure's hands. Null empties them. */
-  setWeapon(weaponId: string | null): void {
-    if (weaponId === this.weaponId) return;
+  /** The weapon in the one figure's hands, in its finish. Null empties them. */
+  setWeapon(weaponId: string | null, camo: CamoId | null = null): void {
+    if (weaponId === this.weaponId && camo === this.camo) return;
     this.weaponId = weaponId;
+    this.camo = camo;
     const only = this.slots.length === 1 ? this.slots[0] : undefined;
     if (only === undefined) return;
-    only.weapon = weaponId === null ? null : this.heldWeapon(weaponId);
+    only.weapon = weaponId === null ? null : this.heldWeapon(weaponId, camo);
     only.avatar?.setWeapon(only.weapon);
   }
 
@@ -282,7 +288,7 @@ export class CharacterStage {
     this.slots = figures.map((figure) => ({
       figure,
       provider: this.deps.characterAssets.avatarProvider(characterDefinition(figure.characterId)),
-      weapon: figure.weaponId === null ? null : this.heldWeapon(figure.weaponId),
+      weapon: figure.weaponId === null ? null : this.heldWeapon(figure.weaponId, figure.camo ?? null),
       avatar: null,
     }));
   }
@@ -384,19 +390,20 @@ export class CharacterStage {
     this.slots = [];
   }
 
-  /** The held weapon for an id, built once and kept — `BotRenderer.heldWeapon`'s shape. */
-  private heldWeapon(weaponId: string): HeldWeaponAsset {
-    const existing = this.weapons.get(weaponId);
+  /** The held weapon for an id and a finish, built once and kept — `BotRenderer.heldWeapon`'s shape. */
+  private heldWeapon(weaponId: string, camo: CamoId | null): HeldWeaponAsset {
+    const key = `${weaponId}|${camo ?? ''}`;
+    const existing = this.weapons.get(key);
     if (existing !== undefined) return existing;
     const built = buildHeldWeapon(weaponId);
     const asset: HeldWeaponAsset = {
       weaponId,
       geometry: built.geometry,
-      material: heldWeaponMaterial(this.deps.anisotropy()),
+      material: heldWeaponMaterial(this.deps.anisotropy(), camo),
       gripAnchor: built.gripAnchor,
       supportAnchor: built.supportAnchor,
     };
-    this.weapons.set(weaponId, asset);
+    this.weapons.set(key, asset);
     return asset;
   }
 

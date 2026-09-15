@@ -47,6 +47,25 @@ export function camoTexture(id: CamoId, anisotropy: number): THREE.Texture {
   return texture;
 }
 
+/**
+ * The same pattern as a data URL, for the editor's camo bars (playtest round 3, R4.5): the
+ * texture's own canvas read back once per camo per process — six of them, about 40 kB each,
+ * built the first time a SKIN tab opens and kept beside the textures. `camoPicturesBuilt`
+ * counts the reads, so "once" is a number rather than a claim.
+ */
+const pictures = new Map<CamoId, string>();
+export let camoPicturesBuilt = 0;
+
+export function camoPicture(id: CamoId, anisotropy: number): string {
+  const existing = pictures.get(id);
+  if (existing !== undefined) return existing;
+  const image = camoTexture(id, anisotropy).image as HTMLCanvasElement;
+  const url = image.toDataURL('image/png');
+  pictures.set(id, url);
+  camoPicturesBuilt++;
+  return url;
+}
+
 function makeCanvas(): CanvasRenderingContext2D {
   const canvas = document.createElement('canvas');
   canvas.width = TEX;

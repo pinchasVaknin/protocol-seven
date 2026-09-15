@@ -2,6 +2,7 @@ import { ALL_EQUIPMENT, equipmentDef, type EquipmentId } from '../../shared/equi
 import { camoDef, CAMO_IDS } from '../../shared/meta/Camos';
 import { fieldUpgradeDef, FIELD_UPGRADE_IDS } from '../../shared/meta/FieldUpgrades';
 import { resolveLoadout, type LoadoutSlot } from '../../shared/meta/Loadouts';
+import { camoPicture } from '../meta/CamoTextures';
 import type { Profile } from '../meta/Profile';
 import { attachmentsForWeapon, weaponLevelProgress } from '../../shared/meta/Unlocks';
 import { STREAK_DEFS, streakDef } from '../../shared/streaks/StreakDefs';
@@ -689,7 +690,13 @@ export class LoadoutEditor {
    */
   private paintBoxValue(box: BoxDef, icon: HTMLElement, value: HTMLElement): void {
     const slot = this.slot;
-    const chips: { text: string; tip: string }[] = [];
+    /**
+     * A chip's rank (playtest round 3, R4.1): a weapon box has one *lead* — the weapon — and
+     * its finish and attachments as *details*; the other boxes hold *peers*, two grenades or
+     * three streaks that are each the whole answer. The first chip used to be the lead in
+     * every box, which drew CARE PACKAGE as an attachment of UAV.
+     */
+    const chips: { text: string; tip: string; rank: 'lead' | 'peer' | 'detail'; empty?: boolean }[] = [];
     let weaponId: string | null = null;
     switch (box.kind) {
       case 'primary':
@@ -697,43 +704,44 @@ export class LoadoutEditor {
         const w = slot[box.kind];
         weaponId = w.weaponId;
         const def = requireWeapon(w.weaponId);
-        chips.push({ text: def.name, tip: this.weaponBlurb(def) });
+        chips.push({ text: def.name, tip: this.weaponBlurb(def), rank: 'lead' });
         chips.push({
           text: w.camo === null ? 'FACTORY FINISH' : camoDef(w.camo).name,
           tip: w.camo === null ? 'No camouflage fitted' : camoDef(w.camo).requirement,
+          rank: 'detail',
         });
         if (w.attachments.length > 0) {
           for (const id of w.attachments) {
             const a = attachmentDef(id);
-            chips.push({ text: a.name, tip: `${a.benefit} — ${a.cost}` });
+            chips.push({ text: a.name, tip: `${a.benefit} — ${a.cost}`, rank: 'detail' });
           }
         }
         break;
       }
       case 'equipment':
-        chips.push({ text: equipmentDef(slot.lethal).name, tip: equipmentBlurb(slot.lethal) });
-        chips.push({ text: equipmentDef(slot.tactical).name, tip: equipmentBlurb(slot.tactical) });
+        chips.push({ text: equipmentDef(slot.lethal).name, tip: equipmentBlurb(slot.lethal), rank: 'peer' });
+        chips.push({ text: equipmentDef(slot.tactical).name, tip: equipmentBlurb(slot.tactical), rank: 'peer' });
         break;
       case 'perks':
         for (const tier of PERK_TIERS) {
           const id = slot.perks[tier - 1];
-          if (id === null || id === undefined) chips.push({ text: '—', tip: `Perk ${tier}: empty` });
-          else chips.push({ text: perkDef(id).name, tip: perkDef(id).blurb });
+          if (id === null || id === undefined) chips.push({ text: '—', tip: `Perk ${tier}: empty`, rank: 'peer', empty: true });
+          else chips.push({ text: perkDef(id).name, tip: perkDef(id).blurb, rank: 'peer' });
         }
         break;
       case 'streaks':
         ([0, 1, 2] as const).forEach((index) => {
           const id = slot.streaks[index];
-          if (id === null || id === undefined) chips.push({ text: '—', tip: `Key ${index + 3}: empty` });
+          if (id === null || id === undefined) chips.push({ text: '—', tip: `Key ${index + 3}: empty`, rank: 'peer', empty: true });
           else {
             const def = streakDef(id);
-            chips.push({ text: def.name, tip: `Key ${index + 3} · costs ${def.requirement} kills · ${def.blurb}` });
+            chips.push({ text: def.name, tip: `Key ${index + 3} · costs ${def.requirement} kills · ${def.blurb}`, rank: 'peer' });
           }
         });
         break;
       case 'field': {
         const def = fieldUpgradeDef(slot.fieldUpgrade);
-        chips.push({ text: def.name, tip: `${def.blurb} · ${def.chargeSeconds}s charge` });
+        chips.push({ text: def.name, tip: `${def.blurb} · ${def.chargeSeconds}s charge`, rank: 'lead' });
         break;
       }
     }
@@ -756,9 +764,10 @@ export class LoadoutEditor {
     if (value.dataset['key'] === key) return;
     value.dataset['key'] = key;
     value.replaceChildren(
-      ...chips.map((chip, i) => {
+      ...chips.map((chip) => {
         const span = document.createElement('span');
-        span.className = i === 0 ? 'lo-chip lo-chip--lead lo-metal' : 'lo-chip';
+        span.className =
+          chip.rank === 'detail' ? 'lo-chip' : `lo-chip lo-chip--${chip.rank} lo-metal${chip.empty === true ? ' lo-chip--empty' : ''}`;
         span.textContent = chip.text;
         span.tabIndex = 0;
         this.attachTip(span, () => chip.tip);
@@ -975,6 +984,8 @@ export class LoadoutEditor {
                   s[which].camo = id;
                 }),
               glyphIcon('camo'),
+              // The pattern itself on the bar (R4.5): the texture's canvas, read back once.
+              camoPicture(id, this.deps.anisotropy()),
             ),
           );
         }
@@ -1140,10 +1151,16 @@ export class LoadoutEditor {
     requirement: () => string,
     apply: () => void,
     icon: SVGSVGElement,
+    /** A CSS image for a bar that *is* its picture — the camo bars (R4.5). The glyph slot collapses. */
+    pictureUrl: string | null = null,
   ): HTMLElement {
     const el = document.createElement('button');
     el.type = 'button';
     el.className = 'lo-bar lo-bar--opt';
+    if (pictureUrl !== null) {
+      el.classList.add('lo-bar--camo');
+      el.style.setProperty('--lo-picture', `url("${pictureUrl}")`);
+    }
 
     const picture = document.createElement('span');
     picture.className = 'lo-bar__icon';
@@ -1158,6 +1175,10 @@ export class LoadoutEditor {
     text.append(label, detail);
     const state = document.createElement('span');
     state.className = 'lo-bar__state op-label';
+    // The padlock before a locked bar's requirement (R4.2): the opacity alone did not read.
+    const lock = makeIconSvg(categoryIcon('lock'), CATEGORY_VIEWBOX, 'lo-bar__lock');
+    const need = document.createElement('span');
+    state.append(lock, need);
     el.append(picture, text, state);
     el.addEventListener('click', () => {
       if (locked()) return;
@@ -1166,13 +1187,13 @@ export class LoadoutEditor {
 
     this.refreshers.push(() => {
       const isLocked = locked();
-      const need = requirement();
       const isOn = on();
       el.classList.toggle('is-on', isOn);
       el.classList.toggle('is-locked', isLocked);
       el.disabled = isLocked;
       detail.textContent = blurb();
-      state.textContent = isLocked ? need : isOn ? 'EQUIPPED' : '';
+      lock.style.display = isLocked ? '' : 'none';
+      need.textContent = isLocked ? requirement() : isOn ? 'EQUIPPED' : '';
     });
     return el;
   }
@@ -1314,7 +1335,7 @@ export class LoadoutEditor {
       this.preview.show(shown, camo, requireWeapon(shown).name);
     } else {
       this.preview.release();
-      this.stage.setWeapon(equipped.weaponId);
+      this.stage.setWeapon(equipped.weaponId, equipped.camo);
     }
   }
 

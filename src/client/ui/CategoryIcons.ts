@@ -20,7 +20,8 @@ export type CategoryIconId =
   | 'field'
   | 'camo'
   | 'attachment'
-  | 'equipment';
+  | 'equipment'
+  | 'lock';
 
 const PATHS: Readonly<Record<CategoryIconId, string>> = {
   /** A frag: a body of segments under a lever and a pin ring. */
@@ -57,6 +58,10 @@ const PATHS: Readonly<Record<CategoryIconId, string>> = {
   equipment:
     'M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 0 0 0-19z M12 4.5a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15z' +
     'M11 7h2v1.4c1.7.5 3 2 3 3.9 0 2.3-1.8 4.1-4 4.1s-4-1.8-4-4.1c0-1.9 1.3-3.4 3-3.9z',
+  /** A padlock, before a locked bar's requirement (playtest round 3, R4.2): a shackle over a body with a keyhole. */
+  lock:
+    'M7 10V8a5 5 0 0 1 10 0v2h1.5a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z' +
+    'M9 10h6V8a3 3 0 0 0-6 0z M11 14h2v3.5h-2z',
 };
 
 export function categoryIcon(id: CategoryIconId): string {

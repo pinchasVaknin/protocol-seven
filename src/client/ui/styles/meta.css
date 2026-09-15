@@ -534,9 +534,31 @@
   background: linear-gradient(90deg, var(--c-accent-glow), rgba(16, 19, 24, 0.92) 60%);
 }
 
+/*
+ * Three rules for an option bar (playtest round 3, R4.2). Locked and unlocked used to share
+ * the neutral rule and differ by opacity alone, which did not read: now an **unlocked** bar
+ * carries the dim accent on its leading edge — it is the player's to take — the **equipped**
+ * one the full accent and the glow (`.is-on`), and a **locked** one no rule at all, its
+ * opacity, and a padlock before its requirement. The category bars keep the neutral rule:
+ * they are not options.
+ */
+.lo-bar--opt {
+  border-left-color: var(--c-accent-dim);
+}
+
 .lo-bar.is-locked {
   cursor: default;
   opacity: 0.55;
+  border-left-color: transparent;
+}
+
+.lo-bar__lock {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  vertical-align: -3px;
+  fill: currentColor;
+  fill-rule: evenodd;
 }
 
 /* Metallic type: a light-to-steel gradient through the letters, solid white under the pointer. */
@@ -645,7 +667,14 @@
   white-space: nowrap;
 }
 
-/* A chip: one equipped thing. The lead chip is the bar's own answer; the rest are details. */
+/*
+ * A chip: one equipped thing, at one of three ranks (R4.1). The **lead** is a weapon bar's
+ * own answer and the **details** after it — the finish, the attachments — are small and
+ * boxed; a **peer** is one of two grenades or three streaks that are each the whole answer,
+ * so it takes the lead's weight at the body size, unboxed, with a rule between neighbours
+ * rather than a border each. The first chip of every box used to be the lead, which drew
+ * CARE PACKAGE as an attachment of UAV.
+ */
 .lo-chip {
   font-size: var(--t-small);
   font-weight: var(--w-medium);
@@ -665,11 +694,37 @@
   padding-left: 0;
 }
 
+.lo-chip--peer {
+  font-size: var(--t-body);
+  font-weight: var(--w-heavy);
+  border: 0;
+  border-radius: 0;
+  padding: 2px 0;
+}
+
+.lo-chip--peer + .lo-chip--peer {
+  border-left: 1px solid var(--c-line-hi);
+  padding-left: var(--s-3);
+}
+
+/* An empty tier or key: a dash, dim, so three peers still read as three places. */
+.lo-chip--empty {
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  color: var(--c-text-faint);
+}
+
 .lo-chip:hover,
 .lo-chip:focus-visible {
   border-color: var(--c-accent-dim);
   color: var(--c-text);
   outline: none;
+}
+
+.lo-chip--peer:hover,
+.lo-chip--peer:focus-visible {
+  border-color: var(--c-line-hi);
 }
 
 .lo-bar__chevron {
@@ -686,6 +741,54 @@
 .lo-empty {
   padding: var(--s-4);
   color: var(--c-text-faint);
+}
+
+/*
+ * A camo bar is its own picture (R4.5): the pattern — the texture's canvas, `--lo-picture`,
+ * tiled at the bar's height — under a gradient that is the bar's own dark on the left, fades
+ * from 40 % and is gone by 62 %, so the finish shows on the right half and dissolves toward
+ * the middle; the name and the requirement stand in plain white on the dark, not the metal.
+ * The glyph slot collapses: the picture is the bar. `is-on` puts the accent's glow *under*
+ * the pattern rather than in its place; a locked bar's opacity dims the pattern too, which
+ * is right.
+ */
+.lo-bar--camo {
+  grid-template-columns: 0 minmax(0, 1fr) auto;
+  background: linear-gradient(to right, rgb(10, 12, 15) 0%, rgb(10, 12, 15) 40%, rgba(10, 12, 15, 0) 62%), var(--lo-picture);
+  background-repeat: no-repeat, repeat-x;
+  background-size: 100% 100%, auto 100%;
+  background-position: 0 0, right center;
+}
+
+.lo-bar--camo .lo-bar__icon {
+  display: none;
+}
+
+.lo-bar--camo .lo-bar__name,
+.lo-bar--camo:hover:not(:disabled) .lo-bar__name,
+.lo-bar--camo.is-on .lo-bar__name {
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  color: #f4f6f8;
+}
+
+.lo-bar--camo .lo-bar__blurb {
+  color: #e8eaee;
+}
+
+.lo-bar--camo:hover:not(:disabled) {
+  background: linear-gradient(to right, rgb(22, 26, 32) 0%, rgb(22, 26, 32) 40%, rgba(22, 26, 32, 0) 62%), var(--lo-picture);
+  background-repeat: no-repeat, repeat-x;
+  background-size: 100% 100%, auto 100%;
+  background-position: 0 0, right center;
+}
+
+.lo-bar--camo.is-on {
+  background: linear-gradient(to right, rgba(63, 169, 199, 0.22) 0%, rgb(10, 12, 15) 40%, rgba(10, 12, 15, 0) 62%), var(--lo-picture);
+  background-repeat: no-repeat, repeat-x;
+  background-size: 100% 100%, auto 100%;
+  background-position: 0 0, right center;
 }
 
 .lo-pager {

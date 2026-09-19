@@ -609,6 +609,28 @@ expected to be flat to the rounding. `npm run skirmish` end to end; `npm run lea
 field is not an allocation); `npm run content` and the seeded harness byte-identical; `check`
 green with the new tests.
 
+### B6.1 — done (session of 2026-09-19): the table
+
+**Built** (`e9f4a76`; `shared/meta/Skins.ts` 50 new, `Skins.test.ts` 31 new, `check-skins.mjs`
++20). `SKIN_IDS` is a `const` tuple of the seven in the catalogue's order — apex, echo, hazard,
+pulse, rhino, sentry, viper — and the order is the wire; `SkinId` its type; `DEFAULT_SKIN_ID`
+moved here from `SaveData.ts`, which imports it (the v3 → v4 migration and its test read the
+same constant); `NO_SKIN_INDEX = 255`; `skinIndexOf` / `skinIdAt` on `weaponIndexOf`'s shape;
+`isSkinId`. The client's `CharacterId` is `(typeof SKIN_IDS)[number]` and
+`CHARACTER_DEFINITIONS` is keyed by it, so a skin in one list and not the other does not
+compile — the load-time assert on the default went with the reason for it, and
+`BOT_CHARACTER_IDS` is the table. `Profile.skinId` checks the save's string with `isSkinId`.
+`check:skins` gains rule 5 — every table row catalogued, every catalogued skin in the table,
+no repeats — **proved to fire** on a `'ghost'` row before the commit (*"'ghost' is in
+Skins.ts's SKIN_IDS but CharacterCatalog.ts has no character('ghost', …) for it"*), then
+restored.
+
+**Measured.** `npm run check` green — **141 tests** (three new: the round trip in table order,
+255 for a stranger and null back, the default in the table below the byte that means none),
+boundaries **368 files** (shared 182). Pane, a fresh load: the editor's strip with the seven
+tiles, ECHO marked, `skinIndexOf('viper')` 6; no console error. Nothing on the wire yet:
+`PROTOCOL_VERSION` is still 17 and the harnesses are untouched.
+
 ## What each item breaks
 
 - **Every client on protocol 17 is refused at the `Hello`.** By design (S6.1: *"reject a
@@ -630,11 +652,11 @@ green with the new tests.
 
 | # | Decision | Recommendation |
 |---|---|---|
-| 1 | **The bump is the moment to take `heightScale` off the wire** — redundant since M13 C2, one byte per full write and one bit, waiting for *"its own version bump"*. Take it in the same v18, or leave it? | **Leave it this milestone.** Its reader (`BotRenderer`'s `mesh.update(…, scale)`) has not been measured with a glTF body, and B6 is one change; a second in the same bump is two things to bisect if the netharness moves. Record it as the first item of the next wire change |
-| 2 | E's open item, carried from M15: the page's first menu pays the seven skins' **~500 ms parse** once, where the first match used to pay it under the intro. Accept, preload the way `echo` is preloaded at boot (a line), or hold the skirmish until the first match has warmed them (a rule)? | **Accept, and measure on a real machine first.** The pane's number was a hand-driven frame; the human's display is the instrument. If it reads as a hitch, the line — preload — over the rule |
-| 3 | The `Hello` byte's position: after the name (a byte every connection sends), or behind the class with its own presence byte (the token's shape)? | **After the name, no presence byte.** 255 *is* the absence; a presence byte would be a second way to say it |
-| 4 | Bots on the wire: 255 (dealt by every client independently, so two clients see the same bot in different skins), or the server deals from the same shuffled deck and sends the index (every client agrees)? | **255 now; the server's deal is a follow-up if anyone notices.** `RandomCharacterSelector`'s comment already says separate clients will not agree; a server deal is a `shared/ai` change (`Bot` learns a skin) for a fact nobody has reported |
-| 5 | The cosmetic audit's judgement call: is a replicated skin **identity**, like `displayName`, or **presentation**, which §8.25 bans from the snapshot? | **Identity.** *Who is this* already has two replicated halves — the name and the team — and the body is the third: two clients that deal the same player two bodies are showing two different people, and the point of the milestone is that they stop. The client still owns everything about how a body is drawn (the rig, the clips, the pads, the plain gunmetal). The reason goes into `ALLOWED` in those words, which is the audit's whole mechanism |
+| 1 | ~~**The bump is the moment to take `heightScale` off the wire** — redundant since M13 C2, one byte per full write and one bit, waiting for *"its own version bump"*. Take it in the same v18, or leave it?~~ **Taken (2026-09-19): leave it this milestone.** Its reader (`BotRenderer`'s `mesh.update(…, scale)`) has not been measured with a glTF body, and B6 is one change; a second in the same bump is two things to bisect if the netharness moves. The first item of the next wire change | — |
+| 2 | ~~E's open item, carried from M15: the page's first menu pays the seven skins' **~500 ms parse** once, where the first match used to pay it under the intro. Accept, preload the way `echo` is preloaded at boot (a line), or hold the skirmish until the first match has warmed them (a rule)?~~ **Taken (2026-09-19): accept, and measure on a real machine first.** The pane's number was a hand-driven frame; the human's display is the instrument. If it reads as a hitch, the line — preload — over the rule | — |
+| 3 | ~~The `Hello` byte's position: after the name (a byte every connection sends), or behind the class with its own presence byte (the token's shape)?~~ **Taken (2026-09-19): after the name, no presence byte.** 255 *is* the absence; a presence byte would be a second way to say it | — |
+| 4 | ~~Bots on the wire: 255 (dealt by every client independently, so two clients see the same bot in different skins), or the server deals from the same shuffled deck and sends the index (every client agrees)?~~ **Taken (2026-09-19): 255 now**; the server's deal is a follow-up if anyone notices. `RandomCharacterSelector`'s comment already says separate clients will not agree; a server deal is a `shared/ai` change (`Bot` learns a skin) for a fact nobody has reported | — |
+| 5 | ~~The cosmetic audit's judgement call: is a replicated skin **identity**, like `displayName`, or **presentation**, which §8.25 bans from the snapshot?~~ **Taken (2026-09-19): identity.** *Who is this* already has two replicated halves — the name and the team — and the body is the third: two clients that deal the same player two bodies are showing two different people, and the point of the milestone is that they stop. The client still owns everything about how a body is drawn (the rig, the clips, the pads, the plain gunmetal). The reason goes into `ALLOWED` in those words, which is the audit's whole mechanism | — |
 
 ## Dependency order
 
@@ -654,9 +676,10 @@ on the page's first menu, on the human's machine.
 
 ## How to start — the next brief
 
-**B6.1**, alone, through `npm run check`: `shared/meta/Skins.ts`, `CharacterId` derived from
-it, `check:skins` holding the three descriptions to each other, the test. Then B6.2 and B6.3
-together with the netharness `--skins` mode written *before* the client is touched, so the
-server's half is proved by the instrument and not by the eye; then B6.4 and the pane. One
-`done` subsection per step, with the netharness numbers, and the milestone closes on the
-`--skins` run.
+**B6.1 is done** (above) and **the five decisions were taken the same day, every one on the
+recommendation** (`heightScale` stays; E's half second accepted pending a real machine; the
+byte after the name with no presence byte; bots at 255; the field is identity), so nothing is
+waiting. Next: **B6.2 and B6.3 together** with the netharness `--skins` mode written *before*
+the client is touched, so the server's half is proved by the instrument and not by the eye;
+then B6.4 and the pane. One `done` subsection per step, with the netharness numbers, and the
+milestone closes on the `--skins` run.

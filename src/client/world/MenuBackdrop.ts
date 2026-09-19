@@ -295,6 +295,26 @@ export class MenuBackdrop {
     return cam;
   }
 
+  /**
+   * A still camera for the map's picture (M17, C3; the human's note on Dunes): on the spine
+   * lane, a little before the centre, looking through it — *"where you see the centre and the
+   * houses hiding behind it"* — rather than the dolly's view up a side street. Null until the
+   * map is in the scene. `scripts/map-thumbs.mjs`'s page renders through this.
+   */
+  vistaCamera(aspect: number): THREE.PerspectiveCamera | null {
+    const map = this.map;
+    if (map === null) return null;
+    const cam = this.camera;
+    if (cam.aspect !== aspect) {
+      cam.aspect = aspect;
+      cam.updateProjectionMatrix();
+    }
+    const v = planVista(map);
+    cam.position.set(v.x, v.y, v.z);
+    cam.lookAt(v.tx, v.ty, v.tz);
+    return cam;
+  }
+
   /** Take the map out of the scene and off the GPU. Safe to call with nothing built. */
   dispose(): void {
     this.release();
@@ -430,6 +450,58 @@ function probeDolly(map: LoadedMap, lane: string, from: Vec3Lit, toward: Vec3Lit
     // atan2(-dx, -dz), which is the yaw a body walking the lane would carry.
     yaw: Math.atan2(-dx, -dz),
     lane,
+  };
+}
+
+/** Where the picture is taken from, and what it looks at. */
+interface Vista {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly tx: number;
+  readonly ty: number;
+  readonly tz: number;
+}
+
+/** The picture's stand-off from the lane's centre, metres, and its lift over eye height. */
+const VISTA_BACK = 14;
+const VISTA_LIFT = 0.6;
+
+/**
+ * The vista: from the spine lane's centre, walk toward each end with the standing capsule
+ * and stand on the longer free side, `VISTA_BACK` back or as far as it runs, a little above
+ * eye height, looking at the centre — so the centre and what stands beyond it fill the frame.
+ * A map with no free run at all stands on the centre itself, looking along the lane.
+ */
+function planVista(map: LoadedMap): Vista {
+  const lanes = candidateLanes(map.def, map);
+  const lane = lanes[Math.floor(lanes.length / 2)] ?? lanes[0];
+  const c = lane?.center ?? { x: 0, y: 0, z: 0 };
+  let best = { dx: 0, dz: 1, run: 0 };
+  for (const end of [lane?.a, lane?.b]) {
+    if (end === undefined) continue;
+    const dx0 = end.x - c.x;
+    const dz0 = end.z - c.z;
+    const length = Math.hypot(dx0, dz0);
+    if (length < 1e-3) continue;
+    const dx = dx0 / length;
+    const dz = dz0 / length;
+    let run = 0;
+    for (let s = 0; s <= Math.min(length, VISTA_BACK + 2); s += PROBE_STEP) {
+      if (map.collision.overlapCapsule(c.x + dx * s, c.y, c.z + dz * s, PROBE_RADIUS, PROBE_HEIGHT)) break;
+      run = s;
+    }
+    if (run > best.run) best = { dx, dz, run };
+  }
+  const back = Math.max(0, Math.min(VISTA_BACK, best.run - 1));
+  return {
+    x: c.x + best.dx * back,
+    y: c.y + EYE_HEIGHT + VISTA_LIFT,
+    z: c.z + best.dz * back,
+    // Through the centre and on: the point the same distance past it, at eye height.
+    tx: c.x - best.dx * Math.max(back, 6),
+    ty: c.y + EYE_HEIGHT,
+    tz: c.z - best.dz * Math.max(back, 6),
   };
 }
 

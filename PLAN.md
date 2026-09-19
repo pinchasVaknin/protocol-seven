@@ -754,3 +754,29 @@ browser pass at 1920×1080 and 1280×720.
   the project has ever needed, hiding the one build it has. Watched at 1920 × 1080: the four
   stages, the assembled logo, the menu under the fade with Dunes already built; a second key
   at 1.5 s: the logo whole under a fade, the menu in under a second.
+
+### Playtest report (2026-09-20), fixed the same day: the tab, the light, the Dunes picture, the plates
+
+Four items from the human, on the build above.
+
+- **The favicon read white.** The keyed mark alone on a light tab strip. Now the mark on a
+  near-black rounded plate (`--c-void`, radius 20 %), 256² and 16/32/48 — the human's own
+  example, the skull on black.
+- **The splash's ending washed the screen.** The bloom scaled to the screen was a flat light
+  blue with the logo in it; the human asked for the light *on the logo* and a ring with
+  sparks instead. Stage 4 is now: every piece's glow swells and settles (`drop-shadow` at 22
+  then 12 px, brightness 1.45 → 1.12), the eyes flare white-cyan, a thinner halo ring goes
+  out to 2.6× with fourteen sparks streaking off it at fixed angles with a little
+  irregularity — and the layer fades from black over the menu. No screen-filling light.
+- **Dunes' picture was the side street.** The pictures are taken through a **vista** camera
+  now (`MenuBackdrop.vistaCamera`, `planVista`): on the spine lane, walked from the centre
+  toward each end with the standing capsule, standing on the longer free side up to 14 m back
+  and 0.6 m over eye height, looking through the centre — Dunes shows its market and the
+  houses beyond, Depot its yard under the bridge, Foundry the hall. The menu's dolly is
+  unchanged.
+- **A nameplate and a health bar stayed over every corpse** — a regression from C2's
+  spectator fix. `BotRenderer.update` wrote `visible = true` to every actor that was not the
+  spectated one, after `ActorIndicator.update` had hidden the indicator for a body that was
+  not participating. Now only the spectated body is touched (hidden), and its avatar is shown
+  again on the frame it stops being the eyes (`hiddenFor`); the indicator decides for itself.
+  Measured in a solo match over 25 s: 266 dead-bot samples, 0 with a plate visible.

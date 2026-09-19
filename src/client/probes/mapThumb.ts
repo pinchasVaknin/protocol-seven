@@ -12,8 +12,9 @@ import { MenuBackdrop } from '../world/MenuBackdrop';
  * Play Solo shows the chosen map large and every map as a card, and the project has no map
  * pictures — no pictures of anything, M12's first paragraph — so they are made here, once,
  * by the same `MenuBackdrop` the menu stands over: the same map build, the same ambient,
- * the same lane camera at eye height, with the fight off. What the card shows is what the
- * player will see behind the menu, which is the honest picture. Committed as
+ * the fight off, through its **vista** camera — on the spine lane a little before the
+ * centre, looking through it, so the centre and what stands beyond it are the picture (the
+ * human's note on Dunes, whose dolly runs up a side street). Committed as
  * `public/maps/<id>.jpg` and re-made when a map changes.
  *
  * `?map=<id>` picks the map. `window.__mapThumb.render()` resolves to the data URL once the
@@ -70,10 +71,13 @@ async function render(): Promise<string> {
     await new Promise((resolve) => setTimeout(resolve, 20));
     cam = backdrop.frame(DT, WIDTH / HEIGHT);
   }
-  // Run the dolly in from its end, then draw once and read in the same task.
+  // The vista — before the centre, looking through it — rather than the dolly's frame; a few
+  // frames first so the particulate has drifted off its seed, then draw once and read in the
+  // same task.
   const frames = Math.round(ELAPSED_SECONDS / DT);
   for (let i = 0; i < frames; i++) cam = backdrop.frame(DT, WIDTH / HEIGHT) ?? cam;
-  renderer.render(scene, cam, null);
+  const vista = backdrop.vistaCamera(WIDTH / HEIGHT) ?? cam;
+  renderer.render(scene, vista, null);
   return canvas.toDataURL('image/jpeg', QUALITY);
 }
 

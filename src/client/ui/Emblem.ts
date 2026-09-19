@@ -13,8 +13,10 @@
  * - `mark-eyes.png` — only the cyan of the same cut: the eyes and the light across them, alpha
  *                  from the cyan-ness. Laid over the mark and breathed by `app.css`
  *                  (`.op-mark__eyes`), which is how a raster's eyes glow more and less.
- * - `favicon.png`, `favicon.ico` — the mark fitted into a square with a 6 % margin, 256² and
- *                  16/32/48, for the browser tab (M17, C0). Linked from `index.html`.
+ * - `favicon.png`, `favicon.ico` — the mark on a near-black rounded plate (`--c-void`), 256²
+ *                  and 16/32/48, for the browser tab (M17, C0; the plate from the human's
+ *                  report that the keyed mark alone read white on a light tab strip). Linked
+ *                  from `index.html`.
  * - `splash-protocol.png`, `splash-rule.png`, `splash-seven.png` — the word, the rule and the
  *                  word below it, cut from the logo at (480, 400), (478, 487) and (479, 527)
  *                  for the splash (M17, C6; `ui/Splash.ts`), which assembles them with the

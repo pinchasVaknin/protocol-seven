@@ -14,9 +14,11 @@ import type { ProceduralAudio } from '../engine/ProceduralAudio';
  *     from the screen's centre to its place in the logo; SEVEN follows and joins under it;
  *     the rule between them snaps in. Three bass hits, one to each — *"boom boom boom"*.
  *  3. **The shockwave.** A ring expands out of the logo and fades, with the energy hiss.
- *  4. **The light.** A bloom grows out of the logo until it fills the screen; the chime; and
- *     the layer fades away over the menu, which `onReveal` has put up underneath at the
- *     bloom's peak.
+ *  4. **The light.** The logo itself lights up — the glow on every piece swells and settles,
+ *     the eyes flare — while a ring of the accent goes out with sparks streaking off it; the
+ *     chime; and the layer fades away over the menu, which `onReveal` has put up underneath.
+ *     A first version washed the whole screen white here; the human asked for the light on
+ *     the logo and a ring with sparks instead, and this is that.
  *
  * ## The artwork is the logo, cut
  *
@@ -51,7 +53,7 @@ export interface SplashDeps {
   readonly audio: ProceduralAudio;
   /** The gesture arrived: start the audio graph. Called before stage 2's first sound. */
   readonly onGesture: () => void;
-  /** The bloom has peaked: put the menu up under the layer. */
+  /** The light has peaked: put the menu up under the layer. */
   readonly onReveal: () => void;
   /** The layer is gone. */
   readonly onDone: () => void;
@@ -75,9 +77,10 @@ const T = {
   rule: 1.7,
   shock: 2.1,
   light: 3.5,
-  reveal: 4.05,
-  fadeEnd: 5.0,
+  reveal: 4.2,
+  fadeEnd: 5.2,
 } as const;
+const SPARK_COUNT = 14;
 const FLY_MS = 320;
 const PUSH_MS = 260;
 const SHAKE_MS = 240;
@@ -94,7 +97,8 @@ export class Splash {
   private readonly prompt: HTMLElement;
   private readonly ring: HTMLElement;
   private readonly ring2: HTMLElement;
-  private readonly bloom: HTMLElement;
+  private readonly halo: HTMLElement;
+  private readonly sparks: HTMLElement[] = [];
   private readonly live: Animation[] = [];
   private readonly timers: number[] = [];
   private gestured = false;
@@ -149,14 +153,24 @@ export class Splash {
     this.ring.className = 'splash__ring';
     this.ring2 = document.createElement('div');
     this.ring2.className = 'splash__ring splash__ring--second';
-    this.bloom = document.createElement('div');
-    this.bloom.className = 'splash__bloom';
+    this.halo = document.createElement('div');
+    this.halo.className = 'splash__ring splash__halo';
+    // Sparks off the halo: streaks at fixed angles with a little irregularity, each its own
+    // length, so the ring reads as energy rather than as geometry.
+    for (let i = 0; i < SPARK_COUNT; i++) {
+      const spark = document.createElement('i');
+      spark.className = 'splash__spark';
+      const angle = (360 / SPARK_COUNT) * i + ((i * 37) % 11) - 5;
+      spark.style.setProperty('--angle', `${angle}deg`);
+      spark.style.setProperty('--length', `${6 + ((i * 53) % 9)}vmin`);
+      this.sparks.push(spark);
+    }
 
     this.prompt = document.createElement('span');
     this.prompt.className = 'splash__prompt';
     this.prompt.textContent = 'PRESS ANY KEY';
 
-    this.box.append(this.ring, this.ring2, this.bloom, skull, protocol, rule, seven);
+    this.box.append(this.ring, this.ring2, this.halo, ...this.sparks, skull, protocol, rule, seven);
     this.layer.append(this.box, this.prompt);
     deps.host.appendChild(this.layer);
   }
@@ -330,20 +344,53 @@ export class Splash {
       }
     });
 
-    // The light: the bloom grows until it is the screen, the menu goes up under it at the
-    // peak, and the layer fades away over it.
+    // The light: the logo's own glow swells and settles, the eyes flare again, the halo
+    // goes out with its sparks; the menu goes up under the layer, which fades away over it.
     this.at(T.light, () => {
       this.deps.audio.playSplashChime();
+      for (const piece of [skull, protocol, rule, seven]) {
+        this.track(
+          piece.animate(
+            [
+              { filter: 'drop-shadow(0 0 0 rgba(63, 169, 199, 0)) brightness(1)' },
+              { filter: 'drop-shadow(0 0 22px rgba(63, 169, 199, 0.95)) drop-shadow(0 0 60px rgba(63, 169, 199, 0.6)) brightness(1.45)', offset: 0.35 },
+              { filter: 'drop-shadow(0 0 12px rgba(63, 169, 199, 0.7)) drop-shadow(0 0 32px rgba(63, 169, 199, 0.35)) brightness(1.12)' },
+            ],
+            { duration: 1300, easing: 'ease-out', fill: 'forwards' },
+          ),
+        );
+      }
       this.track(
-        this.bloom.animate(
+        this.eyes.animate(
           [
-            { transform: 'translate(-50%, -50%) scale(0.2)', opacity: 0 },
-            { transform: 'translate(-50%, -50%) scale(1.2)', opacity: 0.9, offset: 0.55 },
-            { transform: 'translate(-50%, -50%) scale(4.5)', opacity: 1 },
+            { opacity: 1, filter: 'drop-shadow(0 0 10px rgba(63, 169, 199, 1)) drop-shadow(0 0 28px rgba(63, 169, 199, 0.8))' },
+            { opacity: 1, filter: 'drop-shadow(0 0 18px rgba(200, 245, 255, 1)) drop-shadow(0 0 60px rgba(63, 169, 199, 1))', offset: 0.3 },
+            { opacity: 1, filter: 'drop-shadow(0 0 12px rgba(63, 169, 199, 1)) drop-shadow(0 0 36px rgba(63, 169, 199, 0.85))' },
           ],
-          { duration: (T.reveal - T.light) * 1000 + 250, easing: 'ease-in', fill: 'forwards' },
+          { duration: 1200, easing: 'ease-out', fill: 'forwards' },
         ),
       );
+      this.track(
+        this.halo.animate(
+          [
+            { transform: 'translate(-50%, -50%) scale(0.5)', opacity: 0.9, borderWidth: '4px' },
+            { transform: 'translate(-50%, -50%) scale(2.6)', opacity: 0, borderWidth: '1px' },
+          ],
+          { duration: 1100, easing: 'cubic-bezier(0.1, 0.7, 0.2, 1)', fill: 'forwards' },
+        ),
+      );
+      this.sparks.forEach((spark, i) => {
+        this.track(
+          spark.animate(
+            [
+              { transform: 'rotate(var(--angle)) translateX(14vmin) scaleX(0.2)', opacity: 0 },
+              { transform: 'rotate(var(--angle)) translateX(22vmin) scaleX(1)', opacity: 1, offset: 0.25 },
+              { transform: 'rotate(var(--angle)) translateX(52vmin) scaleX(0.6)', opacity: 0 },
+            ],
+            { duration: 900 + (i % 4) * 90, delay: (i * 23) % 140, easing: 'cubic-bezier(0.1, 0.6, 0.3, 1)', fill: 'forwards' },
+          ),
+        );
+      });
     });
     this.at(T.reveal, () => this.reveal());
     this.at(T.reveal + 0.1, () => this.fadeOut((T.fadeEnd - T.reveal - 0.1) * 1000));

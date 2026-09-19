@@ -642,16 +642,25 @@ body.op-locked #viewport {
   box-shadow: 0 0 30px rgba(232, 234, 238, 0.4);
 }
 
-/* The light: a bloom out of the logo, white at its heart and the accent at its edge. */
-.splash__bloom {
+/* The light's halo: a thinner ring of the accent, and the sparks that streak off it. */
+.splash__halo {
+  border-width: 4px;
+  border-color: rgba(120, 220, 245, 0.95);
+  box-shadow: 0 0 30px rgba(63, 169, 199, 0.8), inset 0 0 30px rgba(63, 169, 199, 0.4);
+  transform: translate(-50%, -50%) scale(0.5);
+}
+
+.splash__spark {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 70vmin;
-  height: 70vmin;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 1) 0%, rgba(200, 240, 250, 0.95) 28%, rgba(63, 169, 199, 0.6) 55%, rgba(63, 169, 199, 0) 72%);
-  transform: translate(-50%, -50%) scale(0.2);
+  width: var(--length, 8vmin);
+  height: 3px;
+  margin-top: -1.5px;
+  transform-origin: 0 50%;
+  transform: rotate(var(--angle, 0deg)) translateX(14vmin) scaleX(0.2);
+  background: linear-gradient(90deg, rgba(63, 169, 199, 0), rgba(160, 235, 255, 1) 40%, rgba(255, 255, 255, 1));
+  box-shadow: 0 0 8px rgba(63, 169, 199, 0.9);
   opacity: 0;
   pointer-events: none;
 }

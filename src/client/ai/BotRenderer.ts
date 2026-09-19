@@ -89,6 +89,8 @@ export class BotRenderer {
    * one, and shown again the frame it is not.
    */
   private eyesOf = NO_SPECTATOR_TARGET;
+  /** The actor hidden as `eyesOf` on the last frame, so its avatar is shown again the frame it stops being. */
+  private hiddenFor = NO_SPECTATOR_TARGET;
 
   /**
    * `actors` is a supplier rather than an array so the caller can decide per frame what is
@@ -174,11 +176,19 @@ export class BotRenderer {
         camera,
       );
       // The body the camera is inside is not drawn — after `applyEvents`, whose respawn edge
-      // sets the avatar visible, so this is the last word on the frame either way.
-      const seen = actor.entityId !== this.eyesOf;
-      if (mesh.group.visible !== seen) mesh.setVisible(seen);
-      if (indicator.group.visible !== seen) indicator.group.visible = seen;
+      // sets the avatar visible, and after the indicator's own update, so this is the last
+      // word on the frame. Only *that* body: the indicator hides itself on a death, and a
+      // first version that wrote `visible = true` to every other actor here put a nameplate
+      // and a health bar back over every corpse in the match.
+      if (actor.entityId === this.eyesOf) {
+        mesh.setVisible(false);
+        indicator.group.visible = false;
+      } else if (actor.entityId === this.hiddenFor) {
+        // No longer the eyes: the avatar comes back; the indicator decides for itself next frame.
+        mesh.setVisible(true);
+      }
     }
+    this.hiddenFor = this.eyesOf;
 
     if (this.avatars.size !== this.present.size) this.retireAbsent();
   }

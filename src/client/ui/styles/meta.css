@@ -529,8 +529,9 @@
 }
 
 .lo-bar.is-on {
-  border-left-color: var(--c-accent);
+  /* The shorthand first: written after it, it would take the leading edge back to the dim accent. */
   border-color: var(--c-accent-dim);
+  border-left-color: var(--c-accent);
   background: linear-gradient(90deg, var(--c-accent-glow), rgba(16, 19, 24, 0.92) 60%);
 }
 

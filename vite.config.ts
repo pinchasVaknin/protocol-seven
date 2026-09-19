@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 
 /**
@@ -14,9 +15,19 @@ import { defineConfig } from 'vite';
  */
 const serverUrl = process.env['VITE_SERVER_URL'] ?? '';
 
+/**
+ * The build's version, for the footer's stamp (M17, C1: `PROTOCOL 7 // <PLACE> // V x.y.z`).
+ *
+ * Read off `package.json` here rather than written into a source file, so there is one number
+ * and it is the one `npm version` moves. `ui/ScreenChrome.ts` reads the define and prints `dev`
+ * where it is absent.
+ */
+const version: string = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
+
 export default defineConfig({
   define: {
     __SERVER_URL__: JSON.stringify(serverUrl),
+    __APP_VERSION__: JSON.stringify(version),
   },
   resolve: {
     // `three/examples/jsm/*` imports bare `three`, which the dep optimiser is happy to

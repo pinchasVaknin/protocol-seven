@@ -311,19 +311,22 @@ body.op-locked #viewport {
   justify-items: stretch;
   align-items: stretch;
   gap: 0;
-  /* The bars' insets plus their heights — the 84 px mark above, the 20 px label below — so the
-   * stage is the box between them that it was when they were rows of this grid, and the Play
-   * Solo panel centres between the bars rather than in the whole frame (it came within 15 px
+  /* The bars' insets plus their heights — the 84 px mark above, the footer's two rows below —
+   * so the stage is the box between them that it was when they were rows of this grid, and the
+   * Play Solo page stands between the bars rather than in the whole frame (it came within 15 px
    * of the header otherwise). */
-  padding: 124px 64px 56px;
+  padding: 124px 64px 96px;
 }
 
 /*
- * The shared header (`ScreenHeader.ts`, R3.1): the mark and the place on the left, the card on
- * the right, absolute on the screen's viewport. Each screen sets the inset: the menu's frame
- * fills the viewport, so its bars stand at the window's edges at the frame's own padding; the
- * editor's body stays 1920×1080, so its header is level with the frame's top and only its
- * sides reach the window's.
+ * The shared chrome (`ScreenChrome.ts`; R3.1, unified by M17 C1): the header — the mark and
+ * the wordmark, a rule, the place's title over its subtitle, the card at the right end — and
+ * the footer — the tick and the line at the left, the hairline, the stamp and the three bars
+ * on the row beneath. Both absolute on the screen's viewport. Each screen sets the inset with
+ * a modifier: the menu's frame fills the viewport, so its bars stand at the window's edges at
+ * the frame's own padding (`--menu`); the other screens' bodies stay 1920×1080, so their bars
+ * are level with the frame's top and bottom and only their sides reach the window's
+ * (`--frame`).
  */
 .op-head {
   position: absolute;
@@ -338,26 +341,151 @@ body.op-locked #viewport {
   display: flex;
   align-items: center;
   gap: var(--s-5);
+  min-width: 0;
 }
 
 .op-head--menu {
   top: 40px;
-  align-items: flex-start;
   /* The header sits over whatever the map puts under it — a sunlit wall on Dunes — so its
    * text carries its own shadow rather than relying on the fade alone. */
   text-shadow: 0 1px 14px rgba(7, 8, 10, 0.85);
 }
 
-/* The editor's: the frame's 32 / 48 padding, its 72 px header row, and the mark at the row's height. */
-.op-head--editor {
+/* On a framed screen: the frame's 32 / 48 padding, a 72 px header row, and the mark at the row's height. */
+.op-head--frame {
   top: calc((var(--frame-h, 1080px) - 1080px) / 2 + 32px);
   left: 48px;
   right: 48px;
   height: 72px;
 }
 
-.op-head--editor .op-head__mark {
+.op-head--frame .op-head__mark {
   height: 64px;
+}
+
+.op-head__wordmark {
+  font-size: 36px;
+  font-weight: var(--w-heavy);
+  letter-spacing: 0.2em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.op-head__rule {
+  flex: none;
+  width: 1px;
+  height: 44px;
+  background: var(--c-line-hi);
+}
+
+/* The place: its name over what it is for, the name in the accent because it is where the player is. */
+.op-head__place {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.op-head__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: var(--w-heavy);
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--c-accent);
+  white-space: nowrap;
+}
+
+.op-head__sub {
+  font-size: var(--t-micro);
+  font-weight: var(--w-medium);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+  white-space: nowrap;
+}
+
+/* ---- the footer ------------------------------------------------------------ */
+
+.op-foot {
+  position: absolute;
+  left: 64px;
+  right: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.op-foot--menu {
+  bottom: 30px;
+  text-shadow: 0 1px 10px rgba(7, 8, 10, 0.85);
+}
+
+.op-foot--frame {
+  bottom: calc((var(--frame-h, 1080px) - 1080px) / 2 + 24px);
+  left: 48px;
+  right: 48px;
+}
+
+.op-foot__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+/* The tick: a short bar of the accent, lit. */
+.op-foot__tick {
+  flex: none;
+  width: 4px;
+  height: 16px;
+  background: var(--c-accent);
+  box-shadow: 0 0 8px rgba(63, 169, 199, 0.9), 0 0 20px rgba(63, 169, 199, 0.45);
+}
+
+.op-foot__line {
+  color: var(--c-text-dim);
+  letter-spacing: 0.3em;
+}
+
+.op-foot__row--stamp {
+  gap: var(--s-4);
+}
+
+/* The hairline, fading in from the left so it does not start on a point under the tick. */
+.op-foot__rule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--c-line-hi) 24%, var(--c-line-hi));
+}
+
+.op-foot__stamp {
+  flex: none;
+  color: var(--c-text-faint);
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+}
+
+/* Three slanted bars; two lit, the third the one still to earn. */
+.op-foot__bars {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.op-foot__bar {
+  display: block;
+  width: 18px;
+  height: 6px;
+  transform: skewX(-32deg);
+  background: var(--c-line-hi);
+}
+
+.op-foot__bar.is-lit {
+  background: var(--c-accent);
+  box-shadow: 0 0 8px rgba(63, 169, 199, 0.6);
 }
 
 /* ---- the brand (Emblem.ts) -------------------------------------------------- */
@@ -433,29 +561,6 @@ body.op-locked #viewport {
   margin: -120px 0;
   user-select: none;
   pointer-events: none;
-}
-
-.op-menu__wordmark {
-  margin: 0;
-  font-size: 40px;
-  font-weight: var(--w-heavy);
-  letter-spacing: 0.2em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.op-menu__rule {
-  width: 1px;
-  height: 32px;
-  background: var(--c-line-hi);
-}
-
-.op-menu__tag {
-  font-size: var(--t-small);
-  font-weight: var(--w-medium);
-  letter-spacing: 0.34em;
-  text-transform: uppercase;
-  color: var(--c-text-faint);
 }
 
 /* ---- the player card (playtest round 3, R2.1; PlayerCard.ts) ------------------- */
@@ -582,22 +687,6 @@ body.op-locked #viewport {
   display: flex;
   flex-direction: column;
   gap: 18px;
-}
-
-/* The line at the bottom left (R1.4); the right corner is empty since the status line went (R1.3). */
-.op-menu__foot {
-  position: absolute;
-  bottom: 36px;
-  left: 64px;
-  right: 64px;
-  display: flex;
-  justify-content: flex-start;
-  align-items: flex-end;
-}
-
-.op-menu__line {
-  color: var(--c-text-dim);
-  letter-spacing: 0.3em;
 }
 
 /*

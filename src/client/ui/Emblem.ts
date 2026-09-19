@@ -13,6 +13,8 @@
  * - `mark-eyes.png` — only the cyan of the same cut: the eyes and the light across them, alpha
  *                  from the cyan-ness. Laid over the mark and breathed by `app.css`
  *                  (`.op-mark__eyes`), which is how a raster's eyes glow more and less.
+ * - `favicon.png`, `favicon.ico` — the mark fitted into a square with a 6 % margin, 256² and
+ *                  16/32/48, for the browser tab (M17, C0). Linked from `index.html`.
  *
  * Made by a one-off Pillow pass from the file the human supplied; the numbers (a key from 12
  * to 72 on the brightest channel, the cyan from 18 to 90 of min(g, b) − r) are in the commit

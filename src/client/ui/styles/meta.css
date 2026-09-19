@@ -11,7 +11,7 @@
 
 /*
  * The frame is a grid: the class strip across the top, the stage on the left, the list on the
- * right. The header is not in it — it is on the viewport (R1.1, `.op-head--editor`), level
+ * right. The header is not in it — it is on the viewport (R1.1, `.op-head--frame`), level
  * with the frame's top, and the frame keeps its 72 px as top padding. Sized to the 1920x1080
  * frame at the frame's ramp, and it adds up — 32 + 72 head + 16 + 44 strip + 16 + 868 body
  * + 32 = 1080 — which is the whole reason the six boxes are six, the list is paged as it is
@@ -31,24 +31,6 @@
   align-items: stretch;
   padding: 120px 48px 32px;
   position: relative;
-}
-
-/* ---- header -------------------------------------------------------------- */
-
-/* The place's name in the shared header (`ScreenHeader.ts`): the title with its subtitle under it. */
-.lo-head__titles {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.lo-head__title {
-  margin: 0;
-  font-size: var(--t-title);
-  font-weight: var(--w-heavy);
-  letter-spacing: var(--track-display);
-  line-height: 1;
-  text-transform: uppercase;
 }
 
 /* ---- the class strip (R3.3) ----------------------------------------------- */

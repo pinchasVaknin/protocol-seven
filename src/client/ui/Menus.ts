@@ -10,7 +10,7 @@ import { createScreen } from './Frame';
 import { makeLockup } from './Emblem';
 import { PlayerCard } from './PlayerCard';
 import { ProfilePanel } from './ProfilePanel';
-import { makeScreenHeader } from './ScreenHeader';
+import { makeScreenFooter, makeScreenHeader, type ScreenPlace } from './ScreenChrome';
 import { makeIconSvg } from './WeaponIcons';
 
 /**
@@ -27,9 +27,10 @@ import { makeIconSvg } from './WeaponIcons';
  * are to go — PLAY (multiplayer, primary, one click to the arena as §6.1 requires), PLAY
  * SOLO, CREATE A CLASS and SETTINGS. The reference has six; ZOMBIES and STORE do not exist
  * here and QUIT is out by decision 7, a tab being a thing that closes itself. The **footer**
- * carries one line, bottom left — FIGHT · SURVIVE · WIN, the human's (playtest round 3,
- * decision 9) — where it used to carry `Game.statusLine()`'s map, brush and prop counts, an
- * M1 build stat nobody reading a menu could use (R1.3).
+ * is the shared one (`ScreenChrome.ts`, M17 C1): FIGHT · SURVIVE · WIN at the left, the
+ * human's (playtest round 3, decision 9), and the version stamp at the right — where it used
+ * to carry `Game.statusLine()`'s map, brush and prop counts, an M1 build stat nobody reading
+ * a menu could use (R1.3).
  *
  * The stage is in the frame; the header and the footer are on the **viewport** (playtest
  * round 3, R1.1). The frame is a 16:9 box centred in the window, and a window wider than
@@ -98,8 +99,11 @@ export interface MenuDeps {
 
 type Page = 'MAIN' | 'PLAY';
 
-/** The one line on the menu's footer (playtest round 3, decision 9): the human's own words, in the house style. */
-const MENU_LINE = 'FIGHT · SURVIVE · WIN';
+/** What the chrome calls each page (`ScreenChrome.ts`): the header's place and the footer's stamp. */
+const PLACES: Readonly<Record<Page, ScreenPlace>> = {
+  MAIN: { title: 'MAIN MENU', subtitle: 'ARENA FPS' },
+  PLAY: { title: 'PLAY SOLO', subtitle: 'SELECT COMBAT SCENARIO' },
+};
 
 /**
  * The four glyphs, one path each in a 24-box, filled with `currentColor` (`fill-rule:
@@ -240,29 +244,16 @@ export class Menus {
     focus.focus();
   }
 
-  /** The shared header (`ScreenHeader.ts`): the mark, the wordmark and `ARENA FPS`, the player card. */
+  /** The shared header (`ScreenChrome.ts`): the mark and the wordmark, the page's name, the player card. */
   private header(): HTMLElement {
-    const wordmark = document.createElement('h1');
-    wordmark.className = 'op-menu__wordmark';
-    wordmark.textContent = 'PROTOCOL SEVEN';
-    const rule = document.createElement('span');
-    rule.className = 'op-menu__rule';
-    const tag = document.createElement('span');
-    tag.className = 'op-menu__tag';
-    tag.textContent = 'ARENA FPS';
     // The card is built once and re-read here: the level or the skin may have changed since.
     this.card.refresh();
-    return makeScreenHeader('op-head--menu', [wordmark, rule, tag], this.card.element);
+    return makeScreenHeader('op-head--menu', PLACES[this.page], this.card.element);
   }
 
+  /** The shared footer: the line at the left, the stamp at the right, with this page's name on it. */
   private footer(): HTMLElement {
-    const foot = document.createElement('footer');
-    foot.className = 'op-menu__foot';
-    const line = document.createElement('span');
-    line.className = 'op-label op-menu__line';
-    line.textContent = MENU_LINE;
-    foot.appendChild(line);
-    return foot;
+    return makeScreenFooter('op-foot--menu', PLACES[this.page]);
   }
 
   /** The four buttons. Returns the one to focus. */

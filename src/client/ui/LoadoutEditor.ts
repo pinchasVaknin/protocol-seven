@@ -17,7 +17,7 @@ import { createScreen } from './Frame';
 import { LoadoutStats } from './LoadoutStats';
 import { PlayerCard } from './PlayerCard';
 import { ProfilePanel } from './ProfilePanel';
-import { makeScreenHeader } from './ScreenHeader';
+import { makeScreenHeader } from './ScreenChrome';
 import { ICON_VIEWBOX, iconFor, makeIconSvg } from './WeaponIcons';
 import { WeaponPreview } from './WeaponPreview';
 
@@ -410,21 +410,19 @@ export class LoadoutEditor {
     this.refresh();
   }
 
-  /** The shared header (`ScreenHeader.ts`): the mark, CREATE A CLASS with its subtitle, the player card. */
+  /** The shared header (`ScreenChrome.ts`): the mark and the wordmark, CREATE A CLASS with its subtitle, the player card. */
   private paintHeader(): HTMLElement {
-    const titles = document.createElement('div');
-    titles.className = 'lo-head__titles';
-    const title = document.createElement('h1');
-    title.className = 'lo-head__title';
-    title.textContent = 'CREATE A CLASS';
-    const sub = document.createElement('span');
-    sub.className = 'op-label';
-    sub.textContent = this.deps.unrestricted()
-      ? 'SHOOTING RANGE — ALL CONTENT UNLOCKED, NO PROGRESS BANKED'
-      : 'CUSTOMISE YOUR LOADOUT';
-    titles.append(title, sub);
     this.card.refresh();
-    return makeScreenHeader('op-head--editor', [titles], this.card.element);
+    return makeScreenHeader(
+      'op-head--frame',
+      {
+        title: 'CREATE A CLASS',
+        subtitle: this.deps.unrestricted()
+          ? 'SHOOTING RANGE — ALL CONTENT UNLOCKED, NO PROGRESS BANKED'
+          : 'CUSTOMISE YOUR LOADOUT',
+      },
+      this.card.element,
+    );
   }
 
   /**

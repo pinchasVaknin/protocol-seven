@@ -8,8 +8,9 @@ server: the split first, then the netcode, then everything else on top of it. M1
 content backlog, M13 (archived) put skinned bodies on the bots and moved the board and the XP
 award to the server, M14 (archived) put vitest in the gate and legacy decorators behind a fence,
 M15 (archived) rebuilt the front end to fit one screen, M16 (archived) put the player's chosen
-body on the wire, and Milestone 12 — the content backlog — is the milestone now in progress;
-it is below, in full.
+body on the wire, and Milestone 17 — the front end's second pass, from the human's "Fixes /
+Design" brief — is the milestone now in progress. Milestone 12, the content backlog, stays
+below it in full.
 
 **Survival mode is cancelled** — permanently, not deferred. See "Roadmap update — post-M8" in
 [12-post-m8-round-4.md](docs/archive/plan/12-post-m8-round-4.md).
@@ -52,8 +53,8 @@ This index makes no claim about what is complete. The honest answer to that ques
 | 22 | Milestone 15 — proposed: the front end, rebuilt to fit one screen | 1,566 | [22-m15-front-end.md](docs/archive/plan/22-m15-front-end.md) |
 | 23 | Milestone 16 — proposed: the body other players see (B6, the wire) | 234 | [23-m16-body-on-the-wire.md](docs/archive/plan/23-m16-body-on-the-wire.md) |
 
-What stays in this file: **Milestone 12 — proposed** (the content backlog), the milestone now
-in progress.
+What stays in this file: **Milestone 12 — proposed** (the content backlog) and **Milestone
+17** (the milestone now in progress).
 
 ## How this file stays short
 
@@ -517,3 +518,76 @@ removed from them.
 *The playtest round 4 and round 5 fix records that followed this section are in [19-m12-playtest-rounds-4-5-fixes.md](docs/archive/plan/19-m12-playtest-rounds-4-5-fixes.md).*
 
 ---
+
+---
+
+# Milestone 17 — the front end's second pass: the chrome, Play Solo, Settings, the splash, and six fixes
+
+Opened 2026-09-19 from the human's brief *"Fixes / Design"* (`../הכנה M15/Fixes _ Design.md`,
+with three reference images: the PLAY SOLO screen, the SETTINGS screen, and the logo). The
+brief is nine design items and six fixes; the plan below was described to the human before
+any code was written and built after their answers, which are the decisions.
+
+## The brief, as read
+
+1. **Favicon** — the skull on the browser tab.
+2. **A cinematic splash** before the menu: the skull fades in on black; PROTOCOL is thrown in
+   from the right and strikes it, SEVEN follows; three bass hits; a shockwave with an energy
+   sweep; a bright light and a chime, then a fade to the menu.
+3. **One header and one footer** on the menu, Play Solo, Create-a-Class and Settings. Header:
+   the mark with its breathing eyes, the place's name, the player card. Footer: the tick and
+   FIGHT · SURVIVE · WIN at the left; beneath, a line ending in `PROTOCOL 7 // <PLACE> //
+   V <version>` and three bars, two lit.
+4. **Settings** as the reference: a rail of five categories on the left, the panel in the
+   centre, an image plate at the bottom right, BACK and APPLY inside the panel above the footer.
+5. **Create-a-Class**: CHANGE A SKIN and SAVE AND EXIT re-homed in a structured row above the
+   footer rather than floating.
+6. **Play Solo** as the reference: the map's picture with its name and three tags, a carousel
+   of map cards, the mode cards, the difficulty cards, a TESTBED card, and START MATCH.
+7. **Fixes**: the menu's backdrop decoupled from the solo pick and rolled at random from the
+   real maps, never the testbed; Dunes' static backdrop camera; the spectator's camera inside
+   the followed body's head in Search & Destroy; the callsign lost to OPERATOR in a solo match;
+   the intro camera's sharp turns, and the wait before the round.
+
+## Decisions taken (2026-09-19, the human's answers to the eight questions)
+
+1. **The splash is gated.** Stage 1 — the skull on black — carries PRESS ANY KEY; the key or
+   the click is the user gesture the AudioContext needs, and stages 2–4 run from it with their
+   sounds. A splash that ran on load would be silent under the autoplay policy.
+2. **APPLY is real.** Settings apply live so a sensitivity can be felt, but persist only on
+   APPLY; BACK reverts to the last saved record.
+3. **The map pictures are rendered once** — `scripts/map-thumbs.mjs`, in `skin-thumbs.mjs`'s
+   idiom — and committed; no live render behind the cards.
+4. **MIXED stays**, the fifth difficulty card and the default.
+5. **The testbed is the reference's**: reached by ENTER TESTBED alone, as the Shooting Range,
+   with modes and difficulty disabled; the greybox is no longer offered with the four modes.
+6. **The intro takes the time it needs.** The camera's approach and overview are not to be
+   fitted into a shorter budget; *"the 5 seconds is strictly the countdown after the camera
+   finishes its overview, right before the player can move."* So the freeze is the intro plus a
+   five-second countdown, not ten seconds shared between them.
+7. **The version is `package.json`'s** — `0.1.0` — not the reference's illustrative number.
+8. **The Settings image plate is the chosen skin's thumbnail** — B5's render, an asset that
+   exists — with the caption.
+
+## The order
+
+C0 favicon · C1 the chrome · C2 the six fixes · C3 Play Solo · C4 Settings · C5 Create-a-Class
+· C6 the splash. Each phase ends on `npm run check` and `npm run layout`; the screens on a
+browser pass at 1920×1080 and 1280×720.
+
+### C0 / C1 — done (session of 2026-09-19): the favicon and the chrome
+
+- `public/brand/favicon.png` (256², the mark fitted into a square with a 6 % margin, on alpha)
+  and `favicon.ico` (16/32/48), a one-off Pillow pass like the one that cut the mark; linked
+  from `index.html`.
+- `ui/ScreenHeader.ts` → **`ui/ScreenChrome.ts`**: `makeScreenHeader(modifier, place, card)`
+  and `makeScreenFooter(modifier, place)`, where `place` is a title and a subtitle. The header
+  is the mark, the wordmark, a rule, the place, the card; the footer the tick and the line, and
+  beneath them the hairline, the stamp and the three bars. Two insets: `--menu` (the frame
+  fills the viewport; bars at the window's padding) and `--frame` (level with the frame's
+  top and bottom). The menu's own wordmark, rule, tag and one-line footer went with it.
+- The version: `__APP_VERSION__`, defined in `vite.config.ts` from `package.json`, read by
+  `appVersion()`; `dev` where the define is absent.
+- Applied to the menu's two pages — MAIN MENU / ARENA FPS, PLAY SOLO / SELECT COMBAT SCENARIO —
+  with the menu grid's bottom padding at 96 for the footer's second row. The editor and
+  Settings take the chrome in their own phases, where their frames are re-budgeted for it.

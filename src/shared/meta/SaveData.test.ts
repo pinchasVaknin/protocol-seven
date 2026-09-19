@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { installLogSink } from '../core/Log';
 import { levelForXp } from './Levels';
+import { DEFAULT_SKIN_ID } from './Skins';
 import {
-  DEFAULT_SKIN_ID,
   defaultSettings,
   makeSyntheticV0Save,
   migrateSave,

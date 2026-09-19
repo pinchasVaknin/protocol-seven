@@ -19,6 +19,11 @@
  *   4. **Every skin has its thumbnail** — `thumbs/<File>.png`, `scripts/skin-thumbs.mjs`'s
  *      render (B5). The picker's strip shows every skin at once from these; a skin without
  *      one is a blank tile.
+ *   5. **The table and the catalogue name the same skins** (M16, B6.1). `shared/meta/Skins.ts`
+ *      holds `SKIN_IDS`, the order the wire names a skin by; the catalogue keys its definitions
+ *      by that type, so a mismatch is already a compile error — this rule is the same fact
+ *      stated where the folder is, so one run reports all three descriptions against each
+ *      other rather than two here and one in `tsc`.
  *
  * The images are read with `glb-images.mjs`; nothing here decodes a pixel. Exit code 1 on any
  * violation.
@@ -31,6 +36,7 @@ import { glbImages, readGlb } from './glb-images.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SKINS_DIR = 'public/models/bots/skins';
 const CATALOG = 'src/client/characters/CharacterCatalog.ts';
+const TABLE = 'src/shared/meta/Skins.ts';
 const MAX_SKIN_BYTES = 5 * 1024 * 1024;
 const MAX_TEXTURE_SIDE = 1024;
 const FIX = 'run `node scripts/skin-compress.mjs`, then bump CHARACTER_VERSION';
@@ -85,6 +91,20 @@ for (const file of shipped) {
   }
 }
 
+// ---- 5. the table and the catalogue agree ----------------------------------------------
+const table = readFileSync(path.join(ROOT, TABLE), 'utf8');
+const tableMatch = /export const SKIN_IDS = \[([^\]]*)\] as const;/.exec(table);
+const tabled = tableMatch === null ? [] : [...tableMatch[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
+if (tabled.length === 0) problems.push(`${TABLE} has no \`SKIN_IDS = ['…'] as const\` to audit.`);
+const cataloguedIds = new Set(catalogued.values());
+for (const id of tabled) {
+  if (!cataloguedIds.has(id)) problems.push(`'${id}' is in ${TABLE}'s SKIN_IDS but ${CATALOG} has no character('${id}', …) for it.`);
+}
+for (const id of cataloguedIds) {
+  if (!tabled.includes(id)) problems.push(`'${id}' is catalogued in ${CATALOG} but not in ${TABLE}'s SKIN_IDS — the wire cannot name it.`);
+}
+if (new Set(tabled).size !== tabled.length) problems.push(`${TABLE}'s SKIN_IDS repeats an id; a wire index has to be one skin.`);
+
 if (problems.length > 0) {
   console.error('skin audit FAILED:\n');
   for (const p of problems) console.error(`  ${p}\n`);
@@ -94,5 +114,6 @@ if (problems.length > 0) {
 
 console.log(
   `skin audit ok — ${shipped.length} skins, ${(totalBytes / 1048576).toFixed(1)} MB in all, ${textures} textures, ` +
-    `none over ${MAX_SKIN_BYTES / 1048576} MB or ${MAX_TEXTURE_SIDE} px, every one catalogued, every one with a thumbnail.`,
+    `none over ${MAX_SKIN_BYTES / 1048576} MB or ${MAX_TEXTURE_SIDE} px, every one catalogued, every one with a thumbnail, ` +
+    `every one in the table (${tabled.length} rows).`,
 );

@@ -6,16 +6,15 @@
  * cost before it becomes eligible for a match. `scripts/check-animations.mjs`
  * holds the animation half of it to the folder it names, in the gate.
  */
-import { DEFAULT_SKIN_ID } from '../../shared/meta/SaveData';
+import { DEFAULT_SKIN_ID, SKIN_IDS, type SkinId } from '../../shared/meta/Skins';
 
-export type CharacterId =
-  | 'apex'
-  | 'echo'
-  | 'hazard'
-  | 'pulse'
-  | 'rhino'
-  | 'sentry'
-  | 'viper';
+/**
+ * The ids are `shared/`'s table (M16, B6.1): the wire names a skin by its position in
+ * `SKIN_IDS`, so the list lives where both halves can read it, and this file keys everything
+ * the client knows about a skin by it. A definition below for an id not in the table, or a
+ * table row with no definition, is a type error at `CHARACTER_DEFINITIONS`.
+ */
+export type CharacterId = SkinId;
 
 /**
  * A **slot** (M13 Phase D): the semantic pose `AnimationSelector` asks for. A slot holds one
@@ -328,32 +327,19 @@ export const CHARACTER_DEFINITIONS = {
 } satisfies Readonly<Record<CharacterId, CharacterDefinition>>;
 
 /**
- * Skins eligible for the current bot-only cosmetic selection.
+ * Skins eligible for the cosmetic deal and the pickers: the table, in the table's order.
  *
  * Every entry has passed the skin and rig validation. Apex keeps a separate rig profile because
  * its asset's unit scale differs from the rest of the Mixamo pack.
  */
-export const BOT_CHARACTER_IDS = [
-  'apex',
-  'echo',
-  'hazard',
-  'pulse',
-  'rhino',
-  'sentry',
-  'viper',
-] as const satisfies readonly CharacterId[];
+export const BOT_CHARACTER_IDS: readonly CharacterId[] = SKIN_IDS;
 
 /**
- * The default skin is `shared/`'s `DEFAULT_SKIN_ID`, checked here to be a real one: the save
- * layer knows the name and this file knows the skins, and one of them has to say so if they
- * ever disagree. A throw at module load is the loudest available place.
+ * The default skin is `shared/`'s `DEFAULT_SKIN_ID`. It used to be checked here at module
+ * load against a hand-written list; the id is now the table's type, so a default that names
+ * no skin does not compile.
  */
-export const DEFAULT_CHARACTER_ID: CharacterId = (() => {
-  if (!(DEFAULT_SKIN_ID in CHARACTER_DEFINITIONS)) {
-    throw new Error(`DEFAULT_SKIN_ID "${DEFAULT_SKIN_ID}" is not a character in the catalogue.`);
-  }
-  return DEFAULT_SKIN_ID as CharacterId;
-})();
+export const DEFAULT_CHARACTER_ID: CharacterId = DEFAULT_SKIN_ID;
 
 export function characterDefinition(id: CharacterId): CharacterDefinition {
   return CHARACTER_DEFINITIONS[id];

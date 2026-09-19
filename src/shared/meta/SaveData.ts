@@ -8,6 +8,7 @@ import { ATTACHMENT_IDS, type AttachmentId } from '../weapons/Attachments';
 import { ALL_WEAPONS, WEAPON_DEFS } from '../weapons/WeaponDefs';
 import { CAMO_IDS, isCamoId, type CamoId } from './Camos';
 import { CHALLENGES, type ChallengeId } from './Challenges';
+import { DEFAULT_SKIN_ID } from './Skins';
 import { isFieldUpgradeId, type FieldUpgradeId } from './FieldUpgrades';
 import { levelForXp, MAX_LEVEL, PRESTIGE_MAX } from './Levels';
 import {
@@ -109,22 +110,16 @@ export interface SettingsV1 {
    *
    * A setting rather than a profile fact, beside the callsign, because it is the same kind of
    * thing — who the player looks like — and because "reset progress" keeps settings and
-   * erases the rest, and a wiped level should not also change a face. Held as a string:
-   * `shared/` does not know the catalogue (`client/characters/CharacterCatalog.ts` is the one
-   * list of ids), so this layer keeps the name and `Profile.skinId` is what checks it against
-   * the catalogue and falls back to `DEFAULT_SKIN_ID` for a name it does not know.
+   * erases the rest, and a wiped level should not also change a face. Held as a string
+   * rather than a `SkinId`: a save is what an older build wrote, and the name in it is checked
+   * against the table (`Skins.ts`, since M16 B6.1; the client's catalogue before that) by
+   * `Profile.skinId`, which falls back to `DEFAULT_SKIN_ID` for a name it does not know.
    *
    * Local-first (M15 decision 2): what the stage and the summary's lineup show. Other
    * players still see the dealt body until B6 puts the choice on the wire.
    */
   skin: string;
 }
-
-/**
- * The skin every player has worn since M13 — the default that preloads at boot. The client's
- * catalogue asserts at load that it names a real skin; `shared/` only knows the name.
- */
-export const DEFAULT_SKIN_ID = 'echo';
 
 export const SHADOW_QUALITIES = ['off', 'low', 'medium', 'high'] as const;
 export type ShadowQuality = (typeof SHADOW_QUALITIES)[number];

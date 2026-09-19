@@ -1,8 +1,9 @@
 import { SaveStore } from './SaveStore';
-import { BOT_CHARACTER_IDS, DEFAULT_CHARACTER_ID, type CharacterId } from '../characters/CharacterCatalog';
+import { DEFAULT_CHARACTER_ID, type CharacterId } from '../characters/CharacterCatalog';
 import type { AttachmentId } from '../../shared/weapons/Attachments';
 import { CAMO_PREREQUISITES, type CamoId } from '../../shared/meta/Camos';
 import { CHALLENGES, challengeDef, type ChallengeId } from '../../shared/meta/Challenges';
+import { isSkinId } from '../../shared/meta/Skins';
 import { canPrestige, levelForXp, levelProgress, TOKENS_PER_PRESTIGE } from '../../shared/meta/Levels';
 import {
   defaultLoadouts,
@@ -129,15 +130,16 @@ export class Profile implements ProgressionStore {
   }
 
   /**
-   * The operator's skin (M15, B5), checked against the catalogue.
+   * The operator's skin (M15, B5), checked against the table.
    *
-   * `shared/` keeps the name; this is the one reader that knows which names are skins. A name
-   * the catalogue does not carry — a skin renamed, a save edited by hand — falls back to the
-   * default rather than to a 404 and a procedural body, and is written back on the next pick.
+   * The save keeps a string; this is the reader that checks it against `SKIN_IDS` (M16 B6.1 —
+   * the catalogue's own list before that). A name the table does not carry — a skin renamed,
+   * a save edited by hand — falls back to the default rather than to a 404 and a procedural
+   * body, and is written back on the next pick.
    */
   get skinId(): CharacterId {
     const stored = this.save.settings.skin;
-    return (BOT_CHARACTER_IDS as readonly string[]).includes(stored) ? (stored as CharacterId) : DEFAULT_CHARACTER_ID;
+    return isSkinId(stored) ? stored : DEFAULT_CHARACTER_ID;
   }
 
   setSkin(id: CharacterId): void {

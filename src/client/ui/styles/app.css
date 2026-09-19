@@ -2333,38 +2333,12 @@ body.op-locked #viewport {
 }
 
 /* ==========================================================================
- * M8 — the settings screen, the FPS counter and the rebinding rows.
+ * M8 — the FPS counter, the rebinding rows' first home; the settings screen is above (M17, C4).
  *
  * Everything resolves to a token in `tokens.css`; the only colours named here are the
  * gameplay ones the palette writes onto `:root` at runtime (`ui/Palette.ts`), which is
  * what lets colourblind mode change a hitmarker without touching a stylesheet.
  * ========================================================================== */
-
-/*
- * A wide screen caps its **content**, never the layer (playtest round 4, F11).
- *
- * This was `max-width: 780px` on `.op-screen` itself, and `.op-screen` is `position: absolute;
- * inset: 0`. That box is over-constrained — left, right and a width cannot all hold — and CSS
- * resolves it by ignoring `right`, so the settings screen was 780 px wide and pinned to the
- * **left edge** of the viewport rather than centred. The backdrop is painted by the same
- * element, which is why the right-hand two-thirds of the screen was also undimmed: one rule,
- * both halves of the report.
- *
- * The convention it now follows is the one every other overlaid screen already uses — the layer
- * stays full-bleed and centres its children, and the content carries the cap:
- * `.sb`, `.sb--embedded`, `.eom__xp`, `.lo-head` and `.lo-columns` are all `width: min(px, vw)`.
- * Only the two elements that need the width take it; the title and the Back row keep their
- * shrink-to-fit size and are centred by the layer's own `align-items`.
- */
-.op-screen--wide .op-tabs,
-.op-screen--wide .op-settings {
-  width: min(1080px, 100%);
-}
-
-/* The binding tab is three columns wide (M15, A4); the other four keep the narrow measure. */
-.op-screen--wide .op-settings--bindings {
-  width: min(1560px, 100%);
-}
 
 .op-tabs {
   display: flex;
@@ -2397,125 +2371,278 @@ body.op-locked #viewport {
   border-bottom-color: var(--c-accent);
 }
 
+/* ---- the settings screen (M17, C4; Settings.ts) ------------------------------------ */
+
 /*
- * No `max-height`, no `overflow-y` (M15, A4). This was a `56vh` scroller — "tall enough for the
- * binding list, short enough that Back stays on screen" — and the layout probe's first run
- * under the frame named it: 1184 px of rows in a 605 px box. The rows stand in three columns
- * now (`.op-settings__columns`), the tallest of them eight rows, and the frame is what bounds
- * the tab. `vh` in particular may not come back: inside a zoomed frame a viewport unit is the
- * window's size in *frame* pixels, which is not a number any layout here wants.
+ * The frame is the rail and the panel side by side under the shared chrome (`--frame`: the
+ * header at 32, the footer at 24 from the bottom), sized to 1920 × 1080 at the frame's ramp:
+ * 120 above and 86 below leave 874 for the body; the rail is 330 and the panel the rest. The
+ * panel is the head, the two columns and the foot, and its main column never scrolls (M15,
+ * A4): the tallest category, BINDINGS, is three columns of at most eight rows.
  */
-.op-settings {
+.st .op-frame {
+  display: block;
+  padding: 120px 48px 86px;
+}
+
+.st-body {
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 32px;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ---- the rail ---- */
+
+.st-rail {
   display: flex;
   flex-direction: column;
-  gap: var(--s-3);
+  gap: var(--s-2);
+  align-self: start;
 }
 
-/* A button in the settings column is as wide as its label, not as wide as the column: at the
- * bindings tab's 1560 px, "Reset all bindings" stretched across the screen. */
-.op-settings > .op-btn {
-  align-self: flex-start;
-}
-
-.op-settings__columns {
+.st-rail__item {
+  appearance: none;
+  position: relative;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0 var(--s-8);
+  grid-template-columns: 28px 36px 1fr 20px;
+  align-items: center;
+  gap: var(--s-3);
+  height: 76px;
+  padding: 0 var(--s-4) 0 var(--s-5);
+  background: rgba(14, 17, 22, 0.72);
+  border: 1px solid var(--c-line);
+  border-left: 3px solid transparent;
+  border-radius: var(--radius);
+  color: var(--c-text-dim);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.st-rail__item:hover,
+.st-rail__item:focus-visible {
+  background: var(--c-surface-hi);
+  color: var(--c-text);
+  outline: none;
+}
+
+.st-rail__item.is-on {
+  background: linear-gradient(90deg, rgba(63, 169, 199, 0.16), rgba(28, 32, 39, 0.9));
+  border-color: var(--c-line-hi);
+  border-left-color: var(--c-accent);
+  color: #ffffff;
+}
+
+.st-rail__glyph {
+  width: 28px;
+  height: 28px;
+  fill: currentColor;
+  fill-rule: evenodd;
+}
+
+.st-rail__item.is-on .st-rail__glyph {
+  fill: var(--c-accent);
+}
+
+.st-rail__num {
+  font-size: var(--t-small);
+  color: var(--c-text-faint);
+}
+
+.st-rail__item.is-on .st-rail__num {
+  color: var(--c-accent);
+}
+
+.st-rail__name {
+  font-size: var(--t-body);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+.st-rail__chevron {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.st-rail__item.is-on .st-rail__chevron {
+  opacity: 1;
+  fill: var(--c-accent);
+}
+
+/* ---- the panel ---- */
+
+.st-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--s-4);
+  min-height: 0;
+  padding: var(--s-5) var(--s-6) var(--s-5);
+  background: rgba(12, 14, 17, 0.9);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+}
+
+.st-panel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--c-line);
+}
+
+.st-panel__glyph {
+  width: 40px;
+  height: 40px;
+  fill: var(--c-accent);
+  fill-rule: evenodd;
+  flex: none;
+}
+
+.st-panel__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.st-panel__title {
+  margin: 0;
+  font-size: var(--t-title);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-display);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.st-panel__sub {
+  color: var(--c-accent);
+  letter-spacing: 0.22em;
+}
+
+.st-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+  gap: var(--s-6);
+  min-height: 0;
   align-items: start;
 }
 
-.op-settings__column {
+.st-columns--wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.st-main {
   display: flex;
   flex-direction: column;
-  /* One step tighter than the other tabs' rows: eight of these plus two headings have to
-   * stand in the frame under the title, the tabs and Back, and at the frame's ramp they did
-   * not at `--s-3` (1021 tall in a 1016 box). */
-  gap: var(--s-2);
+  gap: var(--s-4);
+  min-width: 0;
 }
 
-.op-settings__group {
-  margin-top: var(--s-4);
-  color: var(--c-accent-dim);
+/* A section: a bordered group with its heading, thin dark-blue rules. */
+.st-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: rgba(20, 23, 28, 0.5);
 }
 
-.op-settings__column .op-settings__group:first-child {
-  margin-top: 0;
-}
-
-/* The controls card centres on the menu; here it sits with the other rows. */
-.op-settings--info .op-keys {
-  justify-content: start;
-}
-
-.op-settings--info .op-danger {
-  align-items: flex-start;
-  margin-top: 0;
-}
-
-/*
- * The control column may shrink; the label and the readout may not.
- *
- * `220px` was a fixed track, so the row had a floor of 220 + 64 + the gaps + the label's own
- * min-content — about 364px — and on a 375px screen that is wider than the settings panel it
- * sits in. `minmax(0, 220px)` keeps 220 as the size it *wants* (nothing moves on any screen
- * with room for it) and lets it give ground before the row overflows, which is the difference
- * between a slider that gets shorter and a value readout that goes off the side.
- */
-.op-setting {
-  display: grid;
-  grid-template-columns: 1fr minmax(0, 320px) 90px;
+.st-sec__head {
+  display: flex;
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-2);
+  padding-bottom: var(--s-2);
+  margin-bottom: var(--s-2);
+  border-bottom: 1px solid var(--c-line);
 }
 
-.op-setting--stack {
-  grid-template-columns: 1fr;
+.st-sec__glyph {
+  width: 22px;
+  height: 22px;
+  fill: var(--c-text-dim);
+  fill-rule: evenodd;
 }
 
-.op-setting--binding {
-  grid-template-columns: 1fr auto;
-}
-
-.op-setting__label {
-  font-family: var(--font-ui);
-  font-size: var(--t-body);
+.st-sec__title {
+  font-size: var(--t-small);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
   color: var(--c-text);
 }
 
-.op-setting__value {
+/* ---- the rows ---- */
+
+.st-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 360px) 90px;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  min-height: 44px;
+}
+
+.st-row--toggle {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.st-row--stack {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.st-row__label {
   font-size: var(--t-small);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
   color: var(--c-text-dim);
+}
+
+.st-row__value {
+  font-size: var(--t-small);
+  color: var(--c-text);
   text-align: right;
 }
 
-.op-setting__help {
+.st-row__help {
   grid-column: 1 / -1;
-  margin: calc(var(--s-1) * -1) 0 0;
-  font-family: var(--font-ui);
-  font-size: var(--t-small);
+  margin: -4px 0 4px;
+  font-size: var(--t-micro);
+  font-weight: var(--w-regular);
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--c-text-faint);
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
-.op-setting__range {
+.st-range {
   appearance: none;
   width: 100%;
-  height: 2px;
-  background: var(--c-line-hi);
+  height: 3px;
+  background: linear-gradient(90deg, var(--c-accent-dim), var(--c-line-hi));
   outline: none;
   cursor: pointer;
 }
 
-.op-setting__range::-webkit-slider-thumb {
+.st-range::-webkit-slider-thumb {
   appearance: none;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   background: var(--c-accent);
+  box-shadow: 0 0 8px rgba(63, 169, 199, 0.7);
   cursor: pointer;
 }
 
-.op-setting__range::-moz-range-thumb {
+.st-range::-moz-range-thumb {
   width: 16px;
   height: 16px;
   border: 0;
@@ -2524,82 +2651,292 @@ body.op-locked #viewport {
   cursor: pointer;
 }
 
-.op-toggle {
+.st-toggle {
   appearance: none;
+  min-width: 84px;
+  height: 36px;
   background: var(--c-surface);
   border: 1px solid var(--c-line-hi);
   border-radius: var(--radius);
-  color: var(--c-text-faint);
+  color: var(--c-text-dim);
   font-family: var(--font-ui);
   font-size: var(--t-micro);
   font-weight: var(--w-heavy);
   letter-spacing: var(--track-label);
-  padding: var(--s-2) 0;
   cursor: pointer;
-  grid-column: 2 / 4;
-  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
-.op-toggle--on {
-  color: var(--c-accent);
-  border-color: var(--c-accent-dim);
+.st-toggle.is-on {
   background: var(--c-accent-glow);
+  border-color: var(--c-accent);
+  color: var(--c-accent);
 }
 
-.op-choices {
+.st-choices {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--s-1);
+  gap: var(--s-2);
 }
 
-.op-choice {
+.st-choice {
   appearance: none;
-  background: var(--c-surface);
-  border: 1px solid var(--c-line);
-  border-radius: var(--radius);
-  color: var(--c-text-dim);
-  font-family: var(--font-ui);
-  font-size: var(--t-small);
-  padding: var(--s-2) var(--s-3);
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-}
-
-.op-choice--on {
-  color: var(--c-accent);
-  border-color: var(--c-accent-dim);
-  background: var(--c-accent-glow);
-}
-
-.op-binds {
-  display: flex;
-  gap: var(--s-1);
-}
-
-.op-bind {
-  appearance: none;
-  min-width: 132px;
+  padding: 8px var(--s-3);
   background: var(--c-surface);
   border: 1px solid var(--c-line-hi);
   border-radius: var(--radius);
-  color: var(--c-text);
-  font-family: var(--font-mono);
-  font-size: var(--t-small);
-  /* A key cap, not a button: short and wide. See `.op-settings__column` for the height budget. */
-  padding: var(--s-1) var(--s-3);
+  color: var(--c-text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--t-micro);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
   cursor: pointer;
-  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
-.op-bind--empty {
+.st-choice:hover,
+.st-choice:focus-visible {
+  color: var(--c-text);
+  outline: none;
+}
+
+.st-choice.is-on {
+  background: var(--c-accent-glow);
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+/* ---- the bindings ---- */
+
+.st-bindings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-3);
+  align-items: start;
+}
+
+.st-bindings__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+/* Eight rows and two headings stand in the panel at this: 8 × 40 + 32 in the tallest column. */
+.st-bind {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-2);
+  height: 40px;
+}
+
+.st-bind__label {
+  font-size: var(--t-micro);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.st-bind__keys {
+  display: flex;
+  gap: 6px;
+}
+
+.st-key {
+  appearance: none;
+  min-width: 74px;
+  height: 32px;
+  padding: 0 var(--s-2);
+  background: var(--c-surface-hi);
+  border: 1px solid var(--c-line-hi);
+  border-radius: var(--radius);
+  color: var(--c-text);
+  font-family: var(--font-ui);
+  font-size: var(--t-micro);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.st-key:hover,
+.st-key:focus-visible {
+  border-color: var(--c-accent-dim);
+  outline: none;
+}
+
+.st-key.is-empty {
+  color: var(--c-text-faint);
+  background: transparent;
+  border-style: dashed;
+}
+
+.st-key.is-armed {
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+  background: var(--c-accent-glow);
+}
+
+.st-bindings__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.st-note {
+  margin: 0;
+  font-size: var(--t-small);
   color: var(--c-text-faint);
 }
 
-/* Armed and waiting for a key. Deliberately loud: the page is swallowing input. */
-.op-bind--armed {
-  color: var(--c-void);
+.st-reset {
+  min-height: 44px;
+}
+
+/* The armed reset: red, the one time the accent is not the colour of a lit thing. */
+.op-cta--danger {
+  border-color: var(--c-bad);
+  color: var(--c-bad);
+}
+
+.st-danger {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.st-danger__warn {
+  color: var(--c-bad);
+}
+
+/* The controls card, on INFO. */
+.st-sec .op-keys {
+  justify-content: start;
+  margin: var(--s-2) 0;
+}
+
+/* ---- the side column ---- */
+
+.st-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.st-card {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: rgba(20, 23, 28, 0.5);
+}
+
+.st-card__glyph {
+  width: 32px;
+  height: 32px;
+  fill: var(--c-accent);
+  fill-rule: evenodd;
+  flex: none;
+}
+
+.st-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.st-card__value {
+  font-size: var(--t-body);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+/* The operator's portrait (B5's render) under the caption: the reference's soldier plate. */
+.st-plate {
+  position: relative;
+  height: 300px;
+  overflow: hidden;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: radial-gradient(ellipse at 50% 70%, var(--c-surface-hi), var(--c-void));
+}
+
+.st-plate__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 12%;
+  user-select: none;
+}
+
+.st-plate__shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(7, 8, 10, 0.94) 0%, rgba(7, 8, 10, 0.5) 40%, rgba(7, 8, 10, 0) 70%);
+}
+
+.st-plate__caption {
+  position: absolute;
+  left: var(--s-4);
+  right: var(--s-4);
+  bottom: var(--s-6);
+  font-size: var(--t-micro);
+  font-weight: var(--w-heavy);
+  letter-spacing: 0.22em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+  max-width: 220px;
+}
+
+.st-plate__bars {
+  position: absolute;
+  left: var(--s-4);
+  bottom: var(--s-3);
+  display: flex;
+  gap: 4px;
+}
+
+.st-plate__bar {
+  display: block;
+  width: 12px;
+  height: 4px;
+  transform: skewX(-32deg);
   background: var(--c-accent);
-  border-color: var(--c-accent);
+  opacity: 0.8;
+}
+
+/* ---- the foot ---- */
+
+.op-actionbar--bare {
+  justify-content: flex-end;
+  min-height: 0;
+}
+
+.st-foot {
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--c-line);
+}
+
+.st-back,
+.st-apply {
+  min-width: 200px;
+  min-height: 60px;
+  font-size: var(--t-body);
 }
 
 /* --- FPS counter -------------------------------------------------------- */

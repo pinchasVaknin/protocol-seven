@@ -9,7 +9,7 @@ import {
 } from '../shared/ai/DifficultyTiers';
 import { EV, createGameBus, type GameBus } from '../shared/core/Events';
 import { Input } from './input/Input';
-import { defaultBindings } from '../shared/core/Keybinds';
+import type { BindingMap } from '../shared/core/Keybinds';
 import type { InputCommand } from '../shared/core/InputCommand';
 import { DT, MAX_STEPS_PER_FRAME, type FrameSample } from '../shared/core/Loop';
 import { Loop } from './engine/FrameLoop';
@@ -527,6 +527,8 @@ export class Game {
   private instantCheatUntilMs = 0;
   /** Where the settings screen's Back button goes. Captured on entry (M8). */
   private settingsReturn: GameStateId = 'MENU';
+  /** The binding table last handed to `Input`, so `previewSettings` swaps it only when it is a new one. */
+  private appliedBindings: BindingMap | null = null;
 
   constructor(canvas: HTMLCanvasElement, uiHost: HTMLElement, debugHost: HTMLElement) {
     // M6: one save object for everything (S6.6). Settings used to live in their own store;
@@ -708,11 +710,16 @@ export class Game {
     this.settingsScreen = new Settings({
       host: uiHost,
       read: () => this.profile.settings,
-      onChange: (patch) => this.applySettings(patch),
+      // The draft, live (M17 C4, decision 2): applied, not persisted.
+      onPreview: (settings) => this.previewSettings(settings),
+      // APPLY: persisted through the one apply path.
+      onCommit: (settings) => this.applySettings(settings),
       onBack: () => this.transitionTo(this.settingsReturn),
-      onResetBindings: () => this.applySettings({ bindings: defaultBindings() }),
       // M15 A4: the reset control lives on the INFO tab now; the wipe is still `Profile`'s.
       onResetProgress: () => this.profile.resetProgress(),
+      profile: this.profile,
+      serverConfigured: () => isServerConfigured(window.location.search),
+      onDisplayName: (name) => this.profile.patchSettings({ callsign: name }),
     });
 
     this.loop = new Loop({
@@ -2225,13 +2232,28 @@ export class Game {
    */
   applySettings(patch: Partial<SettingsV1>): void {
     this.profile.patchSettings(patch);
-    const s = this.profile.settings;
+    this.previewSettings(this.profile.settings);
+  }
 
+  /**
+   * Apply a settings record to the live systems without persisting it (M17 C4, decision 2).
+   *
+   * The settings screen edits a draft and previews it here on every change, so a sensitivity
+   * is felt on the frame the slider moves; APPLY hands the draft to `applySettings`, BACK
+   * previews the saved record again. The one description of what a setting *does* lives here,
+   * and the persisted path is that description on the saved record.
+   */
+  previewSettings(s: SettingsV1): void {
     // ---- look ------------------------------------------------------------
     this.input.setSensitivity(s.sensitivity);
     this.input.setAdsSensitivity(s.adsSensitivity);
     this.input.setInvertY(s.invertY);
-    if (patch.bindings !== undefined) this.input.setBindings(s.bindings);
+    // By identity: a rebind hands over a new table, a slider does not, and `setBindings`
+    // clears the held keys and re-arms the keyboard lock — not something to do per tick.
+    if (s.bindings !== this.appliedBindings) {
+      this.appliedBindings = s.bindings;
+      this.input.setBindings(s.bindings);
+    }
     this.cameraConfig.fov = clampFov(s.fov);
 
     // ---- audio -----------------------------------------------------------

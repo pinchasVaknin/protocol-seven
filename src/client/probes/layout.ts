@@ -288,10 +288,13 @@ const menus = new Menus({
 const settings = new Settings({
   host,
   read: () => profile.settings,
-  onChange: noop,
+  onPreview: noop,
+  onCommit: noop,
   onBack: noop,
-  onResetBindings: noop,
   onResetProgress: noop,
+  profile,
+  serverConfigured: () => true,
+  onDisplayName: noop,
 });
 
 const pause = new PauseMenu({
@@ -483,7 +486,7 @@ function layerOf(selector: string): HTMLElement {
 }
 
 /** The main menu and the setup page are the same layer: the one with no modifier class. */
-const PLAIN_SCREEN = '.op-screen:not(.eom):not(.lo):not(.op-screen--pause):not(.op-screen--wide)';
+const PLAIN_SCREEN = '.op-screen:not(.eom):not(.lo):not(.op-screen--pause):not(.st)';
 
 /**
  * Every surface, and how to put it on screen.
@@ -562,8 +565,9 @@ const SURFACES: readonly Readonly<{ name: string; show: () => HTMLElement; hide:
     name: `settings/${tab}`,
     show: (): HTMLElement => {
       settings.show();
-      const layer = layerOf('.op-screen--wide');
-      click(layer, tab);
+      const layer = layerOf('.st');
+      // The rail's item reads "0N NAME"; `click` matches on the whole text, so open it directly.
+      settings.openTab(tab);
       return layer;
     },
     hide: (): void => settings.hide(),

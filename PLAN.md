@@ -678,3 +678,28 @@ browser pass at 1920×1080 and 1280×720.
   can stretch to it. `npm run layout`: `solo-setup` ok at all eight viewports; watched at
   1920 × 1080 and 1280 × 720: the strip, the modes, the tiers, the testbed lock and the
   restore.
+
+### C4 — done (session of 2026-09-20): Settings
+
+- **The shape**: `ui/Settings.ts` rebuilt on the reference. The shared chrome with the place
+  SYSTEM CONTROL / CONFIGURE OPERATIVE PARAMETERS (the screen has the player card and the
+  profile panel now, as the other two do); a rail of the five categories (a glyph, `0N`, the
+  name; the open one lit with the accent bar and a chevron); the panel with the category's
+  title and subtitle, its controls in bordered sections (CONTROLS: SENSITIVITY, VIEW; AUDIO:
+  LEVELS; VIDEO: RENDERING, ACCESSIBILITY; INFO: CONTROLS, PROGRESS), and beside them the
+  side column — INPUT DEVICE · MOUSE / KEYBOARD, the one fact the device gate leaves, and
+  the chosen skin's thumbnail under ADJUST YOUR CONTROLS FOR MAXIMUM PERFORMANCE (decision
+  8). BINDINGS takes the whole panel width: three columns of labels and two key chips each
+  did not fit beside the side column without cutting the labels to "CROUC…". The foot is
+  BACK and APPLY on the shared action bar. No DEADZONE and no controller: nothing here that
+  is not wired (S6.3's rule).
+- **APPLY is real** (decision 2): the screen edits a **draft** (a copy of the save on
+  `show`), every change goes live through `Game.previewSettings` — `applySettings` is now
+  `patchSettings` + `previewSettings`, one description of what a setting does — and nothing
+  persists until APPLY hands the draft to `applySettings`; BACK and Escape preview the saved
+  record again and leave. The binding table is swapped by identity, so a slider tick does
+  not clear the held keys or re-arm the keyboard lock. RESET ALL BINDINGS resets the draft.
+  Checked in the browser: FOV to 110 → readout 110°, save 90; BACK → 90°; to 100 and APPLY
+  → save 100.
+- The probe: `settings/*` opens the category through `openTab` (the rail's label is
+  "0N NAME"), the plain screen excludes `.st`; five categories ok at all eight viewports.

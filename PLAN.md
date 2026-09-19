@@ -721,3 +721,36 @@ browser pass at 1920×1080 and 1280×720.
   the stage's own action row are gone.
 - `npm run layout`: eleven editor surfaces ok at all eight viewports. Watched: the row, the
   strip opening over the disc, the weapon list with SAVE / CANCEL taking the cell.
+
+### C6 — done (session of 2026-09-20): the splash
+
+- **The artwork, cut**: `public/brand/splash-protocol.png`, `splash-rule.png`,
+  `splash-seven.png` — the word, the rule and the word under it, cut from `logo.png` at
+  (480, 400), (478, 487), (479, 527) by a one-off Pillow pass (100 kB in all); the skull is
+  `mark.png` with `mark-eyes.png`, which turned out to be the same file's cut at (40, 208).
+  `ui/Splash.ts` maps the logo's 1 024 canvas onto an 84 vmin box and places each cut at its
+  offset in percent, so assembled they are the logo pixel for pixel.
+- **The four stages** (`Splash.ts`): the skull fades in at the *screen's* centre with PRESS
+  ANY KEY under it — the gate (decision 1), the key or the click being the user gesture the
+  `AudioContext` needs, and `Game.audio.start()` runs on it; then, on timers from the
+  gesture: PROTOCOL thrown in from off the right (320 ms, ease-in, blurred) and on impact the
+  skull pushed to its place in the logo with a small overshoot, the box shaken, the word
+  flashed, the first bass hit; SEVEN the same at 1.1 s; the rule snapping in from the left at
+  1.7 s with the third hit and the eyes flaring; two rings out of the logo's centre at 2.1 s
+  with the hiss; the bloom from 3.5 s, white at its heart and the accent at its edge, to the
+  screen by 4.05 s, where `onReveal` transitions to MENU under it, and the layer fading over
+  the menu to 5.0 s. Any key or click after the gesture skips: the timers dropped, the moves
+  *finished* (not cancelled — a cancelled `fill: forwards` snaps its element back), reveal,
+  a 450 ms fade. `prefers-reduced-motion`: the chime and the fade.
+- **The sounds** (`ProceduralAudio`, on the `ui` bus, non-positional): `playSplashHit(i)` —
+  a sine dropping 110 → 38 Hz with a click of noise on the front, each of the three a little
+  heavier; `playSplashShock` — a noise burst whose low-pass sweeps 9 kHz → 180 Hz over 1.5 s
+  with a low swell under it; `playSplashChime` — the level-up's rising sweep a fifth up with
+  a partial under it and a band of air rising with it.
+- **The boot**: `Game`'s BOOT, after the device gate, shows the splash unless `?harness` or
+  `?nosplash` (`splashWanted`; the key declared in `UrlFlags.ts`'s undocumented table with
+  its reason), and **rolls and builds the menu's map behind it** (`prepareBackdrop`, the
+  same call MENU's `enter` makes), so the menu lands on a built map — the one loading screen
+  the project has ever needed, hiding the one build it has. Watched at 1920 × 1080: the four
+  stages, the assembled logo, the menu under the fade with Dunes already built; a second key
+  at 1.5 s: the logo whole under a fade, the menu in under a second.

@@ -514,6 +514,144 @@ export class ProceduralAudio extends AudioGraph {
     this.noiseBurst(air);
   }
 
+  // -- the splash (M17, C6) ----------------------------------------------------
+
+  /**
+   * One of the splash's bass hits: the word striking the skull.
+   *
+   * A sine dropping an octave and a half from a low fundamental, with a short click of noise
+   * on the front so the hit has an edge — the *"boom"* of the brief's *"boom boom boom"*. The
+   * three land a little harder each time (`index` 0..2), which is what makes them a figure
+   * rather than one sound thrice. On the `ui` bus, non-positional: nothing is happening in a
+   * room yet.
+   */
+  playSplashHit(index: number): void {
+    if (!this.hasContext) return;
+    const weight = 1 + 0.18 * Math.min(index, 2);
+
+    const body = this.oscScratch;
+    body.x = 0;
+    body.y = 0;
+    body.z = 0;
+    body.positional = false;
+    body.bus = 'ui';
+    body.type = 'sine';
+    body.freq = 110;
+    body.freqEnd = 38;
+    body.level = 0.5 * weight;
+    body.attack = 0.004;
+    body.decay = 0.55;
+    body.wet = 0.25;
+    body.filterFreq = 900;
+    body.filterQ = 0.8;
+    this.oscHit(body);
+
+    const click = this.noiseScratch;
+    click.x = 0;
+    click.y = 0;
+    click.z = 0;
+    click.positional = false;
+    click.bus = 'ui';
+    click.filter = 'lowpass';
+    click.freq = 2400;
+    click.freqEnd = 300;
+    click.q = 0.9;
+    click.level = 0.22 * weight;
+    click.attack = 0.002;
+    click.decay = 0.12;
+    click.wet = 0.2;
+    click.rate = 1;
+    this.noiseBurst(click);
+  }
+
+  /**
+   * The shockwave: the *"Tcssshhhhhhoooooo"* — a hiss that opens bright and closes low over a
+   * second and a half, which is a noise burst whose filter sweeps down, and a low swell under
+   * it so the wave has a floor.
+   */
+  playSplashShock(): void {
+    if (!this.hasContext) return;
+
+    const hiss = this.noiseScratch;
+    hiss.x = 0;
+    hiss.y = 0;
+    hiss.z = 0;
+    hiss.positional = false;
+    hiss.bus = 'ui';
+    hiss.filter = 'lowpass';
+    hiss.freq = 9000;
+    hiss.freqEnd = 180;
+    hiss.q = 0.7;
+    hiss.level = 0.34;
+    hiss.attack = 0.01;
+    hiss.decay = 1.5;
+    hiss.wet = 0.45;
+    hiss.rate = 1;
+    this.noiseBurst(hiss);
+
+    const floor = this.oscScratch;
+    floor.x = 0;
+    floor.y = 0;
+    floor.z = 0;
+    floor.positional = false;
+    floor.bus = 'ui';
+    floor.type = 'triangle';
+    floor.freq = 70;
+    floor.freqEnd = 45;
+    floor.level = 0.22;
+    floor.attack = 0.02;
+    floor.decay = 1.2;
+    floor.wet = 0.3;
+    floor.filterFreq = 600;
+    floor.filterQ = 0.7;
+    this.oscHit(floor);
+  }
+
+  /**
+   * The light: a chime and a whoosh as the logo brightens and the menu arrives. The chime is
+   * the level-up's rising shape a fifth higher with a second partial under it, and the whoosh
+   * a band of air that rises with it — a pleasant ending, the brief's words, not a hit.
+   */
+  playSplashChime(): void {
+    if (!this.hasContext) return;
+
+    this.playUiSweep(587, 1568, 0.26, 0.9);
+
+    const under = this.oscScratch;
+    under.x = 0;
+    under.y = 0;
+    under.z = 0;
+    under.positional = false;
+    under.bus = 'ui';
+    under.type = 'triangle';
+    under.freq = 294;
+    under.freqEnd = 784;
+    under.level = 0.16;
+    under.attack = 0.02;
+    under.decay = 1.1;
+    under.wet = 0.35;
+    under.filterFreq = 5000;
+    under.filterQ = 0.7;
+    this.oscHit(under, 0.06);
+
+    const air = this.noiseScratch;
+    air.x = 0;
+    air.y = 0;
+    air.z = 0;
+    air.positional = false;
+    air.bus = 'ui';
+    air.filter = 'bandpass';
+    air.freq = 1200;
+    air.freqEnd = 7000;
+    air.q = 1.1;
+    air.level = 0.14;
+    air.attack = 0.15;
+    air.decay = 0.9;
+    air.wet = 0.4;
+    air.rate = 1;
+    this.noiseBurst(air);
+  }
+
   /** True once `start()` has built the graph. Guards the composed sounds. */
   private get hasContext(): boolean {
     return this.poolSize > 0;

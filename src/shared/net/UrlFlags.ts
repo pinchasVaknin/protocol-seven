@@ -127,6 +127,7 @@ export const UNDOCUMENTED_URL_KEYS: ReadonlyMap<string, string> = new Map([
   ['matches', 'client/debug/BotHarness — match count for that harness'],
   ['show', 'client/probes/layout — which surface the headless layout probe mounts'],
   ['skin', 'client/probes/skinThumb — which skin the thumbnail page renders for scripts/skin-thumbs.mjs'],
+  ['nosplash', 'client/ui/Splash — skips the splash before the menu (M17, C6); the harness skips it by its own flag'],
 ]);
 
 /**

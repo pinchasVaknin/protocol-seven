@@ -116,6 +116,7 @@ import type { MenuSelection } from './ui/Menus';
 import { FpsCounter } from './ui/FpsCounter';
 import { palette } from './ui/Palette';
 import { Settings } from './ui/Settings';
+import { Splash, splashWanted } from './ui/Splash';
 import {
   cloneEquipmentConfig,
   DEFAULT_EQUIPMENT_CONFIG,
@@ -423,6 +424,8 @@ export class Game {
   private readonly chopperCamera = new ChopperCamera();
   /** The match intro's camera (M15, Phase C): asked for once per render frame, before the chopper's. */
   private readonly introCamera: IntroCamera;
+  /** The splash over the boot (M17, C6), while it plays; null before and after. */
+  private splash: Splash | null = null;
 
   /**
    * The per-match world: the map, the player, the match and its debug tooling.
@@ -896,6 +899,28 @@ export class Game {
             this.screens.menus.showUnsupported(device.headline, device.detail);
             return;
           }
+          /**
+           * The splash (M17, C6), unless something is driving the page: the bot harness
+           * starts its match from the menu and cannot press a key, and `?nosplash` is for
+           * the developer who has seen it. The menu's map is rolled and built *behind* the
+           * splash, so the menu lands on a built map rather than a bare canvas — the one
+           * loading screen this project has ever needed, hiding the one build it has.
+           */
+          if (splashWanted(window.location.search)) {
+            this.prepareBackdrop();
+            this.splash = new Splash({
+              host: this.uiHost,
+              audio: this.audio,
+              // The key or the click is the user gesture the AudioContext needs (decision 1).
+              onGesture: () => this.audio.start(),
+              onReveal: () => this.transitionTo('MENU'),
+              onDone: () => {
+                this.splash = null;
+              },
+            });
+            this.splash.play();
+            return;
+          }
           this.transitionTo('MENU');
           this.startBotHarnessIfRequested();
         }, 32);
@@ -916,11 +941,7 @@ export class Game {
          * keeps it — a re-roll is a rebuild, and a rebuild is a few hundred frames of bare
          * canvas for a hop to a sibling screen and back.
          */
-        if (this.backdrop.mapId === '') {
-          const entry = rollBackdropMap(this.backdropDice.float(), this.lastBackdropMapId);
-          this.lastBackdropMapId = entry.id;
-          this.backdrop.prepare(entry.id);
-        }
+        this.prepareBackdrop();
       },
       exit: () => this.screens.menus.hide(),
     });
@@ -2230,6 +2251,14 @@ export class Game {
    * dirty and `SaveStore` coalesces the burst a slider drag produces into one write 250 ms
    * later. Live is immediate; written is a quarter of a second behind.
    */
+  /** The map behind the menu, rolled when there is none — see `MENU`'s `enter`. */
+  private prepareBackdrop(): void {
+    if (this.backdrop.mapId !== '') return;
+    const entry = rollBackdropMap(this.backdropDice.float(), this.lastBackdropMapId);
+    this.lastBackdropMapId = entry.id;
+    this.backdrop.prepare(entry.id);
+  }
+
   applySettings(patch: Partial<SettingsV1>): void {
     this.profile.patchSettings(patch);
     this.previewSettings(this.profile.settings);

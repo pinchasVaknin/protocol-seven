@@ -15,6 +15,10 @@
  *                  (`.op-mark__eyes`), which is how a raster's eyes glow more and less.
  * - `favicon.png`, `favicon.ico` — the mark fitted into a square with a 6 % margin, 256² and
  *                  16/32/48, for the browser tab (M17, C0). Linked from `index.html`.
+ * - `splash-protocol.png`, `splash-rule.png`, `splash-seven.png` — the word, the rule and the
+ *                  word below it, cut from the logo at (480, 400), (478, 487) and (479, 527)
+ *                  for the splash (M17, C6; `ui/Splash.ts`), which assembles them with the
+ *                  mark — cut at (40, 208) — back into the logo.
  *
  * Made by a one-off Pillow pass from the file the human supplied; the numbers (a key from 12
  * to 72 on the brightest channel, the cyan from 18 to 90 of min(g, b) − r) are in the commit

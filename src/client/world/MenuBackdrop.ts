@@ -70,7 +70,8 @@ const log = logger('backdrop');
  * dolly runs over the collision-free prefix only. **Every lane, from either end** (M17, C2):
  * the middle lane alone was the rule until Dunes' middle lane turned out to begin inside a
  * wall at eye height — run 0.0 m, a camera that held and swayed for as long as the menu was
- * up, which was the report "the DUNES camera is static". The longest free run wins. A map on
+ * up, which was the report "the DUNES camera is static". The spine's longer end wins while it
+ * runs at all, else the longest run on any lane. A map on
  * which no lane runs `MIN_RUN` gets an **orbit** instead — a slow circle above the lane's
  * centre, looking down at it, at the first of a few heights and radii whose whole circle the
  * probe finds free — so no map can hold a still camera again; only a map with no free lane
@@ -365,26 +366,32 @@ export class MenuBackdrop {
  * else the hold.
  *
  * Every lane by both ends — `a → center` and `b → center` — because a lane end can sit inside
- * geometry at eye height (Dunes' middle lane does), and the lane that is a street from one
- * end may be a wall from the other. A map with no lanes (the greybox) gets `spawns[0] →
+ * geometry at eye height (Dunes' middle lane's `a` does), and the lane that is a street from
+ * one end may be a wall from the other. The middle lane is preferred while either of its ends
+ * runs: it is the one down the spine. A map with no lanes (the greybox) gets `spawns[0] →
  * navBounds' centre`, which is `ModePanel.measureLanes`' fallback for the same absence.
  */
 function planCameraPath(map: LoadedMap): CameraPath {
   const def: MapDef = map.def;
   const lanes = candidateLanes(def, map);
+  const middle = lanes[Math.floor(lanes.length / 2)] ?? lanes[0];
 
+  // The middle lane first — the one down the spine, the most of the map in one look — from
+  // whichever end runs further; any lane only when the spine is blocked from both.
   let best: Dolly | null = null;
+  let spine: Dolly | null = null;
   for (const lane of lanes) {
     for (const from of [lane.a, lane.b]) {
       const dolly = probeDolly(map, lane.name, from, lane.center);
       if (best === null || dolly.run > best.run) best = dolly;
+      if (lane === middle && (spine === null || dolly.run > spine.run)) spine = dolly;
     }
   }
+  if (spine !== null && spine.run >= MIN_RUN) return spine;
   if (best !== null && best.run >= MIN_RUN) return best;
 
   // No lane runs: a circle above the middle lane's centre, at the first ring the probe finds
   // free all the way round.
-  const middle = lanes[Math.floor(lanes.length / 2)] ?? lanes[0];
   if (middle !== undefined) {
     const orbit = probeOrbit(map, middle);
     if (orbit !== null) return orbit;

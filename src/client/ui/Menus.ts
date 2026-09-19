@@ -1,14 +1,11 @@
-import {
-  BOT_DIFFICULTIES,
-  BOT_DIFFICULTY_BLURBS,
-  type BotDifficulty,
-} from '../../shared/ai/DifficultyTiers';
+import type { BotDifficulty } from '../../shared/ai/DifficultyTiers';
 import type { GameModeId } from '../../shared/modes/GameMode';
-import { MAPS, MODES, modesForMap } from '../../shared/modes/ModeRegistry';
+import { DEFAULT_MODE_ID, findMap, modesForMap } from '../../shared/modes/ModeRegistry';
 import type { Profile } from '../meta/Profile';
 import { createScreen } from './Frame';
 import { makeLockup } from './Emblem';
 import { PlayerCard } from './PlayerCard';
+import { paintPlaySolo, testbedMode } from './PlaySolo';
 import { ProfilePanel } from './ProfilePanel';
 import { makeScreenFooter, makeScreenHeader, type ScreenPlace } from './ScreenChrome';
 import { makeIconSvg } from './WeaponIcons';
@@ -54,13 +51,16 @@ import { makeIconSvg } from './WeaponIcons';
  * pseudo-element that sweeps a highlight along the skew on hover. No image, because there are
  * none (M12's first paragraph), and the look reads the same at every scale of the frame.
  *
- * ## Play Solo is a panel, not a page
+ * ## Play Solo is a page on the same frame
  *
- * The mode / map / difficulty pickers used to replace the whole screen. They slide in over
- * the stage now and the header and footer stay where they are, so going to pick a map is not
- * leaving the menu. The slide is 16 px and the frame's padding is 64, so a probe that
- * measures the panel on the frame it was inserted into finds it inside the window even at
- * the first keyframe.
+ * The mode / map / difficulty pickers used to replace the whole screen, then (M15) slid in
+ * as a panel over the stage. Since M17 C3 the page is the reference's — `PlaySolo.ts`: the
+ * map large with its strip, the mode and difficulty cards, the testbed's plate, the summary
+ * bar and START MATCH — painted into the stage between the same header and footer, whose
+ * place changes from MAIN MENU to PLAY SOLO. The selection is this class's: the page paints
+ * it and asks for changes through callbacks, and the testbed's rule (decision 5) lives here
+ * — picking it makes the mode the Shooting Range, picking a real map again restores the
+ * mode the player had.
  *
  * Pointer lock can only be requested from a user gesture, so the button that starts a match
  * is genuinely load-bearing rather than a formality.
@@ -134,6 +134,8 @@ export class Menus {
   private readonly card: PlayerCard;
   private readonly panel: ProfilePanel;
   private page: Page = 'MAIN';
+  /** The mode the player had before the testbed took it (decision 5); what a real map restores. */
+  private rememberedMode: GameModeId;
 
   constructor(deps: MenuDeps) {
     this.deps = deps;
@@ -142,6 +144,8 @@ export class Menus {
     this.viewport = viewport;
     this.frame = frame;
     this.screen.hidden = true;
+    const range = testbedMode();
+    this.rememberedMode = deps.selection.modeId === range.id ? DEFAULT_MODE_ID : deps.selection.modeId;
     this.panel = new ProfilePanel({
       profile: deps.profile,
       onDisplayName: deps.onDisplayName,
@@ -301,150 +305,46 @@ export class Menus {
     return b;
   }
 
-  /** The mode / map / difficulty panel. Returns the one to focus. */
+  /** The Play Solo page (`PlaySolo.ts`). Returns the one to focus: START MATCH. */
   private paintSetup(stage: HTMLElement): HTMLElement {
-    const modeList = this.picker(
-      'Mode',
-      // Only what this map can run: Domination needs flags and S&D needs bomb sites, and
-      // offering a mode whose objectives the map does not author throws on match build.
-      modesForMap(this.deps.selection.mapId).map((m) => ({ id: m.id, name: m.name, blurb: m.blurb })),
-      this.deps.selection.modeId,
-      (id) => {
-        this.deps.selection.modeId = id as GameModeId;
+    const { root, focus } = paintPlaySolo({
+      selection: this.deps.selection,
+      onPickMap: (mapId) => {
+        this.pickMap(mapId);
         this.paint();
       },
-    );
-
-    // A mode may pin its map — the Shooting Range only exists where the dummies are. The
-    // picker still shows the map so the player knows where they are going; it simply
-    // cannot be changed, which is more informative than hiding the column.
-    const modeEntry = MODES.find((m) => m.id === this.deps.selection.modeId);
-    const forced = modeEntry?.forcedMapId ?? null;
-    const mapList = this.picker(
-      'Map',
-      MAPS.map((m) => ({ id: m.id, name: m.name, blurb: m.blurb })),
-      forced ?? this.deps.selection.mapId,
-      (id) => {
-        if (forced !== null) return;
-        this.deps.selection.mapId = id;
+      onPickMode: (modeId) => {
+        this.deps.selection.modeId = modeId;
+        this.rememberedMode = modeId;
         this.paint();
       },
-      forced !== null,
-    );
-
-    /**
-     * Difficulty (F1), and it is a third column rather than a control below the two.
-     *
-     * The four tiers have been in `DifficultyTiers.ts` since M3 with nothing outside a debug
-     * panel able to choose between them. `MIX` is last and is the default: it is not a fifth
-     * tier but the map's authored spread of all four, which is what every match in this project
-     * has run — so the picker's default selection is the behaviour that was already shipped.
-     */
-    const difficultyList = this.picker(
-      'Difficulty',
-      BOT_DIFFICULTIES.map((id) => ({
-        id,
-        name: id === 'MIX' ? 'MIXED' : id,
-        blurb: BOT_DIFFICULTY_BLURBS[id],
-      })),
-      this.deps.selection.difficulty,
-      (id) => {
-        this.deps.selection.difficulty = id as BotDifficulty;
+      onPickDifficulty: (difficulty) => {
+        this.deps.selection.difficulty = difficulty;
         this.paint();
       },
-      // The Shooting Range fills no roster (`populatesRoster: false`), so there is nobody for a
-      // difficulty to describe. Shown and locked rather than hidden, for the reason the map
-      // column is: a picker that vanishes tells the player less than one that says why.
-      // `false` for a selection the registry does not recognise: the picker stays live, and
-      // `findMode` throws on launch, which is where a bad mode id should be found.
-      modeEntry !== undefined && !modeEntry.populatesRoster,
-      'no bots in this mode',
-    );
-
-    const launch = this.button('Start match', () => this.deps.onLaunch());
-    launch.classList.add('op-btn--primary');
-    const back = this.button('Back', () => {
-      this.page = 'MAIN';
-      this.paint();
+      onLaunch: () => this.deps.onLaunch(),
     });
-    back.classList.add('op-btn--quiet');
-
-    const actions = document.createElement('div');
-    actions.className = 'op-actions';
-    actions.append(back, launch);
-
-    const columns = document.createElement('div');
-    columns.className = 'op-pickers';
-    columns.append(modeList, mapList, difficultyList);
-
-    const heading = document.createElement('span');
-    heading.className = 'op-label op-setup__heading';
-    heading.textContent = 'PLAY SOLO — select mode, map and difficulty';
-
-    const panel = document.createElement('section');
-    panel.className = 'op-setup';
-    panel.append(heading, columns, actions);
-    stage.appendChild(panel);
-    return launch;
+    stage.appendChild(root);
+    return focus;
   }
 
-  // -- primitives ------------------------------------------------------------
-
-  private picker(
-    label: string,
-    entries: readonly Readonly<{ id: string; name: string; blurb: string }>[],
-    selected: string,
-    onPick: (id: string) => void,
-    locked = false,
-    /**
-     * Why it is locked, appended to the heading.
-     *
-     * The map picker's reason — *"fixed by this mode"* — was the only one until the difficulty
-     * picker arrived, and it is the wrong sentence for that one: the Shooting Range does not
-     * *fix* a difficulty, it has nobody to apply one to. A locked control that misstates its own
-     * reason is worse than an enabled one that does nothing, because the player then believes
-     * the wrong thing about the mode.
-     */
-    lockedNote = 'fixed by this mode',
-  ): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.className = 'op-picker';
-    wrap.classList.toggle('is-locked', locked);
-
-    const heading = document.createElement('span');
-    heading.className = 'op-label';
-    heading.textContent = locked ? `${label} — ${lockedNote}` : label;
-    wrap.appendChild(heading);
-
-    for (const entry of entries) {
-      const option = document.createElement('button');
-      option.type = 'button';
-      option.className = 'op-option';
-      option.classList.toggle('op-option--on', entry.id === selected);
-      option.disabled = locked && entry.id !== selected;
-      option.setAttribute('aria-pressed', entry.id === selected ? 'true' : 'false');
-
-      const name = document.createElement('span');
-      name.className = 'op-option__name';
-      name.textContent = entry.name;
-      const blurb = document.createElement('span');
-      blurb.className = 'op-option__blurb';
-      blurb.textContent = entry.blurb;
-
-      option.append(name, blurb);
-      option.addEventListener('click', () => onPick(entry.id));
-      wrap.appendChild(option);
+  /**
+   * The testbed's rule (decision 5): picking it makes the mode the Shooting Range — the one
+   * mode the greybox is offered in, and the one with no roster — and picking a real map again
+   * restores the mode the player had. A remembered mode the new map cannot run (none today:
+   * every real map authors flags and sites) falls back to the default rather than throwing
+   * on match build.
+   */
+  private pickMap(mapId: string): void {
+    const selection = this.deps.selection;
+    const range = testbedMode();
+    selection.mapId = mapId;
+    if (findMap(mapId).testbed) {
+      selection.modeId = range.id;
+      return;
     }
-    return wrap;
-  }
-
-  private button(text: string, onClick: () => void): HTMLButtonElement {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'op-btn';
-    b.textContent = text;
-    b.addEventListener('click', onClick);
-    return b;
+    const wanted = this.rememberedMode;
+    selection.modeId = modesForMap(mapId).some((m) => m.id === wanted) ? wanted : DEFAULT_MODE_ID;
   }
 }
 

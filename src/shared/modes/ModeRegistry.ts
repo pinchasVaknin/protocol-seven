@@ -170,6 +170,12 @@ export interface MapEntry {
   readonly id: string;
   readonly name: string;
   readonly blurb: string;
+  /** Play Solo's line under the name (M17, C3): what kind of place, and its shape. */
+  readonly tagline: string;
+  /** Play Solo's three descriptor tags: the fight's range, the map's size, its cover. */
+  readonly tags: readonly [string, string, string];
+  /** The picture Play Solo shows, `public/maps/<id>.jpg` — `npm run maps:thumbs` makes them. */
+  readonly picture: string;
   readonly def: MapDef;
   /** Bots per side for a default match here. */
   readonly teamSize: number;
@@ -191,6 +197,9 @@ export const MAPS: readonly MapEntry[] = [
     id: FOUNDRY_MAP.id,
     name: FOUNDRY_MAP.name,
     blurb: 'Industrial · three lanes · catwalks',
+    tagline: 'INDUSTRIAL COMPLEX // THREE-LANE',
+    tags: ['CLOSE QUARTERS', 'MEDIUM SIZE', 'HIGH COVER'],
+    picture: '/maps/mp_foundry.jpg',
     def: FOUNDRY_MAP,
     // 5v5 is four bots alongside the player and five against (S6).
     teamSize: 5,
@@ -202,6 +211,9 @@ export const MAPS: readonly MapEntry[] = [
     id: DUNES_MAP.id,
     name: DUNES_MAP.name,
     blurb: 'Desert village · long streets · tight alleys',
+    tagline: 'DESERT VILLAGE // THREE-LANE',
+    tags: ['LONG SIGHTLINES', 'LARGE SIZE', 'LOW COVER'],
+    picture: '/maps/mp_dunes.jpg',
     def: DUNES_MAP,
     // 5v5, same as Foundry. Dunes is bigger in area but the fight concentrates in three
     // lanes exactly as Foundry's does, so a larger roster would only thin it out.
@@ -214,6 +226,9 @@ export const MAPS: readonly MapEntry[] = [
     id: DEPOT_MAP.id,
     name: DEPOT_MAP.name,
     blurb: 'Night cargo yard · stacked containers · climb it',
+    tagline: 'CARGO YARD // NIGHT // VERTICAL',
+    tags: ['MIXED RANGE', 'MEDIUM SIZE', 'DENSE COVER'],
+    picture: '/maps/mp_depot.jpg',
     def: DEPOT_MAP,
     teamSize: 5,
     tierMix: ['HARDENED', 'REGULAR', 'VETERAN', 'REGULAR', 'HARDENED', 'RECRUIT', 'REGULAR', 'VETERAN'],
@@ -224,6 +239,9 @@ export const MAPS: readonly MapEntry[] = [
     id: GREYBOX_MAP.id,
     name: GREYBOX_MAP.name,
     blurb: 'Grey-box range · movement and weapon testbed',
+    tagline: 'WEAPON TEST FACILITY // GREY-BOX',
+    tags: ['TARGET RANGE', 'SMALL SIZE', 'NO STAKES'],
+    picture: '/maps/mp_testbed.jpg',
     def: GREYBOX_MAP,
     teamSize: 4,
     tierMix: ['REGULAR', 'HARDENED', 'RECRUIT', 'REGULAR'],

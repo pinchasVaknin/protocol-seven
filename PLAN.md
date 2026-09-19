@@ -643,3 +643,38 @@ browser pass at 1920×1080 and 1280×720.
   mispredictions in the 60 ticks after migration into the live match, the two runtimes agreeing
   on the freeze. Watched in the browser: the approach, the rise, the rest on the overview, the
   return, GET READY · 5 → 1; a key at 2 s returned the camera and the banner read 5.
+
+### C3 — done (session of 2026-09-20): Play Solo
+
+- **The pictures** (decision 3): `probes/map-thumb.html` + `client/probes/mapThumb.ts` build
+  one map through the menu's own `MenuBackdrop` — the same build, ambient and lane camera,
+  the fight off — and read a 1 536 × 864 JPEG at 0.86; `scripts/map-thumbs.mjs` (`npm run
+  maps:thumbs`) drives it through the headless Chrome the layout probe uses and writes
+  `public/maps/<id>.jpg`: Foundry 143 kB, Dunes 142, Depot 114, the testbed 151 — 550 kB in
+  all, fetched only by the page that shows them. The hero and the cards crop the one file.
+  While here, `planCameraPath` prefers the **spine** lane while either of its ends runs
+  (Foundry and Depot are back on their middle lanes; Dunes' is blocked from both ends, so it
+  keeps WEST).
+- **The registry**: `MapEntry.tagline`, `tags` (three) and `picture`.
+- **The page**, `ui/PlaySolo.ts`, painted into the menu's stage under the same chrome with
+  the place PLAY SOLO / SELECT COMBAT SCENARIO. Left: the hero (picture, pager `02 / 04`,
+  COMBAT MAP, the name at 52 px, the tagline, the three tags) over the MAPS strip of four
+  cards, the testbed's badged with the flask. Right: `01 MAP` as a row that steps to the
+  next map; `02 GAME MODE`, five cards with glyphs drawn in the file (skull, flag, tag,
+  reticle, charge); `03 BOT DIFFICULTY`, five cards (chevrons one to four, MIXED as two
+  facing — decision 4) with the chosen tier's line beneath; the TESTBED plate with ENTER
+  TESTBED. The bar: OPERATION SUMMARY (map, mode, difficulty) and START MATCH.
+- **The testbed's rule** (decision 5), in `Menus.pickMap`: the greybox picked from the strip
+  or the plate makes the mode the Shooting Range and locks the mode and difficulty sections
+  (drawn greyed with SHOOTING RANGE ONLY / NO BOTS IN THE RANGE, not hidden); the primary
+  reads ENTER TESTBED; a real map picked again restores the mode the player had
+  (`rememberedMode`, the default if the map cannot run it). The greybox is offered with no
+  other mode.
+- **The action bar and the CTA**, shared: `.op-actionbar` (a lead plate cut at two corners
+  and the primary beside it) and `.op-cta` (`--primary` lit in the accent with a bloom,
+  `--quiet` for a secondary). Settings and Create-a-Class take the same two in C4 and C5.
+- The old `.op-setup` panel and the `.op-picker` / `.op-option` columns are gone with the
+  `picker` primitive. The stage grid gained `grid-template-rows: minmax(0, 1fr)` so the page
+  can stretch to it. `npm run layout`: `solo-setup` ok at all eight viewports; watched at
+  1920 × 1080 and 1280 × 720: the strip, the modes, the tiers, the testbed lock and the
+  restore.

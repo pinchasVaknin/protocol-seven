@@ -671,13 +671,15 @@ body.op-locked #viewport {
 
 /*
  * The stage: the left half is the backdrop and holds nothing; the navigation stands in a
- * 600 px column on the right, vertically centred. The setup panel spans both columns and
- * right-aligns itself, so opening it does not move the header or the footer.
+ * 600 px column on the right, vertically centred. The Play Solo page spans both columns and
+ * fills the stage, so opening it does not move the header or the footer.
  */
 .op-menu__stage {
   grid-area: stage;
   display: grid;
   grid-template-columns: 1fr 600px;
+  /* One row the stage's own height, so the Play Solo page can stretch to it (M17, C3). */
+  grid-template-rows: minmax(0, 1fr);
   align-items: center;
   min-height: 0;
 }
@@ -865,36 +867,7 @@ body.op-locked #viewport {
   opacity: 0.8;
 }
 
-/*
- * The Play Solo panel. It slides 16 px and fades over `--dur-med`; the frame's side padding is
- * 64, so even the first keyframe is inside the window — which is what lets the layout probe
- * measure the panel on the frame it was inserted into without waiting for the animation.
- *
- * Centred in the stage and then pushed half a margin to the right (playtest, 2026-09-15:
- * *"not in the middle of the screen — a little to the right"*). It used to sit against the
- * frame's right edge, where the navigation stands; a panel this wide read as a wall there.
- * A little right of centre keeps the backdrop on the left, which is the asymmetry the menu
- * is built on, without hugging the edge.
- */
-.op-setup {
-  grid-column: 1 / -1;
-  justify-self: center;
-  margin-left: 200px;
-  width: 1380px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-6);
-  padding: var(--s-8) 48px;
-  background: rgba(12, 14, 17, 0.9);
-  border: 1px solid var(--c-line);
-  border-left: 2px solid var(--c-accent);
-  animation: op-panel-in var(--dur-med) var(--ease);
-}
-
-.op-setup__heading {
-  color: var(--c-accent);
-}
-
+/* The slide the profile panel (and, until M17 C3, the Play Solo panel) comes in on. */
 @keyframes op-panel-in {
   from {
     opacity: 0;
@@ -907,7 +880,6 @@ body.op-locked #viewport {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .op-setup,
   .op-profile__panel {
     animation: none;
   }
@@ -1244,74 +1216,665 @@ body.op-locked #viewport {
   user-select: none;
 }
 
-/* ---- mode / map / difficulty pickers (M4; difficulty at round 4, F1) ---- */
+/* ---- the action bar and the CTA (M17, C3): the row a screen ends on ------------------ */
 
 /*
- * Three columns since the difficulty picker joined the mode and the map.
- *
- * `auto-fit` against an explicit width rather than a fixed `repeat(3, ...)`: three fixed
- * columns overflow a narrow viewport, and the convention this file already settled on at F11
- * is that the **content** carries the cap while the layer stays full-bleed and centres it. At
- * 840px that is three 264px columns; below it they fold to two and then to one instead of
- * running off the side of the screen.
+ * One row at the foot of a screen's body, above the shared footer: a lead plate (a summary,
+ * a secondary action) and the primary. Play Solo's OPERATION SUMMARY + START MATCH, the
+ * editor's CHANGE A SKIN + SAVE AND EXIT, Settings' BACK + APPLY — one shape, so the three
+ * screens end the same way. The plates are cut at two corners, the nav's idiom, and the
+ * primary glows: the accent's frame and a bloom, the one lit thing on the row.
  */
-.op-pickers {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+.op-actionbar {
+  display: flex;
+  align-items: stretch;
+  gap: var(--s-4);
+  min-height: 84px;
+}
+
+.op-actionbar__lead {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   gap: var(--s-6);
-  /* Three columns of ~370 at the frame's ramp (was 840 / 264 at the HUD's). */
-  width: min(1180px, 100%);
-}
-
-.op-picker {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
-}
-
-.op-option {
-  appearance: none;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: left;
-  padding: var(--s-3) var(--s-4);
-  background: var(--c-surface);
+  padding: 0 var(--s-6);
+  background: rgba(14, 17, 22, 0.92);
   border: 1px solid var(--c-line);
-  border-left: 2px solid var(--c-line-hi);
-  border-radius: var(--radius);
-  color: var(--c-text-dim);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
 }
 
-.op-option:hover,
-.op-option:focus-visible {
+.op-cta {
+  appearance: none;
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-3);
+  min-width: 260px;
+  padding: 0 var(--s-8);
+  border: 1px solid var(--c-line-hi);
+  background: rgba(14, 17, 22, 0.92);
+  color: var(--c-text);
+  font-family: var(--font-ui);
+  font-size: var(--t-lead);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-display);
+  text-transform: uppercase;
+  cursor: pointer;
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.op-cta:hover,
+.op-cta:focus-visible {
   background: var(--c-surface-hi);
+  border-color: var(--c-text-dim);
   outline: none;
 }
 
-/* Selection is one accent edge and a brighter name — not a second colour. */
-.op-option--on {
-  border-left-color: var(--c-accent);
-  background: var(--c-surface-hi);
+.op-cta--primary {
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+  background: linear-gradient(180deg, rgba(63, 169, 199, 0.22), rgba(63, 169, 199, 0.08));
+  box-shadow: 0 0 24px rgba(63, 169, 199, 0.25), inset 0 0 18px rgba(63, 169, 199, 0.12);
 }
 
-.op-option__name {
+.op-cta--primary:hover,
+.op-cta--primary:focus-visible {
+  background: linear-gradient(180deg, rgba(63, 169, 199, 0.36), rgba(63, 169, 199, 0.14));
+  color: #ffffff;
+  border-color: var(--c-accent);
+}
+
+.op-cta:active {
+  background: var(--c-accent);
+  color: var(--c-void);
+}
+
+/* The secondary: the same cut in the quiet colours, sized to a row rather than the bar. */
+.op-cta--quiet {
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 var(--s-5);
+  font-size: var(--t-small);
+  letter-spacing: var(--track-label);
+  color: var(--c-text-dim);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+
+.op-cta--quiet:hover,
+.op-cta--quiet:focus-visible {
+  color: var(--c-text);
+}
+
+.op-cta__lead,
+.op-cta__chevron {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+  fill-rule: evenodd;
+  flex: none;
+}
+
+.op-cta__chevron {
+  width: 18px;
+  height: 18px;
+}
+
+/* ---- Play Solo (M17, C3; PlaySolo.ts) -------------------------------------------- */
+
+/*
+ * The page fills the stage between the bars: two columns and the action bar under both.
+ * Sized to the frame at its ramp — 1 792 × 860 inside the menu grid's padding — and it adds
+ * up: 84 for the bar and 28 above it leave 748 for the columns; on the left the strip's 236
+ * and 24 leave 488 for the hero; on the right the four plates are 132 + 176 + 208 + 148
+ * with 20 between, 744.
+ */
+.ps {
+  grid-column: 1 / -1;
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "left right"
+    "bar bar";
+  gap: 28px 32px;
+  min-height: 0;
+  height: 100%;
+}
+
+.ps-left {
+  grid-area: left;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-height: 0;
+}
+
+.ps-right {
+  grid-area: right;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+}
+
+.ps-bar {
+  grid-area: bar;
+}
+
+/* A plate: the surface every section stands on. */
+.ps-sec,
+.ps-testbed,
+.ps-maps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  background: rgba(14, 17, 22, 0.88);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+}
+
+.ps-sec__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 24px;
+}
+
+/* The number chip, and the label beside it. */
+.ps-sec__num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 34px;
+  height: 24px;
+  padding: 0 6px;
+  font-size: var(--t-small);
+  color: var(--c-accent);
+  background: rgba(63, 169, 199, 0.1);
+  border: 1px solid var(--c-accent-dim);
+  border-radius: var(--radius);
+}
+
+.ps-sec__label {
+  font-size: var(--t-small);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--c-text);
+}
+
+.ps-sec__note {
+  margin-left: auto;
+  color: var(--c-warn);
+}
+
+/* A locked section: the testbed has no mode and no roster. The controls stay, greyed. */
+.ps-sec.is-locked .ps-cards {
+  opacity: 0.38;
+}
+
+/* ---- the hero ---- */
+
+.ps-hero {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--c-line);
+  border-left: 3px solid var(--c-accent);
+  border-radius: var(--radius);
+  background: var(--c-surface);
+}
+
+.ps-hero__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+}
+
+.ps-hero__shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to top, rgba(7, 8, 10, 0.92) 0%, rgba(7, 8, 10, 0.55) 34%, rgba(7, 8, 10, 0) 62%),
+    linear-gradient(to right, rgba(7, 8, 10, 0.35), rgba(7, 8, 10, 0) 40%);
+}
+
+.ps-pager {
+  position: absolute;
+  top: var(--s-4);
+  left: var(--s-4);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 4px 6px;
+  background: rgba(7, 8, 10, 0.72);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+}
+
+.ps-pager__count {
+  font-size: var(--t-small);
+  font-weight: var(--w-heavy);
+  letter-spacing: 0.16em;
+  color: var(--c-text);
+  padding: 0 var(--s-2);
+}
+
+.ps-pager__arrow {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--c-accent);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.ps-pager__arrow:hover,
+.ps-pager__arrow:focus-visible {
+  background: var(--c-accent-glow);
+  outline: none;
+}
+
+.ps-pager__glyph {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+
+.ps-hero__body {
+  position: absolute;
+  left: var(--s-6);
+  right: var(--s-6);
+  bottom: var(--s-6);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-shadow: 0 1px 12px rgba(7, 8, 10, 0.9);
+}
+
+.ps-hero__label {
+  color: var(--c-text-dim);
+  letter-spacing: 0.26em;
+}
+
+.ps-hero__name {
+  margin: 0;
+  font-size: 52px;
+  font-weight: var(--w-heavy);
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: #ffffff;
+}
+
+.ps-hero__tagline {
+  font-size: var(--t-small);
+  font-weight: var(--w-medium);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+}
+
+.ps-tags {
+  display: flex;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+}
+
+.ps-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 6px var(--s-3);
+  font-size: var(--t-micro);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--c-text);
+  background: rgba(7, 8, 10, 0.7);
+  border: 1px solid var(--c-line-hi);
+  border-radius: var(--radius);
+  text-shadow: none;
+}
+
+.ps-tag__mark {
+  width: 14px;
+  height: 14px;
+  fill: var(--c-accent);
+  fill-rule: evenodd;
+}
+
+/* ---- the strip ---- */
+
+.ps-maps {
+  flex: none;
+}
+
+.ps-maps__strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-3);
+}
+
+.ps-card {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: var(--c-surface);
+  border: 2px solid var(--c-line);
+  border-radius: var(--radius);
+  color: var(--c-text-dim);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.ps-card:hover,
+.ps-card:focus-visible {
+  border-color: var(--c-line-hi);
+  color: var(--c-text);
+  outline: none;
+}
+
+.ps-card.is-on {
+  border-color: var(--c-accent);
+  color: var(--c-text);
+  box-shadow: 0 0 18px rgba(63, 169, 199, 0.35), inset 0 0 0 1px rgba(63, 169, 199, 0.4);
+}
+
+.ps-card__img {
+  display: block;
+  width: 100%;
+  height: 136px;
+  object-fit: cover;
+  user-select: none;
+}
+
+.ps-card__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 44px;
+  padding: 0 var(--s-3);
+  border-top: 1px solid var(--c-line);
+  background: rgba(7, 8, 10, 0.6);
+}
+
+.ps-card__badge {
+  width: 18px;
+  height: 18px;
+  fill: var(--c-accent);
+  fill-rule: evenodd;
+  flex: none;
+}
+
+.ps-card__name {
+  font-size: var(--t-small);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- the map row ---- */
+
+.ps-maprow {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  height: 76px;
+  padding: 0 var(--s-3) 0 0;
+  background: var(--c-surface);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  color: var(--c-text);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.ps-maprow:hover,
+.ps-maprow:focus-visible {
+  background: var(--c-surface-hi);
+  border-color: var(--c-line-hi);
+  outline: none;
+}
+
+.ps-maprow__img {
+  display: block;
+  width: 116px;
+  height: 100%;
+  object-fit: cover;
+  border-right: 1px solid var(--c-line);
+  user-select: none;
+}
+
+.ps-maprow__name {
+  flex: 1 1 auto;
+  font-size: var(--t-lead);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-display);
+  text-transform: uppercase;
+  color: var(--c-accent);
+}
+
+.ps-maprow__chevron {
+  width: 20px;
+  height: 20px;
+  fill: var(--c-text-faint);
+}
+
+/* ---- the option cards: modes and difficulty ---- */
+
+.ps-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+
+.ps-opt {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  height: 112px;
+  padding: var(--s-2);
+  background: var(--c-surface);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  color: var(--c-text-dim);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.ps-cards--diffs .ps-opt {
+  height: 92px;
+}
+
+.ps-opt:hover:not(:disabled),
+.ps-opt:focus-visible {
+  background: var(--c-surface-hi);
+  border-color: var(--c-line-hi);
+  color: var(--c-text);
+  outline: none;
+}
+
+.ps-opt.is-on {
+  border-color: var(--c-accent);
+  color: #ffffff;
+  background: linear-gradient(180deg, rgba(63, 169, 199, 0.2), rgba(63, 169, 199, 0.06));
+  box-shadow: 0 0 16px rgba(63, 169, 199, 0.3);
+}
+
+.ps-opt:disabled {
+  cursor: default;
+}
+
+.ps-opt__glyph {
+  width: 34px;
+  height: 34px;
+  fill: currentColor;
+  fill-rule: evenodd;
+}
+
+.ps-opt.is-on .ps-opt__glyph {
+  fill: var(--c-accent);
+}
+
+.ps-opt__name {
+  font-size: var(--t-micro);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.ps-blurb {
+  margin: 0;
+  padding: 0 var(--s-1);
+  font-size: var(--t-small);
+  color: var(--c-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- the testbed plate ---- */
+
+.ps-testbed {
+  gap: var(--s-3);
+  border-style: dashed;
+}
+
+.ps-testbed.is-on {
+  border-style: solid;
+  border-color: var(--c-accent-dim);
+}
+
+.ps-testbed__top {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.ps-testbed__icon {
+  width: 40px;
+  height: 40px;
+  fill: var(--c-accent);
+  fill-rule: evenodd;
+  flex: none;
+  padding-right: var(--s-3);
+  border-right: 1px solid var(--c-line-hi);
+  box-sizing: content-box;
+}
+
+.ps-testbed__titles {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ps-testbed__title {
+  font-size: var(--t-lead);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-display);
+  text-transform: uppercase;
+}
+
+.ps-testbed__sub {
+  color: var(--c-text-dim);
+}
+
+.ps-testbed__note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  font-size: var(--t-small);
+  line-height: 1.35;
+  color: var(--c-text-dim);
+}
+
+.ps-testbed__info {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-top: 2px;
+  fill: var(--c-text-faint);
+  fill-rule: evenodd;
+}
+
+/* ---- the summary ---- */
+
+.ps-summary__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding-right: var(--s-6);
+  border-right: 1px solid var(--c-line-hi);
+}
+
+.ps-summary__icon {
+  width: 22px;
+  height: 22px;
+  fill: var(--c-text-dim);
+  fill-rule: evenodd;
+}
+
+.ps-summary__title {
+  font-size: var(--t-small);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+
+.ps-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ps-fact + .ps-fact {
+  padding-left: var(--s-6);
+  border-left: 1px solid var(--c-line);
+}
+
+.ps-fact__value {
   font-size: var(--t-body);
   font-weight: var(--w-heavy);
   letter-spacing: var(--track-label);
   text-transform: uppercase;
-  color: var(--c-text-faint);
+  color: var(--c-text);
+  white-space: nowrap;
 }
 
-.op-option--on .op-option__name {
-  color: var(--c-accent);
-}
-
-.op-option__blurb {
-  font-size: var(--t-small);
-  color: var(--c-text-faint);
+.ps-launch {
+  min-width: 340px;
 }
 
 /* ---- scoreboard (M4) --------------------------------------------------- */

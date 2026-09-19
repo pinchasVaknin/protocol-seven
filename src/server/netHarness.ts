@@ -1,5 +1,7 @@
+import { BOT_ID_BASE } from '../shared/ai/BotDirector';
 import { installClock } from '../shared/core/Clock';
 import { logger } from '../shared/core/Log';
+import { NO_SKIN_INDEX, SKIN_IDS } from '../shared/meta/Skins';
 import { describeConditions, NET_PERFECT, parseConditions, type NetConditions } from '../shared/net/NetSim';
 import { HeadlessClient, type ClientBehaviour } from './debug/HeadlessClient';
 import { installServerLogging, metric } from './log';
@@ -44,6 +46,14 @@ interface Args {
   crouch: boolean;
   /** Disconnect test: 'clean', 'hard' or 'none' (S8.11). */
   disconnect: 'clean' | 'hard' | 'none';
+  /**
+   * The body on the wire (M16, B6): every client declares a different skin at its `Hello`, and
+   * at the end every client's snapshots are read back — the body each one is told about for
+   * every other must be the one that client declared, and every bot must be "declared none".
+   * The run exits non-zero if any pair disagrees, which makes it the milestone's gate rather
+   * than its report.
+   */
+  skins: boolean;
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -60,6 +70,7 @@ function parseArgs(argv: readonly string[]): Args {
     hittest: false,
     crouch: false,
     disconnect: 'none',
+    skins: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -114,6 +125,9 @@ function parseArgs(argv: readonly string[]): Args {
       case '--crouch':
         args.crouch = true;
         break;
+      case '--skins':
+        args.skins = true;
+        break;
       case '--disconnect':
         if (value === 'clean' || value === 'hard') args.disconnect = value;
         i++;
@@ -163,6 +177,8 @@ async function main(): Promise<number> {
       // script more than it measures the netcode.
       behaviour: i === 0 ? args.behaviour : 'strafe',
       seed: args.seed + i * 7919,
+      // Distinct for up to seven clients; the eighth wears the first's, which the check knows.
+      skinIndex: args.skins ? i % SKIN_IDS.length : undefined,
     });
     try {
       await client.connect();
@@ -266,6 +282,8 @@ async function main(): Promise<number> {
     });
   }
 
+  const skinFailures = args.skins ? checkBodies(clients, log) : 0;
+
   for (const c of clients) c.disconnect(true);
 
   metric('netharness', 'run.end', {
@@ -276,11 +294,52 @@ async function main(): Promise<number> {
     conditionSpec: args.conditionSpec,
     totalMispredictions,
     worstMispredictionP99: round(worstMisprediction),
+    ...(args.skins ? { skinFailures } : {}),
   });
 
   // Let the close frames actually leave before the process does.
   await new Promise((resolve) => setTimeout(resolve, 250));
-  return 0;
+  return skinFailures === 0 ? 0 : 1;
+}
+
+/**
+ * The `--skins` assertion (M16, B6): for every ordered pair of clients, the body `viewer` was
+ * told `subject` wears is the one `subject` declared — its own included — and every bot in
+ * anybody's view is `NO_SKIN_INDEX`. One metric line per client with what it saw; the count
+ * of disagreements is the exit code's.
+ */
+function checkBodies(clients: readonly HeadlessClient[], log: ReturnType<typeof logger>): number {
+  let failures = 0;
+  const declared = new Map<number, { name: string; skin: number }>();
+  for (const c of clients) {
+    const r = c.report();
+    declared.set(r.entityId, { name: r.name, skin: c.skinIndex ?? NO_SKIN_INDEX });
+  }
+  for (const viewer of clients) {
+    const seen = viewer.bodiesSeen();
+    const bodies: Record<string, string> = {};
+    let humans = 0;
+    let bots = 0;
+    for (const [entityId, index] of seen) {
+      const who = declared.get(entityId);
+      const expected = entityId >= BOT_ID_BASE ? NO_SKIN_INDEX : who?.skin;
+      const label = who?.name ?? (entityId >= BOT_ID_BASE ? `bot${entityId}` : `entity${entityId}`);
+      bodies[label] = index === NO_SKIN_INDEX ? 'none' : (SKIN_IDS[index] ?? `?${index}`);
+      if (entityId >= BOT_ID_BASE) bots++;
+      else humans++;
+      if (expected === undefined) continue; // a human this run did not field — a disconnected seat's ghost, if any
+      if (index !== expected) {
+        failures++;
+        log.error(
+          `${viewer.report().name} sees ${label} as ${bodies[label]}; ${label} declared ` +
+            `${expected === NO_SKIN_INDEX ? 'none' : SKIN_IDS[expected]}.`,
+        );
+      }
+    }
+    metric('netharness', 'skins', { viewer: viewer.report().name, humans, bots, bodies });
+  }
+  if (failures === 0) log.info(`skins: every client sees every other as the body it declared (${clients.length} clients).`);
+  return failures;
 }
 
 function clampInt(v: number, lo: number, hi: number): number {

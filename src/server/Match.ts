@@ -926,6 +926,8 @@ export class ServerMatch extends Disposable {
      * grant could ever reach. `MatchInstance.seat` is the one caller and it has the session.
      */
     cheats: CheatGrants,
+    /** The body the connection declared, a position in `SKIN_IDS` or `NO_SKIN_INDEX` (M16, B6). Required, as `cheats` is and for the same reason. */
+    characterIndex: number,
     loadout?: LoadoutSlot | null,
     reclaim?: ReclaimedSeat | null,
   ): NetPlayer | null {
@@ -989,6 +991,7 @@ export class ServerMatch extends Disposable {
       secondaryDef: resolved?.secondary ?? PISTOL_DEFAULT,
       perks: resolved?.perkState ?? NO_PERKS,
       cheats,
+      characterIndex,
     });
     this.loadouts.set(entityId, resolved);
 

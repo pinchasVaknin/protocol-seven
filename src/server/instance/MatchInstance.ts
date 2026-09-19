@@ -42,6 +42,7 @@ import { SentryGun } from '../../shared/streaks/SentryGun';
 import { STREAK_DEFS, type StreakId } from '../../shared/streaks/StreakDefs';
 import { Uav } from '../../shared/streaks/Uav';
 import { EFlag, makeEntitySnapshot, weaponIndexOf, type EntitySnapshot } from '../../shared/net/Snapshot';
+import { NO_SKIN_INDEX } from '../../shared/meta/Skins';
 import type { ReplicatedScoreRow } from '../../shared/combat/ScoreSystem';
 import type { LoadoutSlot } from '../../shared/meta/Loadouts';
 import type { ReclaimedSeat, ServerMatch } from '../Match';
@@ -258,7 +259,13 @@ export abstract class MatchInstance {
   ): NetPlayer | null {
     // The grants are the session's, so they follow this player across every migration and die
     // with the connection rather than with the seat (playtest round 4, F14).
-    const player = this.match.addPlayer(session.displayName, session.cheats, loadout, reclaim);
+    const player = this.match.addPlayer(
+      session.displayName,
+      session.cheats,
+      session.characterIndex,
+      loadout,
+      reclaim,
+    );
     if (player === null) return null;
     this.seats.set(session.playerId, { session, player });
     this.encoders.set(player.entityId, new SnapshotEncoder());
@@ -827,6 +834,7 @@ function writePlayer(e: EntitySnapshot, p: NetPlayer): void {
   e.heightScale = p.capsuleScale;
   e.health = clampByte(p.health.current);
   e.weaponIndex = weaponIndexOf(p.weapons.definition.id);
+  e.characterIndex = p.characterIndex;
   e.flags =
     (p.alive ? EFlag.Alive : 0) |
     (isDown(p.lastButtons, Btn.Fire) ? EFlag.Firing : 0) |
@@ -854,6 +862,8 @@ function writeBot(e: EntitySnapshot, b: Bot): void {
   e.heightScale = b.capsuleScale;
   e.health = clampByte(b.health.current);
   e.weaponIndex = weaponIndexOf(b.weapons.definition.id);
+  // The server has no opinion about a bot's body (M16 decision 4): every client deals one.
+  e.characterIndex = NO_SKIN_INDEX;
   e.flags =
     (b.health.alive ? EFlag.Alive : 0) |
     (isDown(b.lastCommand.buttons, Btn.Fire) ? EFlag.Firing : 0) |

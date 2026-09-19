@@ -49,6 +49,15 @@ const ALLOWED = {
   heightScale: 'the collision capsule height stance implies — a hitbox fact, not a pose (redundant with stance since M13 C2; leaves with v13)',
   health: '§4.15 health',
   weaponIndex: '§4.15 equipped weapon',
+  /**
+   * The body other players see (M16 B6, decision 5) — identity, in the row `displayName` sits
+   * in. *Who is this* already has two replicated halves, the name and the team; the body is
+   * the third half of the same fact, and two clients that dealt one player two bodies were
+   * showing two different people. It is an index into a table, not a decision about what the
+   * body looks like: the rig, the clips, the pads and the plain gunmetal stay the client's,
+   * which is the §8.25 line this file exists to hold.
+   */
+  characterIndex: 'identity; which of the catalogued bodies this player is — the name and the team are the other two halves',
   flags: 'alive/firing/reloading/ads/sprinting/grounded/bot/team — all §4.15 gameplay state',
 
   /**

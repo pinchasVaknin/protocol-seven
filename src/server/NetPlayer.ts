@@ -70,6 +70,13 @@ export interface NetPlayerDeps {
    * `session.cheats`. Bots are `Bot`s, not NetPlayers, and are never granted anything.
    */
   readonly cheats: CheatGrants;
+  /**
+   * The body this connection declared at its `Hello`, as a position in `SKIN_IDS`, or
+   * `NO_SKIN_INDEX` (M16, B6). Required for the reason `cheats` is: it is the session's fact,
+   * and a seating path that forgot it would show this player as somebody else to everyone.
+   * Written into every snapshot by `writePlayer`; the server never reads it for anything.
+   */
+  readonly characterIndex: number;
 }
 
 export class NetPlayer implements Combatant {
@@ -103,6 +110,8 @@ export class NetPlayer implements Combatant {
   active = false;
 
   private readonly deps: NetPlayerDeps;
+  /** The body other players see — the `Hello`'s skin index (M16, B6). */
+  readonly characterIndex: number;
   private alive_ = false;
   private readonly residual = { yaw: 0, pitch: 0 };
 
@@ -129,6 +138,7 @@ export class NetPlayer implements Combatant {
     deps: NetPlayerDeps,
   ) {
     this.deps = deps;
+    this.characterIndex = deps.characterIndex;
     this.health = new Health(deps.healthConfig);
     this.controller = new PlayerController(deps.movement, deps.world, deps.bus, entityId);
     this.weapons = new WeaponSystem(

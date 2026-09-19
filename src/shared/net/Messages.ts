@@ -228,7 +228,17 @@ function head(w: ByteWriter, id: number): void {
 }
 
 /**
- * The first frame on a connection — and it carries the player's class (M11, Tier 1 #20).
+ * The first frame on a connection — and it carries the player's class (M11, Tier 1 #20) and,
+ * since v18, the body they wear (M16, B6).
+ *
+ * ## The skin, one byte after the name
+ *
+ * `skinIndex` is a position in `SKIN_IDS` or `NO_SKIN_INDEX`, and it is sent by every
+ * connection with no presence byte (M16 decision 3): 255 *is* the absence, and a presence
+ * byte would be a second way to say it. It sits after the name and ahead of the class because
+ * it is a fact every connection has, which is what the token's rule below is about. It is a
+ * *setting*, not part of the class — a respawn changes classes, not bodies — so the `Loadout`
+ * message does not carry it, and a pick made mid-connection is the next connection's.
  *
  * ## Why the loadout is here and not in a message that follows
  *
@@ -260,12 +270,14 @@ function head(w: ByteWriter, id: number): void {
 export function writeHello(
   w: ByteWriter,
   name: string,
+  skinIndex: number,
   loadout?: NetLoadout | null,
   reconnectToken?: Uint8Array | null,
 ): Uint8Array {
   head(w, MsgC.Hello);
   w.u16(PROTOCOL_VERSION);
   w.str(name);
+  w.u8v(skinIndex);
   w.u8v(loadout == null ? 0 : 1);
   if (loadout != null) writeLoadoutBody(w, loadout);
   const token = reconnectToken != null && reconnectToken.length === RECONNECT_TOKEN_BYTES
@@ -1211,6 +1223,8 @@ export type Decoded =
       kind: 'hello';
       version: number;
       name: string;
+      /** A position in `SKIN_IDS`, or `NO_SKIN_INDEX`; the server clamps a stranger to the latter (M16, B6). */
+      skinIndex: number;
       loadout: NetLoadout | null;
       /** What this connection claims about a seat it held before (round 4, F8). */
       reconnectToken: Uint8Array | null;
@@ -1270,6 +1284,9 @@ export function decodeHeader(r: ByteReader): Decoded {
     case MsgC.Hello: {
       const version = r.u16();
       const name = r.str();
+      // One byte, always present; a frame from a build that did not send it is a v17 frame,
+      // and the version check refuses it before this value is read as anything.
+      const skinIndex = r.u8v();
       // The version is checked by the caller before any of this is trusted, but the trailing
       // loadout must still decode without throwing on a frame from a build that did not send
       // one — hence the explicit presence byte rather than "read if bytes remain".
@@ -1279,7 +1296,9 @@ export function decodeHeader(r: ByteReader): Decoded {
       // a length inferred from what is left in the frame is a length an attacker chooses.
       const hasToken = r.u8v() === 1;
       const reconnectToken = hasToken ? r.raw(RECONNECT_TOKEN_BYTES) : null;
-      return r.overran ? BAD : { kind: 'hello', version, name, loadout, reconnectToken };
+      return r.overran
+        ? BAD
+        : { kind: 'hello', version, name, skinIndex, loadout, reconnectToken };
     }
     case MsgC.Commands: {
       const snapshotAck = r.u16();

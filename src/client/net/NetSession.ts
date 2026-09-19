@@ -100,6 +100,8 @@ export interface NetSessionDeps {
   readonly skirmish?: SkirmishSink;
   /** The class to send with the `Hello` (Tier 1 #20). See `writeHello`. */
   readonly loadout?: NetLoadout | null;
+  /** The body to send with it, a position in `SKIN_IDS` (M16, B6). */
+  readonly skinIndex?: number;
   /**
    * The reconnect token the handshake was answered with (round 4, F8).
    *
@@ -229,6 +231,7 @@ export class NetSession {
       applyNonReplayed: deps.applyWeapon,
       displayName: deps.displayName,
       loadout: deps.loadout ?? null,
+      skinIndex: deps.skinIndex,
       wantRewindDebug: deps.wantRewindDebug,
       onNewMatch: (welcome) => {
         // A rotation reassigns entity ids, so the identity has to move with it or every

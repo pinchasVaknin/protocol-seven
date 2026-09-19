@@ -44,6 +44,7 @@ import type {
 import type { BombInfo, TagInfo } from '../modes/GameMode';
 import { COMMAND_REDUNDANCY, quantiseCommandInPlace, rejectText } from './Protocol';
 import { copyEntitySnapshot, EFlag, makeEntitySnapshot, type EntitySnapshot } from './Snapshot';
+import { NO_SKIN_INDEX } from '../meta/Skins';
 import type { INetLink } from './Transport';
 import { ByteReader, ByteWriter } from './Wire';
 
@@ -108,6 +109,11 @@ export interface NetClientDeps {
    * handshake — see `writeHello`. Undefined is legal and means the server defaults.
    */
   readonly loadout?: NetLoadout | null | undefined;
+  /**
+   * The body this player wears, as a position in `SKIN_IDS` (M16, B6). Sent with the `Hello`
+   * beside the class; undefined means "declared none" and every other client deals one.
+   */
+  readonly skinIndex?: number | undefined;
   /** Ask the server for the S7 rewind panel feed. */
   readonly wantRewindDebug?: boolean | undefined;
   /**
@@ -477,7 +483,15 @@ export class NetClient {
     const name = withRewindSuffix(this.deps.displayName, this.deps.wantRewindDebug === true);
     // The class rides the handshake, so the seat is built with it rather than reconfigured
     // afterwards. See `writeHello` for the measured cost of the alternative.
-    this.deps.link.send(writeHello(this.writer, name, this.deps.loadout ?? null, this.reconnectToken));
+    this.deps.link.send(
+      writeHello(
+        this.writer,
+        name,
+        this.deps.skinIndex ?? NO_SKIN_INDEX,
+        this.deps.loadout ?? null,
+        this.reconnectToken,
+      ),
+    );
     this.lastPingMs = 0;
     this.rateWindowMs = nowMs();
   }

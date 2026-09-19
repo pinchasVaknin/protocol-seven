@@ -205,6 +205,8 @@ export interface NetworkedMatchOptions {
   readonly skirmish?: SkirmishSink;
   /** M11: the class to send with the `Hello` (Tier 1 #20). */
   readonly loadout?: NetLoadout | null;
+  /** M16, B6: the body to send with it — `skinIndexOf(profile.skinId)`. */
+  readonly skinIndex?: number;
   /** The reconnect capability the handshake was answered with (round 4, F8). */
   readonly reconnectToken?: Uint8Array | null;
   /**
@@ -317,6 +319,7 @@ export class MatchWorld {
             onNewMatch: server.onNewMatch,
             skirmish: server.skirmish,
             loadout: server.loadout,
+            skinIndex: server.skinIndex,
             reconnectToken: server.reconnectToken,
             // Both of these are filled in properly the moment the match exists — see below.
             // They are indirected through `this.match` rather than captured, because the

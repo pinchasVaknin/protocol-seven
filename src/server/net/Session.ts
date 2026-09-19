@@ -29,6 +29,7 @@ import {
 import { CheatState } from '../../shared/cheats/Cheats';
 import { readIncomingName } from '../../shared/net/UrlFlags';
 import type { LoadoutSlot } from '../../shared/meta/Loadouts';
+import { NO_SKIN_INDEX, SKIN_IDS } from '../../shared/meta/Skins';
 import {
   sanitiseNetLoadout,
   type NetLoadout,
@@ -267,6 +268,16 @@ export class Session {
   loadout: LoadoutSlot | null = null;
 
   /**
+   * The body this client declared at its `Hello` (M16, B6): a position in `SKIN_IDS`, or
+   * `NO_SKIN_INDEX`. A fact about the connection, exactly as the loadout is, and held here for
+   * the same reason — it has to survive migration and a reconnect, and both of those seat the
+   * *session*. Clamped at the boundary (S4.16): an index past the table is a client with a
+   * longer table than this server, which the version check already refused, so it reads as
+   * "declared none" rather than as a refusal.
+   */
+  characterIndex: number = NO_SKIN_INDEX;
+
+  /**
    * The match id this client has reported its background build complete for, or -1.
    *
    * Answers `READY_WAIT` (§6.5). Kept per session rather than per instance because the report
@@ -407,7 +418,7 @@ export class Session {
 
     switch (msg.kind) {
       case 'hello':
-        this.handleHello(msg.version, msg.name, msg.loadout, msg.reconnectToken);
+        this.handleHello(msg.version, msg.name, msg.skinIndex, msg.loadout, msg.reconnectToken);
         return;
       case 'commands':
         this.handleCommands(msg.count, msg.snapshotAck);
@@ -479,6 +490,7 @@ export class Session {
   private handleHello(
     version: number,
     name: string,
+    skinIndex: number,
     loadout: NetLoadout | null,
     claim: Uint8Array | null,
   ): void {
@@ -525,6 +537,8 @@ export class Session {
      * build out of step falls back to the server defaults, which is a working game.
      */
     this.loadout = sanitiseNetLoadout(loadout);
+    // The body, before the seat for the same reason: `writePlayer` reads it off the entity.
+    this.characterIndex = skinIndex < SKIN_IDS.length ? skinIndex : NO_SKIN_INDEX;
 
     const joined = this.events.onJoin(this, this.displayName, claim);
     if (joined === null) {

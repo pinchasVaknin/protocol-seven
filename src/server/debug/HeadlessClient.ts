@@ -149,6 +149,12 @@ export interface HeadlessClientOptions {
    */
   readonly loadout?: NetLoadout;
   /**
+   * The body to declare at the `Hello`, a position in `SKIN_IDS` (M16, B6), or undefined to
+   * declare none. `--skins` gives every client a different one and reads them all back
+   * through every other client's snapshots — see `bodiesSeen`.
+   */
+  readonly skinIndex?: number;
+  /**
    * Which ballot option to vote for, or -1 to abstain.
    *
    * Abstaining is not a gap in the harness — §4.20 requires an empty ballot to resolve
@@ -901,6 +907,7 @@ export class HeadlessClient {
       },
       displayName: opts.name,
       loadout: opts.loadout ?? null,
+      skinIndex: opts.skinIndex,
       wantRewindDebug: opts.wantRewindDebug,
       skirmish: {
         onVoteState: (info) => this.onVoteState(info),
@@ -1634,6 +1641,22 @@ export class HeadlessClient {
   /** Whether this client is dropped and has not yet been dialled back in. */
   get droppedOut(): boolean {
     return this.link.state === 'closed';
+  }
+
+  /**
+   * Every entity this client has a snapshot of, with the body the server says it wears (M16,
+   * B6): the `characterIndex` off the newest sample. The `--skins` run asserts against this
+   * that a body declared by one client is the body every other client is told about, which
+   * is the whole claim of the milestone in one map.
+   */
+  get skinIndex(): number | undefined {
+    return this.opts.skinIndex;
+  }
+
+  bodiesSeen(): ReadonlyMap<number, number> {
+    const seen = new Map<number, number>();
+    for (const [entityId, interp] of this.net.remotes) seen.set(entityId, interp.latest.characterIndex);
+    return seen;
   }
 
   report(): HeadlessClientReport {

@@ -25,6 +25,7 @@ import { logger } from '../shared/core/Log';
 import type { SummaryInfo, WelcomeInfo } from '../shared/net/Messages';
 import type { SkirmishSink } from '../shared/net/NetClient';
 import { isArenaInstance, toNetLoadout, type NetLoadout } from '../shared/net/Skirmish';
+import { skinIndexOf } from '../shared/meta/Skins';
 import { applyFrameScale } from './ui/Frame';
 import { LoadingScreen } from './ui/LoadingScreen';
 import { VoteOverlay } from './ui/VoteOverlay';
@@ -2027,6 +2028,9 @@ export class Game {
       const result = await handshake({
         ...join,
         loadout: this.netLoadout(),
+        // The body too (M16, B6): the profile's pick, as the table's index. Once per
+        // connection; a pick made after this is the next connection's.
+        skinIndex: skinIndexOf(this.profile.skinId),
         // Present whatever seat this client last held. Null on a first join, and a token the
         // server does not recognise is an ordinary join rather than a refusal — see
         // `ReconnectRegistry.claim`.
@@ -2048,6 +2052,7 @@ export class Game {
         // point `handshake` has already sent the `Hello`, so this copy is what a *rebuilt*
         // session — a rotation or a migration — will send if it ever reconnects.
         loadout: this.netLoadout(),
+        skinIndex: skinIndexOf(this.profile.skinId),
         skirmish: this.skirmishSink(),
         prebuiltMap: null,
       };

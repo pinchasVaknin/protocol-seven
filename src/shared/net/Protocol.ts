@@ -17,6 +17,16 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v18 (M16, B6): **the body other players see.** `EntitySnapshot` gains `characterIndex` — a
+ * position in `SKIN_IDS`, or 255 for "declared none" — under its own delta bit, on every full
+ * write; `Hello` gains the same byte after the name, sent by every connection with no presence
+ * byte. Until this, a player's skin (M15 B5) was local-first: their own stage and lineup showed
+ * the pick and every other client dealt them a body from a shuffled deck, so two clients
+ * showed the same player as two people. The server has no opinion about a bot's body and
+ * writes 255; the client's deck is the fallback for that, as it was the rule for everybody.
+ * `heightScale`, redundant since M13 C2 and waiting for a bump, deliberately stays in this one
+ * (M16 decision 1): one change per bump is one thing to bisect.
+ *
  * v17 (M13 Phase B, bug 4.3): the **scoreboard is state** — `MsgS.Scoreboard`, the whole row
  * set, sent to a seat when it is seated and whenever the set has changed since that seat last
  * saw it, rate-limited and with a periodic full resend under loss.
@@ -133,7 +143,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 17;
+export const PROTOCOL_VERSION = 18;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

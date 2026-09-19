@@ -2,6 +2,7 @@ import type { StanceId } from '../player/Stance';
 import { STANCES } from '../player/Stance';
 import type { PlayerSimState } from '../player/PlayerState';
 import { ALL_WEAPONS } from '../weapons/WeaponDefs';
+import { NO_SKIN_INDEX } from '../meta/Skins';
 import type { ByteReader, ByteWriter } from './Wire';
 import {
   dequantAngle,
@@ -72,6 +73,7 @@ const F = {
   Spawn: 1 << 10,
   Flinch: 1 << 11,
   Name: 1 << 12,
+  Character: 1 << 13,
 } as const;
 
 /**
@@ -106,6 +108,17 @@ export interface EntitySnapshot {
   health: number;
   /** Index into `ALL_WEAPONS`. 255 means "no weapon", which a dead body has. */
   weaponIndex: number;
+  /**
+   * Index into `SKIN_IDS` — the body this player declared at the `Hello` (M16, B6). 255
+   * (`NO_SKIN_INDEX`) means "declared none": every bot, and a client with nothing to say. The
+   * client deals a body to those from its own deck, which is what it did for everybody before
+   * this field, and what it still does for a body the server has no opinion about.
+   *
+   * Identity, not presentation (decision 5): *who is this* has a name and a team on the wire
+   * already, and the body is the third half of the same fact. How a body is drawn stays the
+   * client's.
+   */
+  characterIndex: number;
   flags: number;
   /** M3 visual serials (`BotVisualState`). The animation seam, replicated verbatim. */
   deathSerial: number;
@@ -130,6 +143,7 @@ export function makeEntitySnapshot(): EntitySnapshot {
     heightScale: 1,
     health: 100,
     weaponIndex: 255,
+    characterIndex: NO_SKIN_INDEX,
     flags: EFlag.Alive,
     deathSerial: 0,
     deathAngle: 0,
@@ -153,6 +167,7 @@ export function copyEntitySnapshot(src: EntitySnapshot, dst: EntitySnapshot): vo
   dst.heightScale = src.heightScale;
   dst.health = src.health;
   dst.weaponIndex = src.weaponIndex;
+  dst.characterIndex = src.characterIndex;
   dst.flags = src.flags;
   dst.deathSerial = src.deathSerial;
   dst.deathAngle = src.deathAngle;
@@ -205,6 +220,9 @@ export function writeEntity(w: ByteWriter, e: EntitySnapshot, base: EntitySnapsh
   if (base === null) {
     mask =
       F.Pos | F.Yaw | F.Pitch | F.Vel | F.Stance | F.Height | F.Health | F.Weapon | F.Flags | F.Name;
+    // The body rides every full write too, even at 255: a fresh entity's baseline says "none",
+    // and a client that never sees the field never asks its deck — see `readEntity`.
+    mask |= F.Character;
     // Serials only ride a full write when they are non-zero: a fresh entity at zero is the
     // client's own default, so spending three fields to say so is waste on every join.
     if (e.deathSerial !== 0) mask |= F.Death;
@@ -219,6 +237,7 @@ export function writeEntity(w: ByteWriter, e: EntitySnapshot, base: EntitySnapsh
     if (qh !== Math.round(base.heightScale * 255)) mask |= F.Height;
     if (e.health !== base.health) mask |= F.Health;
     if (e.weaponIndex !== base.weaponIndex) mask |= F.Weapon;
+    if (e.characterIndex !== base.characterIndex) mask |= F.Character;
     if (e.flags !== base.flags) mask |= F.Flags;
     if (e.deathSerial !== base.deathSerial) mask |= F.Death;
     if (e.spawnSerial !== base.spawnSerial) mask |= F.Spawn;
@@ -244,6 +263,7 @@ export function writeEntity(w: ByteWriter, e: EntitySnapshot, base: EntitySnapsh
   if ((mask & F.Height) !== 0) w.u8v(qh);
   if ((mask & F.Health) !== 0) w.u8v(e.health);
   if ((mask & F.Weapon) !== 0) w.u8v(e.weaponIndex);
+  if ((mask & F.Character) !== 0) w.u8v(e.characterIndex);
   if ((mask & F.Flags) !== 0) w.u8v(e.flags);
   if ((mask & F.Death) !== 0) {
     w.u8v(e.deathSerial & 0xff);
@@ -284,6 +304,7 @@ export function readEntity(r: ByteReader, out: EntitySnapshot): void {
   if ((mask & F.Height) !== 0) out.heightScale = r.u8v() / 255;
   if ((mask & F.Health) !== 0) out.health = r.u8v();
   if ((mask & F.Weapon) !== 0) out.weaponIndex = r.u8v();
+  if ((mask & F.Character) !== 0) out.characterIndex = r.u8v();
   if ((mask & F.Flags) !== 0) out.flags = r.u8v();
   if ((mask & F.Death) !== 0) {
     out.deathSerial = r.u8v();

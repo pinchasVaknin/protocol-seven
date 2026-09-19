@@ -1,6 +1,7 @@
 import { logger } from '../../shared/core/Log';
 import { decodeHeader, writeHello, type WelcomeInfo } from '../../shared/net/Messages';
 import type { NetLoadout } from '../../shared/net/Skirmish';
+import { NO_SKIN_INDEX } from '../../shared/meta/Skins';
 import { HANDSHAKE_TIMEOUT_MS, PROTOCOL_VERSION, rejectText } from '../../shared/net/Protocol';
 import type { NetConditions } from '../../shared/net/NetSim';
 import { withRewindSuffix } from '../../shared/net/UrlFlags';
@@ -80,6 +81,8 @@ export interface HandshakeResult {
 export interface HandshakeOptions {
   /** The player's class, sent with the `Hello` (M11, Tier 1 #20). */
   readonly loadout?: NetLoadout | null;
+  /** The body they wear, as a position in `SKIN_IDS` (M16, B6). Absent means "declared none". */
+  readonly skinIndex?: number;
   /**
    * A seat this client held a moment ago, if it is coming back (round 4, F8).
    *
@@ -141,7 +144,13 @@ export async function handshake(options: HandshakeOptions): Promise<HandshakeRes
    * and their camo strings.
    */
   link.send(
-    writeHello(new ByteWriter(1024), name, options.loadout ?? null, options.reconnectToken ?? null),
+    writeHello(
+      new ByteWriter(1024),
+      name,
+      options.skinIndex ?? NO_SKIN_INDEX,
+      options.loadout ?? null,
+      options.reconnectToken ?? null,
+    ),
   );
 
   try {

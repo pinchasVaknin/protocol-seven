@@ -1,3 +1,4 @@
+import type { SkinId } from '../meta/Skins';
 import { HitboxRig, HUMANOID_RIG, rigLayoutFor } from '../combat/HitboxRig';
 import type { DamageSystem } from '../combat/DamageSystem';
 import { EV, type GameBus } from '../core/Events';
@@ -269,6 +270,15 @@ export class Bot implements Combatant, PathClient {
    */
   get weaponId(): string | null {
     return this.weapons.definition.id;
+  }
+
+  /**
+   * `RenderableActor.characterId` (M16, B6): null. A bot declares no body — the server writes
+   * `NO_SKIN_INDEX` for it and every client deals one from its own deck, which is what the
+   * whole roster got before a player could choose.
+   */
+  get characterId(): SkinId | null {
+    return null;
   }
 
   /**

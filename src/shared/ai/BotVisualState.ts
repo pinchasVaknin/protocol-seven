@@ -1,3 +1,4 @@
+import type { SkinId } from '../meta/Skins';
 import type { StanceId } from '../player/Stance';
 
 /**
@@ -100,6 +101,14 @@ export interface RenderableActor {
    * change at all. Null means an unknown id, and an unarmed body is better than a wrong one.
    */
   readonly weaponId: string | null;
+  /**
+   * The body this actor declared, as a `SKIN_IDS` id, or null to let the client deal one (M16,
+   * B6). A remote player's is `skinIdAt(EntitySnapshot.characterIndex)`; a bot's is null,
+   * because the server has no opinion about a bot's body and every client deals its own. The
+   * resolver reads `characterId ?? selector.characterIdFor(...)`, so null is "deal me one",
+   * which is what every body got before the wire carried a choice.
+   */
+  readonly characterId: SkinId | null;
   /** Semantic state used to choose a visual animation. See `ActorAnimationInput`. */
   readonly animation: ActorAnimationInput;
   /**

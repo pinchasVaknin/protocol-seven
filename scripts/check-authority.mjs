@@ -55,6 +55,24 @@ const MIGRATED = [
       'client, so it is zero on a dedicated server. MatchFlow.teamScore prefers the value off ' +
       'the snapshot header and falls back to the mode in single-player.',
   },
+  {
+    fact: 'the body a player wears',
+    // The random deal: `selector.characterIdFor(...)` or `characterSelector.characterIdFor(...)`.
+    // Not `lineup.characterIdFor(...)`, which is the *resolved* accessor that prefers the wire.
+    pattern: /(?:character)?[Ss]elector\s*\.\s*characterIdFor\s*\(/g,
+    under: 'src/client',
+    // The deal is legitimate only as the fallback behind the declared body: a `??` on the line
+    // means the wire (or the podium's `declared`) was read first. A call with no `??` is the
+    // local copy standing where the wire should — the M16 B6 regression, one client dealing a
+    // body another client was told a different name for.
+    guardedBy: /\?\?/,
+    instead: 'actor.characterId ?? selector.characterIdFor(actor.entityId)',
+    because:
+      'RandomCharacterSelector deals a body from a per-match deck, so two clients deal one ' +
+      'player two bodies. Since M16 B6 the body is on the wire (EntitySnapshot.characterIndex, ' +
+      'RenderableActor.characterId); the selector is the fallback for a body that declared ' +
+      'none — a bot, or an older client — and must be read only after it.',
+  },
 ];
 
 /**
@@ -170,6 +188,15 @@ function* sources(dir) {
   }
 }
 
+/** The whole line an index falls on, for testing a per-rule guard against it. */
+function lineOf(source, index) {
+  let from = index;
+  while (from > 0 && source[from - 1] !== NEWLINE) from--;
+  let to = index;
+  while (to < source.length && source[to] !== NEWLINE) to++;
+  return source.slice(from, to);
+}
+
 /** Line number of an index, so a violation points at a line rather than at an offset. */
 function lineAt(source, index) {
   let line = 1;
@@ -189,6 +216,9 @@ for (const rule of MIGRATED) {
     rule.pattern.lastIndex = 0;
     let match;
     while ((match = rule.pattern.exec(code)) !== null) {
+      if (rule.guardedBy !== undefined && lineOf(code, match.index).match(rule.guardedBy) !== null) {
+        continue;
+      }
       const rel = path.relative(ROOT, file).replace(/\\/g, '/');
       problems.push(
         `${rel}:${lineAt(code, match.index)} reads the local copy of ${rule.fact}. ` +

@@ -203,7 +203,12 @@ export class MenuSkirmish extends Disposable {
       () => this.bots.bots,
       () => this.viewer,
       deps.anisotropy(),
-      (actor) => deps.characterAssets.avatarProvider(characterDefinition(selector.characterIdFor(actor.entityId))),
+      // Bots only, so `characterId` is always null and this is the deal — but written as the
+      // fallback so the one authority rule holds here too (M16, B6).
+      (actor) =>
+        deps.characterAssets.avatarProvider(
+          characterDefinition(actor.characterId ?? selector.characterIdFor(actor.entityId)),
+        ),
     );
     // No nameplates, no health bars, no pads: a backdrop is a picture, not a HUD.
     this.renderer.setIndicatorsVisible(false);

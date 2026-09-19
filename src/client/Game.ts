@@ -89,6 +89,7 @@ import { CharacterAssetService } from './characters/CharacterAssetService';
 import {
   characterDefinition,
   DEFAULT_CHARACTER_ID,
+  type CharacterId,
 } from './characters/CharacterCatalog';
 import { RandomCharacterSelector } from './characters/RandomCharacterSelector';
 import type { LineupSource } from './ui/EndOfMatch';
@@ -1108,7 +1109,10 @@ export class Game {
     return {
       characterIdFor: (entityId) => {
         if (entityId === localId) return this.profile.skinId;
-        return selector === null ? DEFAULT_CHARACTER_ID : selector.characterIdFor(entityId);
+        // The body the actor declared (M16, B6), or the deal for one who did not — the same
+        // preference the live resolver makes, so the podium shows the player the match did.
+        const declared = this.declaredCharacterId(match, entityId);
+        return declared ?? (selector === null ? DEFAULT_CHARACTER_ID : selector.characterIdFor(entityId));
       },
       weaponIdFor: (entityId) => {
         if (entityId === localId) return match.weapons.definition.id;
@@ -1118,6 +1122,18 @@ export class Game {
         return null;
       },
     };
+  }
+
+  /**
+   * The body a rendered actor declared (M16, B6), or null for one that declared none or that
+   * the renderer never saw. `weaponIdFor` loops the same list; the skin is the podium's other
+   * per-body fact.
+   */
+  private declaredCharacterId(match: Match, entityId: number): CharacterId | null {
+    for (const actor of match.actorsForRender()) {
+      if (actor.entityId === entityId) return actor.characterId;
+    }
+    return null;
   }
 
   // -- the loadout doctrine -------------------------------------------------
@@ -1568,8 +1584,11 @@ export class Game {
       renderer: this.renderer,
       textures: this.textures,
       characterAvatarProvider: (actor) =>
+        // The body the player declared (M16, B6), or the deal for one who did not — the
+        // fallback the `CharacterAvatarProvider` comment promised. A bot's `characterId` is
+        // null, so the whole roster still deals exactly as it did before the wire.
         this.characterAssets.avatarProvider(
-          characterDefinition(characterSelector.characterIdFor(actor.entityId)),
+          characterDefinition(actor.characterId ?? characterSelector.characterIdFor(actor.entityId)),
         ),
       viewmodel: this.viewmodel,
       cameraRig: this.cameraRig,

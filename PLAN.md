@@ -1851,6 +1851,149 @@ then R4 in any order, each item its own commit, none depending on another. Every
 `npm run layout` and `npm run check` green; the pane numbers in this record when each group
 closes, as a `done` subsection under this one.
 
+#### R1 — done (session of 2026-09-16): the chrome on the window, two states, a line
+
+**Built** (`77eec4b`, R1.1 alone; `578ece8`, R1.2–R1.4). `createScreen` returns the third
+box: `viewport`, the window's size in frame pixels — `--frame-w` and `--frame-h` written by
+`applyFrameScale` beside `--ui-scale`, the frame's ramp tokens moved onto it from `.op-frame`
+(`tokens.css`), the 1920×1080 frame centred inside it with no zoom of its own; `Frame.test.ts`
+holds the arithmetic (both ≥ 1920 / 1080, one exact). The menu's header and footer mount on
+the viewport at the frame's padding from the *window's* edges and level with the frame's top;
+the probe's skip list gains the box and the *outside* rule is unchanged. Then the two states:
+`.op-nav:hover` keeps the lift and runs the sweep as a keyframe (`op-nav-sweep`, 0.55 s, on
+`::after` — it plays on every entry and never backwards), `:focus-visible` is the accent on
+the leading rule and the top hairline; `Game.statusLine()`, `MenuDeps.statusLine` and the
+probe fixture's line deleted (Game −7, GameScreens −2); `MENU_LINE = 'FIGHT · SURVIVE · WIN'`
+(decision 9) in the footer's left corner at `op-label`, the right corner empty.
+
+**Measured, in the pane at 1280×600** (`--ui-scale` 0.556, `--frame-w` 2304 px, `--frame-h`
+1080): the brand's left edge **35.55 px** from the window's — 64 × 0.556 = 35.56, was 142 —
+the card's right edge **35.55** from the window's right, the footer spanning 35.55 → 1244.45.
+The focused button at rest (PLAY SOLO — the pane has no server, so PLAY is disabled and the
+focus lands one down): the rest gradient `rgba(28, 32, 39, .92)`, the rule `--c-line-hi`,
+`::after` at **−45 %** (−268.7 px), no animation; under `:hover` the lift `rgba(40, 45, 54,
+.96)`, the accent rule, `#f4f6f8`, and `::after` at 603 px — the sweep's end, `op-nav-sweep`
+having run once. One thing the pane could not reproduce: its script-moved focus matched
+neither `:focus-visible` nor `:hover`, where the report's Chrome matched the first — the
+two rules are separate either way, which is the fix.
+
+#### R2 — done (session of 2026-09-16): the card, and the profile behind its gear
+
+**Built** (`86cc13a`; `PlayerCard.ts` 103 new, `ProfilePanel.ts` 371 new, `app.css` +421/−22,
+`Menus.ts` 41/48, `GameLoadout.profileLine` and its only reader gone). The card, right-aligned
+in the window's header on both screens: the chosen skin's thumbnail (B5's 320×400 render,
+`object-fit: cover` from the top into 64 px) with the presence dot on its corner — **honest**
+(decision 10): `is-online` when `serverConfigured()` is, titled *Server configured* / *No
+server configured*; the callsign at `--t-lead`, LEVEL N (PRESTIGE ★ N over 55) beneath; the
+rule; the gear, a sixth glyph drawn as the other five are. `MenuDeps` loses `profileLine`,
+`displayName` and `onDisplayName` and gains `profile`, as the editor already had it. The panel
+(decision 12: a panel, not a state) slides over either frame from the gear, closes on its ✕ and
+on Escape — `Menus.handleEscape` is the panel's, and it is Escape's only customer on the menu —
+with three tabs: **OVERVIEW** (the avatar at 240×300 — the plan said 160×200 and the panel had
+the room — the callsign field moved here with its rules, the level with the XP bar and *N XP TO
+NEXT*, prestige and tokens, the record); **ACHIEVEMENTS** (`Profile.challengeRows()`, thirty
+rows in six category sub-tabs, done in the accent); **APPEARANCE** (the seven thumbnails,
+`Profile.setSkin`, the editor's strip untouched). A host's `refresh` runs on the close. Three
+probe surfaces — `menu/profile/overview`, `/achievements`, `/appearance` — at the eight
+viewports.
+
+**Measured.** The card in the pane: `OPERATOR-011 · LEVEL 1`, the dot grey (no server
+configured — the fact PLAY's disabled state states). The three surfaces PASS at the eight
+viewports; `npm run check` green.
+
+#### R3 — done (session of 2026-09-16): the editor's frame
+
+**Built** (`31942fa`; `LoadoutEditor.ts` 1 387 → 1 427 with 175/135 lines moved, `meta.css`
+185/134, `CharacterStage.ts` 41/22, `ScreenHeader.ts` 26 new). One header for both screens
+(`ScreenHeader`: the mark, the place — the wordmark with ARENA FPS on the menu, CREATE A CLASS
+with its subtitle on the editor — and the card on the right; Settings keeps its own title),
+mounted on the viewport as R1.1 mounts the menu's, the editor's frame keeping the header's 72
+px as top padding. `paintLevel` and `paintActions` leave the header (R3.2): the level is on the
+card, the bar is in OVERVIEW. The class strip on a second row (R3.3, decision 13): **five
+plates at 300 × 44 with the nav's torn cut**, `1 · ASSAULT` … `5 · MARKSMAN`, the open one
+`is-on`, the equipped one carrying EQUIPPED at its right end and the open unequipped one EQUIP
+in the same place; the name is edited *on* the open plate — no box, a rule beneath while it is
+written, the `keydown` stop kept — and the other four are labels. *Save and exit* under the
+list (R3.4): a foot track, `op-actions`, right-aligned, the button at 48 px. The arithmetic
+(R3.5, decision 11): the column **868**, four tracks and three gaps, the head 40; **option bars
+80 with 8 px gaps, pages 8 / 6** — 704 in 744 without the band, 528 in 592 with it, the six
+category bars 740 in 784 — and the four places the sum lives agree (`PAGE_WITH_BAND` /
+`PAGE_FULL`, the `.lo-right` comment, the `.lo .op-frame` comment: 32 + 72 + 16 + 44 + 16 + 868
++ 32 = 1080). The arrows gone (R3.6): `arrowButton`, `.lo-stage__bar`, `nudge()`, `NUDGE`,
+`SETTLE` and `target` deleted, the status a label over the canvas's foot, the skin strip
+re-based to it. The fling (R3.7): `pointermove` keeps a velocity blended 0.7 / 0.3, `pointerup`
+hands it to `spin` clamped at ±12 rad/s — or zero if the hand had stalled 80 ms before letting
+go — and `tick` turns by `(IDLE_TURN + spin) · dt`, decaying `spin` by `exp(−2.2 · dt)`;
+`hold()` sets `angle` alone. CHANGE A SKIN at `align-self: center` (R3.8), the strip untouched.
+
+**Measured.** `npm run layout` PASS on the ten editor surfaces at the eight viewports. In
+the pane, the bars **80 frame px with an 8 px gap** (44.4 / 4.4 window px at 0.556).
+The fling, `flingSpeed` sampled after a synthetic drag of 12 moves at 14 px / 16 ms (the
+hand at 12.84 rad/s over the idle, clamped): **12.0 at release, 7.18 at 0.25 s, 3.99 at
+0.5 s, 1.33 at 1 s, 0.44 at 1.5 s, 0.14 at 2 s, 0.015 at 3 s** — monotone toward the idle
+rate, and within a hundredth of 12 · e^(−2.2 t) at every sample, which is the constant
+proved rather than the code read. The plates: five, EQUIPPED on the first, the disc turning
+under the operator with the M4.
+
+#### R4 — done (session of 2026-09-16): the list and the stage
+
+**Built** (`a1bd6d0`; `LoadoutEditor.ts` 36/15 → 1 448, `meta.css` +104 → 1 319,
+`CamoTextures.ts` +19, `CategoryIcons.ts` a ninth path, `WeaponMesh.ts` 7/2,
+`CharacterStage.ts` 22/15 → 501; then `853892c` for the bug the first commit exposed).
+**R4.1**: chips carry a rank — `lead` / `peer` / `detail`, set by the box: a weapon `lead +
+detail…`, equipment, perks and streaks all `peer`, the field upgrade `lead`; a peer is the
+lead's type at `--t-body` with the metal, in a row separated by thin rules, an empty tier a dim
+peer. **R4.2**: three rules — `.lo-bar--opt` carries `--c-accent-dim` on its leading edge,
+`.is-on` the full accent and the glow, `.is-locked` a transparent edge at 0.55 with the padlock
+(`lock` in `CategoryIcons`) before the requirement; the category bars keep the neutral rule.
+**R4.3**: `.lo-stage__actions { justify-content: center }`. **R4.4**:
+`heldWeaponMaterial(anisotropy, camo = null)` → `sharedSurfaces(anisotropy, camo)`, the camo
+set's gunmetal being the pattern and already cached per process;
+`CharacterStage.setWeapon(weaponId, camo)` keys its assets by `weaponId|camo`; `refreshStage`
+passes `equipped.camo`; `StageFigure.camo` optional, so D's lineup carries none (the wire has
+none to give). `BotRenderer` keeps the plain gunmetal. **R4.5**: `camoPicture(id, anisotropy)`
+— the texture's own 256 px canvas through `toDataURL` once per camo per process, kept beside
+the textures, `camoPicturesBuilt` counting the reads; `tile()` takes a `picture`,
+`.lo-bar--camo` puts it on the right 45 % under `linear-gradient(to right, rgb(10 12 15) 0 40%,
+transparent 62%)`, the glyph slot collapsed, the name and requirement in plain white on the
+dark left; `is-on` puts the glow under the pattern as a second layer; NONE keeps the glyph.
+
+**Found while here — two, fixed.** First (`853892c`, the human's, the same day):
+`CharacterSkin.setWeapon` compared the asset's `weaponId` and returned early, so a finish
+picked on the stage changed the cached asset and not the mesh in the operator's hands; it
+compares the asset now — the same weapon in a new finish is a new asset. That commit also
+re-indented the file to four spaces; restored to the tree's two in the close, the fix kept
+verbatim. Second (the close): `.lo-bar.is-on` wrote `border-left-color: var(--c-accent)` and
+then the `border-color` shorthand *after* it, so the equipped bar's leading edge was the dim
+accent — invisible while every other bar was neutral, and after R4.2 the same edge as an
+unlocked bar's. Measured before the swap: equipped `rgb(44, 125, 148)`, unlocked the same;
+after: equipped **`rgb(63, 169, 199)`**, unlocked `rgb(44, 125, 148)`, locked `transparent`
+at 0.55, the category bar `rgb(57, 64, 75)`. Two declarations, one order.
+
+**Measured, in the pane at 1280×600.** SAVE / CANCEL's centre **372.2 window px, the stage's
+372.2**. The operator holding the M4 in TIGER; `CharacterStage`'s renderer **5 g / 13 t flat
+over 20 MENU ↔ LOADOUT cycles** with the camo'd weapon held — 13 rather than the plain
+weapon's 11 because the camo set's two maps are on the GPU beside the default set's, and
+*flat* is the claim: the material is shared and the count does not move. The camo data URIs
+**six, built once** — `camoPicturesBuilt` 6 on the SKIN tab's first open and 6 after it was
+closed, reopened, and the editor left and re-entered; 5 / 12 / 36 / 8 / 107 / 67 kB (PNG;
+the estimate said ~40 each, the mean is 39). The padlock shown on every locked bar and
+hidden on the rest. No console error.
+
+#### The gate
+
+`npm run layout` **PASS — 32 surfaces × 8 viewports**, the three profile surfaces among them;
+`npm run check` green (138 tests; boundaries 366 files); nothing in `shared/` or `server/`, so
+the seeded harness and the content probe are byte-identical by construction. The client build
+**1 570.37 kB raw / 453.73 gzip, CSS 70.58** — E left it at 1 555.81 / 449.42 / 60.22, so the
+round is **+14.56 / +4.31 kB of script and +10.36 of stylesheet**, the panel and the plates
+most of it.
+
+**Needs a browser:** the ones the report listed — whether the peers' row reads as three
+things or one line; the padlock at 55 %; the pattern's fade at the bar's middle; 2.2 as the
+damping on a real wheel; the line at the bottom left; the plates' torn cut at 44 px — and
+one more: the sweep at 0.55 s on a pointer that crosses all four buttons at once.
+
 ## What each item breaks
 
 - **B1/B2's fix is replaced, not removed.** The `safe center` + `overflow: auto` reasoning in
@@ -1932,3 +2075,9 @@ after it. **The five decisions were taken the same day, every one on the recomme
 (FIGHT · SURVIVE · WIN; the dot honest; bars 80 px at 8 / 6; a panel; the plates), so nothing
 is waiting: the next thing built is **R1.1**, alone, through the probe, then the rest in the
 order the report gives.
+
+**Closed (2026-09-19).** R1–R4 built and recorded above with the pane's numbers; the gate green
+— `npm run layout` PASS at 32 surfaces × 8 viewports, `npm run check` green, 138 tests — and
+the client at 1 570.37 kB / 453.73 gzip. The open item E left, the ~500 ms skins parse on the
+page's first menu, is carried into the next milestone's table rather than decided here. This
+section moves to `docs/archive/plan/22-m15-front-end.md`; Milestone 16 opens on B6.

@@ -4,9 +4,11 @@ import { nodeClock } from './NodeClock';
 import {
   APPROACH_MAX_SECONDS,
   collidingSamples,
+  COUNTDOWN_SECONDS,
   EYE_RADIUS,
-  OBJECTIVES_MAX_SECONDS,
-  OWN_VIEW_SECONDS,
+  introSeconds,
+  matchStartSeconds,
+  objectivesFor,
   planIntro,
   PULLBACK_SECONDS,
   RETURN_SECONDS,
@@ -29,8 +31,9 @@ import { bakeNavmesh } from '../shared/world/NavBake';
  *   1. **No sample is inside a collider.** A 30 cm sphere at the eye against the map's own
  *      `CollisionWorld`, the test movement uses. A camera that clips a wall on the way to the
  *      centre is the one thing the brief's "like a normal human path" forbids.
- *   2. **The plan fits the freeze.** Its segments total no more than the ten seconds less the
- *      return blend and the player's own second, and each phase is inside its own budget.
+ *   2. **The plan fits the freeze.** Its segments total no more than `introSeconds` — the
+ *      freeze less the return blend and the countdown (M17, C2) — each phase is inside its own
+ *      budget, and every objective the mode has is visited, because the freeze was sized for it.
  *
  * It prints the route lengths, what the approach trimmed, the overview's distance (and what
  * clamped it), the objectives visited and any whip that fell back to the arc — so the
@@ -41,7 +44,6 @@ import { bakeNavmesh } from '../shared/world/NavBake';
  *   node dist-server/intro.js --debug   (names the collider the first bad sample is in)
  */
 
-const FREEZE_SECONDS = 10;
 const FOV_DEG = 60;
 const SAMPLE_STEP = 0.25;
 
@@ -50,6 +52,9 @@ interface Row {
   readonly mode: string;
   readonly spawn: string;
   readonly plan: IntroPlan;
+  /** The mode's intro budget on this map, and the freeze it sets. */
+  readonly budget: number;
+  readonly freeze: number;
   readonly hits: number;
   readonly firstHit: string;
   readonly overBudget: string[];
@@ -81,7 +86,7 @@ function main(): void {
           modeId: mode.id,
           spawn: spawn.position,
           fovDeg: FOV_DEG,
-          freezeSeconds: FREEZE_SECONDS,
+          freezeSeconds: matchStartSeconds(map.def, mode.id),
         });
         const bad = collidingSamples(plan, collision.collision, SAMPLE_STEP, EYE_RADIUS);
         const first = bad[0];
@@ -102,8 +107,12 @@ function main(): void {
           console.log(`  debug ${map.name} ${mode.id} ${spawn.team}: first bad sample ${first.segment} at (${fmt(first.x)}, ${fmt(first.y)}, ${fmt(first.z)}); nearest waypoint ${fmt(nearest, 2)} m; ${near.join(' | ')}`);
         }
         const overBudget: string[] = [];
-        const budget = FREEZE_SECONDS - RETURN_SECONDS - OWN_VIEW_SECONDS;
+        const budget = introSeconds(map.def, mode.id);
         if (plan.seconds > budget + 1e-6) overBudget.push(`total ${fmt(plan.seconds, 2)} s > ${fmt(budget, 2)} s`);
+        const wanted = objectivesFor(map.def, mode.id).length;
+        if (plan.objectives.length !== wanted) {
+          overBudget.push(`objectives ${plan.objectives.length} of ${wanted} visited`);
+        }
         const approach = plan.segments.find((s) => s.kind === 'approach');
         if (approach !== undefined && approach.seconds > APPROACH_MAX_SECONDS + 1e-6) {
           overBudget.push(`approach ${fmt(approach.seconds, 2)} s > ${APPROACH_MAX_SECONDS} s`);
@@ -112,14 +121,13 @@ function main(): void {
         if (pullback !== undefined && Math.abs(pullback.seconds - PULLBACK_SECONDS) > 1e-6) {
           overBudget.push(`pullback ${fmt(pullback.seconds, 2)} s`);
         }
-        if (plan.objectiveSeconds > OBJECTIVES_MAX_SECONDS + 1e-6) {
-          overBudget.push(`objectives ${fmt(plan.objectiveSeconds, 2)} s > ${OBJECTIVES_MAX_SECONDS} s`);
-        }
         rows.push({
           map: map.name,
           mode: mode.id,
           spawn: `${spawn.team}@(${fmt(spawn.position.x, 0)}, ${fmt(spawn.position.z, 0)})`,
           plan,
+          budget,
+          freeze: matchStartSeconds(map.def, mode.id),
           hits: bad.length,
           firstHit:
             first === undefined
@@ -140,7 +148,7 @@ function main(): void {
     if (verdict === 'FAIL') failures++;
     console.log(
       `${verdict.padEnd(4)} ${row.map.padEnd(8)} ${row.mode.padEnd(4)} ${row.spawn.padEnd(16)} ` +
-        `${fmt(p.seconds, 2)}s  approach ${fmt(p.approachMetres, 0)}m` +
+        `${fmt(p.seconds, 2)}s of ${fmt(row.budget, 1)} (freeze ${fmt(row.freeze, 1)})  approach ${fmt(p.approachMetres, 0)}m` +
         (p.trimmedMetres > 0 ? ` (trimmed ${fmt(p.trimmedMetres, 0)}m)` : '') +
         `  overview ${fmt(p.overviewDistance, 0)}m` +
         (p.objectives.length > 0 ? `  objectives ${p.objectives.join('→')}` : '') +
@@ -160,7 +168,7 @@ function main(): void {
   }
   console.log(
     `INTRO CHECK PASSED — ${rows.length} plans, no sample inside a collider at ${SAMPLE_STEP} m / r ${EYE_RADIUS} m, ` +
-      `every plan within ${FREEZE_SECONDS - RETURN_SECONDS - OWN_VIEW_SECONDS} s.`,
+      `every plan within its mode's intro budget, every objective visited, the freeze the intro plus ${RETURN_SECONDS} + ${COUNTDOWN_SECONDS} s.`,
   );
 }
 

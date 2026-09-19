@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { RenderableActor } from '../../shared/ai/BotVisualState';
 import type { BotTeam } from '../../shared/ai/Combatant';
+import { NO_SPECTATOR_TARGET } from '../../shared/modes/SpectatorTarget';
 import { relationTo, type ViewerContext } from '../../shared/ui/TeamColour';
 import { ActorIndicator, buildActorIndicatorAssets } from './ActorIndicator';
 import { BotMesh, buildBotAssets, type BotAssets } from './BotMesh';
@@ -78,6 +79,16 @@ export class BotRenderer {
   private readonly seen = new Map<number, { death: number; spawn: number; flinch: number }>();
   private readonly present = new Set<number>();
   private gltfAvatarCreationsRemaining = 0;
+  /**
+   * The actor whose eyes the camera is in (M17, C2), or `NO_SPECTATOR_TARGET`.
+   *
+   * A dead player in Search & Destroy watches through a teammate's eyes (§6.8), and the
+   * camera sat inside that teammate's head — its own skull and nameplate in the middle of
+   * the view, which was the report. The body a camera is *inside* is not drawn, exactly as
+   * the player's own body is not: its avatar and its indicator are hidden while it is the
+   * one, and shown again the frame it is not.
+   */
+  private eyesOf = NO_SPECTATOR_TARGET;
 
   /**
    * `actors` is a supplier rather than an array so the caller can decide per frame what is
@@ -107,6 +118,11 @@ export class BotRenderer {
    */
   setIndicatorsVisible(on: boolean): void {
     this.indicatorGroup.visible = on;
+  }
+
+  /** Which actor the camera is looking out of this frame; `NO_SPECTATOR_TARGET` for none. See `eyesOf`. */
+  setEyesOf(entityId: number): void {
+    this.eyesOf = entityId;
   }
 
   /** The scene node holding one side's bodies. See `groupA`. */
@@ -145,7 +161,8 @@ export class BotRenderer {
         scale,
         dt,
       );
-      this.indicatorFor(actor).update(
+      const indicator = this.indicatorFor(actor);
+      indicator.update(
         {
           displayName: actor.displayName,
           healthFraction: actor.healthFraction,
@@ -156,6 +173,11 @@ export class BotRenderer {
         dt,
         camera,
       );
+      // The body the camera is inside is not drawn — after `applyEvents`, whose respawn edge
+      // sets the avatar visible, so this is the last word on the frame either way.
+      const seen = actor.entityId !== this.eyesOf;
+      if (mesh.group.visible !== seen) mesh.setVisible(seen);
+      if (indicator.group.visible !== seen) indicator.group.visible = seen;
     }
 
     if (this.avatars.size !== this.present.size) this.retireAbsent();

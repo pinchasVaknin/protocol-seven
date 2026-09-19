@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  COUNTDOWN_SECONDS,
   planIntro,
   RETURN_SECONDS,
   type IntroPlan,
@@ -39,8 +40,12 @@ import type { MatchWorld } from '../MatchWorld';
  * ## Skipping
  *
  * Any key or mouse button skips to the return blend, except the digits that pick a class:
- * the quick selector is the reason the freeze is ten seconds long, and a class pick must not
- * cost the player the overview. `Escape` is left alone too — it is the pause key.
+ * the quick selector lives in the freeze, and a class pick must not cost the player the
+ * overview. `Escape` is left alone too — it is the pause key. In single-player the skip also
+ * cuts the freeze itself down to the return and the countdown (`MatchFlow.shortenWarmup`,
+ * M17 C2): the freeze is sized to the intro, and a player who has skipped the intro should
+ * not sit through the time it would have taken. Over the network the freeze is the server's
+ * and the skip ends the camera alone.
  */
 
 export interface IntroCameraDeps {
@@ -236,6 +241,8 @@ export class IntroCamera {
     // The return has already begun on its own; a skip changes nothing.
     if (t >= plan.seconds) return;
     this.skippedAt = t;
+    // Solo: the freeze follows the camera. A no-op on a replicated flow.
+    flow.shortenWarmup(RETURN_SECONDS + COUNTDOWN_SECONDS);
   }
 }
 

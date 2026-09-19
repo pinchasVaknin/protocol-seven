@@ -309,8 +309,9 @@ export function matchCaption(phase: MatchPhase, inWarmupArena: boolean): string 
  *
  * ## Which window, and why it is that one
  *
- * The **ten-second pre-match freeze of round one** — `MatchFlow.MATCH_START_SECONDS`, which
- * round two lengthened from three for the quick class selector. It is the only moment in a
+ * The **pre-match freeze of round one** — `MatchFlowDeps.matchStartSeconds`, the intro's
+ * length plus the countdown since M17 C2; ten seconds flat before that, which round two had
+ * lengthened from three for the quick class selector. It is the only moment in a
  * match when a player is standing still, cannot be shot, and has not yet decided anything. The
  * later rounds of a Search & Destroy series get three seconds and no brief: by round two the
  * player has played round one, and a banner over the crosshair at the moment a one-life round

@@ -68,6 +68,7 @@ import type { XpReport } from '../shared/meta/XpRules';
 import type { GameMode, HeaderSlot } from '../shared/modes/GameMode';
 import { isObjectiveProvider } from '../shared/ai/ObjectiveIntent';
 import { MatchFlow } from '../shared/modes/MatchFlow';
+import { matchStartSeconds } from '../shared/cinematic/IntroPlan';
 import type { MapEntry, ModeEntry } from '../shared/modes/ModeRegistry';
 import { Health, type HealthConfig } from '../shared/player/Health';
 import type { MovementConfig } from '../shared/player/MovementConfig';
@@ -251,11 +252,13 @@ export interface MatchDeps {
   readonly localTeam?: BotTeam;
 
   /**
-   * The name this client is known by. `PLAYER_NAME` in single-player.
+   * The name this client is known by; `PLAYER_NAME` when absent.
    *
    * The scoreboard registers the local row before the first snapshot arrives, so without this
    * the player's own row read `OPERATOR` while every other client — and the killfeed, which
-   * resolves names from the snapshot — called them by the name they joined with.
+   * resolves names from the snapshot — called them by the name they joined with. Single-player
+   * passes the profile's callsign here too since M17 C2: the local roster's `PlayerCombatant`
+   * and the score row both take it, so the killfeed and the board say what the card says.
    */
   readonly localName?: string;
 }
@@ -477,6 +480,7 @@ export class Match {
        * inside it. See `PlayerCombatant.entityId` for the three faults that produced.
        */
       this.identity.entityId,
+      deps.localName ?? PLAYER_NAME,
     );
     this.damage.register(this.playerCombatant);
     this.selfDamage = makeDamageRequest(deps.weaponDef);
@@ -594,6 +598,8 @@ export class Match {
        * methods the caller remembers not to invoke.
        */
       authoritative: deps.networked !== true,
+      // The freeze the intro is sized to (M17, C2) — the same number the server computes.
+      matchStartSeconds: matchStartSeconds(deps.map.def, this.mode.id),
       onSidesSwapped: (swapped) => this.bots.spawns.setSideSwap(swapped),
     });
     this.bots.respawnPolicy = {
@@ -2189,6 +2195,8 @@ export class Match {
     this.anim.update(drive, this.deps.viewmodelConfig, dt);
 
     this.range?.updateVisuals(alpha, camera);
+    // The body a dead player is watching through is not drawn (M17, C2) — see `BotRenderer.eyesOf`.
+    this.botRenderer.setEyesOf(this.spectatorTargetId);
     this.botRenderer.update(alpha, dt, camera);
     this.fx.update(dt);
     this.equipment.render(alpha, dt, camera);

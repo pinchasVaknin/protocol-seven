@@ -177,6 +177,13 @@ export interface MapEntry {
   readonly tierMix: readonly BotTier[];
   /** Whether the M2 target range is built into this map. */
   readonly targetRange: boolean;
+  /**
+   * A development map (M17, C2): never drawn behind the menu, and on Play Solo offered as the
+   * TESTBED card alone — entered as the Shooting Range, with no mode and no difficulty to
+   * choose (decision 5). The greybox is the one; a fourth real map is `false` here and gets
+   * everything the three have.
+   */
+  readonly testbed: boolean;
 }
 
 export const MAPS: readonly MapEntry[] = [
@@ -189,6 +196,7 @@ export const MAPS: readonly MapEntry[] = [
     teamSize: 5,
     tierMix: ['REGULAR', 'HARDENED', 'RECRUIT', 'REGULAR', 'VETERAN', 'HARDENED', 'REGULAR', 'RECRUIT'],
     targetRange: false,
+    testbed: false,
   },
   {
     id: DUNES_MAP.id,
@@ -200,6 +208,7 @@ export const MAPS: readonly MapEntry[] = [
     teamSize: 5,
     tierMix: ['REGULAR', 'HARDENED', 'RECRUIT', 'REGULAR', 'VETERAN', 'HARDENED', 'REGULAR', 'RECRUIT'],
     targetRange: false,
+    testbed: false,
   },
   {
     id: DEPOT_MAP.id,
@@ -209,6 +218,7 @@ export const MAPS: readonly MapEntry[] = [
     teamSize: 5,
     tierMix: ['HARDENED', 'REGULAR', 'VETERAN', 'REGULAR', 'HARDENED', 'RECRUIT', 'REGULAR', 'VETERAN'],
     targetRange: false,
+    testbed: false,
   },
   {
     id: GREYBOX_MAP.id,
@@ -218,8 +228,33 @@ export const MAPS: readonly MapEntry[] = [
     teamSize: 4,
     tierMix: ['REGULAR', 'HARDENED', 'RECRUIT', 'REGULAR'],
     targetRange: true,
+    testbed: true,
   },
 ];
+
+/** The maps a player is shown as maps: everything that is not a testbed. */
+export const PLAYABLE_MAPS: readonly MapEntry[] = MAPS.filter((m) => !m.testbed);
+
+/**
+ * The map to draw behind the menu (M17, C2): one of the real maps, at random, and not the one
+ * that was there last.
+ *
+ * The backdrop used to be the solo picker's map — so the menu showed the last thing picked,
+ * across a reload, and showed the greybox whenever that was it. Decoupled: a roll over
+ * `PLAYABLE_MAPS` on `roll` in [0, 1), skipping `previous` when there is anything else to
+ * show, so a return to the menu is a different picture from the one it left. Pure in the
+ * roll so the caller decides where the entropy comes from — a seeded `Rng` on the clock in
+ * the client, since `Math.random` is banned (S2) and this is the one draw nothing gameplay
+ * reads.
+ */
+export function rollBackdropMap(roll: number, previous: string | null): MapEntry {
+  const pool = PLAYABLE_MAPS.filter((m) => m.id !== previous);
+  const candidates = pool.length > 0 ? pool : PLAYABLE_MAPS;
+  const first = candidates[0];
+  if (first === undefined) throw new Error('no map to draw behind the menu');
+  const clamped = Math.min(Math.max(roll, 0), 0.999999);
+  return candidates[Math.floor(clamped * candidates.length)] ?? first;
+}
 
 export const DEFAULT_MODE_ID: GameModeId = 'TDM';
 export const DEFAULT_MAP_ID = FOUNDRY_MAP.id;

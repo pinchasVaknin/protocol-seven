@@ -20,9 +20,10 @@ const log = logger('backdrop');
 /**
  * The menu's backdrop: a world that is not a match (M15, A3).
  *
- * The main menu's left half is the game's own renderer drawing a real map — the one the solo
- * picker points at, so the menu shows where the player is going — with the camera on a slow
- * dolly along one of the map's authored lanes at eye height. It is the brief's "cinematic
+ * The main menu's left half is the game's own renderer drawing a real map — one of the real
+ * maps, rolled by `Game` on the way into the menu (M17, C2; it was the solo picker's map
+ * until then) — with the camera on a slow dolly along one of the map's authored lanes at eye
+ * height. It is the brief's "cinematic
  * background video" answered without a video (decision 1: no video asset exists and none is
  * wanted at 5–20 MB against a 391 kB client), and it is the whole of the backdrop for Phase
  * A; the bodies and the shooting are Phase E — `MenuSkirmish`, below — on E's numbers.
@@ -55,20 +56,25 @@ const log = logger('backdrop');
  * ## One map in the scene, ever
  *
  * `MatchWorld` adds its map to the same `THREE.Scene`. So `Game.buildWorld` disposes this
- * before it constructs one, and `MENU`'s `enter` prepares it again on the way back — for the
- * map the picker names now, which is idempotent when it has not changed and a rebuild when it
- * has. A world outside the state the state machine builds worlds for is a new thing, and this
+ * before it constructs one, and `MENU`'s `enter` prepares it again on the way back — a fresh
+ * roll, since there is nothing here to keep. A world outside the state the state machine
+ * builds worlds for is a new thing, and this
  * is the whole of the rule that keeps it from being two: the backdrop exists only while
  * `Game.world` is null, and `buildWorld` is the one place that makes it non-null.
  *
  * ## The dolly, and the wall it does not go through
  *
- * The middle lane's `a → center` at eye height is a straight line the bots walk, and on the
- * three shipped maps it is a street or a hall. It is still checked: at adoption the segment is
+ * A lane's end to its centre at eye height is a straight line the bots walk, and on the three
+ * shipped maps it is a street or a hall. It is still checked: at adoption the segment is
  * sampled every 25 cm with a standing capsule against the map's own `CollisionWorld`, and the
- * dolly runs over the collision-free prefix only. A prefix shorter than `MIN_RUN` holds the
- * camera at `a` and sways it, which is a worse menu than a moving one and a better one than a
- * camera inside a wall. Phase C's spline replaces the straight line; the check stays.
+ * dolly runs over the collision-free prefix only. **Every lane, from either end** (M17, C2):
+ * the middle lane alone was the rule until Dunes' middle lane turned out to begin inside a
+ * wall at eye height — run 0.0 m, a camera that held and swayed for as long as the menu was
+ * up, which was the report "the DUNES camera is static". The longest free run wins. A map on
+ * which no lane runs `MIN_RUN` gets an **orbit** instead — a slow circle above the lane's
+ * centre, looking down at it, at the first of a few heights and radii whose whole circle the
+ * probe finds free — so no map can hold a still camera again; only a map with no free lane
+ * *and* no free circle falls back to the hold and the sway.
  */
 
 /** The player's eye above the ground it stands on (`PlayerSnapshot.eyeHeight`). */
@@ -86,8 +92,19 @@ const PITCH = -0.035;
 const PROBE_STEP = 0.25;
 const PROBE_RADIUS = 0.3;
 const PROBE_HEIGHT = 1.8;
-/** Below this many free metres the dolly holds and sways instead of pushing. */
+/** Below this many free metres a lane is not a dolly, and the orbit is tried. */
 const MIN_RUN = 4;
+/** The orbit's seconds per revolution. */
+const ORBIT_PERIOD_S = 90;
+/** Heights above the lane centre and radii around it, tried in order for a free circle. */
+const ORBIT_RINGS: readonly Readonly<{ height: number; radius: number }>[] = [
+  { height: 5, radius: 7 },
+  { height: 7, radius: 10 },
+  { height: 9, radius: 13 },
+  { height: 12, radius: 16 },
+];
+/** Samples around the circle the probe checks. */
+const ORBIT_SAMPLES = 24;
 
 export interface MenuBackdropDeps {
   readonly scene: THREE.Scene;
@@ -99,17 +116,33 @@ export interface MenuBackdropDeps {
 }
 
 interface Dolly {
+  readonly kind: 'dolly';
   readonly ax: number;
   readonly ay: number;
   readonly az: number;
   /** Unit direction from `a` toward the lane centre, on the ground. */
   readonly dx: number;
   readonly dz: number;
-  /** The collision-free length the camera may travel from `a`. */
+  /** The collision-free length the camera may travel from `a`; 0 is the hold. */
   readonly run: number;
   /** The lane's own heading, so the camera looks where a player walking it would. */
   readonly yaw: number;
+  /** The lane's name, for the log. */
+  readonly lane: string;
 }
+
+/** The fallback: a circle above the lane's centre, looking at it. */
+interface Orbit {
+  readonly kind: 'orbit';
+  readonly cx: number;
+  readonly cy: number;
+  readonly cz: number;
+  readonly height: number;
+  readonly radius: number;
+  readonly lane: string;
+}
+
+type CameraPath = Dolly | Orbit;
 
 export class MenuBackdrop {
   private readonly deps: MenuBackdropDeps;
@@ -118,7 +151,7 @@ export class MenuBackdrop {
 
   private map: LoadedMap | null = null;
   private particulate: Particulate | null = null;
-  private dolly: Dolly | null = null;
+  private dolly: CameraPath | null = null;
   /**
    * The fight on the map (E), or null with `combat` off or no map yet. Rebuilt with the next
    * seed when its match is over.
@@ -239,7 +272,7 @@ export class MenuBackdrop {
     }
 
     const d = this.dolly;
-    if (d !== null) {
+    if (d !== null && d.kind === 'dolly') {
       // A cosine ease from `a` to the end of the run and back: no stop at either end, and
       // the same push-and-pull however long the run is.
       const period = d.run > 0 ? (2 * d.run) / DOLLY_SPEED : 1;
@@ -247,6 +280,12 @@ export class MenuBackdrop {
       const sway = (SWAY_DEG * Math.PI) / 180 * Math.sin((2 * Math.PI * this.elapsed) / SWAY_PERIOD_S);
       cam.position.set(d.ax + d.dx * s, d.ay + EYE_HEIGHT, d.az + d.dz * s);
       cam.rotation.set(PITCH, d.yaw + sway, 0, 'YXZ');
+    } else if (d !== null) {
+      // The orbit: a slow circle, the camera on it and its eye on the lane's centre a little
+      // above the ground, so the street below is what fills the frame rather than the sky.
+      const theta = (2 * Math.PI * this.elapsed) / ORBIT_PERIOD_S;
+      cam.position.set(d.cx + d.radius * Math.cos(theta), d.cy + d.height, d.cz + d.radius * Math.sin(theta));
+      cam.lookAt(d.cx, d.cy + EYE_HEIGHT, d.cz);
     }
 
     // The same call the match makes, on the same clock: decoration rides the render dt.
@@ -272,13 +311,16 @@ export class MenuBackdrop {
     this.particulate = particulateDef === undefined ? null : new Particulate(particulateDef);
     if (this.particulate !== null) built.root.add(this.particulate.points);
 
-    this.dolly = planDolly(built);
+    this.dolly = planCameraPath(built);
     this.elapsed = 0;
     const d = this.dolly;
     log.info(
-      `${built.def.name} behind the menu: dolly run ${d.run.toFixed(1)} m` +
-        (d.run < MIN_RUN ? ' (held — the lane is blocked at eye height)' : '') +
-        '.',
+      `${built.def.name} behind the menu: ` +
+        (d.kind === 'orbit'
+          ? `orbit over ${d.lane}, ${d.radius} m out and ${d.height} m up (no lane runs ${MIN_RUN} m free at eye height).`
+          : d.run > 0
+            ? `dolly along ${d.lane}, run ${d.run.toFixed(1)} m.`
+            : `held at ${d.lane} — no lane runs ${MIN_RUN} m free at eye height, and no free circle above it.`),
     );
   }
 
@@ -319,57 +361,102 @@ export class MenuBackdrop {
 }
 
 /**
- * The lane to ride and how far along it the camera may go.
+ * The camera's path: the longest free dolly on any lane from either end, else an orbit,
+ * else the hold.
  *
- * The middle lane by index, which on every shipped map is the one down the spine; a map with
- * no lanes (the greybox, the range) gets `spawns[0] → navBounds' centre`, which is
- * `ModePanel.measureLanes`' fallback for the same absence.
+ * Every lane by both ends — `a → center` and `b → center` — because a lane end can sit inside
+ * geometry at eye height (Dunes' middle lane does), and the lane that is a street from one
+ * end may be a wall from the other. A map with no lanes (the greybox) gets `spawns[0] →
+ * navBounds' centre`, which is `ModePanel.measureLanes`' fallback for the same absence.
  */
-function planDolly(map: LoadedMap): Dolly {
+function planCameraPath(map: LoadedMap): CameraPath {
   const def: MapDef = map.def;
-  const lane = pickLane(def, map);
-  const dx0 = lane.center.x - lane.a.x;
-  const dz0 = lane.center.z - lane.a.z;
+  const lanes = candidateLanes(def, map);
+
+  let best: Dolly | null = null;
+  for (const lane of lanes) {
+    for (const from of [lane.a, lane.b]) {
+      const dolly = probeDolly(map, lane.name, from, lane.center);
+      if (best === null || dolly.run > best.run) best = dolly;
+    }
+  }
+  if (best !== null && best.run >= MIN_RUN) return best;
+
+  // No lane runs: a circle above the middle lane's centre, at the first ring the probe finds
+  // free all the way round.
+  const middle = lanes[Math.floor(lanes.length / 2)] ?? lanes[0];
+  if (middle !== undefined) {
+    const orbit = probeOrbit(map, middle);
+    if (orbit !== null) return orbit;
+  }
+
+  // The hold: the best lane's end, run 0, swaying.
+  return best ?? probeDolly(map, 'MAP', { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
+}
+
+/** Walk `from → toward` with a standing capsule; the run is the free prefix, 0 below `MIN_RUN`. */
+function probeDolly(map: LoadedMap, lane: string, from: Vec3Lit, toward: Vec3Lit): Dolly {
+  const dx0 = toward.x - from.x;
+  const dz0 = toward.z - from.z;
   const length = Math.hypot(dx0, dz0);
   const dx = length > 0 ? dx0 / length : 0;
   const dz = length > 0 ? dz0 / length : 1;
 
-  // Walk the segment with a standing capsule; stop at the first sample that is inside
-  // anything. The run is the free prefix, capped at the lane itself.
   let run = 0;
   for (let s = 0; s <= length; s += PROBE_STEP) {
-    const x = lane.a.x + dx * s;
-    const z = lane.a.z + dz * s;
-    if (map.collision.overlapCapsule(x, lane.a.y, z, PROBE_RADIUS, PROBE_HEIGHT)) break;
+    const x = from.x + dx * s;
+    const z = from.z + dz * s;
+    if (map.collision.overlapCapsule(x, from.y, z, PROBE_RADIUS, PROBE_HEIGHT)) break;
     run = s;
   }
   if (run < MIN_RUN) run = 0;
 
   return {
-    ax: lane.a.x,
-    ay: lane.a.y,
-    az: lane.a.z,
+    kind: 'dolly',
+    ax: from.x,
+    ay: from.y,
+    az: from.z,
     dx,
     dz,
     run,
     // three.js yaw: facing -Z is 0, and +X is -π/2. The direction (dx, dz) faces
     // atan2(-dx, -dz), which is the yaw a body walking the lane would carry.
     yaw: Math.atan2(-dx, -dz),
+    lane,
   };
 }
 
-function pickLane(def: MapDef, map: LoadedMap): LaneDef {
-  const lanes = def.lanes;
-  if (lanes !== undefined && lanes.length > 0) {
-    const middle = lanes[Math.floor(lanes.length / 2)];
-    if (middle !== undefined) return middle;
+/** The first ring above the lane's centre whose whole circle a small capsule finds free. */
+function probeOrbit(map: LoadedMap, lane: LaneDef): Orbit | null {
+  const c = lane.center;
+  for (const ring of ORBIT_RINGS) {
+    let free = true;
+    for (let i = 0; i < ORBIT_SAMPLES && free; i++) {
+      const theta = (2 * Math.PI * i) / ORBIT_SAMPLES;
+      const x = c.x + ring.radius * Math.cos(theta);
+      const z = c.z + ring.radius * Math.sin(theta);
+      // A capsule a metre tall centred on the camera's eye.
+      if (map.collision.overlapCapsule(x, c.y + ring.height - 0.5, z, 0.4, 1.0)) free = false;
+    }
+    if (free) {
+      return { kind: 'orbit', cx: c.x, cy: c.y, cz: c.z, height: ring.height, radius: ring.radius, lane: lane.name };
+    }
   }
+  return null;
+}
+
+/** The map's authored lanes, or one made from its first spawn and its bounds' centre. */
+function candidateLanes(def: MapDef, map: LoadedMap): readonly LaneDef[] {
+  const lanes = def.lanes;
+  if (lanes !== undefined && lanes.length > 0) return lanes;
   const spawn: Vec3Lit = map.spawns[0]?.position ?? { x: 0, y: 0, z: 0 };
   const b = map.navBounds;
-  return {
-    name: 'MAP',
-    a: spawn,
-    b: spawn,
-    center: { x: (b.min.x + b.max.x) / 2, y: spawn.y, z: (b.min.z + b.max.z) / 2 },
-  };
+  return [
+    {
+      name: 'MAP',
+      a: spawn,
+      b: spawn,
+      center: { x: (b.min.x + b.max.x) / 2, y: spawn.y, z: (b.min.z + b.max.z) / 2 },
+    },
+  ];
 }

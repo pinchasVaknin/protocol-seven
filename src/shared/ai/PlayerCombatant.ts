@@ -40,7 +40,15 @@ export class PlayerCombatant implements Combatant {
    * Defaulted so every single-player call site keeps the identity it has had since M2.
    */
   readonly entityId: number;
-  readonly displayName = 'OPERATOR';
+  /**
+   * The name the killfeed and the damage report call this body by (M17, C2).
+   *
+   * A constant `'OPERATOR'` until then, which was the report "the player's name resets to
+   * Operator in a solo match": the callsign is a profile setting, and the client-side match
+   * is the one place the profile's owner is also a combatant on a local roster. Defaulted for
+   * the harnesses and the audits, which have no profile to read one from.
+   */
+  readonly displayName: string;
   readonly rig = new HitboxRig(HUMANOID_RIG);
 
   /** Cleared for the AFK harness, where the human is a spectator. */
@@ -68,8 +76,10 @@ export class PlayerCombatant implements Combatant {
     readonly team: BotTeam,
     private readonly player: PlayerController,
     entityId: number = PLAYER_ENTITY_ID,
+    displayName = 'OPERATOR',
   ) {
     this.entityId = entityId;
+    this.displayName = displayName;
   }
 
   get px(): number {

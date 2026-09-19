@@ -60,7 +60,7 @@ const log = logger('skirmish');
  *
  * ## The warm-up, skipped in place
  *
- * Round one opens with a ten-second freeze (`MATCH_START_SECONDS`), during which every bot
+ * Round one opens with a ten-second freeze (`DEFAULT_MATCH_START_SECONDS`), during which every bot
  * stands still. A menu that opened on ten seconds of statues would be a worse menu than the
  * dolly alone, so while the flow is in WARMUP the skirmish takes several sim steps per loop
  * step: the freeze passes in a second and a quarter of wall clock, and since nothing moves
@@ -179,6 +179,8 @@ export class MenuSkirmish extends Disposable {
       mapId: mapEntry.id,
       mapName: mapEntry.name,
       localTeam: SEAT_TEAM,
+      // No `matchStartSeconds`: nobody watches an intro behind the menu, and the default
+      // ten-second freeze is the one the fast-forward below is sized for.
       onSidesSwapped: (swapped) => this.bots.spawns.setSideSwap(swapped),
     });
     this.bots.respawnPolicy = {

@@ -591,3 +591,55 @@ browser pass at 1920×1080 and 1280×720.
 - Applied to the menu's two pages — MAIN MENU / ARENA FPS, PLAY SOLO / SELECT COMBAT SCENARIO —
   with the menu grid's bottom padding at 96 for the footer's second row. The editor and
   Settings take the chrome in their own phases, where their frames are re-budgeted for it.
+
+### C2 — done (session of 2026-09-19): the six fixes
+
+- **The backdrop, rolled.** `MapEntry.testbed` on the registry (the greybox `true`, the three
+  real maps `false`) — one flag, the blacklist and the TESTBED card's fact both; `PLAYABLE_MAPS`
+  and `rollBackdropMap(roll, previous)`, pure, never the testbed, never the previous while there
+  is another (`ModeRegistry.test.ts`). `Game` rolls on entering MENU **when there is no
+  backdrop** — boot, and the way back from a match, which disposed it — from an `Rng` seeded on
+  the clock at boot (the one clock-seeded draw in the client: nothing gameplay reads it; S2's
+  ban on `Math.random` stands). A return from Settings or Create-a-Class keeps the map that is
+  there: a re-roll is a rebuild, a few hundred frames of bare canvas, for a hop to a sibling
+  screen and back.
+- **Dunes' camera.** Measured: `DUNES behind the menu: dolly run 0.0 m (held — the lane is
+  blocked at eye height)` — the middle lane's `a` sits inside geometry at eye height, so the
+  free prefix was zero and the camera held and swayed. `planCameraPath` probes **every lane from
+  both ends** and takes the longest free run (Dunes: `dolly along WEST, run 33.0 m`; Depot's
+  longest is now WEST at 27.0 where the middle lane was shorter); a map on which no lane runs
+  `MIN_RUN` gets an **orbit** — a 90 s circle above the middle lane's centre at the first of four
+  rings whose whole circle a capsule finds free — and only a map with neither falls back to the
+  hold. No map can hold a still camera by the old rule again.
+- **The spectator's head.** `BotRenderer.setEyesOf(entityId)`: the body the camera is inside
+  is not drawn — its avatar and its indicator hidden while it is the one, shown the frame it is
+  not — exactly as the player's own body is not. `ClientMatch.render` passes
+  `spectatorTargetId` before the renderer's update.
+- **The callsign.** `PlayerCombatant` takes its `displayName` (the constant `'OPERATOR'`
+  stays as the default for the harnesses and the audits); `ClientMatch` hands the same
+  `localName` to the combatant and the score row; `MatchWorld` resolves single-player's through
+  `resolveDisplayName(null, profile.settings.callsign)` — the join's sanitiser, so the two
+  paths agree on what an empty name becomes.
+- **The intro, and the freeze sized to it (decision 6).** `IntroPlan.ts`: the pull-back now
+  rises **straight back along the heading the approach arrived on**, and holds that heading
+  while it climbs — it used to pull back along the spawn's azimuth while looking past the
+  centre, and the two disagreeing was the rotation the report described; the heading on the
+  approach and the whips is the route's tangent **averaged over ±2.5 / ±3 m** (`headingAt`),
+  so a corner the route hugs at the bots' clearance is turned into over a second and a half
+  rather than snapped; the pace is a jog, not a sprint (approach peak 5.5 m/s, was 9; whips 16,
+  was 40); the blends are longer (return 1.0 s, was 0.5; pull-back 3 s, was 1.5; pull-in 1.2,
+  was 0.5; objective holds 1.0, was 0.3) and a 1.5 s rest on the overview is a segment of its
+  own. The freeze: `matchStartSeconds(def, modeId) = introSeconds + RETURN_SECONDS +
+  COUNTDOWN_SECONDS (5)`, computed by the server (`server/Match.ts`) and the client
+  (`ClientMatch`) from the same two facts — a replicated client back-computes the phase's
+  elapsed time against it — through `MatchFlowDeps.matchStartSeconds`; `DEFAULT_MATCH_START_
+  SECONDS` (10) is what the audits and the fight behind the menu run on. In single-player a
+  skip also cuts the freeze to the return and the countdown (`MatchFlow.shortenWarmup`); over
+  the network the skip ends the camera alone. **The numbers, per mode:** TDM / FFA / KC intro
+  10.5 s, freeze **16.5 s**; S&D (two sites) intro 15.2 s, freeze **21.2 s**; Domination (three
+  flags) intro 19.2 s, freeze **25.2 s**. Six constants at the top of `IntroPlan.ts` if any of
+  them should move. `npm run intro`: **299 plans, 0 failures**, every objective visited, no
+  sample inside a collider; `npm run skirmish -- --cycles 1`: FLOW CHECK PASSED, 0
+  mispredictions in the 60 ticks after migration into the live match, the two runtimes agreeing
+  on the freeze. Watched in the browser: the approach, the rise, the rest on the overview, the
+  return, GET READY · 5 → 1; a key at 2 s returned the camera and the banner read 5.

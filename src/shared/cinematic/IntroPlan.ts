@@ -13,28 +13,48 @@ import type { MapDef, ObjectiveDef, Vec3Lit } from '../world/maps/types';
  *
  * The brief called this a hidden loading screen. In this project there is nothing to hide —
  * the connected path builds the next map during the previous match's summary (§6.5), the
- * solo path before `MATCH` — but there *is* the round-one freeze: `MATCH_START_SECONDS` in
- * which the player stands at spawn unable to move, ten seconds so there is time to read the
- * quick class selector. The intro is client-only presentation over a built world during a
+ * solo path before `MATCH` — but there *is* the round-one freeze, in which the player stands
+ * at spawn unable to move. The intro is client-only presentation over a built world during a
  * freeze the server already runs. Nothing goes on the wire.
  *
- * ## Three phases in one budget
+ * ## The freeze is sized to the intro, not the other way round (M17, C2)
  *
- * Of the freeze's ten seconds, the last 1.0 is the player's own view — a player looking
- * through a cinematic camera when the round goes live has been ambushed by their own UI —
- * and the 0.5 before that is the blend back to it. The plan's segments fill what is left:
+ * The freeze used to be ten seconds flat, and the plan was fitted into it: 3.5 s of approach,
+ * 1.5 of pull-back, 3.5 for the objectives, 0.5 of return and 1.0 of the player's own view.
+ * The report was that it was *"too aggressive and disjointed"*, and the human's decision was
+ * the other way about: *"the camera should take the exact time it needs; the 5 seconds is
+ * strictly the countdown after the camera finishes its overview."* So `matchStartSeconds`
+ * is now a function of the map and the mode — `introSeconds` (the phases' own budgets, with
+ * the objectives counted) plus the return blend plus `COUNTDOWN_SECONDS` — and the server
+ * and the client compute the same number from the same two facts, which is what lets a
+ * replicated client back out the freeze's total from the seconds remaining on the wire. The
+ * plan still fills its budget and holds the last pose for whatever it did not use, because
+ * an approach's length is the player's spawn's and the freeze cannot be.
+ *
+ * ## Three phases, then the countdown
+ *
+ * The plan's segments fill `introSeconds`; the return blend follows, and then the countdown
+ * in the player's own eyes — a player looking through a cinematic camera when the round goes
+ * live has been ambushed by their own UI, and five seconds is the human's number for reading
+ * the room and the quick class selector:
  *
  *  1. **The approach** — spawn to the map's centre on the bots' own route (`Pathfinder` over
- *     the match's `NavGrid`, a second instance so the bots' queue is untouched), a Catmull-Rom
- *     spline through the waypoints at eye height, yaw following the tangent, pitch held a
- *     few degrees down. A distance/time profile eased at both ends with a ceiling: a route
- *     longer than the ceiling allows is **trimmed from the spawn end**, not sped up, because
- *     the approach reads as a person moving or it does not read.
- *  2. **The overview** — a pull-back from the centre along a 45° ray whose azimuth points
- *     toward the player's spawn, so their own side lands at the bottom of the frame; to the
- *     distance at which the map's half-diagonal fits the lens, clamped by the first collider
- *     the ray meets (a roof, a wall) — computed, never tuned per map.
- *  3. **The objectives** — Domination's flags in label order, Search & Destroy's two sites:
+ *     the match's `NavGrid`, a second instance so the bots' queue is untouched), a filleted
+ *     polyline through the waypoints at eye height, the heading the route's own averaged
+ *     over a few metres either side so a corner is turned into rather than snapped round,
+ *     pitch held a few degrees down. A distance/time profile eased at both ends with a
+ *     ceiling: a route longer than the ceiling allows is **trimmed from the spawn end**, not
+ *     sped up, because the approach reads as a person moving or it does not read.
+ *  2. **The overview** — a pull-back from the centre, **straight back along the heading the
+ *     approach arrived on** and up at 45°, so the camera rises away from what it was looking
+ *     at and its heading never moves while it climbs (it used to pull back along the spawn's
+ *     azimuth while looking past the centre, and the two disagreeing is what was reported as
+ *     *"while climbing at 45 degrees, the camera continues to rotate"*); to the distance at
+ *     which the map's half-diagonal fits the lens, clamped by the first collider the ray
+ *     meets (a roof, a wall), else the clearest of a fan around it — computed, never tuned
+ *     per map.
+ *  3. **The objectives**, after a rest on the overview — Domination's flags in label order,
+ *     Search & Destroy's two sites:
  *     a snap down to each, a hold with its label, a whip to the next along a nav route with
  *     the speed profile inverted (fast in the middle, eased into the hold). A route the grid
  *     cannot find falls back to an arc above the map, never through it. Team Deathmatch,
@@ -83,7 +103,7 @@ export interface IntroPlan {
   /** Whips that fell back to the arc because the grid had no route. */
   readonly arcs: readonly string[];
   readonly overviewDistance: number;
-  /** What the pull-in, the whips and their holds cost, against `OBJECTIVES_MAX_SECONDS`. */
+  /** What the pull-in, the whips and their holds cost. */
   readonly objectiveSeconds: number;
   /** Tabulated points pushed off a collider by `relax` — grazes the route hugs at the bots' clearance. */
   readonly nudged: number;
@@ -102,21 +122,22 @@ export interface IntroInput {
   readonly spawn: Vec3Lit;
   /** The intro camera's vertical field of view, degrees — what the overview is fitted to. */
   readonly fovDeg: number;
-  /** The freeze's length; the plan fits in it less the return and the player's own second. */
+  /** The freeze's length; the plan fits in it less the return and the countdown. */
   readonly freezeSeconds: number;
 }
 
 /** The blend from the last pose back to the rig's eye. */
-export const RETURN_SECONDS = 0.5;
-/** The player's own view before the freeze lifts. Not negotiable — see the file comment. */
-export const OWN_VIEW_SECONDS = 1.0;
-export const APPROACH_MAX_SECONDS = 3.5;
-export const PULLBACK_SECONDS = 1.5;
-export const OBJECTIVES_MAX_SECONDS = 3.5;
-/** Metres per second at the approach's fastest; a sprint is 6.9. */
-export const APPROACH_PEAK_SPEED = 9;
+export const RETURN_SECONDS = 1.0;
+/** The countdown in the player's own eyes before the freeze lifts (M17, decision 6). */
+export const COUNTDOWN_SECONDS = 5;
+export const APPROACH_MAX_SECONDS = 6;
+export const PULLBACK_SECONDS = 3;
+/** The rest on the overview once the pull-back lands, before the objectives or the return. */
+export const OVERVIEW_HOLD_SECONDS = 1.5;
+/** Metres per second at the approach's fastest; a sprint is 6.9, a walk 2.5. */
+export const APPROACH_PEAK_SPEED = 5.5;
 /** Metres per second at a whip's fastest. */
-export const WHIP_PEAK_SPEED = 40;
+export const WHIP_PEAK_SPEED = 16;
 /** The player's eye above the ground it stands on (`PlayerSnapshot.eyeHeight`). */
 export const EYE_HEIGHT = 1.65;
 /**
@@ -128,23 +149,50 @@ export const EYE_HEIGHT = 1.65;
 export const EYE_RADIUS = 0.25;
 const APPROACH_PITCH = (-6 * Math.PI) / 180;
 /** A minimum for the approach: shorter than this reads as a cut, not a move. */
-const APPROACH_MIN_SECONDS = 1.2;
+const APPROACH_MIN_SECONDS = 2.5;
 /** The pull back in from the overview to the centre; the pull-back reversed. */
-const SNAP_SECONDS = 0.5;
-const OBJECTIVE_HOLD_SECONDS = 0.3;
-/** A whip's longest; two objectives and the pull-in then fit `OBJECTIVES_MAX_SECONDS`. */
-const WHIP_MAX_SECONDS = 1.0;
+export const SNAP_SECONDS = 1.2;
+export const OBJECTIVE_HOLD_SECONDS = 1.0;
+/** A whip's longest. */
+export const WHIP_MAX_SECONDS = 1.5;
 /** The camera's stand-off from an objective: back along the arrival, and up. */
 const OBJECTIVE_BACK = 4;
 const OBJECTIVE_UP = 3;
 /** How far the overview ray keeps from the collider that stops it. */
 const OVERVIEW_CLEARANCE = 1.5;
-const YAW_LAG_SECONDS = 0.3;
+/**
+ * Metres either side of the camera over which the route's tangents are averaged for the
+ * heading (M17, C2). A corner the route hugs at the bots' clearance is a right angle in a
+ * few centimetres; the eye turns into it over `2 × HEADING_WINDOW` metres instead, which at
+ * the approach's pace is a second and a half. It replaced a 0.3 s lag on the position's own
+ * tangent, which only delayed the snap.
+ */
+const HEADING_WINDOW = 2.5;
+const WHIP_HEADING_WINDOW = 3;
+const HEADING_STEP = 0.25;
 /** The overview's sphere march. */
 const MARCH_STEP = 0.25;
 /** Where the overview may look from: azimuths either side of the spawn's, elevations under 45°. */
 const OVERVIEW_AZIMUTHS = [0, Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2, (2 * Math.PI) / 3, (-2 * Math.PI) / 3, (5 * Math.PI) / 6, (-5 * Math.PI) / 6, Math.PI];
 const OVERVIEW_ELEVATIONS = [Math.PI / 4, Math.PI / 5, Math.PI / 6];
+
+/**
+ * The intro's own length on this map in this mode: the phases' budgets, with the objectives
+ * counted. What the plan fills, holding the last pose for whatever it does not use.
+ */
+export function introSeconds(def: MapDef, modeId: GameModeId): number {
+  const objectives = objectivesFor(def, modeId).length;
+  const tour = objectives > 0 ? SNAP_SECONDS + objectives * (WHIP_MAX_SECONDS + OBJECTIVE_HOLD_SECONDS) : 0;
+  return APPROACH_MAX_SECONDS + PULLBACK_SECONDS + OVERVIEW_HOLD_SECONDS + tour;
+}
+
+/**
+ * The round-one freeze: the intro, the blend back to the player's eyes, the countdown. The
+ * server's number and the client's, from the same two facts (see the file comment).
+ */
+export function matchStartSeconds(def: MapDef, modeId: GameModeId): number {
+  return introSeconds(def, modeId) + RETURN_SECONDS + COUNTDOWN_SECONDS;
+}
 
 /** A smoothstep ease: position, and (for the profile) its peak speed is 1.5× the average. */
 function ease(u: number): number {
@@ -361,6 +409,36 @@ class Spline {
     if (Math.hypot(dx, dz) < 1e-6) return 0;
     return yawOf(dx, dz);
   }
+
+  /**
+   * The heading `s` metres along, averaged over `span` metres either side (M17, C2): the
+   * mean of the unit tangents sampled every `HEADING_STEP`, clamped to the curve's ends so
+   * the heading at the start is the first span's and at the end the last's. A corner is a
+   * step in `yawAt` and a ramp in this.
+   */
+  headingAt(s: number, span: number): number {
+    if (span <= HEADING_STEP) return this.yawAt(s);
+    const a: IntroPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
+    const b: IntroPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
+    let sx = 0;
+    let sz = 0;
+    for (let d = -span; d < span; d += HEADING_STEP) {
+      const s0 = Math.max(0, Math.min(this.length, s + d));
+      const s1 = Math.max(0, Math.min(this.length, s + d + HEADING_STEP));
+      if (s1 - s0 < 1e-6) continue;
+      this.at(s0, a);
+      this.at(s1, b);
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len = Math.hypot(dx, dz);
+      if (len < 1e-6) continue;
+      // Weighted by the sample's length, so a long straight outweighs a short fillet.
+      sx += dx;
+      sz += dz;
+    }
+    if (Math.hypot(sx, sz) < 1e-6) return this.yawAt(s);
+    return yawOf(sx, sz);
+  }
 }
 
 // -- routes off the navmesh ---------------------------------------------------
@@ -530,7 +608,7 @@ export function planIntro(input: IntroInput): IntroPlan {
   const finder = new Pathfinder(nav, movement.stepHeight, movement.groundSnapDist);
   const segments: IntroSegment[] = [];
   const waypoints: Vec3Lit[][] = [];
-  const budget = Math.max(0, freezeSeconds - RETURN_SECONDS - OWN_VIEW_SECONDS);
+  const budget = Math.max(0, freezeSeconds - RETURN_SECONDS - COUNTDOWN_SECONDS);
 
   // The centre: the nav bounds' middle, on the nearest walkable cell.
   const b = def.navBounds;
@@ -568,7 +646,7 @@ export function planIntro(input: IntroInput): IntroPlan {
   );
   const approachEnd: IntroPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
   approach.at(approach.length, approachEnd);
-  approachEnd.yaw = approach.yawAt(approach.length);
+  approachEnd.yaw = approach.headingAt(approach.length, HEADING_WINDOW);
   approachEnd.pitch = APPROACH_PITCH;
   waypoints.push(approachPoints);
   segments.push({
@@ -579,28 +657,18 @@ export function planIntro(input: IntroInput): IntroPlan {
     at(u, out) {
       const s = approach.length * ease(u);
       approach.at(s, out);
-      // The heading lags the position by a fraction of a second, so a turn is seen coming.
-      const lagS = approach.length * ease(Math.max(0, u - YAW_LAG_SECONDS / approachSeconds));
-      out.yaw = approach.yawAt(lagS);
+      // The heading is the route's, averaged either side, so a corner is turned into.
+      out.yaw = approach.headingAt(s, HEADING_WINDOW);
       out.pitch = APPROACH_PITCH;
     },
   });
 
   // ---- 2. the overview ----------------------------------------------------------------
-  // Azimuth toward the spawn, so the player's own side is at the bottom of the frame.
-  let ax = spawn.x - centre.x;
-  let az = spawn.z - centre.z;
-  const alen = Math.hypot(ax, az);
-  if (alen < 1e-3) {
-    ax = -simSin(approachEnd.yaw);
-    az = -simCos(approachEnd.yaw);
-    // Back along the approach: the direction it came from.
-    ax = -ax;
-    az = -az;
-  } else {
-    ax /= alen;
-    az /= alen;
-  }
+  // Straight back along the heading the approach arrived on (M17, C2): the camera rises away
+  // from what it is looking at, and the heading holds while it climbs. The approach came
+  // from the spawn, so the player's own side is still the near edge of the frame.
+  const ax = simSin(approachEnd.yaw);
+  const az = simCos(approachEnd.yaw);
   const halfDiagonal = Math.hypot(b.max.x - b.min.x, b.max.z - b.min.z) / 2;
   const halfFov = ((fovDeg / 2) * Math.PI) / 180;
   const tanHalf = simSin(halfFov) / simCos(halfFov);
@@ -646,14 +714,14 @@ export function planIntro(input: IntroInput): IntroPlan {
     pitch: 0,
   };
   // The look target: a little past the centre along the approach's heading, so the pull-back
-  // starts on the view the approach ended with rather than at the camera's own feet.
+  // starts on the view the approach ended with rather than at the camera's own feet. The ray
+  // is behind the camera, so looking at the target from anywhere on it is the approach's
+  // own heading; only the pitch moves, and it is eased from the approach's rather than cut.
   const fx = -simSin(approachEnd.yaw);
   const fz = -simCos(approachEnd.yaw);
   const target: Vec3Lit = { x: centre.x + fx * 8, y: centre.y, z: centre.z + fz * 8 };
   lookAt(overview, target.x, target.y, target.z);
-  const pullbackFrom: IntroPose = { ...approachEnd };
-  lookAt(pullbackFrom, target.x, target.y, target.z);
-  const pullbackYawDelta = angleDelta(approachEnd.yaw, pullbackFrom.yaw);
+  overview.yaw = approachEnd.yaw;
   waypoints.push([]);
   segments.push({
     kind: 'pullback',
@@ -666,9 +734,9 @@ export function planIntro(input: IntroInput): IntroPlan {
       out.y = approachEnd.y + (overview.y - approachEnd.y) * e;
       out.z = approachEnd.z + (overview.z - approachEnd.z) * e;
       lookAt(out, target.x, target.y, target.z);
-      // Ease the heading in from the approach's rather than snapping to the target's.
-      if (u < 0.25) out.yaw = approachEnd.yaw + pullbackYawDelta * ease(u / 0.25);
-      if (u < 0.25) out.pitch = APPROACH_PITCH + (out.pitch - APPROACH_PITCH) * ease(u / 0.25);
+      out.yaw = approachEnd.yaw;
+      // The pitch: the approach's for the first moments, then the target's as the rise takes it.
+      if (u < 0.3) out.pitch = APPROACH_PITCH + (out.pitch - APPROACH_PITCH) * ease(u / 0.3);
     },
   });
 
@@ -686,6 +754,23 @@ export function planIntro(input: IntroInput): IntroPlan {
   const arcs: string[] = [];
   let used = approachSeconds + PULLBACK_SECONDS;
   let objectiveSecondsUsed = 0;
+
+  // The rest on the overview: the map read whole before anything else happens to the camera.
+  waypoints.push([]);
+  segments.push({
+    kind: 'hold',
+    seconds: OVERVIEW_HOLD_SECONDS,
+    label: '',
+    metres: 0,
+    at(_u, out) {
+      out.x = overview.x;
+      out.y = overview.y;
+      out.z = overview.z;
+      out.yaw = overview.yaw;
+      out.pitch = overview.pitch;
+    },
+  });
+  used += OVERVIEW_HOLD_SECONDS;
   if (objectives.length > 0) {
     const centreEye: IntroPose = { ...approachEnd };
     const pullIn: IntroSegment = {
@@ -699,10 +784,10 @@ export function planIntro(input: IntroInput): IntroPlan {
         out.y = overview.y + (approachEnd.y - overview.y) * e;
         out.z = overview.z + (approachEnd.z - overview.z) * e;
         lookAt(out, target.x, target.y, target.z);
-        // Level out over the last quarter, onto the approach's own pitch and heading.
-        if (u > 0.75) {
-          const f = ease((u - 0.75) / 0.25);
-          out.yaw = out.yaw + angleDelta(out.yaw, approachEnd.yaw) * f;
+        out.yaw = approachEnd.yaw;
+        // Level out over the last third, onto the approach's own pitch.
+        if (u > 0.66) {
+          const f = ease((u - 0.66) / 0.34);
           out.pitch = out.pitch + (APPROACH_PITCH - out.pitch) * f;
         }
       },
@@ -748,11 +833,12 @@ export function planIntro(input: IntroInput): IntroPlan {
           at(u, out) {
             const sAlong = spline.length * ease(u);
             spline.at(sAlong, out);
-            // The heading: from the last hold's into the route's over the first 15 %, along
-            // the route through the middle, onto the objective's over the last 30 %.
-            const along = spline.yawAt(sAlong);
-            const enter = u < 0.15 ? ease(u / 0.15) : 1;
-            const leave = u > 0.7 ? ease((u - 0.7) / 0.3) : 0;
+            // The heading: from the last hold's into the route's over the first 30 %, along
+            // the route (averaged, so its corners are turned) through the middle, onto the
+            // objective's over the last 35 %.
+            const along = spline.headingAt(sAlong, WHIP_HEADING_WINDOW);
+            const enter = u < 0.3 ? ease(u / 0.3) : 1;
+            const leave = u > 0.65 ? ease((u - 0.65) / 0.35) : 0;
             const yawAlong = fromYaw + angleDelta(fromYaw, along) * enter;
             out.yaw = yawAlong + angleDelta(yawAlong, stand.yaw) * leave;
             const pitchAlong = fromPitch + (APPROACH_PITCH - fromPitch) * enter;
@@ -773,9 +859,9 @@ export function planIntro(input: IntroInput): IntroPlan {
           },
         };
         const cost = travel.seconds + hold.seconds;
-        // The phase has a budget; an objective that would overrun it is left out and the
-        // earlier ones kept. Two sites always fit; three flags on a wide map may not.
-        if (objectiveSeconds + cost > OBJECTIVES_MAX_SECONDS || used + cost > budget) break;
+        // The freeze was sized for every objective (`introSeconds`); an objective that would
+        // still overrun it is left out and the earlier ones kept.
+        if (used + cost > budget + 1e-6) break;
         objectiveSeconds += cost;
         used += cost;
         segments.push(travel, hold);

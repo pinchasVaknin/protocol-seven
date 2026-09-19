@@ -85,7 +85,8 @@ export function makeReplicatedMatchState(): ReplicatedMatchState {
 const WARMUP_SECONDS = 3;
 
 /**
- * Seconds of "get ready" before the first tick of a **match** (M11 Gate B).
+ * Seconds of "get ready" before the first tick of a **match** (M11 Gate B), when the caller
+ * names none.
  *
  * Ten rather than three, because this is the window the quick class selector lives in: the
  * player has just been migrated into a map they may not have chosen, holding a class they
@@ -95,8 +96,13 @@ const WARMUP_SECONDS = 3;
  *
  * Round one only. A ten-second hold between every Search & Destroy round would add a minute to
  * a best-of-five for a decision nobody is making at that point.
+ *
+ * Since M17 C2 every match a player is in passes `matchStartSeconds` — the intro's length on
+ * that map in that mode, the return blend and the five-second countdown, from
+ * `shared/cinematic/IntroPlan.ts` — and this default is what the audits and the fight behind
+ * the menu run on.
  */
-const MATCH_START_SECONDS = 10;
+export const DEFAULT_MATCH_START_SECONDS = 10;
 
 /** Remaining-time announcer cues, in seconds. Fired once each, highest first. */
 const TIME_CUES: readonly Readonly<{ at: number; cue: AnnouncerCue }>[] = [
@@ -137,6 +143,14 @@ export interface MatchFlowDeps {
   readonly authoritative?: boolean;
   /** Shorten a round, for harnesses only. Unset everywhere a player is involved. */
   readonly roundSecondsOverride?: number | undefined;
+  /**
+   * The round-one freeze, seconds (M17, C2). `matchStartSeconds(def, modeId)` wherever a
+   * player is: the server and the client compute it from the same map and mode, and a
+   * replicated client back-computes the phase's elapsed time from the wire's remaining
+   * seconds against it (`applyReplicated`), so the two must agree or the intro's clock is
+   * wrong. `DEFAULT_MATCH_START_SECONDS` when absent.
+   */
+  readonly matchStartSeconds?: number;
 }
 
 const evMatchStarted = { modeId: '', modeName: '', mapId: '', mapName: '', roundsToWin: 1 };
@@ -220,7 +234,21 @@ export class MatchFlow extends Disposable {
    * `phaseTicks` — so a client and the server always agree about which of the two applies.
    */
   private get warmupSeconds(): number {
-    return this.roundIndex <= 1 ? MATCH_START_SECONDS : WARMUP_SECONDS;
+    return this.roundIndex <= 1 ? (this.deps.matchStartSeconds ?? DEFAULT_MATCH_START_SECONDS) : WARMUP_SECONDS;
+  }
+
+  /**
+   * Cut the running warm-up down to `seconds` remaining (M17, C2): the intro was skipped.
+   *
+   * Authoritative flows only — single-player, where the client is the clock. On a replicated
+   * flow the server's freeze is the server's, and a skip ends the camera and nothing else. A
+   * warm-up that already has less left is not lengthened.
+   */
+  shortenWarmup(seconds: number): void {
+    if (this.deps.authoritative === false || this.phase !== 'WARMUP') return;
+    const limit = this.warmupSeconds;
+    const wantedTicks = Math.max(0, Math.round((limit - seconds) / DT));
+    if (wantedTicks > this.phaseTicks) this.phaseTicks = wantedTicks;
   }
 
   /** Seconds left of the warm-up or the round-end hold, whichever is running. */

@@ -42,6 +42,7 @@ import { LocalIdentity } from '../shared/combat/LocalIdentity';
 import type { BrowserLink } from './net/BrowserLink';
 import type { SkirmishSink } from '../shared/net/NetClient';
 import { isArenaInstance, ownerFromCode, type NetLoadout } from '../shared/net/Skirmish';
+import { resolveDisplayName } from '../shared/net/UrlFlags';
 import { NetSession } from './net/NetSession';
 import { logger } from '../shared/core/Log';
 import type { RenderableActor } from '../shared/ai/BotVisualState';
@@ -333,7 +334,9 @@ export class MatchWorld {
       networked: server !== null,
       identity: this.identity,
       localTeam: server?.welcome.team,
-      localName: server?.displayName,
+      // The name the server seated us under, or — solo — the profile's callsign through the
+      // same sanitiser the join uses, so the two paths agree on what an empty name becomes.
+      localName: server?.displayName ?? resolveDisplayName(null, deps.profile.settings.callsign),
       actors: this.net === null ? undefined : () => netSessionActors(this.net),
       /**
        * Spend a streak by asking the server (Gate B, §8.22).

@@ -8,9 +8,12 @@ import { FOUNDRY_MAP } from '../world/maps/foundry';
 import {
   APPROACH_MAX_SECONDS,
   collidingSamples,
+  COUNTDOWN_SECONDS,
   EYE_RADIUS,
-  OBJECTIVES_MAX_SECONDS,
-  OWN_VIEW_SECONDS,
+  introSeconds,
+  matchStartSeconds,
+  objectivesFor,
+  OVERVIEW_HOLD_SECONDS,
   planIntro,
   PULLBACK_SECONDS,
   RETURN_SECONDS,
@@ -37,30 +40,42 @@ function foundry() {
 describe('planIntro on Foundry', () => {
   const { collision, nav } = foundry();
   const spawn = FOUNDRY_MAP.spawns[0]!.position;
-  const common = { def: FOUNDRY_MAP, nav, collision, movement: DEFAULT_MOVEMENT_CONFIG, spawn, fovDeg: 60, freezeSeconds: 10 };
+  const common = { def: FOUNDRY_MAP, nav, collision, movement: DEFAULT_MOVEMENT_CONFIG, spawn, fovDeg: 60 };
 
-  it('fits the freeze less the return and the player\'s own second, phase by phase', () => {
-    const plan = planIntro({ ...common, modeId: 'DOM' });
-    const budget = 10 - RETURN_SECONDS - OWN_VIEW_SECONDS;
+  it('fills the freeze less the return and the countdown, phase by phase, and visits every flag', () => {
+    const freeze = matchStartSeconds(FOUNDRY_MAP, 'DOM');
+    expect(freeze).toBeCloseTo(introSeconds(FOUNDRY_MAP, 'DOM') + RETURN_SECONDS + COUNTDOWN_SECONDS, 9);
+    const plan = planIntro({ ...common, modeId: 'DOM', freezeSeconds: freeze });
+    const budget = introSeconds(FOUNDRY_MAP, 'DOM');
     expect(plan.seconds).toBeLessThanOrEqual(budget + 1e-9);
     expect(plan.seconds).toBeGreaterThan(budget - 0.25);
     const approach = plan.segments.find((s) => s.kind === 'approach')!;
     expect(approach.seconds).toBeLessThanOrEqual(APPROACH_MAX_SECONDS);
     expect(plan.segments.find((s) => s.kind === 'pullback')!.seconds).toBe(PULLBACK_SECONDS);
-    expect(plan.objectiveSeconds).toBeLessThanOrEqual(OBJECTIVES_MAX_SECONDS);
-    expect(plan.objectives).toEqual(['dom_a', 'dom_b']);
+    // The freeze is sized for every objective (M17, C2), so every one is visited.
+    expect(plan.objectives).toEqual(objectivesFor(FOUNDRY_MAP, 'DOM').map((o) => o.id));
+  });
+
+  it('sizes the freeze to the mode: the deathmatch modes shortest, Domination longest', () => {
+    const tdm = matchStartSeconds(FOUNDRY_MAP, 'TDM');
+    expect(tdm).toBe(APPROACH_MAX_SECONDS + PULLBACK_SECONDS + OVERVIEW_HOLD_SECONDS + RETURN_SECONDS + COUNTDOWN_SECONDS);
+    expect(matchStartSeconds(FOUNDRY_MAP, 'FFA')).toBe(tdm);
+    expect(matchStartSeconds(FOUNDRY_MAP, 'SND')).toBeGreaterThan(tdm);
+    expect(matchStartSeconds(FOUNDRY_MAP, 'DOM')).toBeGreaterThan(matchStartSeconds(FOUNDRY_MAP, 'SND'));
   });
 
   it('holds the overview for the deathmatch modes and visits both sites for Search & Destroy', () => {
-    const tdm = planIntro({ ...common, modeId: 'TDM' });
+    const tdm = planIntro({ ...common, modeId: 'TDM', freezeSeconds: matchStartSeconds(FOUNDRY_MAP, 'TDM') });
     expect(tdm.objectives).toEqual([]);
-    expect(tdm.segments.map((s) => s.kind)).toEqual(['approach', 'pullback', 'hold']);
-    const snd = planIntro({ ...common, modeId: 'SND' });
+    // The rest on the overview, and the remainder of the budget held there after it.
+    expect(tdm.segments.map((s) => s.kind).slice(0, 3)).toEqual(['approach', 'pullback', 'hold']);
+    expect(tdm.segments.every((s, i) => i < 2 || s.kind === 'hold')).toBe(true);
+    const snd = planIntro({ ...common, modeId: 'SND', freezeSeconds: matchStartSeconds(FOUNDRY_MAP, 'SND') });
     expect(snd.objectives).toEqual(['snd_a', 'snd_b']);
   });
 
   it('starts on the route out of the spawn, as far along as the trim took it, and keeps the eye clear', () => {
-    const plan = planIntro({ ...common, modeId: 'SND' });
+    const plan = planIntro({ ...common, modeId: 'SND', freezeSeconds: matchStartSeconds(FOUNDRY_MAP, 'SND') });
     const first: IntroPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
     plan.poseAt(0, first);
     // A route longer than the approach's budget is trimmed from the spawn end, so the camera
@@ -70,7 +85,7 @@ describe('planIntro on Foundry', () => {
   });
 
   it('poseAt is continuous across segment boundaries', () => {
-    const plan = planIntro({ ...common, modeId: 'DOM' });
+    const plan = planIntro({ ...common, modeId: 'DOM', freezeSeconds: matchStartSeconds(FOUNDRY_MAP, 'DOM') });
     const a: IntroPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
     const b: IntroPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
     let t = 0;

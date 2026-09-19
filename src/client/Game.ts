@@ -105,6 +105,7 @@ import {
   findMode,
   resolveMapId,
   resolveModeId,
+  rollBackdropMap,
 } from '../shared/modes/ModeRegistry';
 import { DEFAULT_CAMERA_CONFIG, FOV_MAX, FOV_MIN, type CameraConfig } from './player/CameraConfig';
 import { DEFAULT_HEALTH_CONFIG, type HealthConfig } from '../shared/player/Health';
@@ -252,6 +253,14 @@ export class Game {
   private readonly characterAssets = new CharacterAssetService();
   /** Worlds built this session. Moves the skin deck between matches — see `buildWorld`. */
   private worldsBuilt = 0;
+  /**
+   * The menu's own dice (M17, C2): the map behind the menu is rolled from these, seeded on the
+   * clock at boot — the one draw in the client that nothing gameplay reads, and the reason it
+   * may be seeded on the clock where every other `Rng` is seeded on a fact.
+   */
+  private readonly backdropDice = new Rng(Date.now() >>> 0);
+  /** The map last drawn behind the menu, so the next roll is a different one. */
+  private lastBackdropMapId: string | null = null;
   private readonly viewmodel: ViewmodelLayer;
   private readonly cameraRig: CameraRig;
   private readonly audio = new ProceduralAudio();
@@ -891,12 +900,20 @@ export class Game {
         this.screens.menus.show();
         this.input.clearHeld();
         /**
-         * The map behind the menu (M15, A3): the one the solo picker names, built a chunk a
-         * frame from here. On every entry rather than once at boot, because the picker may
-         * have moved and a match may have disposed it — `buildWorld` does, so that the scene
-         * never holds two maps. Idempotent when nothing changed.
+         * The map behind the menu (M15, A3; rolled since M17, C2): one of the real maps at
+         * random, built a chunk a frame from here. It used to be the solo picker's map — so
+         * the menu showed the last thing picked, across a reload, and showed the greybox
+         * whenever that was it. Rolled **when there is none**: at boot, and on the way back
+         * from a match, which disposed it (`buildWorld` does, so that the scene never holds
+         * two maps). A return from Settings or Create-a-Class finds the one already there and
+         * keeps it — a re-roll is a rebuild, and a rebuild is a few hundred frames of bare
+         * canvas for a hop to a sibling screen and back.
          */
-        this.backdrop.prepare(this.selection.mapId);
+        if (this.backdrop.mapId === '') {
+          const entry = rollBackdropMap(this.backdropDice.float(), this.lastBackdropMapId);
+          this.lastBackdropMapId = entry.id;
+          this.backdrop.prepare(entry.id);
+        }
       },
       exit: () => this.screens.menus.hide(),
     });
@@ -2531,8 +2548,8 @@ export class Game {
     const world = this.world;
     if (world === null) {
       /**
-       * No world: the front end is DOM over the menu's backdrop (M15, A3) — the last-played
-       * map on a slow dolly, rendered through the backdrop's own camera with no viewmodel —
+       * No world: the front end is DOM over the menu's backdrop (M15, A3) — a rolled map on
+       * a slow dolly, rendered through the backdrop's own camera with no viewmodel —
        * or over a cleared canvas while that map is still building, because a canvas that is
        * neither drawn nor cleared holds the last frame of the previous match.
        */

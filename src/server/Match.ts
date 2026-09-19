@@ -44,6 +44,7 @@ import { DT } from '../shared/core/Loop';
 import { logger } from '../shared/core/Log';
 import type { GameMode, MatchResult, MatchVariant } from '../shared/modes/GameMode';
 import { MatchFlow } from '../shared/modes/MatchFlow';
+import { matchStartSeconds } from '../shared/cinematic/IntroPlan';
 import {
   resolveLoadout,
   type LoadoutSlot,
@@ -396,6 +397,8 @@ export class ServerMatch extends Disposable {
       onSidesSwapped: (swapped) => this.bots.spawns.setSideSwap(swapped),
       // Both clocks or neither. See `ModeDeps.roundSecondsOverride`.
       roundSecondsOverride: options.roundSecondsOverride,
+      // The freeze the clients' intro is sized to (M17, C2) — the same number they compute.
+      matchStartSeconds: matchStartSeconds(this.mapEntry.def, this.mode.id),
     });
     this.bots.respawnPolicy = {
       allowed: (id) => this.flow.respawnAllowed(id),

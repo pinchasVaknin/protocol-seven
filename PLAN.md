@@ -631,6 +631,61 @@ boundaries **368 files** (shared 182). Pane, a fresh load: the editor's strip wi
 tiles, ECHO marked, `skinIndexOf('viper')` 6; no console error. Nothing on the wire yet:
 `PROTOCOL_VERSION` is still 17 and the harnesses are untouched.
 
+### B6.2 / B6.3 — done (session of 2026-09-19): the wire, and the server that writes it
+
+**Built** (`090a43b`). The wire: `EntitySnapshot.characterIndex` under `F.Character` (bit 13),
+on every full write and on a change; `NO_SKIN_INDEX` 255 is "declared none". The `Hello`
+carries the same byte after the name and ahead of the class, **no presence byte** (decision 3):
+255 is the absence. `PROTOCOL_VERSION` **17 → 18** with the log entry; `heightScale` stays
+(decision 1). `Snapshot.test.ts` (5 tests): the byte rides a full write at any index, a delta
+costs a byte only when it moved (3 bytes when it did not), 255 round-trips, the `Hello` is
+exactly one byte longer than a v17 frame. The server: `Session.characterIndex` off the `Hello`,
+clamped `< SKIN_IDS.length or 255` at the boundary (S4.16 — a longer table is a newer client the
+version check already refused); `seat` and `addPlayer` carry it beside the loadout; `NetPlayer`
+keeps it as a **required** dep, as `cheats` is and for the same reason; `writePlayer` writes it,
+`writeBot` writes 255 (decision 4). `Migration` and reconnect change nothing — the fact is the
+session's.
+
+**The cosmetic audit did its job.** `check:cosmetics` **refused** `characterIndex` until it was
+listed (*"is serialised into every snapshot and is not in the §4.15 allowlist"*), then passed
+with it in `ALLOWED` as **identity** (decision 5) — the row `displayName` sits in, the argument
+written where the audit asks for it.
+
+**Measured — the netharness `--skins`.** Every client declares a different skin and, at the end,
+every client's snapshots are read back: the body each is told about for every other must be the
+one that client declared, every bot must be "declared none", and the disagreement count is the
+exit code. Three clients on Testbed: every client sees **HEADLESS1 apex / HEADLESS2 echo /
+HEADLESS3 hazard**, all six bots `none`, **`skinFailures` 0**. Live snapshot bytes overlap
+across three runs a side (v17 202.8–208.2, v18 203.0–204.6) — the field is flat to the rounding
+because it moves once and rides only full writes; the exact **+1 byte per full write, +0 per
+quiet delta** is `Snapshot.test.ts`'s.
+
+### B6.4 — done (session of 2026-09-19): the client draws it, and the authority row that holds it
+
+**Built** (`49af5f3`). `RenderableActor.characterId: SkinId | null` — a remote player's is
+`skinIdAt(latest.characterIndex)` in `RemoteActor.applyLatest`, a bot's is `null` (`Bot`'s
+getter: the server writes 255 and every client deals). `Game`'s live resolver and the podium's
+`lineupSource` both read `actor.characterId ?? selector.characterIdFor(…)` — the selector is now
+the fallback the `CharacterAvatarProvider` comment promised, reached only for a body that
+declared none. `MenuSkirmish` takes the same shape (its bots are `null`, so it is still the
+deal), so the rule has one form and no exception.
+
+**`check:authority` gains its second row** — the body a player wears — and a `guardedBy`
+mechanism: a `selector.characterIdFor` call with no `??` on its line is the local copy standing
+where the wire should. **Proved to fire** on an unguarded `MenuSkirmish` (*"reads the local
+copy of the body a player wears"*), then restored. The audit is `2 migrated fact(s), 294 client
+file(s)`.
+
+**Measured — the browser.** A live server, a headless client declaring **apex** (index 0), and
+the real browser client joined against it (`localId` 2): the browser reads the remote human
+**HEADLESS1 as `characterId` `'apex'`** — the skin it declared — and every bot (100–108) as
+`null`. The full path in a real browser: declare → replicate → `RemoteActor` reads
+`skinIdAt` → the resolver draws `characterDefinition('apex')`. `npm run leak` **flat**
+(29 → 29 subscriptions over 100 cycles, heap +0.71 MiB of GC noise, PASSED — a field is not an
+allocation); `npm run content` byte-identical across two runs; `npm run check` green (146
+tests). `heightScale` untouched (decision 1); nothing in `shared/player`, `shared/combat` or
+`shared/ai`'s simulation reads the body.
+
 ## What each item breaks
 
 - **Every client on protocol 17 is refused at the `Hello`.** By design (S6.1: *"reject a
@@ -676,10 +731,16 @@ on the page's first menu, on the human's machine.
 
 ## How to start — the next brief
 
-**B6.1 is done** (above) and **the five decisions were taken the same day, every one on the
-recommendation** (`heightScale` stays; E's half second accepted pending a real machine; the
-byte after the name with no presence byte; bots at 255; the field is identity), so nothing is
-waiting. Next: **B6.2 and B6.3 together** with the netharness `--skins` mode written *before*
-the client is touched, so the server's half is proved by the instrument and not by the eye;
-then B6.4 and the pane. One `done` subsection per step, with the netharness numbers, and the
-milestone closes on the `--skins` run.
+**Every step of Milestone 16 is done** — B6.1 (the table), B6.2/B6.3 (the wire and the server,
+proved by the netharness `--skins` run at `skinFailures` 0), B6.4 (the client draws it, the
+authority row holds it, the browser sees a remote's declared apex) — each recorded above with
+its numbers, and the five decisions taken on the recommendation. The wire is **v18**. What is
+left is the close: the human's eye on two bodies in a browser wearing what they picked, then
+this section moves verbatim to `docs/archive/plan/23-m16-body-on-the-wire.md` with the
+provenance line and an index row, the way M15 closed — `npm run check:plan` holds the file to
+it. **Two carried forward** into the next wire change's decision table: `heightScale` off the
+wire (redundant since M13 C2, deferred here so one bump is one thing to bisect), and the server
+dealing bots a shared skin so every client agrees on a bot's body (decision 4; nobody has
+reported the disagreement). The milestone after opens on **M12's content**, in M12's order —
+F4(a)'s "skins as parameters" is now answered by M13's glTF skins, B5's picker and B6's wire,
+and the F4 row should say so when M12 is next touched.

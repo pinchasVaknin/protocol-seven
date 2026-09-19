@@ -17,7 +17,7 @@ import { createScreen } from './Frame';
 import { LoadoutStats } from './LoadoutStats';
 import { PlayerCard } from './PlayerCard';
 import { ProfilePanel } from './ProfilePanel';
-import { makeScreenHeader } from './ScreenChrome';
+import { makeScreenFooter, makeScreenHeader, type ScreenPlace } from './ScreenChrome';
 import { ICON_VIEWBOX, iconFor, makeIconSvg } from './WeaponIcons';
 import { WeaponPreview } from './WeaponPreview';
 
@@ -39,20 +39,26 @@ import { WeaponPreview } from './WeaponPreview';
  * and a pager beside them, because a list longer than the column is **paged**, never
  * scrolled.
  *
- * ## The header, the strip, the foot (playtest round 3, R3)
+ * ## The header, the strip, the action row (playtest round 3, R3; the row by M17, C5)
  *
- * The header is the shared one (`ScreenHeader.ts`): the mark, CREATE A CLASS, and the player
- * card with its gear and profile panel — exactly the menu's, with the place's name changed,
- * mounted on the viewport so the mark stands at the window's edge (R1.1). The level and its
- * bar left it for the card and the panel; *Save and exit* left it for the foot of the right
- * column, under the list. The five classes are a **strip** of plates on a second row under
- * the header, spanning the frame: each plate carries its number and its name, so the five
- * are read at once rather than hovered for; the open one takes the accent and its name is
- * the field it is renamed in; the equipped one carries EQUIPPED at its right end, and the
- * open one that is not equipped carries the EQUIP action there instead, so the decision is
- * where it is read and nowhere else. The stage lost its two arrows — a drag is enough, and
- * the drag now carries its fling (`CharacterStage`) — and CHANGE A SKIN stands centred in
- * the foot row that SAVE / CANCEL take over while a category is open.
+ * The header and the footer are the shared chrome (`ScreenChrome.ts`): the mark, CREATE A
+ * CLASS, and the player card with its gear and profile panel — exactly the menu's, with the
+ * place's name changed, mounted on the viewport so the mark stands at the window's edge
+ * (R1.1). The five classes are a **strip** of plates on a second row under the header,
+ * spanning the frame: each plate carries its number and its name, so the five are read at
+ * once rather than hovered for; the open one takes the accent and its name is the field it
+ * is renamed in; the equipped one carries EQUIPPED at its right end, and the open one that is
+ * not equipped carries the EQUIP action there instead, so the decision is where it is read
+ * and nowhere else. The stage lost its two arrows — a drag is enough, and the drag now
+ * carries its fling (`CharacterStage`).
+ *
+ * The two actions stand on the **action row** across the frame's foot, above the footer, on
+ * the same bar Play Solo and Settings end on: it keeps the frame's two columns, so CHANGE A
+ * SKIN is centred under the figure (R3.8) and SAVE AND EXIT sits under the list, and the
+ * row is where SAVE / CANCEL take the skin toggle's cell while a category is open. The brief
+ * (M17) found the two buttons *"thrown into the screen space"* — the toggle floating under
+ * the figure, the exit alone at the right — and this is the template it asked for: one row,
+ * two cells, one column each.
  *
  * ## Three states, and the stage answers the list
  *
@@ -248,7 +254,7 @@ export class LoadoutEditor {
   private opts: HTMLElement | null = null;
   /** The stat band under the list, shown for the weapon lists. */
   private band: HTMLElement | null = null;
-  /** The stage's parts the weapon preview replaces; the skin toggle; the SAVE / CANCEL row. */
+  /** The stage's parts the weapon preview replaces; the skin toggle on the action row; SAVE / CANCEL beside it. */
   private stageParts: HTMLElement[] = [];
   private stageSkins: HTMLElement | null = null;
   private stageActions: HTMLElement | null = null;
@@ -401,11 +407,11 @@ export class LoadoutEditor {
     band.appendChild(this.stats.element);
     this.band = band;
 
-    right.append(head, list, band, this.paintFoot());
+    right.append(head, list, band);
 
-    // The header on the viewport, the rest in the frame (R1.1); the panel's overlay last.
-    this.frame.replaceChildren(this.paintStrip(), stage, right, this.tip);
-    this.viewport.replaceChildren(this.paintHeader(), this.frame, this.panel.element);
+    // The chrome on the viewport, the rest in the frame (R1.1); the panel's overlay last.
+    this.frame.replaceChildren(this.paintStrip(), stage, right, this.paintActionRow(), this.tip);
+    this.viewport.replaceChildren(this.paintHeader(), this.frame, makeScreenFooter('op-foot--frame', this.place()), this.panel.element);
     this.staticRefresherCount = this.refreshers.length;
     this.refresh();
   }
@@ -413,16 +419,17 @@ export class LoadoutEditor {
   /** The shared header (`ScreenChrome.ts`): the mark and the wordmark, CREATE A CLASS with its subtitle, the player card. */
   private paintHeader(): HTMLElement {
     this.card.refresh();
-    return makeScreenHeader(
-      'op-head--frame',
-      {
-        title: 'CREATE A CLASS',
-        subtitle: this.deps.unrestricted()
-          ? 'SHOOTING RANGE — ALL CONTENT UNLOCKED, NO PROGRESS BANKED'
-          : 'CUSTOMISE YOUR LOADOUT',
-      },
-      this.card.element,
-    );
+    return makeScreenHeader('op-head--frame', this.place(), this.card.element);
+  }
+
+  /** What the chrome calls this screen. */
+  private place(): ScreenPlace {
+    return {
+      title: 'CREATE A CLASS',
+      subtitle: this.deps.unrestricted()
+        ? 'SHOOTING RANGE — ALL CONTENT UNLOCKED, NO PROGRESS BANKED'
+        : 'CUSTOMISE YOUR LOADOUT',
+    };
   }
 
   /**
@@ -523,17 +530,40 @@ export class LoadoutEditor {
   }
 
   /**
-   * The foot of the right column: the one action (playtest round 4, B5), under the list where
-   * the human asked for it (R3.4). It reads "Save and exit" rather than "Back" because that
-   * is what it does; there is one destination, so there is one button.
+   * The action row (M17, C5): the frame's two columns, one cell each.
+   *
+   * Under the stage, CHANGE A SKIN — or SAVE / CANCEL while a category is open (one or the
+   * other, never both; `refreshStage` decides). Under the list, the one exit (playtest round
+   * 4, B5), which reads SAVE AND EXIT rather than BACK because that is what it does; there is
+   * one destination, so there is one button.
    */
-  private paintFoot(): HTMLElement {
-    const foot = document.createElement('div');
-    foot.className = 'op-actions lo-foot';
-    const exit = button('Save and exit', () => this.deps.onSaveAndExit());
-    exit.classList.add('op-btn--primary', 'lo-exit');
-    foot.appendChild(exit);
-    return foot;
+  private paintActionRow(): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'op-actionbar lo-row';
+
+    const left = document.createElement('div');
+    left.className = 'lo-row__cell lo-row__cell--stage';
+    const toggle = this.paintSkinToggle();
+    this.stageSkins = toggle;
+    // SAVE keeps the picks and returns to the categories; CANCEL restores the snapshot first.
+    const actions = document.createElement('div');
+    actions.className = 'lo-row__actions';
+    actions.hidden = true;
+    const cancel = cta('CANCEL', () => this.cancelCategory());
+    const save = cta('SAVE', () => this.saveCategory());
+    save.classList.add('op-cta--primary');
+    actions.append(cancel, save);
+    this.stageActions = actions;
+    left.append(toggle, actions);
+
+    const right = document.createElement('div');
+    right.className = 'lo-row__cell lo-row__cell--list';
+    const exit = cta('SAVE AND EXIT', () => this.deps.onSaveAndExit());
+    exit.classList.add('op-cta--primary', 'lo-exit');
+    right.appendChild(exit);
+
+    row.append(left, right);
+    return row;
   }
 
   /**
@@ -549,54 +579,52 @@ export class LoadoutEditor {
     status.textContent = 'LOADING OPERATOR…';
     this.stageStatus = status;
 
-    const skins = this.paintSkins();
-    // The operator's parts, hidden together while a weapon stands in their place; the skin
-    // toggle also steps aside for SAVE / CANCEL, which take its row while a category is open.
+    const skins = this.paintSkinStrip();
+    // The operator's parts, hidden together while a weapon stands in their place. The skin
+    // toggle is on the action row (`paintActionRow`), where SAVE / CANCEL take its cell while
+    // a category is open; the strip it opens stays here, over the canvas's foot.
     this.stageParts = [this.stage.canvas, status, skins];
-    this.stageSkins = skins;
 
-    // SAVE keeps the picks and returns to the categories; CANCEL restores the snapshot first.
-    const actions = document.createElement('div');
-    actions.className = 'op-actions lo-stage__actions';
-    actions.hidden = true;
-    const cancel = button('Cancel', () => this.cancelCategory());
-    cancel.classList.add('op-btn--quiet');
-    const save = button('Save', () => this.saveCategory());
-    save.classList.add('op-btn--primary');
-    actions.append(cancel, save);
-    this.stageActions = actions;
-
-    wrap.append(this.stage.canvas, status, this.preview.element, skins, actions);
+    wrap.append(this.stage.canvas, status, this.preview.element, skins);
     return wrap;
   }
 
   /**
-   * CHANGE A SKIN (B5): a toggle in the stage's foot row, centred under the figure (R3.8),
-   * and the strip of every skin it opens.
+   * CHANGE A SKIN (B5): the toggle on the action row, centred under the figure (R3.8; on the
+   * row since M17 C5). The strip it opens is `paintSkinStrip`'s, over the canvas.
+   */
+  private paintSkinToggle(): HTMLElement {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'op-cta op-cta--quiet lo-skins__toggle';
+    toggle.appendChild(makeIconSvg(SKIN_GLYPH, '0 0 24 24', 'op-cta__lead'));
+    const label = document.createElement('span');
+    label.textContent = 'CHANGE A SKIN';
+    toggle.appendChild(label);
+    toggle.appendChild(makeIconSvg(CHEVRON_GLYPH, '0 0 24 24', 'op-cta__chevron lo-skins__chevron'));
+    toggle.addEventListener('click', () => {
+      this.skinsOpen = !this.skinsOpen;
+      this.refresh();
+    });
+    this.refreshers.push(() => {
+      toggle.classList.toggle('is-open', this.skinsOpen);
+      toggle.setAttribute('aria-expanded', this.skinsOpen ? 'true' : 'false');
+    });
+    return toggle;
+  }
+
+  /**
+   * The strip of every skin (B5), opened by the toggle on the action row.
    *
    * The strip lies *over* the canvas rather than under the toggle, so the column's height never
    * changes and the frame never has to. The thumbnails are `scripts/skin-thumbs.mjs`'s renders
    * — seven live stages would be seven contexts and the whole library fetched to open a menu.
    * Picking writes the profile (a setting, kept across a progress reset like the callsign) and
-   * puts the new body on the disc; other players see the dealt body until B6 (decision 2).
+   * puts the new body on the disc; other players see it since B6 (M16).
    */
-  private paintSkins(): HTMLElement {
+  private paintSkinStrip(): HTMLElement {
     const wrap = document.createElement('div');
     wrap.className = 'lo-skins';
-
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'lo-skins__toggle';
-    const label = document.createElement('span');
-    label.textContent = 'CHANGE A SKIN';
-    const chevron = document.createElement('span');
-    chevron.className = 'lo-skins__chevron';
-    chevron.textContent = '›';
-    toggle.append(label, chevron);
-    toggle.addEventListener('click', () => {
-      this.skinsOpen = !this.skinsOpen;
-      this.refresh();
-    });
 
     const strip = document.createElement('div');
     strip.className = 'lo-skins__strip';
@@ -632,11 +660,10 @@ export class LoadoutEditor {
 
     this.refreshers.push(() => {
       wrap.classList.toggle('is-open', this.skinsOpen);
-      toggle.setAttribute('aria-expanded', this.skinsOpen ? 'true' : 'false');
       strip.hidden = !this.skinsOpen;
     });
 
-    wrap.append(toggle, strip);
+    wrap.appendChild(strip);
     return wrap;
   }
 
@@ -1320,7 +1347,7 @@ export class LoadoutEditor {
     const onStage = this.weaponOnStage();
 
     for (const part of this.stageParts) part.hidden = onStage;
-    // The skin toggle and SAVE / CANCEL share the foot row: one or the other, never both.
+    // The skin toggle and SAVE / CANCEL share the row's stage cell: one or the other, never both.
     if (this.stageSkins !== null) this.stageSkins.hidden = onStage || this.open !== null;
     this.preview.element.hidden = !onStage;
     if (this.stageActions !== null) this.stageActions.hidden = this.open === null;
@@ -1346,7 +1373,26 @@ export class LoadoutEditor {
 
 /** Design-frame pixels of the weapon preview on the stage: the stage's width, at the band's aspect. */
 const STAGE_PREVIEW_WIDTH = 860;
+/** 734 less the row the strip's foot needs: the body's height since the action row (M17, C5). */
 const STAGE_PREVIEW_HEIGHT = 480;
+
+/** The action row's glyphs, one path each in a 24-box: a figure, and the chevron the nav uses. */
+const SKIN_GLYPH =
+  'M12 2 a4 4 0 1 0 0 8 a4 4 0 1 0 0 -8 Z M12 4 a2 2 0 1 1 0 4 a2 2 0 1 1 0 -4 Z ' +
+  'M5 22 v-5 a5 5 0 0 1 5 -5 h4 a5 5 0 0 1 5 5 v5 h-2 v-5 a3 3 0 0 0 -3 -3 h-4 a3 3 0 0 0 -3 3 v5 Z';
+const CHEVRON_GLYPH = 'M9 4 L17 12 L9 20 L7.4 18.4 L13.8 12 L7.4 5.6 Z';
+
+/** A button on the action row: the shared CTA, quiet unless a class says otherwise. */
+function cta(text: string, onClick: () => void): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'op-cta op-cta--quiet';
+  const label = document.createElement('span');
+  label.textContent = text;
+  b.appendChild(label);
+  b.addEventListener('click', onClick);
+  return b;
+}
 
 /**
  * Option bars a page holds: with the stat band under the list, and without (R3.5, decision 11:
@@ -1354,8 +1400,8 @@ const STAGE_PREVIEW_HEIGHT = 480;
  * band, 6 × 80 + 5 × 8 + 8 = 528 in the 592 with one; the CSS comment at `.lo-right` carries
  * the same sum from the other side).
  */
-const PAGE_WITH_BAND = 6;
-const PAGE_FULL = 8;
+const PAGE_WITH_BAND = 5;
+const PAGE_FULL = 7;
 
 /** The glyph a category bar shows when it has no weapon to show. */
 const CATEGORY_GLYPH: Readonly<Record<BoxKind, CategoryIconId>> = {
@@ -1399,15 +1445,6 @@ function assignSlot(target: LoadoutSlot, from: LoadoutSlot): void {
   target.perks = [...from.perks];
   target.fieldUpgrade = from.fieldUpgrade;
   target.streaks = [...from.streaks];
-}
-
-function button(text: string, onClick: () => void): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'op-btn';
-  b.textContent = text;
-  b.addEventListener('click', onClick);
-  return b;
 }
 
 /** The pager's arrows (the stage's went in R3.6). */

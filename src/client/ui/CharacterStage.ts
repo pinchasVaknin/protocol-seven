@@ -40,7 +40,7 @@ import { buildHeldWeapon, heldWeaponMaterial } from '../weapons/WeaponMesh';
  * the first time `tick` runs and disposed with the screen — the main renderer is drawing the
  * menu's backdrop under this screen and a second context costs less than a second render
  * target and a viewport dance. The canvas's backing store follows its on-screen size, so a
- * frame at 0.58 does not rasterise 860×800 to show 500×464.
+ * frame at 0.58 does not rasterise 860×734 to show 500×426.
  *
  * ## Loading is a state, not a wait
  *
@@ -83,9 +83,9 @@ export interface StageFigure {
   readonly yaw: number;
 }
 
-/** Design-frame pixels of the editor's stage; the backing store is sized from the on-screen rect. */
+/** Design-frame pixels of the editor's stage (734 since the action row, M17 C5); the backing store is sized from the on-screen rect. */
 export const STAGE_WIDTH = 860;
-export const STAGE_HEIGHT = 800;
+export const STAGE_HEIGHT = 734;
 
 /**
  * The editor's stage (B1). Chest height, a little in front of the eye line, looking at the

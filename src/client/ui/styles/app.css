@@ -1274,6 +1274,11 @@ body.op-locked #viewport {
   outline: none;
 }
 
+/* `display: inline-flex` above outranks the UA's `[hidden]` rule; the editor hides its skin toggle. */
+.op-cta[hidden] {
+  display: none;
+}
+
 .op-cta--primary {
   border-color: var(--c-accent);
   color: var(--c-accent);

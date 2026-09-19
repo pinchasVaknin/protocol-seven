@@ -703,3 +703,21 @@ browser pass at 1920×1080 and 1280×720.
   → save 100.
 - The probe: `settings/*` opens the category through `openTab` (the rail's label is
   "0N NAME"), the plain screen excludes `.st`; five categories ok at all eight viewports.
+
+### C5 — done (session of 2026-09-20): Create-a-Class's action row
+
+- **The row**: `LoadoutEditor.paintActionRow` — a third grid row across the frame's foot,
+  above the shared footer (the editor has both bars now), on the `.op-actionbar` the other
+  two screens end on, and it keeps the frame's two columns: under the stage, CHANGE A SKIN
+  centred under the figure (R3.8) — or SAVE / CANCEL while a category is open, one or the
+  other, never both (`refreshStage`'s rule, unchanged; `.op-cta[hidden]` added, the
+  `display` rule having outranked the UA's `[hidden]` as `.op-screen`'s does) — and under the
+  list, SAVE AND EXIT. The strip the toggle opens stays over the canvas's foot, so the
+  column's height is the same open and closed (B5).
+- **The re-budget**: 32 + 72 + 16 + 44 + 16 + 734 + 16 + 64 + 24 + 46 + 16 = 1080. The
+  stage is 860 × 734 (`STAGE_HEIGHT`, the preview and the status line with it); the right
+  column lost its foot row; the category bars are 100 (were 112) and the pages 7 and 5 (were
+  8 and 6), by the arithmetic in `meta.css` beside `.lo-right`. The old `.op-btn` foot and
+  the stage's own action row are gone.
+- `npm run layout`: eleven editor surfaces ok at all eight viewports. Watched: the row, the
+  strip opening over the disc, the weapon list with SAVE / CANCEL taking the cell.

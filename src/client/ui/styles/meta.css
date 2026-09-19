@@ -11,25 +11,27 @@
 
 /*
  * The frame is a grid: the class strip across the top, the stage on the left, the list on the
- * right. The header is not in it — it is on the viewport (R1.1, `.op-head--frame`), level
- * with the frame's top, and the frame keeps its 72 px as top padding. Sized to the 1920x1080
- * frame at the frame's ramp, and it adds up — 32 + 72 head + 16 + 44 strip + 16 + 868 body
- * + 32 = 1080 — which is the whole reason the six boxes are six, the list is paged as it is
- * (`.lo-right`) and the stage's foot row is one row. Padding is tighter than the frame's
- * default because this screen has the most on it.
+ * right, the action row across the foot (M17, C5). The header and the footer are not in it —
+ * they are on the viewport (R1.1, `.op-head--frame` / `.op-foot--frame`), level with the
+ * frame's top and bottom, and the frame keeps their room as padding. Sized to the 1920x1080
+ * frame at the frame's ramp, and it adds up — 32 + 72 head + 16 + 44 strip + 16 + 734 body
+ * + 16 + 64 row + 24 + 46 foot + 16 = 1080 — which is the whole reason the six boxes are six
+ * and the list is paged as it is (`.lo-right`). Padding is tighter than the frame's default
+ * because this screen has the most on it.
  */
 .lo .op-frame {
   display: grid;
   grid-template-columns: 860px minmax(0, 1fr);
-  grid-template-rows: 44px minmax(0, 1fr);
+  grid-template-rows: 44px minmax(0, 1fr) 64px;
   grid-template-areas:
     "strip strip"
-    "stage right";
+    "stage right"
+    "row row";
   gap: 16px 48px;
   justify-content: stretch;
   justify-items: stretch;
   align-items: stretch;
-  padding: 120px 48px 32px;
+  padding: 120px 48px 86px;
   position: relative;
 }
 
@@ -178,10 +180,10 @@
 /* ---- the stage ----------------------------------------------------------- */
 
 /*
- * The canvas is 860x800 in the frame; under it, one 56 px foot row — CHANGE A SKIN centred
- * in it, or SAVE / CANCEL while a category is open — and 800 + 12 + 56 is the body's 868.
- * The skin strip (B5) opens over the canvas's foot rather than under the row, so this
- * column's height never changes. The two arrows that used to stand here went in R3.6.
+ * The canvas is 860x734 in the frame: the body's whole height, since CHANGE A SKIN and
+ * SAVE / CANCEL moved to the action row under it (M17, C5). The skin strip (B5) opens over
+ * the canvas's foot, so this column's height never changes. The two arrows that used to
+ * stand here went in R3.6.
  */
 .lo-stage {
   grid-area: stage;
@@ -195,7 +197,7 @@
 .lo-stage__canvas {
   display: block;
   width: 860px;
-  height: 800px;
+  height: 734px;
   border-radius: var(--radius);
   background: radial-gradient(ellipse at 50% 62%, rgba(28, 32, 39, 0.9), rgba(7, 8, 10, 0.2) 70%);
   cursor: grab;
@@ -221,7 +223,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: 760px;
+  top: 694px;
   display: block;
   text-align: center;
   color: var(--c-accent);
@@ -229,10 +231,10 @@
 }
 
 /*
- * CHANGE A SKIN and its strip (B5). `position: absolute` in the stage: the toggle stands in
- * the foot row, centred under the figure (R3.8 — it stood at the column's left edge under a
- * figure at its centre), and the strip opens upward over the picture, so the column's height
- * is the same open and closed.
+ * The skin strip (B5). `position: absolute` in the stage, over the canvas's foot, so the
+ * column's height is the same open and closed. Its toggle, CHANGE A SKIN, is on the action
+ * row under the stage (M17, C5): centred under the figure (R3.8 — it stood at the column's
+ * left edge under a figure at its centre, then floated in a foot row of its own).
  */
 .lo-skins {
   position: absolute;
@@ -241,7 +243,6 @@
   bottom: 6px;
   display: flex;
   flex-direction: column;
-  gap: var(--s-2);
   padding: 0 var(--s-3);
   pointer-events: none;
 }
@@ -250,41 +251,16 @@
   pointer-events: auto;
 }
 
-.lo-skins__toggle {
-  appearance: none;
-  align-self: center;
-  display: flex;
-  align-items: center;
-  gap: var(--s-3);
-  padding: var(--s-2) var(--s-4);
-  border: 1px solid var(--c-line-hi);
-  border-left: 3px solid var(--c-accent);
-  border-radius: var(--radius);
-  background: rgba(12, 14, 17, 0.9);
+.lo-skins__toggle.is-open {
   color: var(--c-text);
-  font-family: var(--font-ui);
-  font-size: var(--t-small);
-  font-weight: var(--w-heavy);
-  letter-spacing: var(--track-label);
-  text-transform: uppercase;
-  cursor: pointer;
-  order: 2;
-}
-
-.lo-skins__toggle:hover,
-.lo-skins__toggle:focus-visible {
-  background: var(--c-surface-hi);
-  outline: none;
+  border-color: var(--c-accent-dim);
 }
 
 .lo-skins__chevron {
-  font-size: var(--t-lead);
-  line-height: 1;
-  color: var(--c-text-faint);
   transition: transform var(--dur-fast) var(--ease);
 }
 
-.lo-skins.is-open .lo-skins__chevron {
+.lo-skins__toggle.is-open .lo-skins__chevron {
   transform: rotate(-90deg);
 }
 
@@ -296,7 +272,6 @@
   border: 1px solid var(--c-line);
   border-radius: var(--radius);
   background: rgba(12, 14, 17, 0.92);
-  order: 1;
 }
 
 .lo-skins__strip[hidden] {
@@ -377,21 +352,22 @@
 /* ---- the right column: one list (round 2, 2026-09-15) --------------------- */
 
 /*
- * The column is a head (hidden with the categories showing), the list, the stat band (shown
- * under the weapon lists), and the foot with *Save and exit* (R3.4). The list holds the six
- * category bars or an open category's option bars, one at a time; a page of options is what
- * fits the column, so the page size is a constant in `LoadoutEditor` and the bar's height is
- * a constant here, and the two agree by arithmetic (R3.5, decision 11). The column is 868;
- * the three gaps count whether or not a track is empty (36), the head is 40 and the foot 48:
- * the six category bars, 6 × 112 + 5 × 12 + 8 = 740, in the 784 they have with the head and
- * the band hidden; 8 × 80 + 7 × 8 + 8 = 704 in the 744 an open list has without the band,
- * 6 × 80 + 5 × 8 + 8 = 528 in the 592 it has with one. The rest — 5 % and more — is the
- * room a grown bar needs, and the slack a fraction of a frame pixel rasterises into.
+ * The column is a head (hidden with the categories showing), the list, and the stat band
+ * (shown under the weapon lists); *Save and exit* is on the action row under it since M17
+ * C5 (R3.4 put it here). The list holds the six category bars or an open category's option
+ * bars, one at a time; a page of options is what fits the column, so the page size is a
+ * constant in `LoadoutEditor` and the bar's height is a constant here, and the two agree by
+ * arithmetic (R3.5, decision 11). The column is 734; the two gaps count whether or not a
+ * track is empty (24) and the head is 40: the six category bars, 6 × 100 + 5 × 12 + 8 =
+ * 668, in the 670 they have with the head and the band hidden; 7 × 80 + 6 × 8 + 8 = 616 in
+ * the 670 an open list has without the band, 5 × 80 + 4 × 8 + 8 = 440 in the 506 it has
+ * with one. The rest is the room a grown bar needs, and the slack a fraction of a frame
+ * pixel rasterises into.
  */
 .lo-right {
   grid-area: right;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 12px;
   min-width: 0;
   min-height: 0;
@@ -488,7 +464,7 @@
 }
 
 .lo-bar--cat {
-  height: 112px;
+  height: 100px;
 }
 
 .lo-bar[hidden] {
@@ -797,19 +773,51 @@
   text-align: center;
 }
 
-/* ---- the foot: Save and exit (R3.4) ----------------------------------------- */
+/* ---- the action row (M17, C5) ------------------------------------------------ */
 
-.lo-foot {
-  grid-row: 4;
+/*
+ * The frame's two columns again, so the row's cells stand under the stage and under the
+ * list: CHANGE A SKIN — or SAVE / CANCEL — centred under the figure, SAVE AND EXIT at the
+ * list's right end. 64 tall; the CTAs are sized to it.
+ */
+.lo-row {
+  grid-area: row;
+  display: grid;
+  grid-template-columns: 860px minmax(0, 1fr);
+  gap: 48px;
+  min-height: 0;
+}
+
+.lo-row__cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.lo-row__cell--stage {
+  justify-content: center;
+}
+
+.lo-row__cell--list {
   justify-content: flex-end;
 }
 
-/* 48 tall — `op-btn--primary` at the frame's ramp is 68, which neither foot row can spare. */
-.lo-exit,
-.lo-stage__actions .op-btn {
-  height: 48px;
-  padding: 0 var(--s-4);
+.lo-row__actions {
+  display: flex;
+  gap: var(--s-3);
+}
+
+.lo-row__actions[hidden] {
+  display: none;
+}
+
+.lo-row .op-cta {
+  min-height: 56px;
   font-size: var(--t-body);
+}
+
+.lo-exit {
+  min-width: 300px;
 }
 
 /* ---- the band: the numbers ------------------------------------------------- */
@@ -922,7 +930,7 @@
   justify-content: center;
   gap: var(--s-3);
   width: 860px;
-  height: 800px;
+  height: 734px;
   padding: 0;
   border: 0;
   background: radial-gradient(ellipse at 50% 62%, rgba(28, 32, 39, 0.9), rgba(7, 8, 10, 0.2) 70%);
@@ -943,24 +951,6 @@
 .lo-preview__name {
   color: var(--c-accent);
   font-size: var(--t-lead);
-}
-
-/*
- * SAVE / CANCEL in the stage's foot row while a category is open — centred under the platform
- * (R4.3), and at the foot row's own height: an `op-btn` at the frame's ramp is 62 and the
- * primary 67, which in a 56 px row poked 6 px into the frame's padding (the probe measured
- * 1022 in the 1016) and, with the weapon on the stage, shrank the preview to 790.
- */
-.lo-stage__actions {
-  justify-content: center;
-  gap: var(--s-3);
-  min-height: 56px;
-  padding: 0 var(--s-4);
-  margin-top: auto;
-}
-
-.lo-stage__actions[hidden] {
-  display: none;
 }
 
 /* ---- the tooltip (B4) ------------------------------------------------------ */

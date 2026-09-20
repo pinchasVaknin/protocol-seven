@@ -2386,7 +2386,7 @@ body.op-locked #viewport {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 36px;
+  gap: 28px;
   /* Off until docked, when the stage takes the body; the card's parts have left by then. */
   pointer-events: none;
 }
@@ -2456,20 +2456,22 @@ body.op-locked #viewport {
   transition: opacity 0.3s var(--dbf-ease), transform 0.4s var(--dbf-ease);
 }
 
-/* The two plates and VS: in from either side, up and away on the dock. */
+/* The two plates and VS: in from either side, up and away on the dock. The row's top padding is the emblems' overhang. */
 .dbf-teams {
   display: flex;
   align-items: center;
   gap: 48px;
+  padding-top: 64px;
 }
 
 .dbf-team {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   width: 400px;
-  padding: 26px 32px 22px;
+  padding: 76px 32px 22px;
   background: rgba(14, 17, 22, 0.92);
   border: 1px solid var(--c-line-hi);
   clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
@@ -2498,6 +2500,18 @@ body.op-locked #viewport {
   opacity: 0;
   transform: translateY(-80px);
   transition: opacity 0.35s var(--dbf-ease), transform 0.5s var(--dbf-ease);
+}
+
+/* The side's emblem (decision 7): over the plate's top edge, half out of it, the artwork's own colours. */
+.dbf-team__emblem {
+  position: absolute;
+  top: -64px;
+  left: 50%;
+  width: 136px;
+  height: 136px;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.6));
+  pointer-events: none;
 }
 
 .dbf-team__name {
@@ -2844,8 +2858,28 @@ body.op-locked #viewport {
 }
 
 .dbf .sb__col--name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-size: var(--t-small);
   letter-spacing: 0.2em;
+}
+
+/* The side's emblem before its name on the board (decision 7), small: the shield and the eyes are what survive 28 px. */
+.dbf .sb__col--name::before {
+  content: "";
+  flex: none;
+  width: 28px;
+  height: 28px;
+  background: center / contain no-repeat;
+}
+
+.dbf .sb__team--friendly .sb__col--name::before {
+  background-image: url("/brand/team-allies.png");
+}
+
+.dbf .sb__team--hostile .sb__col--name::before {
+  background-image: url("/brand/team-axis.png");
 }
 
 .dbf .sb__name,

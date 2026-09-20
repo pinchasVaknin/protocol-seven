@@ -7,6 +7,7 @@ import type { CharacterId } from '../characters/CharacterCatalog';
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
 import type { Profile } from '../meta/Profile';
 import { CharacterStage, PODIUM_STAGE, type StageFigure } from './CharacterStage';
+import { teamEmblemUrl } from './Emblem';
 import { createScreen } from './Frame';
 import { podiumOf, podiumSlots } from './Lineup';
 import { PlayerCard } from './PlayerCard';
@@ -633,9 +634,10 @@ export class EndOfMatch {
 
   /**
    * The two plates and VS: this seat's side and the other, named as the board names them
-   * (ALLIES / AXIS, relative), each with its score and how many stood on it. Free-for-All has
-   * no sides: the plates are the two at the top of the ladder — the winner's and the
-   * runner-up's — with their kills, which is what `scoreA` and `scoreB` are there.
+   * (ALLIES / AXIS, relative) under their emblems, each with its score and how many stood on
+   * it. Free-for-All has no sides: the plates are the two at the top of the ladder — the
+   * winner's and the runner-up's — with their kills, which is what `scoreA` and `scoreB` are
+   * there, under the emblem of their relation to the viewer.
    */
   private paintTeams(result: MatchResult, score: ScoreSystem): void {
     this.teams.replaceChildren();
@@ -668,6 +670,13 @@ export class EndOfMatch {
     const plate = document.createElement('div');
     plate.className = `dbf-team dbf-team--${relationClass(relation)}`;
     plate.classList.toggle('is-winner', won);
+    // The side's emblem over the plate's top edge (decision 7): the wolf for this seat's side, the demon for the other.
+    const emblem = document.createElement('img');
+    emblem.className = 'dbf-team__emblem';
+    emblem.src = teamEmblemUrl(relation);
+    emblem.alt = '';
+    emblem.draggable = false;
+    plate.appendChild(emblem);
     const n = document.createElement('span');
     n.className = 'dbf-team__name';
     n.textContent = name;

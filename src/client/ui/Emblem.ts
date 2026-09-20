@@ -21,6 +21,16 @@
  *                  word below it, cut from the logo at (480, 400), (478, 487) and (479, 527)
  *                  for the splash (M17, C6; `ui/Splash.ts`), which assembles them with the
  *                  mark — cut at (40, 208) — back into the logo.
+ * - `team-allies.png`, `team-axis.png` — the two sides' emblems (M18, decision 7; the human's
+ *                  artwork, 2026-09-20): a wolf on a shield with the blue edge, a horned
+ *                  demon on the same shield with the red edge. 512², keyed from the JPEGs'
+ *                  baked checkerboard (a flood from the border through light neutral pixels,
+ *                  a soft edge from the darkest channel, the fringe un-premultiplied). The
+ *                  colours are the artwork's, not the palette's: ALLIES and AXIS are relative
+ *                  (`ui/TeamColour`), so the wolf is always the viewer's own side and the
+ *                  demon always the other, and a colourblind palette recolours the plate and
+ *                  the name around them rather than the emblem itself. The debrief's result
+ *                  card and board headings (`EndOfMatch.ts`, `app.css` `.dbf`).
  *
  * Made by a one-off Pillow pass from the file the human supplied; the numbers (a key from 12
  * to 72 on the brightest channel, the cyan from 18 to 90 of min(g, b) − r) are in the commit
@@ -28,6 +38,11 @@
  */
 
 const BRAND_ROOT = '/brand';
+
+/** The side's emblem, by its relation to the viewer: the wolf for the viewer's own, the demon for the other. */
+export function teamEmblemUrl(relation: 'FRIENDLY' | 'HOSTILE'): string {
+  return `${BRAND_ROOT}/${relation === 'FRIENDLY' ? 'team-allies' : 'team-axis'}.png`;
+}
 
 /** The skull beside the name: the mark, with its eyes as a second layer that breathes. */
 export function makeMark(className: string): HTMLElement {

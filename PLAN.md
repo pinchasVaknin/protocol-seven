@@ -564,8 +564,13 @@ than over it; the device gate on a phone is small and cluttered.
 6. **The XP accordion stays**, and the cadence starts when the podium has landed. It does not
    open on its own here (D2's rule): the list would open over the stat cards. The strip
    says how many unlocks it holds and a click opens it.
-7. **No team emblems.** ALLIES and AXIS as the board names them, in their colours. The human
-   may add two static logo assets later; the plates have the place for them.
+7. **Team emblems — the human's two, later the same day.** A wolf on a shield with the blue
+   edge and a horned demon on the same shield with the red edge, supplied as JPEGs with the
+   checkerboard baked in and keyed to alpha (`public/brand/team-allies.png`, `team-axis.png`;
+   `Emblem.ts` says how). On the result card's plates, over the top edge, and before ALLIES /
+   AXIS on the board's headings. The colours are the artwork's: the sides are relative, so the
+   wolf is always the viewer's own and the demon always the other, and a colourblind palette
+   recolours the plate and the name around them.
 8. **The keys arm a second in.** Space, Escape and Tab mean nothing for the first second —
    the hand still holding jump, the Escape aimed at the pause menu — and any other key or a
    click on nothing skips the choreography to its rest.
@@ -644,6 +649,3 @@ Space into a new match, Escape to the menu.
 ## Open
 
 - **The human's playtest**, with sound.
-- **Team emblems** (decision 7): if two assets arrive, they go on the plates and the board's
-  headings, tinted by `ui/Palette`'s relation colours rather than painted — a second writer
-  of the friendly/hostile fact is the shape P0 bans.

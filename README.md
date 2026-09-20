@@ -199,7 +199,7 @@ background while you are still playing, so the transition into the match has no 
 | `MODE_VOTE_SECONDS` | 10 | |
 | `MAP_VOTE_SECONDS` | 10 | |
 | `READY_TIMEOUT_MS` | 20000 | How long a slow client's background build is waited on before the match starts without it. Paired with the client's per-frame build budget — see `MapBuildQueue` |
-| `SUMMARY_HOLD_SECONDS` | 14 | How long the post-match summary is held before everybody returns |
+| `SUMMARY_HOLD_SECONDS` | 30 | How long the post-match debrief is held before everybody returns |
 | `FAULT_INJECTION` | off | Diagnostic only. Lets the allocator be made to stall and fail |
 
 Shortening the vote timings is supported and is a **diagnostic setting, not a tuning knob** —

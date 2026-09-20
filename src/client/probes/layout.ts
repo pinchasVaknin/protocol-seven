@@ -16,7 +16,7 @@ import { CharacterAssetService } from '../characters/CharacterAssetService';
 import { BOT_CHARACTER_IDS, DEFAULT_CHARACTER_ID } from '../characters/CharacterCatalog';
 import { Profile } from '../meta/Profile';
 import { DEFAULT_CAMERA_CONFIG } from '../player/CameraConfig';
-import { EndOfMatch, type LineupSource } from '../ui/EndOfMatch';
+import { EndOfMatch, type LineupSource, type MatchFacts } from '../ui/EndOfMatch';
 import { LoadoutEditor } from '../ui/LoadoutEditor';
 import { Menus, type MenuSelection } from '../ui/Menus';
 import { PauseMenu } from '../ui/PauseMenu';
@@ -317,8 +317,24 @@ pause.setDebugAvailable(true);
  */
 const characterAssets = new CharacterAssetService({ preload: () => new Promise(() => undefined), dispose: noop });
 
-const summary = new EndOfMatch({ rowsPerTeam: 8, onContinue: noop, onExit: noop, characterAssets, anisotropy: () => 1 });
+const summary = new EndOfMatch({
+  rowsPerTeam: 8,
+  onContinue: noop,
+  onExit: noop,
+  characterAssets,
+  anisotropy: () => 1,
+  profile,
+  audio: { playDebriefHit: noop, playDebriefSweep: noop, playDebriefMedal: noop },
+});
 host.appendChild(summary.element);
+
+/** The mission card's facts (M18): the first map's picture, the widest mode's name, a tier. */
+const matchFacts: MatchFacts = {
+  mapName: MAPS[0]?.name ?? 'FOUNDRY',
+  mapPicture: MAPS[0]?.picture ?? '',
+  modeName: 'TEAM DEATHMATCH',
+  difficulty: 'MIXED',
+};
 
 /**
  * The XP accordion in the summary's band (M15, D2), with the two cues stubbed: the cadence's
@@ -446,19 +462,26 @@ function fullestReport(): XpReport {
   };
 }
 
-/** A team-mode result for `perTeam` a side: B wins, so the podium is the far side of the board. */
+/**
+ * A team-mode result for `perTeam` a side: B wins, so the podium is mostly the far side of the
+ * board. Shown at the choreography's rest (M18, `settle`): the podium, the plates, the stat
+ * cards and the strip, which is where the screen ends up and what has to fit.
+ */
 function teamResult(perTeam: number): { show: () => HTMLElement; hide: () => void } {
   const score = boardOf(perTeam);
   return {
     show: () => {
+      xpSummary.prime(fullestReport());
+      summary.onXp = () => xpSummary.play(fullestReport());
       summary.show(
-        { kind: 'match', winner: 'B', reason: 'SCORE LIMIT', scoreA: 68, scoreB: 75, roundsA: 0, roundsB: 1 },
+        { kind: 'match', winner: 'B', reason: 'Score limit', scoreA: 68, scoreB: 75, roundsA: 0, roundsB: 1 },
         'A',
         1,
         score,
         lineupFixture,
+        matchFacts,
       );
-      xpSummary.play(fullestReport());
+      summary.settle();
       return summary.element;
     },
     hide: () => {
@@ -486,7 +509,7 @@ function layerOf(selector: string): HTMLElement {
 }
 
 /** The main menu and the setup page are the same layer: the one with no modifier class. */
-const PLAIN_SCREEN = '.op-screen:not(.eom):not(.lo):not(.op-screen--pause):not(.st)';
+const PLAIN_SCREEN = '.op-screen:not(.dbf):not(.lo):not(.op-screen--pause):not(.st)';
 
 /**
  * Every surface, and how to put it on screen.
@@ -581,6 +604,32 @@ const SURFACES: readonly Readonly<{ name: string; show: () => HTMLElement; hide:
     hide: () => pause.hide(),
   },
   /**
+   * The result card (M18, phase A): the word, the two plates, the mission card and the strip,
+   * held where the card rests before the dock — the widest the card gets is a full board's
+   * OPERATORS count and the widest map name.
+   */
+  {
+    name: 'summary/card',
+    show: () => {
+      xpSummary.prime(fullestReport());
+      summary.onXp = null;
+      summary.show(
+        { kind: 'match', winner: 'A', reason: 'Score limit', scoreA: 75, scoreB: 68, roundsA: 1, roundsB: 0 },
+        'A',
+        1,
+        boardScore,
+        lineupFixture,
+        matchFacts,
+      );
+      summary.settleCard();
+      return summary.element;
+    },
+    hide: () => {
+      xpSummary.stop();
+      summary.hide();
+    },
+  },
+  /**
    * The summary at three roster sizes, the accordion folded and open (M15, Gate D). Folded is
    * the state the screen opens in — the strip, the lineup, the buttons; open is the state it
    * reaches when the cadence finishes, taken instantly here (`open(true)`) because the probe
@@ -608,14 +657,17 @@ const SURFACES: readonly Readonly<{ name: string; show: () => HTMLElement; hide:
   {
     name: 'summary/board',
     show: () => {
+      xpSummary.prime(fullestReport());
+      summary.onXp = null;
       summary.show(
-        { kind: 'match', winner: 'B', reason: 'SCORE LIMIT', scoreA: 68, scoreB: 75, roundsA: 0, roundsB: 1 },
+        { kind: 'match', winner: 'B', reason: 'Score limit', scoreA: 68, scoreB: 75, roundsA: 0, roundsB: 1 },
         'A',
         1,
         boardScore,
         lineupFixture,
+        matchFacts,
       );
-      xpSummary.play(fullestReport());
+      summary.settle();
       summary.showBoard(true);
       return summary.element;
     },
@@ -636,12 +688,14 @@ const SURFACES: readonly Readonly<{ name: string; show: () => HTMLElement; hide:
     name: tab === 'lineup' ? 'summary/ffa' : 'summary/ffa/board',
     show: (): HTMLElement => {
       summary.setViewer({ team: 'A', freeForAll: true });
+      xpSummary.prime(fullestReport());
+      summary.onXp = null;
       summary.show(
         {
           kind: 'match',
           winner: 'A',
           winnerEntityId: 3,
-          reason: 'KILL LIMIT',
+          reason: 'Score limit',
           scoreA: 30,
           scoreB: 27,
           roundsA: 1,
@@ -651,8 +705,9 @@ const SURFACES: readonly Readonly<{ name: string; show: () => HTMLElement; hide:
         1,
         boardScore,
         lineupFixture,
+        { ...matchFacts, modeName: 'FREE-FOR-ALL' },
       );
-      xpSummary.play(fullestReport());
+      summary.settle();
       summary.showBoard(tab === 'board');
       return summary.element;
     },

@@ -125,7 +125,7 @@ export interface ServerConfig {
    * the match.
    */
   readonly readyTimeoutMs: number;
-  /** Seconds the end-of-match summary is held before everybody returns (§6.9: 12-15 s). */
+  /** Seconds the debrief is held before everybody returns (§6.9 said 12-15 s; M18's choreography asked for 30). */
   readonly summaryHoldSeconds: number;
   /**
    * Wrap the allocator in `FaultyMatchAllocator` (§4.17, §8.14).
@@ -217,7 +217,9 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
     warmupBots: intOr(env['WARMUP_BOTS'], 3, 0, 8),
     botDifficulty: difficultyOr(env['BOT_DIFFICULTY'], 'MIX'),
     readyTimeoutMs: intOr(env['READY_TIMEOUT_MS'], 20_000, 500, 120_000),
-    summaryHoldSeconds: intOr(env['SUMMARY_HOLD_SECONDS'], 14, 1, 60),
+    // Thirty since M18 (it was 14): the debrief's choreography rests at eight seconds and the
+    // XP cadence plays after it, and the human wanted twenty seconds of board after that.
+    summaryHoldSeconds: intOr(env['SUMMARY_HOLD_SECONDS'], 30, 1, 90),
     faultInjection: (env['FAULT_INJECTION'] ?? '') === '1',
     voteCycle: {
       playSeconds: intOr(env['PLAY_SECONDS'], VOTE_CYCLE_CONFIG.playSeconds, 1, 600),

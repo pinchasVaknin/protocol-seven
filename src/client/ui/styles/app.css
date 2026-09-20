@@ -2222,161 +2222,431 @@ body.op-locked #viewport {
   color: var(--c-text-dim);
 }
 
-/* ---- end of match (M4; on the frame, M15 Phase D) ------------------------ */
+/* ---- the debrief (M4; on the frame, M15 D; the choreography, M18; EndOfMatch.ts) ------- */
 
 /*
- * Three rows on the frame's grid — the head, the top (the lineup or the board), the band —
- * and the band a fixed height at the bottom, so nothing above it moves when the XP accordion
- * opens (D2). The frame's padding is the editor's 32/48 rather than 48/72, for the editor's
- * reason: this screen has the most on it.
+ * The frame under the shared chrome (`--frame`: the header at 32, the footer at 24 from the
+ * bottom): 120 above and 86 below leave 874 for three rows — the head (64), the body, and
+ * the band (84) — so the body is 694, which is the podium stage's own height. The body's
+ * three occupants (the result card, the stage, the board) are stacked in the same box, so
+ * the card can leave while the stage arrives.
  *
- * Two numbers are the accordion's room. `--eom-band` is what the screen gives it; the
- * strip (level, bar, total) stands at its foot, and `--xp-list-ceiling` is what the row list
- * may grow to above the strip. The list is `max-height`-animated up to the ceiling and
- * clips while it grows; at rest a report must fit under the ceiling, and `npm run layout`
- * measures the fullest report there is (twelve lines and a tail) against it.
+ * Every phase is a class on the frame (`dbf--card`, `--dock`, `--docked`, `--podium`,
+ * `--plates`, `--stats`, `--rest`) and every entrance and exit is a transition from the
+ * state before it, with its stagger a `transition-delay` here. `.dbf--instant` is the
+ * settle's: the same end state with every transition off for one frame.
  *
- * The old-ramp pin that stood here — `--t-body: 13px` and the rest, restated so the sixteen-row
- * board would fit under the frame's ramp — is gone with the rebuild, as it said it would be.
+ * `--xp-list-ceiling` is the room the XP row list has when it opens: it grows *up* out of
+ * the strip over the stage (absolute, below), so the room costs the layout nothing, and a
+ * report must fit under it at rest — `npm run layout` measures the fullest report there is
+ * against it, with the list's own padding inside the number.
  */
-.eom .op-frame {
-  --eom-band: 300px;
-  --xp-list-ceiling: 196px;
+.dbf .op-frame {
+  --xp-list-ceiling: 260px;
+  --dbf-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) var(--eom-band);
-  gap: var(--s-4);
+  grid-template-rows: 64px minmax(0, 1fr) 84px;
+  gap: 16px;
   justify-content: stretch;
   justify-items: stretch;
   align-items: stretch;
-  padding: 32px 48px;
+  padding: 120px 48px 86px;
 }
 
-.eom[hidden] {
+.dbf[hidden] {
   display: none;
 }
 
-/* ---- the head ---- */
+.dbf .op-card--static .op-card__gear {
+  display: none;
+}
 
-.eom__head {
+/* ---- the head: the result small, the score, the reason; the tabs ---- */
+
+.dbf-head {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: var(--s-8);
   min-width: 0;
 }
 
-.eom__titles {
+/* Laid out from the start — the FLIP measures it — and shown once the word has docked. */
+.dbf-head__result {
   display: flex;
-  flex-direction: column;
-  gap: var(--s-1);
+  align-items: baseline;
+  gap: 24px;
   min-width: 0;
+  opacity: 0;
+  transition: opacity 0.3s var(--dbf-ease);
 }
 
-.eom__outcome {
-  font-size: var(--t-display);
+.dbf--docked .dbf-head__result {
+  opacity: 1;
+}
+
+.dbf-head__word {
+  font-size: 44px;
   font-weight: var(--w-heavy);
-  letter-spacing: var(--track-display);
+  letter-spacing: 0.14em;
+  line-height: 1;
   text-transform: uppercase;
-  margin: 0;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+
+.dbf-head__word.is-win,
+.dbf-hero__word.is-win {
+  color: var(--c-accent);
+  text-shadow: 0 0 24px rgba(63, 169, 199, 0.55);
+}
+
+.dbf-head__word.is-loss,
+.dbf-hero__word.is-loss {
+  color: var(--c-bad);
+  text-shadow: 0 0 24px rgba(232, 96, 76, 0.4);
+}
+
+.dbf-head__score {
+  font-size: 36px;
+  font-weight: var(--w-heavy);
   line-height: 1;
   color: var(--c-text);
   white-space: nowrap;
 }
 
-.eom__outcome--win {
-  color: var(--c-positive, var(--c-good));
+.dbf-head__score b {
+  font-weight: inherit;
 }
 
-.eom__outcome--loss {
-  color: var(--c-bad);
+.dbf-head__score i {
+  font-style: normal;
+  color: var(--c-text-faint);
+  margin: 0 10px;
 }
 
-.eom__detail {
+.dbf-head__reason {
+  color: var(--c-text-dim);
+  letter-spacing: 0.2em;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/*
- * The local player's six figures, in a row between the headline and the tabs. They were a
- * boxed row of their own between the headline and the board; on the frame the head has the
- * width for them and the top has none to spare.
- */
-.eom__personal {
+.dbf-tabs {
   display: flex;
-  gap: var(--s-8);
-  margin-left: auto;
+  align-items: center;
+  gap: var(--s-1);
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.3s var(--dbf-ease);
 }
 
-.eom__stat {
+.dbf--docked .dbf-tabs {
+  opacity: 1;
+}
+
+.dbf-tab {
+  font-size: var(--t-micro);
+  letter-spacing: 0.18em;
+}
+
+/* The key that turns the tabs: a small plate after them. */
+.dbf-tabs__hint {
+  margin-left: var(--s-3);
+  padding: 3px 8px;
+  border: 1px solid var(--c-line-hi);
+  border-radius: var(--radius);
+  color: var(--c-text-faint);
+  font-size: 11px;
+}
+
+/* ---- the body ---- */
+
+.dbf-body {
+  position: relative;
+  min-height: 0;
+}
+
+.dbf-card,
+.dbf-stage {
+  position: absolute;
+  inset: 0;
+}
+
+.dbf-card[hidden],
+.dbf-stage[hidden] {
+  display: none;
+}
+
+/* ---- the result card (phase A) ---- */
+
+.dbf-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--s-1);
+  justify-content: center;
+  gap: 36px;
+  /* Off until docked, when the stage takes the body; the card's parts have left by then. */
+  pointer-events: none;
 }
 
-.eom__stat-value {
+.dbf--docked .dbf-card {
+  visibility: hidden;
+}
+
+.dbf-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+/*
+ * The word: lands at a shade over its size and settles — a hit, not a fade — and on the
+ * dock is carried onto the head's box by the transform `EndOfMatch.flipWordToHead` sets.
+ * Its origin is its top left so the measured translate is the whole of the move.
+ */
+.dbf-hero__word {
+  margin: 0;
+  font-size: 136px;
+  font-weight: var(--w-heavy);
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--c-text);
+  white-space: nowrap;
+  transform-origin: 0 0;
+  opacity: 0;
+  transform: scale(1.12);
+  transition: opacity 0.25s var(--dbf-ease), transform 0.4s var(--dbf-ease);
+}
+
+.dbf--card .dbf-hero__word {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.dbf--dock .dbf-hero__word {
+  transition: transform 0.6s var(--dbf-ease), opacity 0.2s 0.5s var(--dbf-ease);
+}
+
+.dbf--docked .dbf-hero__word {
+  opacity: 0;
+}
+
+.dbf-hero__reason {
+  margin: 0;
+  font-size: var(--t-small);
+  letter-spacing: 0.24em;
+  color: var(--c-text-dim);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.35s 0.35s var(--dbf-ease), transform 0.35s 0.35s var(--dbf-ease);
+}
+
+.dbf--card .dbf-hero__reason {
+  opacity: 1;
+  transform: none;
+}
+
+.dbf--dock .dbf-hero__reason {
+  opacity: 0;
+  transform: translateY(-20px);
+  transition: opacity 0.3s var(--dbf-ease), transform 0.4s var(--dbf-ease);
+}
+
+/* The two plates and VS: in from either side, up and away on the dock. */
+.dbf-teams {
+  display: flex;
+  align-items: center;
+  gap: 48px;
+}
+
+.dbf-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 400px;
+  padding: 26px 32px 22px;
+  background: rgba(14, 17, 22, 0.92);
+  border: 1px solid var(--c-line-hi);
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
+  opacity: 0;
+  transition: opacity 0.4s 0.55s var(--dbf-ease), transform 0.5s 0.55s var(--dbf-ease);
+}
+
+.dbf-team--friendly {
+  border-color: var(--c-good);
+  box-shadow: inset 0 0 40px rgba(87, 169, 255, 0.08);
+  transform: translateX(-60px);
+}
+
+.dbf-team--hostile {
+  border-color: var(--c-bad);
+  box-shadow: inset 0 0 40px rgba(232, 96, 76, 0.08);
+  transform: translateX(60px);
+}
+
+.dbf--card .dbf-team {
+  opacity: 1;
+  transform: none;
+}
+
+.dbf--dock .dbf-team {
+  opacity: 0;
+  transform: translateY(-80px);
+  transition: opacity 0.35s var(--dbf-ease), transform 0.5s var(--dbf-ease);
+}
+
+.dbf-team__name {
+  font-size: var(--t-lead);
+  font-weight: var(--w-heavy);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--c-text);
+}
+
+.dbf-team--friendly .dbf-team__name {
+  color: var(--c-good);
+}
+
+.dbf-team--hostile .dbf-team__name {
+  color: var(--c-bad);
+}
+
+.dbf-team__score {
+  font-size: 96px;
+  font-weight: var(--w-heavy);
+  line-height: 1;
+  color: var(--c-text);
+}
+
+.dbf-team.is-winner .dbf-team__score {
+  text-shadow: 0 0 28px rgba(232, 234, 238, 0.35);
+}
+
+.dbf-team__sub {
+  color: var(--c-text-faint);
+}
+
+.dbf-vs {
+  font-size: 40px;
+  font-weight: var(--w-heavy);
+  letter-spacing: 0.1em;
+  color: var(--c-text-faint);
+  opacity: 0;
+  transition: opacity 0.3s 0.75s var(--dbf-ease);
+}
+
+.dbf--card .dbf-vs {
+  opacity: 1;
+}
+
+.dbf--dock .dbf-vs {
+  opacity: 0;
+  transition: opacity 0.25s var(--dbf-ease);
+}
+
+/* The mission card: up from below, down and away on the dock. */
+.dbf-mission {
+  display: grid;
+  grid-template-columns: 240px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 36px;
+  width: 1240px;
+  padding: 18px 36px 18px 18px;
+  background: rgba(14, 17, 22, 0.92);
+  border: 1px solid var(--c-line);
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  opacity: 0;
+  transform: translateY(40px);
+  transition: opacity 0.4s 0.9s var(--dbf-ease), transform 0.5s 0.9s var(--dbf-ease);
+}
+
+.dbf--card .dbf-mission {
+  opacity: 1;
+  transform: none;
+}
+
+.dbf--dock .dbf-mission {
+  opacity: 0;
+  transform: translateY(80px);
+  transition: opacity 0.35s var(--dbf-ease), transform 0.5s var(--dbf-ease);
+}
+
+.dbf-mission__img {
+  display: block;
+  width: 240px;
+  height: 128px;
+  object-fit: cover;
+  border: 1px solid var(--c-line-hi);
+}
+
+.dbf-mission__where {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 260px;
+  padding-right: 36px;
+  border-right: 1px solid var(--c-line-hi);
+}
+
+.dbf-mission__map {
+  font-size: var(--t-title);
+  font-weight: var(--w-heavy);
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--c-text);
+}
+
+.dbf-mission__mode {
+  font-size: var(--t-small);
+  font-weight: var(--w-heavy);
+  letter-spacing: 0.16em;
+  color: var(--c-accent);
+}
+
+.dbf-mission__stats {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-6);
+}
+
+.dbf-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dbf-stat__value {
   font-size: var(--t-title);
   font-weight: var(--w-heavy);
   line-height: 1;
   color: var(--c-text);
 }
 
-.eom__tabs {
-  display: flex;
-  gap: var(--s-1);
-  flex: none;
-}
-
-.eom__tab {
-  appearance: none;
-  padding: var(--s-2) var(--s-4);
-  border: 1px solid var(--c-line-hi);
-  border-radius: var(--radius);
-  background: var(--c-surface);
-  color: var(--c-text-dim);
-  font-family: var(--font-ui);
-  font-size: var(--t-small);
-  font-weight: var(--w-heavy);
-  letter-spacing: var(--track-label);
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.eom__tab:hover {
-  color: var(--c-text);
-}
-
-.eom__tab.is-on {
-  color: var(--c-accent);
-  border-color: var(--c-accent);
-}
-
-/* ---- the top: the lineup, or the board ---- */
-
-.eom__top {
-  position: relative;
-  min-height: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
+/* ---- the podium (phase C) ---- */
 
 /*
- * The stage's box is the lens's own aspect in frame pixels (`LINEUP_STAGE`), like the
- * editor's 860×800: the nameplates are placed as fractions of it from the camera's
- * projection, and a box of another shape would put them beside the feet rather than under.
+ * The stage's box is the lens's own aspect in frame pixels (`PODIUM_STAGE`), like the
+ * editor's 860×734: the plates are placed as fractions of it from the camera's projection,
+ * and a box of another shape would put them beside the feet rather than under.
  */
-.eom-stage {
-  position: relative;
-  width: 1824px;
-  height: 560px;
-  flex: none;
+.dbf-stage {
+  opacity: 0;
+  transition: opacity 0.6s var(--dbf-ease);
 }
 
-.eom-stage[hidden] {
-  display: none;
+.dbf--podium .dbf-stage {
+  opacity: 1;
 }
 
-.eom-stage__canvas {
+.dbf-stage__canvas {
   display: block;
   width: 100%;
   height: 100%;
@@ -2384,86 +2654,349 @@ body.op-locked #viewport {
   background: radial-gradient(ellipse at 50% 70%, rgba(28, 32, 39, 0.9), rgba(7, 8, 10, 0.2) 70%);
 }
 
-.eom-stage__plates {
+.dbf-stage__plates {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-/* A nameplate: hung from the point under the figure's feet, centred on it. */
-.eom-plate {
+/*
+ * A plate: hung from the point in front of the figure's feet, centred on it. The head (the
+ * medal and the name) lands on the plates phase and the stat card on the stats phase, each
+ * plate `--dbf-order` steps after the one before — bronze, silver, gold, as the medals sound.
+ */
+.dbf-plate {
   position: absolute;
   transform: translate(-50%, 0);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: var(--s-1) var(--s-3);
-  border: 1px solid var(--c-line-hi);
-  border-radius: var(--radius);
-  background: rgba(7, 8, 10, 0.82);
-  white-space: nowrap;
+  gap: 10px;
+  width: 360px;
 }
 
-.eom-plate__name {
+.dbf-plate__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 18px 8px 8px;
+  border: 1px solid var(--c-line-hi);
+  border-radius: var(--radius);
+  background: rgba(7, 8, 10, 0.86);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 0.3s var(--dbf-ease), transform 0.35s var(--dbf-ease);
+  transition-delay: calc(var(--dbf-order, 0) * 0.16s);
+}
+
+.dbf--plates .dbf-plate__head {
+  opacity: 1;
+  transform: none;
+}
+
+.dbf-plate--local .dbf-plate__head {
+  border-left: 2px solid var(--c-accent);
+}
+
+/* The medal: a disc with the rank cut in it, in the metal's colour. */
+.dbf-plate__medal {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: var(--w-heavy);
+  color: var(--c-void);
+  background: #c9a24a;
+  box-shadow: 0 0 16px rgba(201, 162, 74, 0.55), inset 0 -3px 0 rgba(0, 0, 0, 0.25);
+}
+
+.dbf-plate--silver .dbf-plate__medal {
+  background: #c3c9d3;
+  box-shadow: 0 0 16px rgba(195, 201, 211, 0.4), inset 0 -3px 0 rgba(0, 0, 0, 0.25);
+}
+
+.dbf-plate--bronze .dbf-plate__medal {
+  background: #b5763f;
+  box-shadow: 0 0 16px rgba(181, 118, 63, 0.4), inset 0 -3px 0 rgba(0, 0, 0, 0.25);
+}
+
+.dbf-plate__who {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dbf-plate__mvp {
+  color: #c9a24a;
+  letter-spacing: 0.3em;
+}
+
+.dbf-plate__name {
   font-family: var(--font-ui);
-  font-size: var(--t-small);
+  font-size: var(--t-lead);
   font-weight: var(--w-heavy);
   letter-spacing: var(--track-label);
   text-transform: uppercase;
   color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
 }
 
-.eom-plate--friendly .eom-plate__name {
+.dbf-plate--friendly .dbf-plate__name {
   color: var(--c-good);
 }
 
-.eom-plate--hostile .eom-plate__name {
+.dbf-plate--hostile .dbf-plate__name {
   color: var(--c-bad);
 }
 
-/* The player's own plate gets the one accent edge, as their row on the board does. */
-.eom-plate--local {
-  border-left: 2px solid var(--c-accent);
+.dbf-plate__stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: rgba(14, 17, 22, 0.92);
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.35s var(--dbf-ease), transform 0.4s var(--dbf-ease);
+  transition-delay: calc(var(--dbf-order, 0) * 0.1s);
 }
 
-.eom-plate__sub {
-  font-size: var(--t-micro);
-  color: var(--c-text-dim);
+.dbf--stats .dbf-plate__stats {
+  opacity: 1;
+  transform: none;
+}
+
+.dbf-plate__stats .dbf-stat__value {
+  font-size: var(--t-lead);
+}
+
+.dbf-plate__stats .op-label {
+  font-size: 11px;
 }
 
 /*
- * The board on the SCOREBOARD tab: the same `.sb--embedded`, given the frame's width so the
- * two team blocks stand side by side at the frame's ramp rather than folding to two lines.
+ * The board on the SCOREBOARD tab (the reference's second screen): the same `.sb--embedded`
+ * in a box of its own — each side a plate with its name on the top edge in its colour, rows
+ * with room, the awards strip under the two — centred in the body's box at the frame's width
+ * so the two blocks stand side by side rather than folding to two lines. The board's own
+ * title is off: the header's subtitle already names the mode and the map.
  */
-.eom .sb--embedded {
-  width: min(1600px, 100%);
+.dbf-board {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(1700px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.dbf-board[hidden] {
+  display: none;
+}
+
+.dbf .sb--embedded {
+  width: 100%;
+}
+
+.dbf .sb__title {
+  display: none;
+}
+
+.dbf .sb__grid {
+  gap: 40px;
+}
+
+.dbf .sb__team {
+  padding: 8px 18px 14px;
+  background: rgba(14, 17, 22, 0.92);
+  border: 1px solid var(--c-line);
+  border-top-width: 2px;
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+}
+
+.dbf .sb__team--friendly {
+  border-top-color: var(--c-good);
+}
+
+.dbf .sb__team--hostile {
+  border-top-color: var(--c-bad);
+}
+
+.dbf .sb__head,
+.dbf .sb__row {
+  padding: 8px 12px;
+}
+
+.dbf .sb__head {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.dbf .sb__col--name {
+  font-size: var(--t-small);
+  letter-spacing: 0.2em;
+}
+
+.dbf .sb__name,
+.dbf .sb__cell {
+  font-size: var(--t-body);
+}
+
+/* The awards: four plates in a row, the name in the team's colour. */
+.dbf-awards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.dbf-awards:empty {
+  display: none;
+}
+
+.dbf-award {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "label label" "name value";
+  align-items: baseline;
+  gap: 6px 16px;
+  padding: 14px 20px;
+  background: rgba(14, 17, 22, 0.92);
+  border: 1px solid var(--c-line);
+  border-left: 3px solid var(--c-line-hi);
+}
+
+.dbf-award > .op-label {
+  grid-area: label;
+}
+
+.dbf-award__name {
+  grid-area: name;
+  font-size: var(--t-lead);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dbf-award--friendly {
+  border-left-color: var(--c-good);
+}
+
+.dbf-award--friendly .dbf-award__name {
+  color: var(--c-good);
+}
+
+.dbf-award--hostile {
+  border-left-color: var(--c-bad);
+}
+
+.dbf-award--hostile .dbf-award__name {
+  color: var(--c-bad);
+}
+
+.dbf-award__value {
+  grid-area: value;
+  font-size: var(--t-title);
+  font-weight: var(--w-heavy);
+  color: var(--c-text);
 }
 
 /* ---- the band ---- */
 
-.eom__band {
+.dbf-band {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--s-8);
-  align-items: end;
-  height: var(--eom-band);
+  align-items: stretch;
   min-height: 0;
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.4s 1.1s var(--dbf-ease), transform 0.4s 1.1s var(--dbf-ease);
 }
 
-/* The accordion's cell. `XpSummary` fills it; a mode that banks nothing hides it. */
-.eom__xp {
+.dbf--card .dbf-band {
+  opacity: 1;
+  transform: none;
+}
+
+/* The strip's cell; `XpSummary` fills it and the list grows up out of it, over the stage. */
+.dbf-band__xp {
+  position: relative;
   min-width: 0;
-  height: 100%;
 }
 
-.eom__xp[hidden] {
+.dbf-band__xp[hidden] {
   display: none;
 }
 
-/* CONTINUE and EXIT at the band's right end, on the strip's line, and they never move. */
-.eom__actions {
-  padding-bottom: var(--s-3);
+.dbf .xp {
+  height: 100%;
+  justify-content: center;
+}
+
+.dbf .xp__list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 2;
+  padding: var(--s-3) var(--s-4);
+  background: rgba(12, 14, 17, 0.97);
+  border: 1px solid var(--c-line-hi);
+  border-radius: var(--radius);
+}
+
+.dbf .xp__list[hidden] {
+  display: none;
+}
+
+.dbf .xp__strip {
+  min-height: 84px;
+}
+
+.dbf-band__actions {
+  display: flex;
+  align-items: stretch;
+  gap: var(--s-4);
+}
+
+.dbf-exit {
+  min-width: 220px;
+  font-size: var(--t-body);
+}
+
+.dbf-continue {
+  min-width: 340px;
+}
+
+/* The key on the primary: a small plate at its end, the hint that Space is the same press. */
+.dbf-continue__key {
+  margin-left: var(--s-2);
+  padding: 3px 8px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius);
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* The settle: every transition off for the frame it takes. */
+.dbf--instant,
+.dbf--instant * {
+  transition: none !important;
 }
 
 /* M1's placeholder reticle dot lived here. M2 replaced it with the real dynamic

@@ -130,12 +130,21 @@ export type BotDifficulty = BotTier | 'MIX';
 export const BOT_DIFFICULTIES: readonly BotDifficulty[] = [...BOT_TIERS, 'MIX'];
 
 /**
- * One line each, for the menu and for `DEPLOY.md`.
+ * A name each — what the picker's card and the debrief's mission card call it — and one line
+ * each, for the menu and for `DEPLOY.md`.
  *
  * Here rather than in `client/ui/Menus.ts` because a difficulty that reads one way in the
  * front end and another way in the deployment guide is two descriptions of one table, and this
  * file is the table. Nothing here touches the DOM, so `shared/` still compiles without it.
  */
+export const BOT_DIFFICULTY_NAMES: Readonly<Record<BotDifficulty, string>> = {
+  RECRUIT: 'RECRUIT',
+  REGULAR: 'REGULAR',
+  HARDENED: 'HARDENED',
+  VETERAN: 'VETERAN',
+  MIX: 'MIXED',
+};
+
 export const BOT_DIFFICULTY_BLURBS: Readonly<Record<BotDifficulty, string>> = {
   RECRUIT: 'Slow to react, wide cone, never throws',
   REGULAR: 'The M3 baseline — the tier a mixed roster is mostly made of',

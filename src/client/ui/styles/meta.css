@@ -1042,7 +1042,7 @@
 .xp__strip {
   appearance: none;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: var(--s-6);
   width: 100%;
@@ -1088,6 +1088,20 @@
   font-weight: var(--w-heavy);
   min-width: 150px;
   text-align: right;
+}
+
+/* The unlock count (M18): lit in the accent, a chip between the bar and the total, only while the list is folded. */
+.xp__unlocks {
+  padding: 4px 10px;
+  border: 1px solid var(--c-accent-dim);
+  border-radius: var(--radius);
+  color: var(--c-accent);
+  background: var(--c-accent-glow);
+  white-space: nowrap;
+}
+
+.xp__unlocks[hidden] {
+  display: none;
 }
 
 .xp__bar {

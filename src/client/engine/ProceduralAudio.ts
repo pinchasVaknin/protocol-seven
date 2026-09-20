@@ -652,6 +652,113 @@ export class ProceduralAudio extends AudioGraph {
     this.noiseBurst(air);
   }
 
+  // -- the debrief (M18) ---------------------------------------------------------
+
+  /**
+   * The result landing: VICTORY, DEFEAT or DRAW striking the screen.
+   *
+   * The splash's hit — a sine dropping from a low fundamental with a click of noise on its
+   * front — at the splash's second weight, and for a win a bright partial over it so the
+   * word rings rather than only lands; a loss keeps the drop alone, and lower. The same
+   * generator as the splash on purpose: the debrief is the splash's ending, and the two
+   * sounds should be heard as one house's.
+   */
+  playDebriefHit(kind: 'WIN' | 'LOSS' | 'DRAW'): void {
+    if (!this.hasContext) return;
+    const win = kind === 'WIN';
+
+    const body = this.oscScratch;
+    body.x = 0;
+    body.y = 0;
+    body.z = 0;
+    body.positional = false;
+    body.bus = 'ui';
+    body.type = 'sine';
+    body.freq = win ? 110 : 88;
+    body.freqEnd = win ? 40 : 30;
+    body.level = 0.5;
+    body.attack = 0.004;
+    body.decay = win ? 0.6 : 0.9;
+    body.wet = 0.25;
+    body.filterFreq = 900;
+    body.filterQ = 0.8;
+    this.oscHit(body);
+
+    const click = this.noiseScratch;
+    click.x = 0;
+    click.y = 0;
+    click.z = 0;
+    click.positional = false;
+    click.bus = 'ui';
+    click.filter = 'lowpass';
+    click.freq = win ? 2600 : 1400;
+    click.freqEnd = 300;
+    click.q = 0.9;
+    click.level = 0.2;
+    click.attack = 0.002;
+    click.decay = 0.12;
+    click.wet = 0.2;
+    click.rate = 1;
+    this.noiseBurst(click);
+
+    if (win) this.playUiSweep(1046, 1318, 0.12, 0.5);
+  }
+
+  /**
+   * The turn from the result to the podium: the plates lift and the card drops. A band of
+   * air rising with a short sine under it — the chime's whoosh without the chime — so the
+   * screen is heard to move without a note being played over it.
+   */
+  playDebriefSweep(): void {
+    if (!this.hasContext) return;
+    this.playUiSweep(220, 660, 0.1, 0.45);
+
+    const air = this.noiseScratch;
+    air.x = 0;
+    air.y = 0;
+    air.z = 0;
+    air.positional = false;
+    air.bus = 'ui';
+    air.filter = 'bandpass';
+    air.freq = 900;
+    air.freqEnd = 5200;
+    air.q = 1.1;
+    air.level = 0.14;
+    air.attack = 0.04;
+    air.decay = 0.55;
+    air.wet = 0.35;
+    air.rate = 1;
+    this.noiseBurst(air);
+  }
+
+  /**
+   * A medal landing on the podium: bronze, silver, gold, in that order and each a note
+   * higher — the three make a chord as they land, and the gold's carries a second partial so
+   * the first place is heard to be first. `rank` is 0 for gold, 1 for silver, 2 for bronze.
+   */
+  playDebriefMedal(rank: number): void {
+    if (!this.hasContext) return;
+    const freq = rank <= 0 ? 784 : rank === 1 ? 659 : 523;
+    this.playUiSweep(freq * 0.97, freq, 0.2, 0.4);
+
+    const under = this.oscScratch;
+    under.x = 0;
+    under.y = 0;
+    under.z = 0;
+    under.positional = false;
+    under.bus = 'ui';
+    under.type = 'triangle';
+    under.freq = freq / 2;
+    under.freqEnd = freq / 2;
+    under.level = rank <= 0 ? 0.16 : 0.1;
+    under.attack = 0.006;
+    under.decay = rank <= 0 ? 0.7 : 0.45;
+    under.wet = 0.3;
+    under.filterFreq = 5000;
+    under.filterQ = 0.7;
+    this.oscHit(under, 0.02);
+  }
+
   /** True once `start()` has built the graph. Guards the composed sounds. */
   private get hasContext(): boolean {
     return this.poolSize > 0;

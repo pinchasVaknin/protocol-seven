@@ -54,6 +54,19 @@ type Phase = 'IDLE' | 'ROWS' | 'BAR' | 'LEVELUP' | 'TAIL' | 'DONE';
 export interface XpSummaryDeps {
   /** The two cues the cadence plays. `ProceduralAudio` in the client; two no-ops on the layout probe. */
   readonly audio: Pick<ProceduralAudio, 'playXpTick' | 'playLevelUp'>;
+  /**
+   * The level the strip shows, whenever it changes (M18): the debrief's header card reads it
+   * so the level beside the player's name flips with the flourish rather than before the
+   * bar has moved. Absent on the layout probe.
+   */
+  readonly onLevel?: (level: number) => void;
+  /**
+   * Whether the list opens on its own when the cadence ends (D2: *"show what it landed,
+   * without being asked"*). Off on the debrief (M18), where the list would open over the
+   * podium's stat cards: the strip says how many unlocks the list holds instead, and a
+   * click opens it. Defaults to on.
+   */
+  readonly autoOpen?: boolean;
 }
 
 export class XpSummary {
@@ -76,6 +89,7 @@ export class XpSummary {
   private readonly barLabel: HTMLElement;
   private readonly flourish: HTMLElement;
   private readonly tailEl: HTMLElement;
+  private readonly unlocksEl: HTMLElement;
   private opened = false;
 
   private readonly deps: XpSummaryDeps;
@@ -140,11 +154,16 @@ export class XpSummary {
     this.totalEl = document.createElement('div');
     this.totalEl.className = 'xp__total op-num';
 
+    // The unlock count, lit when the cadence ends without opening the list (M18).
+    this.unlocksEl = document.createElement('span');
+    this.unlocksEl.className = 'xp__unlocks op-label';
+    this.unlocksEl.hidden = true;
+
     const chevron = document.createElement('span');
     chevron.className = 'xp__chevron';
     chevron.setAttribute('aria-hidden', 'true');
 
-    this.strip.append(levelBlock, barBlock, this.totalEl, chevron);
+    this.strip.append(levelBlock, barBlock, this.unlocksEl, this.totalEl, chevron);
 
     this.flourish = document.createElement('div');
     this.flourish.className = 'xp__flourish';
@@ -166,6 +185,7 @@ export class XpSummary {
   open(instant = false): void {
     if (this.opened) return;
     this.opened = true;
+    this.unlocksEl.hidden = true;
     this.strip.setAttribute('aria-expanded', 'true');
     this.listEl.hidden = false;
     if (instant) this.element.classList.add('xp--instant');
@@ -197,14 +217,16 @@ export class XpSummary {
     else this.open();
   }
 
-  /** Start the animation. Safe to call again; the previous run is abandoned. */
-  play(report: XpReport): void {
+  /**
+   * The strip as it stands before the cadence — the level and the bar where the match found
+   * them, +0 XP — without starting anything (M18). The debrief shows the strip from its first
+   * second and starts the cadence when the podium has landed; a strip that read nothing for
+   * those eight seconds would read as broken. `play` primes too, so calling both is one thing.
+   */
+  prime(report: XpReport): void {
     this.stop();
     this.report = report;
-    // Always ROWS: `XpLines` is a non-empty tuple, so there is no such thing as a match with
-    // nothing to show (playtest round 5, B6). The branch that used to skip straight to the bar
-    // is what left the panel an empty box after a 0-kill loss.
-    this.phase = 'ROWS';
+    this.phase = 'IDLE';
     this.timer = 0;
     this.rowIndex = 0;
     this.shownXp = report.xpBefore;
@@ -214,6 +236,7 @@ export class XpSummary {
     this.rowsEl.replaceChildren();
     this.tailEl.replaceChildren();
     this.tailEl.classList.remove('is-in');
+    this.unlocksEl.hidden = true;
     this.flourish.hidden = true;
     this.flourish.classList.remove('is-on');
     // Folded, every time: the rows land out of sight and the list opens when they are all in.
@@ -224,7 +247,15 @@ export class XpSummary {
     this.paintLevel(report.levelBefore);
     this.paintBar();
     this.totalEl.textContent = '+0 XP';
+  }
 
+  /** Start the animation. Safe to call again; the previous run is abandoned. */
+  play(report: XpReport): void {
+    this.prime(report);
+    // Always ROWS: `XpLines` is a non-empty tuple, so there is no such thing as a match with
+    // nothing to show (playtest round 5, B6). The branch that used to skip straight to the bar
+    // is what left the panel an empty box after a 0-kill loss.
+    this.phase = 'ROWS';
     this.lastFrameMs = performance.now();
     this.raf = requestAnimationFrame(this.frame);
   }
@@ -244,6 +275,7 @@ export class XpSummary {
     this.paintBar();
     this.paintTail();
     this.phase = 'DONE';
+    if (!(this.deps.autoOpen ?? true)) this.paintUnlocks();
   }
 
   stop(): void {
@@ -302,8 +334,10 @@ export class XpSummary {
         if (this.timer < TAIL_DELAY) break;
         this.paintTail();
         this.phase = 'DONE';
-        // The cadence is over: show what it landed, without being asked (D2).
-        this.open();
+        // The cadence is over: show what it landed, without being asked (D2) — or, where the
+        // list would cover something (M18), say what it holds and let the click open it.
+        if (this.deps.autoOpen ?? true) this.open();
+        else this.paintUnlocks();
         break;
 
       case 'IDLE':
@@ -399,6 +433,15 @@ export class XpSummary {
   private paintLevel(level: number): void {
     const prestige = prestigeLabel(this.prestige);
     this.levelEl.textContent = prestige.length > 0 ? `${prestige} · ${level}` : String(level);
+    this.deps.onLevel?.(level);
+  }
+
+  /** The strip's unlock count, once the tail is painted and the list is still folded. */
+  private paintUnlocks(): void {
+    const count = this.tailEl.childElementCount;
+    if (count === 0 || this.opened) return;
+    this.unlocksEl.textContent = count === 1 ? '1 UNLOCK' : `${count} UNLOCKS`;
+    this.unlocksEl.hidden = false;
   }
 
   private paintBar(): void {

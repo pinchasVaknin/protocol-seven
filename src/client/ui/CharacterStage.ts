@@ -6,11 +6,12 @@ import { characterDefinition, type CharacterId } from '../characters/CharacterCa
 import type { CharacterAssetService } from '../characters/CharacterAssetService';
 import type { CamoId } from '../../shared/meta/Camos';
 import { buildHeldWeapon, heldWeaponMaterial } from '../weapons/WeaponMesh';
+import { PODIUM_STEPS, PODIUM_X } from './Lineup';
 
 /**
  * The stage (M15, B1): the player's skin on a lit disc, holding the class's primary, turning.
- * And (M15, D1) the same stage with a lineup on it — the winning team on a platform after a
- * match, each in the body the match dealt them.
+ * And (M15, D1; the podium, M18) the same stage with a lineup on it — the three best of the
+ * match on a podium after it, each in the body the match dealt them.
  *
  * ## The same body, the same hands, the same call
  *
@@ -27,10 +28,10 @@ import { buildHeldWeapon, heldWeaponMaterial } from '../weapons/WeaponMesh';
  *
  * ## One class, one figure or five
  *
- * The editor's stage is one body on a disc that turns; the summary's is up to five on a
- * platform that does not. They are the same lights, the same lens, the same loading rule and
- * the same disposal, so they are one class with a list of figures rather than two classes
- * kept in step: `show` is the one-figure API the editor and the thumbnail script use, and
+ * The editor's stage is one body on a disc that turns; the debrief's is three on a podium
+ * that does not. They are the same lights, the same lens, the same loading rule and the
+ * same disposal, so they are one class with a list of figures rather than two classes kept
+ * in step: `show` is the one-figure API the editor and the thumbnail script use, and
  * `showLineup` is the same list with more than one entry. `StageOptions` names what differs —
  * the canvas, the camera, the platform under the feet, and whether it turns.
  *
@@ -55,7 +56,7 @@ export interface CharacterStageDeps {
   readonly anisotropy: () => number;
 }
 
-/** What one stage differs from another in. The editor's is the default; the summary's is `LINEUP_STAGE`. */
+/** What one stage differs from another in. The editor's is the default; the debrief's is `PODIUM_STAGE`. */
 export interface StageOptions {
   /** Design-frame pixels; the backing store is sized from the on-screen rect. */
   readonly width: number;
@@ -64,8 +65,14 @@ export interface StageOptions {
   readonly ariaLabel: string;
   /** The lens: height, distance along +Z, and the height it looks at on the axis. */
   readonly camera: { readonly y: number; readonly z: number; readonly lookY: number };
-  /** B1's disc and ring under one body, or a platform this wide and deep under a lineup. */
-  readonly platform: 'disc' | { readonly width: number; readonly depth: number };
+  /**
+   * B1's disc and ring under one body, or the podium (M18): three blocks under three bodies,
+   * the centre's the tallest, each `steps[i]` metres high at `x = slotX[i]`, each `width` by
+   * `depth` — the figures' own `y` says where they stand on them.
+   */
+  readonly platform:
+    | 'disc'
+    | { readonly podium: true; readonly steps: readonly number[]; readonly slotX: readonly number[]; readonly width: number; readonly depth: number };
   /** Whether the stage turns on its own and can be dragged. A lineup stands still. */
   readonly turntable: boolean;
 }
@@ -81,6 +88,8 @@ export interface StageFigure {
   readonly z: number;
   /** Radians. A body at yaw 0 faces −Z, away from the camera; π faces it. */
   readonly yaw: number;
+  /** Metres above the platform's top the figure stands: a podium step (M18). Ground when absent. */
+  readonly y?: number;
 }
 
 /** Design-frame pixels of the editor's stage (734 since the action row, M17 C5); the backing store is sized from the on-screen rect. */
@@ -102,19 +111,18 @@ export const EDITOR_STAGE: StageOptions = {
 };
 
 /**
- * The summary's stage (D1): five bodies across on a platform, the lens back far enough that
- * the whole line fits with the platform under it, and no turntable — a lineup that swung its
- * ends out of frame would be a lineup of three.
+ * The debrief's stage (M18; it was D1's lineup of five on one platform, 5.3 m back): three
+ * bodies on three blocks, the lens further back and higher, tilted down so the feet land in
+ * the upper two thirds of the canvas — the plates and the stat cards hang under them in the
+ * lower third — with the blocks' fronts in frame and air over the tallest block's occupant.
  */
-export const LINEUP_STAGE: StageOptions = {
+export const PODIUM_STAGE: StageOptions = {
   width: 1824,
-  height: 560,
-  canvasClass: 'eom-stage__canvas',
-  ariaLabel: 'The winning team, on the platform.',
-  // 5.3 m back: five bodies at 1.25 m spacing fill two fifths of the height with the platform's
-  // front edge in frame; 6.2 left them a quarter of it (measured in the pane, D1).
-  camera: { y: 1.45, z: 5.3, lookY: 0.98 },
-  platform: { width: 6.8, depth: 2.6 },
+  height: 694,
+  canvasClass: 'dbf-stage__canvas',
+  ariaLabel: 'The three best players of the match, on the podium.',
+  camera: { y: 1.9, z: 6.4, lookY: 0.78 },
+  platform: { podium: true, steps: PODIUM_STEPS, slotX: PODIUM_X, width: 1.5, depth: 1.5 },
   turntable: false,
 };
 
@@ -148,7 +156,12 @@ interface Slot {
   readonly provider: CharacterAvatarProvider;
   weapon: HeldWeaponAsset | null;
   avatar: ActorAvatar | null;
+  /** The walk-in (M18): when this figure starts, from how far behind, and how long it takes. Null stands still. */
+  entrance: { readonly startsAt: number; readonly back: number; readonly seconds: number } | null;
 }
+
+/** A body's own walk: metres per second, under the run threshold so the selector answers with the walk. */
+const WALK_IN_SPEED = 2.4;
 
 export class CharacterStage {
   readonly canvas: HTMLCanvasElement;
@@ -184,6 +197,8 @@ export class CharacterStage {
   private lastSeenWidth = 0;
   private lastSeenHeight = 0;
   private readonly projected = new THREE.Vector3();
+  /** Seconds this stage has ticked; the walk-in is timed on it. */
+  private clock = 0;
 
   constructor(deps: CharacterStageDeps, options: StageOptions = EDITOR_STAGE) {
     this.deps = deps;
@@ -204,7 +219,10 @@ export class CharacterStage {
     const fill = new THREE.HemisphereLight(0x9fb0c8, 0x22252b, 1.1);
     this.scene.add(key, key.target, rim, rim.target, fill);
 
-    this.platform = options.platform === 'disc' ? buildDisc() : buildPlatform(options.platform.width, options.platform.depth);
+    this.platform =
+      options.platform === 'disc'
+        ? buildDisc()
+        : buildPodium(options.platform.steps, options.platform.slotX, options.platform.width, options.platform.depth);
     this.turntable.add(this.platform);
     this.scene.add(this.turntable);
 
@@ -290,7 +308,33 @@ export class CharacterStage {
       provider: this.deps.characterAssets.avatarProvider(characterDefinition(figure.characterId)),
       weapon: figure.weaponId === null ? null : this.heldWeapon(figure.weaponId, figure.camo ?? null),
       avatar: null,
+      entrance: null,
     }));
+  }
+
+  /**
+   * Walk the figures in (M18): each starts `back` metres behind its mark, facing the lens,
+   * and walks onto it over `back / WALK_IN_SPEED` seconds, the last figure first and the
+   * first last, `stagger` seconds apart — so the podium fills bronze, silver, gold. The walk
+   * is the body's own: the avatar reads its planar speed from where it is put each frame
+   * and its selector answers with the walk clip, exactly as a bot walking a lane does.
+   * Returns when the last figure is on its mark, seconds from now.
+   */
+  walkIn(back: number, stagger: number): number {
+    const seconds = back / WALK_IN_SPEED;
+    const count = this.slots.length;
+    this.slots.forEach((slot, index) => {
+      slot.entrance = { startsAt: this.clock + (count - 1 - index) * stagger, back, seconds };
+    });
+    return (count - 1) * stagger + seconds;
+  }
+
+  /** Every figure on its mark, now: the layout probe's, and the skip's. */
+  settle(): void {
+    for (const slot of this.slots) {
+      slot.entrance = null;
+      slot.avatar?.setVisible(true);
+    }
   }
 
   /**
@@ -350,10 +394,30 @@ export class CharacterStage {
 
     // A body's own yaw is the figure's — 0 on the editor's stage, where the turntable carries
     // it — and its position is where the figure stands, so `update`'s planar speed reads 0
-    // and the selector answers with the idle.
+    // and the selector answers with the idle. A figure walking in (M18) is put a little
+    // further along its line each frame, facing the lens until the last step turns it onto
+    // the figure's own yaw, and the same call reads that as a walk.
+    this.clock += dt;
     for (const slot of this.slots) {
       const f = slot.figure;
-      slot.avatar?.update(STANDING_ARMED, f.x, 0, f.z, f.yaw, 1, dt);
+      const y = f.y ?? 0;
+      const e = slot.entrance;
+      if (e === null) {
+        slot.avatar?.update(STANDING_ARMED, f.x, y, f.z, f.yaw, 1, dt);
+        continue;
+      }
+      const u = Math.max(0, Math.min(1, (this.clock - e.startsAt) / e.seconds));
+      // Out of sight until its turn: a body waiting in the dark behind the blocks is a body
+      // the eye finds before the walk gives it to them.
+      slot.avatar?.setVisible(this.clock >= e.startsAt);
+      // One speed for most of the way — a walk has one speed — and the last of it eased to
+      // a stop, so the body arrives rather than hits its mark.
+      const tail = Math.max(0, (u - 0.8) / 0.2);
+      const s = u < 0.8 ? 0.94 * (u / 0.8) : 0.94 + 0.06 * (1 - (1 - tail) * (1 - tail));
+      const z = f.z - e.back * (1 - s);
+      const yaw = Math.PI + (f.yaw - Math.PI) * tail;
+      slot.avatar?.update(STANDING_ARMED, f.x, y, z, yaw, 1, dt);
+      if (u >= 1) slot.entrance = null;
     }
 
     const renderer = this.ensureRenderer();
@@ -461,26 +525,30 @@ function buildDisc(): THREE.Group {
 }
 
 /**
- * The lineup's platform (D1): the disc's plinth stretched to a slab, with the accent as a
- * frame around its top edge — four thin bars in the ring's material, so the two stages read
- * as the same furniture.
+ * The podium (M18; D1's one slab under a lineup of five became three): the disc's plinth as
+ * a block, one per body and each its own height, with the accent as a frame around every
+ * top edge — four thin bars in the ring's material, so the two stages read as the same
+ * furniture. Gold's block at `slotX[0]`, silver's at `slotX[1]`, bronze's at `slotX[2]`.
  */
-function buildPlatform(width: number, depth: number): THREE.Group {
+function buildPodium(steps: readonly number[], slotX: readonly number[], width: number, depth: number): THREE.Group {
   const group = new THREE.Group();
-  const plinth = new THREE.Mesh(new THREE.BoxGeometry(width, 0.12, depth), PLINTH_MATERIAL());
-  plinth.position.y = -0.06;
-  group.add(plinth);
   const bar = 0.036;
   const accent = ACCENT_MATERIAL();
-  const along = new THREE.BoxGeometry(width, bar, bar);
-  const across = new THREE.BoxGeometry(bar, bar, depth);
-  for (const sign of [-1, 1]) {
-    const front = new THREE.Mesh(along, accent);
-    front.position.set(0, 0.002, (sign * (depth - bar)) / 2);
-    const side = new THREE.Mesh(across, accent);
-    side.position.set((sign * (width - bar)) / 2, 0.002, 0);
-    group.add(front, side);
-  }
+  steps.forEach((height, index) => {
+    const x = slotX[index] ?? 0;
+    const block = new THREE.Mesh(new THREE.BoxGeometry(width, height + 0.12, depth), PLINTH_MATERIAL());
+    block.position.set(x, (height - 0.12) / 2, 0);
+    group.add(block);
+    const along = new THREE.BoxGeometry(width, bar, bar);
+    const across = new THREE.BoxGeometry(bar, bar, depth);
+    for (const sign of [-1, 1]) {
+      const front = new THREE.Mesh(along, accent);
+      front.position.set(x, height + 0.002, (sign * (depth - bar)) / 2);
+      const side = new THREE.Mesh(across, accent);
+      side.position.set(x + (sign * (width - bar)) / 2, height + 0.002, 0);
+      group.add(front, side);
+    }
+  });
   return group;
 }
 

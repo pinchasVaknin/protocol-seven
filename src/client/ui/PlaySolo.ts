@@ -1,4 +1,4 @@
-import { BOT_DIFFICULTIES, BOT_DIFFICULTY_BLURBS, type BotDifficulty } from '../../shared/ai/DifficultyTiers';
+import { BOT_DIFFICULTIES, BOT_DIFFICULTY_BLURBS, BOT_DIFFICULTY_NAMES, type BotDifficulty } from '../../shared/ai/DifficultyTiers';
 import type { GameModeId } from '../../shared/modes/GameMode';
 import { findMap, MAPS, MODES, modesForMap, type MapEntry, type ModeEntry } from '../../shared/modes/ModeRegistry';
 import type { MenuSelection } from './Menus';
@@ -106,14 +106,6 @@ const FLASK = 'M9 2 h6 v2 h-1 v4.6 l4.5 9.4 a1.5 1.5 0 0 1 -1.35 2.15 H6.85 A1.5
 const INFO = 'M12 2 a10 10 0 1 0 0 20 a10 10 0 1 0 0-20 Z M12 4 a8 8 0 1 1 0 16 a8 8 0 1 1 0-16 Z M11 10 h2 v7 h-2 Z M11 7 h2 v2 h-2 Z';
 const CLOCK = 'M12 2 a10 10 0 1 0 0 20 a10 10 0 1 0 0-20 Z M12 4 a8 8 0 1 1 0 16 a8 8 0 1 1 0-16 Z M11 6 h2 v6.5 l4 2.4 -1 1.7 -5 -3 Z';
 const TAG_MARK = 'M4 4 h16 v16 H4 Z M7 7 h10 v10 H7 Z';
-
-const DIFFICULTY_NAME: Readonly<Record<BotDifficulty, string>> = {
-  RECRUIT: 'RECRUIT',
-  REGULAR: 'REGULAR',
-  HARDENED: 'HARDENED',
-  VETERAN: 'VETERAN',
-  MIX: 'MIXED',
-};
 
 export function paintPlaySolo(deps: PlaySoloDeps): { root: HTMLElement; focus: HTMLElement } {
   const { selection } = deps;
@@ -278,7 +270,7 @@ function paintRight(map: MapEntry, modeEntry: ModeEntry, deps: PlaySoloDeps): HT
   diffs.setAttribute('aria-label', 'Bot difficulty');
   for (const tier of BOT_DIFFICULTIES) {
     const on = tier === deps.selection.difficulty;
-    const card = optionCard(DIFFICULTY_GLYPH[tier], DIFFICULTY_NAME[tier], on, testbed);
+    const card = optionCard(DIFFICULTY_GLYPH[tier], BOT_DIFFICULTY_NAMES[tier], on, testbed);
     card.addEventListener('click', () => deps.onPickDifficulty(tier));
     diffs.appendChild(card);
   }
@@ -360,7 +352,7 @@ function paintBar(
   const facts: readonly (readonly [string, string])[] = [
     ['MAP', map.name],
     ['MODE', modeEntry.name],
-    ['DIFFICULTY', map.testbed ? '—' : DIFFICULTY_NAME[deps.selection.difficulty]],
+    ['DIFFICULTY', map.testbed ? '—' : BOT_DIFFICULTY_NAMES[deps.selection.difficulty]],
   ];
   for (const [label, value] of facts) {
     const fact = document.createElement('span');

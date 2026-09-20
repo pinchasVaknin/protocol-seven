@@ -2,23 +2,26 @@ import { compareRows, type Rankable, type ScoreTeam } from '../../shared/combat/
 import type { WinnerFacts } from '../../shared/modes/MatchOutcome';
 
 /**
- * Who stands on the podium after a match, and where (M15, D1).
+ * Who stands on the podium after a match, and where (M15, D1; the podium, M18).
  *
- * Pure: a result, a board, and a ceiling in, a ranked list out — so the rule that decides who
- * is on the stage is a function with a test rather than a branch inside a screen. The screen
- * turns each entry into a body; this decides the entries.
+ * Pure: a result and a board in, a ranked list out — so the rule that decides who is on the
+ * stage is a function with a test rather than a branch inside a screen. The screen turns each
+ * entry into a body; this decides the entries.
  *
- * **The winning team, in ladder order, the MVP first.** In a team mode the winning side's rows
- * sorted as the board sorts them (`compareRows`), capped at the stage's five. In Free-for-All
- * the board is one ladder, so the podium is the top of it — three, as the brief says — with
- * the crowned winner pinned to first for the reason `personalOutcome` pins them: the mode
- * decides on kills and the ladder on score, and a podium whose centre is not the winner is
- * a podium that disagrees with the headline over it. A draw has no winning side, so the
- * podium is the top of the whole board: the best five, whatever side they were on.
+ * **The three best of the whole match, the MVP first.** M18's decision (the human's, Q1):
+ * the podium is a ranking of individuals, so it is taken from the whole ladder rather than
+ * from the winning side — a hostile MVP on a DEFEAT screen says what happened, and the plate
+ * under them is in the enemy's colour. The ladder is the board's own order (`compareRows`),
+ * and where the mode crowned one individual — Free-for-All decides on kills where the ladder
+ * ranks on score — the crowned winner is pinned to first, for the reason `personalOutcome`
+ * pins them: a podium whose centre is not the winner disagrees with the headline over it. It
+ * replaced the lineup of the winning side's five: gold, silver and bronze are a set of
+ * three, and a fourth and a fifth had nothing to stand under.
  *
- * **Where each stands** is `slotPositions`: the MVP centre and a step forward, the rest
- * fanning out by rank — second on the viewer's left, third on the right, fourth far left,
- * fifth far right — so the eye reads the podium the way it reads the board.
+ * **Where each stands** is `podiumSlots`: gold centre on the tallest block, silver on the
+ * viewer's left, bronze on the right, each flank turned a little toward the centre — the
+ * blocks are `CharacterStage`'s podium, built from the same `PODIUM_X` and `PODIUM_STEPS`,
+ * so the feet land on the blocks by construction.
  */
 
 export interface LineupRow extends Rankable {
@@ -28,70 +31,49 @@ export interface LineupRow extends Rankable {
   readonly isLocal: boolean;
 }
 
-/** Bodies the platform has room for at 1920. */
-export const LINEUP_MAX = 5;
-/** Free-for-All's podium: the top three, as the brief asks. */
-export const LINEUP_FFA = 3;
+/** Gold, silver, bronze. */
+export const PODIUM_SIZE = 3;
+/** Where the three stand, metres across: gold centre, silver on the viewer's left, bronze right. `CharacterStage` builds the blocks here. */
+export const PODIUM_X: readonly number[] = [0, -1.9, 1.9];
+/** The blocks' heights, metres, in the same order. */
+export const PODIUM_STEPS: readonly number[] = [0.34, 0.2, 0.1];
 
-/** The rows to stand on the stage, best first. Empty for an empty board. */
-export function lineupOf<T extends LineupRow>(result: WinnerFacts, rows: readonly T[], freeForAll: boolean): T[] {
+/** The rows to stand on the podium, best first. Empty for an empty board; fewer than three for a board of fewer. */
+export function podiumOf<T extends LineupRow>(result: WinnerFacts, rows: readonly T[]): T[] {
   const ladder = [...rows].sort(compareRows);
-  let pool: T[];
-  let cap = LINEUP_MAX;
-  if (result.winner === 'DRAW') {
-    pool = ladder;
-  } else if (freeForAll || result.winnerEntityId !== undefined) {
-    pool = ladder;
-    cap = LINEUP_FFA;
-  } else {
-    const side = result.winner;
-    pool = ladder.filter((row) => row.team === side);
-  }
   const crowned = result.winnerEntityId;
   if (crowned !== undefined) {
-    const at = pool.findIndex((row) => row.entityId === crowned);
+    const at = ladder.findIndex((row) => row.entityId === crowned);
     if (at > 0) {
-      const [winner] = pool.splice(at, 1);
-      if (winner !== undefined) pool.unshift(winner);
+      const [winner] = ladder.splice(at, 1);
+      if (winner !== undefined) ladder.unshift(winner);
     }
   }
-  return pool.slice(0, cap);
+  return ladder.slice(0, PODIUM_SIZE);
 }
 
 export interface SlotPosition {
   /** Metres from the platform's centre, across. */
   readonly x: number;
+  /** Metres above the platform: the block's top. */
+  readonly y: number;
   /** Metres toward the camera. */
   readonly z: number;
   /** Radians. π faces the camera; the flanks turn a little toward the centre. */
   readonly yaw: number;
 }
 
-/** Metres between neighbours on the platform. */
-const SPACING = 1.25;
-/** How far the MVP steps toward the camera. */
-const MVP_STEP = 0.45;
 /** How far the flanks turn in, per metre off the centre line. */
 const FLANK_TURN = 0.11;
 
-/**
- * Where `count` bodies stand, by rank: index 0 is the MVP. The order across the platform is
- * `[5th, 3rd, 1st, 2nd, 4th]` for five — a body's rank grows with its distance from the
- * centre, alternating sides, the second on the viewer's left (−X). With an even count the
- * group is centred rather than the MVP.
- */
-export function slotPositions(count: number): SlotPosition[] {
-  const n = Math.max(0, Math.min(LINEUP_MAX, Math.round(count)));
-  // Offsets by rank: 0, -1, +1, -2, +2 — then shifted so the group is centred.
-  const offsets: number[] = [];
+/** Where `count` bodies stand, by rank: index 0 is gold, on the centre block. */
+export function podiumSlots(count: number): SlotPosition[] {
+  const n = Math.max(0, Math.min(PODIUM_SIZE, Math.round(count)));
+  const slots: SlotPosition[] = [];
   for (let rank = 0; rank < n; rank++) {
-    const step = Math.ceil(rank / 2);
-    offsets.push(rank === 0 ? 0 : rank % 2 === 1 ? -step : step);
-  }
-  const mean = offsets.reduce((sum, o) => sum + o, 0) / Math.max(1, n);
-  return offsets.map((offset, rank) => {
-    const x = (offset - mean) * SPACING;
+    const x = PODIUM_X[rank] ?? 0;
     // Yaw π + δ faces +X, so a body on +X turns toward the centre by *subtracting* its offset.
-    return { x, z: rank === 0 ? MVP_STEP : 0, yaw: Math.PI - x * FLANK_TURN };
-  });
+    slots.push({ x, y: PODIUM_STEPS[rank] ?? 0, z: 0, yaw: Math.PI - x * FLANK_TURN });
+  }
+  return slots;
 }

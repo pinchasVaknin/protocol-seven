@@ -1,4 +1,4 @@
-import { prestigeLabel } from '../../shared/meta/Levels';
+import { MAX_LEVEL, prestigeLabel } from '../../shared/meta/Levels';
 import { characterDefinition } from '../characters/CharacterCatalog';
 import type { Profile } from '../meta/Profile';
 import { makeIconSvg } from './WeaponIcons';
@@ -83,13 +83,16 @@ export class PlayerCard {
     this.refresh();
   }
 
-  /** Every fact on the card, from the profile as it is now. */
-  refresh(): void {
+  /**
+   * Every fact on the card, from the profile as it is now — or, on the debrief (M18), with
+   * the level the XP bar is showing, which trails the banked one until the flourish.
+   */
+  refresh(level?: number): void {
     const profile = this.deps.profile;
     const skin = characterDefinition(profile.skinId);
     if (this.avatar.src !== skin.thumbUrl) this.avatar.src = skin.thumbUrl;
     this.name.textContent = profile.settings.callsign;
-    this.level.textContent = levelLine(profile);
+    this.level.textContent = levelLine(profile, level);
     const online = this.deps.online();
     this.dot.classList.toggle('is-online', online);
     this.dot.title = online ? 'Server configured' : 'No server configured';
@@ -97,7 +100,8 @@ export class PlayerCard {
 }
 
 /** LEVEL N; PRESTIGE ★ N once the cap has been passed at least once. */
-export function levelLine(profile: Profile): string {
-  const level = profile.progress.atCap ? 'LEVEL 55 (MAX)' : `LEVEL ${profile.progress.level}`;
+export function levelLine(profile: Profile, shown?: number): string {
+  const number = shown ?? profile.progress.level;
+  const level = number >= MAX_LEVEL ? `LEVEL ${MAX_LEVEL} (MAX)` : `LEVEL ${number}`;
   return profile.prestige > 0 ? `PRESTIGE ${prestigeLabel(profile.prestige)} · ${level}` : level;
 }

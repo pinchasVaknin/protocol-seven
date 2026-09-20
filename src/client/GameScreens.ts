@@ -4,7 +4,7 @@ import type { Profile } from './meta/Profile';
 import type { CharacterAssetService } from './characters/CharacterAssetService';
 import type { XpReport } from '../shared/meta/XpRules';
 import type { MatchResult } from '../shared/modes/GameMode';
-import { EndOfMatch, type LineupSource } from './ui/EndOfMatch';
+import { EndOfMatch, type LineupSource, type MatchFacts } from './ui/EndOfMatch';
 import { LoadoutEditor } from './ui/LoadoutEditor';
 import { Menus, type MenuSelection } from './ui/Menus';
 import { PauseMenu } from './ui/PauseMenu';
@@ -110,7 +110,13 @@ export class GameScreens {
       onDisplayName: deps.onDisplayName,
     });
 
-    this.xpSummary = new XpSummary({ audio: deps.audio });
+    this.xpSummary = new XpSummary({
+      audio: deps.audio,
+      // The header's card follows the bar (M18): the level beside the callsign flips with the flourish.
+      onLevel: (level) => this.summary.setShownLevel(level),
+      // The list would open over the podium's stat cards; the strip says what it holds instead.
+      autoOpen: false,
+    });
 
     this.pauseMenu = new PauseMenu({
       host: deps.host,
@@ -146,11 +152,13 @@ export class GameScreens {
         this.xpSummary.finish();
         deps.onExitSummary();
       },
-      // The lineup's bodies (M15, D1): the same service and the same filtering as the match's.
+      // The podium's bodies (M15, D1): the same service and the same filtering as the match's.
       characterAssets: deps.characterAssets,
       anisotropy: deps.anisotropy,
+      profile: deps.profile,
+      audio: deps.audio,
     });
-    // The M4 insertion point, filled (S6.1). `EndOfMatch` needed no other change.
+    // The M4 insertion point, filled (S6.1).
     this.summary.xpSlot.appendChild(this.xpSummary.element);
     deps.host.appendChild(this.summary.element);
   }
@@ -165,7 +173,7 @@ export class GameScreens {
   showSummary(
     match: Match,
     result: MatchResult,
-    mapName: string,
+    facts: MatchFacts,
     report: XpReport | null,
     prestige: number,
     /** Which body and which weapon each entity on the podium gets (M15, D1). `Game` answers. */
@@ -183,7 +191,17 @@ export class GameScreens {
     this.summary.setNetworked(networked);
     // Before the columns, because the heading the columns build is itself relative (B12).
     this.summary.setViewer(match.viewer);
-    this.summary.setColumns(match.mode.getScoreboardColumns(), match.mode.name, mapName);
+    this.summary.setColumns(match.mode.getScoreboardColumns(), match.mode.name, facts.mapName);
+    // The strip stands from the screen's first second with the level the match found; the
+    // cadence itself is the choreography's last phase (M18), started through `onXp`.
+    this.summary.xpSlot.hidden = report === null;
+    if (report === null) {
+      this.summary.onXp = null;
+    } else {
+      this.xpSummary.prestige = prestige;
+      this.xpSummary.prime(report);
+      this.summary.onXp = () => this.xpSummary.play(report);
+    }
     this.summary.show(
       result,
       // The seat the server put this client in — side *and* entity — so a team-B player is not
@@ -193,11 +211,8 @@ export class GameScreens {
       match.localId,
       match.score,
       lineup,
+      facts,
     );
-    this.summary.xpSlot.hidden = report === null;
-    if (report === null) return;
-    this.xpSummary.prestige = prestige;
-    this.xpSummary.play(report);
   }
 
   hideSummary(): void {

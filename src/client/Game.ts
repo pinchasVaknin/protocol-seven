@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DEFAULT_SCHEDULER, type SchedulerConfig } from '../shared/ai/AiScheduler';
 import {
+  BOT_DIFFICULTY_NAMES,
   cloneTierTable,
   DEFAULT_PERCEPTION,
   DEFAULT_TIERS,
@@ -1106,10 +1107,17 @@ export class Game {
          * Both paths end at `Profile.bankMatch`, which is the one place XP becomes durable.
          */
         const report = net !== null ? this.bankServerXp(net, won) : match.bankProgression(won);
+        const mapEntry = this.mapEntry();
         this.screens.showSummary(
           match,
           result,
-          this.mapEntry().name,
+          {
+            mapName: mapEntry.name,
+            mapPicture: mapEntry.picture,
+            modeName: this.modeEntry().name,
+            // The tier is this client's choice in single-player; connected, the roster is the server's.
+            difficulty: this.server === null ? BOT_DIFFICULTY_NAMES[this.selection.difficulty] : null,
+          },
           banks ? report : null,
           this.profile.prestige,
           this.lineupSource(match),
@@ -1507,7 +1515,15 @@ export class Game {
       this.transitionTo('MATCH');
       return;
     }
-    this.transitionTo('MENU');
+    /**
+     * PLAY AGAIN (M18): the same match again, in single-player — the map, the mode and the
+     * difficulty as the selection stands, which is what it stood at when this one started.
+     * The world is torn down here rather than by SUMMARY's exit handler, which keeps it for
+     * `to === 'MATCH'` because that route is the server's rotation; MATCH's `enter` then
+     * builds a fresh one, and a fresh world is a fresh intro, a fresh deck and a fresh seed.
+     */
+    this.teardownWorld();
+    this.transitionTo('MATCH');
   }
 
   /**

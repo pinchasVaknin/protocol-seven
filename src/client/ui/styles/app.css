@@ -2464,31 +2464,52 @@ body.op-locked #viewport {
   padding-top: 64px;
 }
 
+/*
+ * The plate's surface — the cut corners, the border, the bloom — is a pseudo-element under
+ * the content rather than the plate's own box: `clip-path` clips everything in the box it is
+ * on, and the emblem hangs half out of the top (playtest, 2026-09-20: *"the first time the
+ * emblems appear they are cut"*). `isolation` keeps the surface's `z-index: -1` inside the
+ * plate rather than behind the screen.
+ */
 .dbf-team {
   position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   width: 400px;
   padding: 76px 32px 22px;
-  background: rgba(14, 17, 22, 0.92);
-  border: 1px solid var(--c-line-hi);
-  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
   opacity: 0;
   transition: opacity 0.4s 0.55s var(--dbf-ease), transform 0.5s 0.55s var(--dbf-ease);
 }
 
+.dbf-team::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(14, 17, 22, 0.92);
+  border: 1px solid var(--c-line-hi);
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
+}
+
 .dbf-team--friendly {
-  border-color: var(--c-good);
-  box-shadow: inset 0 0 40px rgba(87, 169, 255, 0.08);
   transform: translateX(-60px);
 }
 
+.dbf-team--friendly::before {
+  border-color: var(--c-good);
+  box-shadow: inset 0 0 40px rgba(87, 169, 255, 0.08);
+}
+
 .dbf-team--hostile {
+  transform: translateX(60px);
+}
+
+.dbf-team--hostile::before {
   border-color: var(--c-bad);
   box-shadow: inset 0 0 40px rgba(232, 96, 76, 0.08);
-  transform: translateX(60px);
 }
 
 .dbf--card .dbf-team {

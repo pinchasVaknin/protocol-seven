@@ -7,7 +7,7 @@ import { makeLockup } from './Emblem';
 import { PlayerCard } from './PlayerCard';
 import { paintPlaySolo, testbedMode } from './PlaySolo';
 import { ProfilePanel } from './ProfilePanel';
-import { makeScreenFooter, makeScreenHeader, type ScreenPlace } from './ScreenChrome';
+import { CHROME_LINE, makeScreenFooter, makeScreenHeader, type ScreenPlace } from './ScreenChrome';
 import { makeIconSvg } from './WeaponIcons';
 
 /**
@@ -169,6 +169,7 @@ export class Menus {
   showBoot(message: string): void {
     this.page = 'MAIN';
     this.screen.hidden = false;
+    this.ungate();
     this.frame.classList.remove('op-menu');
     this.frame.classList.add('op-boot');
     // The chrome of a previous menu paint, if any, comes off the viewport with the page.
@@ -192,13 +193,25 @@ export class Menus {
   showUnsupported(headline: string, detail: string): void {
     this.page = 'MAIN';
     this.screen.hidden = false;
+    /**
+     * The one screen that is not on the frame's scale (playtest, 2026-09-20). Every other
+     * screen is laid out at 1920×1080 and zoomed to the window, and on the phone this
+     * screen exists for that zoom is 0.2: the lockup was a thumbnail and the copy was 3 px
+     * tall — *"small and cluttered"*. `op-screen--gate` takes the zoom off this layer's
+     * viewport (`app.css`), so the gate is laid out in the window's own pixels, as a
+     * portrait column: the lockup, the two lines, and the footer's line at the foot.
+     */
+    this.screen.classList.add('op-screen--gate');
     this.frame.classList.remove('op-menu');
-    this.frame.classList.add('op-boot');
+    this.frame.classList.add('op-boot', 'op-gate');
     const body = document.createElement('p');
-    body.className = 'op-screen__note';
+    body.className = 'op-screen__note op-gate__note';
     body.textContent = detail;
+    const foot = document.createElement('p');
+    foot.className = 'op-label op-gate__foot';
+    foot.textContent = CHROME_LINE;
     this.viewport.replaceChildren(this.frame);
-    this.frame.replaceChildren(makeLockup(), subtitle(headline), body);
+    this.frame.replaceChildren(makeLockup(), subtitle(headline), body, foot);
   }
 
   /** Open the front end at its main page. */
@@ -214,9 +227,18 @@ export class Menus {
     this.panel.close();
   }
 
-  /** Escape closes the profile panel if it is open, and is consumed by it; nothing else on the menu answers Escape. */
+  /**
+   * Escape closes the profile panel if it is open, and is consumed by it; on the Play Solo
+   * page it is BACK — the main page again, the selection kept — and consumed too. Nothing
+   * else on the menu answers it: there is nowhere further back than MAIN.
+   */
   handleEscape(): boolean {
-    return this.panel.handleEscape();
+    if (this.panel.handleEscape()) return true;
+    if (this.page === 'PLAY') {
+      this.back();
+      return true;
+    }
+    return false;
   }
 
   /** Open the profile panel on a tab — for the layout probe, which measures each one. */
@@ -235,6 +257,7 @@ export class Menus {
   // -- pages -----------------------------------------------------------------
 
   private paint(): void {
+    this.ungate();
     this.frame.classList.remove('op-boot');
     this.frame.classList.add('op-menu');
     const stage = document.createElement('div');
@@ -323,9 +346,26 @@ export class Menus {
         this.paint();
       },
       onLaunch: () => this.deps.onLaunch(),
+      onBack: () => this.back(),
     });
     stage.appendChild(root);
     return focus;
+  }
+
+  /**
+   * The gate's classes off the layer and the frame. The gate is terminal in the game, but
+   * the layout probe shows every surface on one instance, and a menu painted under the
+   * gate's un-zoomed viewport would be laid out in window pixels.
+   */
+  private ungate(): void {
+    this.screen.classList.remove('op-screen--gate');
+    this.frame.classList.remove('op-gate');
+  }
+
+  /** BACK, from the button or Escape: the main page, with whatever was picked still picked. */
+  private back(): void {
+    this.page = 'MAIN';
+    this.paint();
   }
 
   /**

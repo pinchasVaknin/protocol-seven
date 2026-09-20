@@ -12,9 +12,11 @@ import { makeIconSvg } from './WeaponIcons';
  * MAPS strip, one card per map, the chosen one in the accent. **Right**, the match: `01 MAP`
  * as a row that steps to the next map, `02 GAME MODE` as five cards with their glyphs, `03
  * BOT DIFFICULTY` as five cards with the chosen tier's line beneath, and the TESTBED plate
- * with its own door. **The bar** is OPERATION SUMMARY — map, mode, difficulty — and START
- * MATCH, the one button that starts a match, which is load-bearing because pointer lock can
- * only be asked for from a user gesture.
+ * with its own door. **The bar** is BACK, OPERATION SUMMARY — map, mode, difficulty — and
+ * START MATCH, the one button that starts a match, which is load-bearing because pointer
+ * lock can only be asked for from a user gesture. BACK (the button, or Escape — `Menus`
+ * answers the key) is the way off the page: it had none (playtest, 2026-09-20), and a page
+ * whose only exit is starting a match is a page that starts matches nobody wanted.
  *
  * ## The testbed is a card and a plate, and it locks the other two sections (decision 5)
  *
@@ -44,6 +46,8 @@ export interface PlaySoloDeps {
   readonly onPickDifficulty: (difficulty: BotDifficulty) => void;
   /** Start the match as the selection stands. */
   readonly onLaunch: () => void;
+  /** Leave the page for the main menu, the selection kept. */
+  readonly onBack: () => void;
 }
 
 /** The mode that is the testbed's: the one with a forced map. */
@@ -96,6 +100,7 @@ const DIFFICULTY_GLYPH: Readonly<Record<BotDifficulty, string>> = {
 
 const CHEVRON = 'M9 4 L17 12 L9 20 L7.4 18.4 L13.8 12 L7.4 5.6 Z';
 const CHEVRON_LEFT = 'M15 4 L7 12 L15 20 L16.6 18.4 L10.2 12 L16.6 5.6 Z';
+const ARROW_LEFT = 'M11 4 l1.6 1.6 -5.3 5.4 H21 v2 H7.3 l5.3 5.4 L11 20 l-8 -8 Z';
 const DOUBLE_CHEVRON = 'M4 4 L12 12 L4 20 L2.4 18.4 L8.8 12 L2.4 5.6 Z M12 4 L20 12 L12 20 L10.4 18.4 L16.8 12 L10.4 5.6 Z';
 const FLASK = 'M9 2 h6 v2 h-1 v4.6 l4.5 9.4 a1.5 1.5 0 0 1 -1.35 2.15 H6.85 A1.5 1.5 0 0 1 5.5 18 L10 8.6 V4 H9 Z M8.2 15 h7.6 l1.4 3 H6.8 Z';
 const INFO = 'M12 2 a10 10 0 1 0 0 20 a10 10 0 1 0 0-20 Z M12 4 a8 8 0 1 1 0 16 a8 8 0 1 1 0-16 Z M11 10 h2 v7 h-2 Z M11 7 h2 v2 h-2 Z';
@@ -322,7 +327,7 @@ function paintRight(map: MapEntry, modeEntry: ModeEntry, deps: PlaySoloDeps): HT
   return right;
 }
 
-// -- the bar: the summary and START MATCH ----------------------------------------------
+// -- the bar: BACK, the summary and START MATCH ------------------------------------------
 
 function paintBar(
   map: MapEntry,
@@ -331,6 +336,16 @@ function paintBar(
 ): { bar: HTMLElement; launch: HTMLButtonElement } {
   const bar = document.createElement('div');
   bar.className = 'op-actionbar ps-bar';
+
+  // BACK first, at the bar's left end: the same button Settings ends on, in the same place.
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'op-cta op-cta--quiet ps-back';
+  back.appendChild(makeIconSvg(ARROW_LEFT, '0 0 24 24', 'op-cta__lead'));
+  const bt = document.createElement('span');
+  bt.textContent = 'BACK';
+  back.appendChild(bt);
+  back.addEventListener('click', () => deps.onBack());
 
   const summary = document.createElement('div');
   summary.className = 'op-actionbar__lead ps-summary';
@@ -369,7 +384,7 @@ function paintBar(
   launch.appendChild(text);
   launch.addEventListener('click', () => deps.onLaunch());
 
-  bar.append(summary, launch);
+  bar.append(back, summary, launch);
   return { bar, launch };
 }
 

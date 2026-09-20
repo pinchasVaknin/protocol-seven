@@ -81,20 +81,17 @@ export function playability(caps: DeviceCapabilities): Playability {
       id: 'no-pointer-lock',
       ok: false,
       headline: 'This browser cannot capture the mouse',
-      detail:
-        'PROTOCOL SEVEN aims by locking the pointer to the page, and this browser does not offer the ' +
-        'Pointer Lock API. A current desktop Chrome, Edge, Firefox or Safari will run it.',
+      detail: 'PROTOCOL SEVEN aims with Pointer Lock. Open it in a current desktop Chrome, Edge, Firefox or Safari.',
     };
   }
   if (!caps.finePointer) {
     return {
       id: 'no-fine-pointer',
       ok: false,
-      headline: 'PROTOCOL SEVEN needs a keyboard and a mouse',
-      detail:
-        'This is a desktop shooter: it is played with WASD and a mouse, and there is no touch ' +
-        'control scheme. Nothing here would work on a touchscreen, so rather than let you into ' +
-        'a match you cannot play, it stops at this screen.',
+      // Two lines, the human's own (playtest, 2026-09-20): the three-sentence version was
+      // "small and cluttered" on the phone it is written for, and a phone is where it is read.
+      headline: 'PROTOCOL SEVEN is a desktop shooter',
+      detail: 'Open it on a computer.',
     };
   }
   return PLAYABLE;

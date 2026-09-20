@@ -563,6 +563,63 @@ body.op-locked #viewport {
   pointer-events: none;
 }
 
+/*
+ * The device gate, off the frame's scale (playtest, 2026-09-20; `Menus.showUnsupported`).
+ *
+ * The viewport keeps its box but not its zoom, and the frame fills it: lengths below are
+ * window pixels, and the lockup is sized by the window's shorter side so a phone in either
+ * hand gets the logo at about two thirds of its width. The type is the HUD's ramp — the
+ * viewport's ramp is written for a frame pixel, which this screen no longer has — restated
+ * here at a size a hand-held screen reads: the headline is the boot line's shape and the
+ * body is one sentence, so neither needs a measure.
+ */
+.op-screen--gate .op-viewport {
+  zoom: 1;
+  width: 100%;
+  height: 100%;
+}
+
+.op-gate {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 24px;
+  gap: 12px;
+  justify-content: center;
+}
+
+.op-gate .op-lockup {
+  width: min(68vmin, 520px);
+  height: min(68vmin, 520px);
+  margin: calc(min(68vmin, 520px) * -0.14) 0;
+}
+
+.op-gate .op-screen__sub {
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  color: var(--c-text-dim);
+  text-align: center;
+  /* Two even lines on a phone's width rather than one long and one word. */
+  text-wrap: balance;
+}
+
+.op-gate__note {
+  font-size: 17px;
+  color: var(--c-text);
+}
+
+.op-gate__foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 28px;
+  margin: 0;
+  text-align: center;
+  color: var(--c-accent);
+  font-size: 11px;
+  letter-spacing: 0.24em;
+}
+
 /* ---- the splash (M17, C6; Splash.ts) ---------------------------------------------- */
 
 /*
@@ -2015,6 +2072,12 @@ body.op-locked #viewport {
 
 .ps-launch {
   min-width: 340px;
+}
+
+/* BACK at the bar's left end (playtest, 2026-09-20): Settings' size, the bar's height. */
+.ps-back {
+  min-width: 180px;
+  font-size: var(--t-body);
 }
 
 /* ---- scoreboard (M4) --------------------------------------------------- */

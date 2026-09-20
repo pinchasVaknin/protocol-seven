@@ -51,8 +51,13 @@ import type { MapDef, ObjectiveDef, Vec3Lit } from '../world/maps/types';
  *     azimuth while looking past the centre, and the two disagreeing is what was reported as
  *     *"while climbing at 45 degrees, the camera continues to rotate"*); to the distance at
  *     which the map's half-diagonal fits the lens, clamped by the first collider the ray
- *     meets (a roof, a wall), else the clearest of a fan around it — computed, never tuned
- *     per map.
+ *     meets (a roof, a wall), else the *smallest turn* of a fan around it that clears —
+ *     computed, never tuned per map. On a turned ray the heading **eases once**, with the
+ *     climb, from the approach's to the map's centre, and ends on it: a heading that held
+ *     while the ray turned put the camera beside the map looking past it (playtest,
+ *     2026-09-20: *"the map is not in the centre of the camera but to the left"* — measured
+ *     at 30° to 150° off-axis on twelve of Foundry's sixteen spawns). Straight back, the two
+ *     headings are the same and nothing turns, which is the previous report's fix kept.
  *  3. **The objectives**, after a rest on the overview — Domination's flags in label order,
  *     Search & Destroy's two sites:
  *     a snap down to each, a hold with its label, a whip to the next along a nav route with
@@ -172,8 +177,17 @@ const WHIP_HEADING_WINDOW = 3;
 const HEADING_STEP = 0.25;
 /** The overview's sphere march. */
 const MARCH_STEP = 0.25;
-/** Where the overview may look from: azimuths either side of the spawn's, elevations under 45°. */
-const OVERVIEW_AZIMUTHS = [0, Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2, (2 * Math.PI) / 3, (-2 * Math.PI) / 3, (5 * Math.PI) / 6, (-5 * Math.PI) / 6, Math.PI];
+/**
+ * Where the overview may look from: turns off the spawn's azimuth, in two bands, and
+ * elevations under 45°. The near band — up to 60° either side — is tried at every elevation
+ * before the far band is tried at any: a lower overview from the player's own side beats a
+ * 45° one from across the map, because the heading has to turn onto the centre by the size
+ * of the turn (see phase 2 in the file comment) and because the player's side is then the
+ * near edge of the frame rather than the far one. Foundry B's spawns are the case: at 45°
+ * nothing under 120° clears the deck over the centre; at 36° straight back does.
+ */
+const OVERVIEW_NEAR_TURNS = [0, Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3];
+const OVERVIEW_FAR_TURNS = [Math.PI / 2, -Math.PI / 2, (2 * Math.PI) / 3, (-2 * Math.PI) / 3, (5 * Math.PI) / 6, (-5 * Math.PI) / 6, Math.PI];
 const OVERVIEW_ELEVATIONS = [Math.PI / 4, Math.PI / 5, Math.PI / 6];
 
 /**
@@ -686,25 +700,38 @@ export function planIntro(input: IntroInput): IntroPlan {
   let ry = 0;
   let rz = 0;
   let distance = 0;
-  for (const elevation of OVERVIEW_ELEVATIONS) {
-    for (const turn of OVERVIEW_AZIMUTHS) {
-      const azimuth = spawnAzimuth + turn;
-      const cx = simCos(azimuth) * simCos(elevation);
-      const cy = simSin(elevation);
-      const cz = simSin(azimuth) * simCos(elevation);
-      const clear = clearDistance(collision, approachEnd, cx, cy, cz, wanted + OVERVIEW_CLEARANCE, EYE_RADIUS);
-      const usable = Math.max(0, Math.min(wanted, clear - OVERVIEW_CLEARANCE));
-      if (usable > distance) {
-        distance = usable;
-        rx = cx;
-        ry = cy;
-        rz = cz;
+  let settled = false;
+  for (const turns of [OVERVIEW_NEAR_TURNS, OVERVIEW_FAR_TURNS]) {
+    for (const elevation of OVERVIEW_ELEVATIONS) {
+      for (const turn of turns) {
+        const azimuth = spawnAzimuth + turn;
+        const cx = simCos(azimuth) * simCos(elevation);
+        const cy = simSin(elevation);
+        const cz = simSin(azimuth) * simCos(elevation);
+        const clear = clearDistance(collision, approachEnd, cx, cy, cz, wanted + OVERVIEW_CLEARANCE, EYE_RADIUS);
+        const usable = Math.max(0, Math.min(wanted, clear - OVERVIEW_CLEARANCE));
+        if (usable > distance) {
+          distance = usable;
+          rx = cx;
+          ry = cy;
+          rz = cz;
+        }
+        /**
+         * Each band is ordered by the size of the turn, and the first ray that reaches most
+         * of the way wins outright — the spawn's own first, then thirty degrees either side,
+         * and so on. It used to be the longest ray of the whole fan, which on Foundry B
+         * preferred a clear 150° over a 30° that was a few metres short: a heading that has
+         * to turn as little as possible to face the centre is worth more than those metres.
+         * Nothing settled means no ray clears: the longest is kept, however short.
+         */
+        if (usable >= wanted * 0.8) {
+          settled = true;
+          break;
+        }
       }
-      // The spawn's own ray at the highest elevation wins outright when it reaches most of the
-      // way: the player's side at the bottom of the frame is worth more than a few metres.
-      if (turn === 0 && usable >= wanted * 0.8) break;
+      if (settled) break;
     }
-    if (distance >= wanted * 0.8) break;
+    if (settled) break;
   }
   const overview: IntroPose = {
     x: approachEnd.x + rx * distance,
@@ -714,14 +741,16 @@ export function planIntro(input: IntroInput): IntroPlan {
     pitch: 0,
   };
   // The look target: a little past the centre along the approach's heading, so the pull-back
-  // starts on the view the approach ended with rather than at the camera's own feet. The ray
-  // is behind the camera, so looking at the target from anywhere on it is the approach's
-  // own heading; only the pitch moves, and it is eased from the approach's rather than cut.
+  // starts on the view the approach ended with rather than at the camera's own feet. The
+  // pitch comes from it at every point of the climb; the heading does not — it eases from
+  // the approach's to the one that puts the map's centre in the middle of the frame at the
+  // top of the ray, and on a straight-back ray those two are the same heading.
   const fx = -simSin(approachEnd.yaw);
   const fz = -simCos(approachEnd.yaw);
   const target: Vec3Lit = { x: centre.x + fx * 8, y: centre.y, z: centre.z + fz * 8 };
   lookAt(overview, target.x, target.y, target.z);
-  overview.yaw = approachEnd.yaw;
+  overview.yaw = yawOf(centre.x - overview.x, centre.z - overview.z);
+  const overviewTurn = angleDelta(approachEnd.yaw, overview.yaw);
   waypoints.push([]);
   segments.push({
     kind: 'pullback',
@@ -734,7 +763,8 @@ export function planIntro(input: IntroInput): IntroPlan {
       out.y = approachEnd.y + (overview.y - approachEnd.y) * e;
       out.z = approachEnd.z + (overview.z - approachEnd.z) * e;
       lookAt(out, target.x, target.y, target.z);
-      out.yaw = approachEnd.yaw;
+      // One turn, with the climb, onto the centre; none at all when the ray is straight back.
+      out.yaw = approachEnd.yaw + overviewTurn * e;
       // The pitch: the approach's for the first moments, then the target's as the rise takes it.
       if (u < 0.3) out.pitch = APPROACH_PITCH + (out.pitch - APPROACH_PITCH) * ease(u / 0.3);
     },
@@ -784,7 +814,8 @@ export function planIntro(input: IntroInput): IntroPlan {
         out.y = overview.y + (approachEnd.y - overview.y) * e;
         out.z = overview.z + (approachEnd.z - overview.z) * e;
         lookAt(out, target.x, target.y, target.z);
-        out.yaw = approachEnd.yaw;
+        // The pull-back's turn, undone with the descent.
+        out.yaw = overview.yaw - overviewTurn * e;
         // Level out over the last third, onto the approach's own pitch.
         if (u > 0.66) {
           const f = ease((u - 0.66) / 0.34);

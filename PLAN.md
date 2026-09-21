@@ -9,9 +9,9 @@ content backlog, M13 (archived) put skinned bodies on the bots and moved the boa
 award to the server, M14 (archived) put vitest in the gate and legacy decorators behind a fence,
 M15 (archived) rebuilt the front end to fit one screen, M16 (archived) put the player's chosen
 body on the wire, M17 (archived) gave the front end its second pass from the human's "Fixes /
-Design" brief, and M18 — the debrief, the end-of-match screen as the human's two-screen
-choreography — is the milestone now in progress, under Milestone 12, the content backlog. Both
-are below, in full.
+Design" brief, M18 (archived) built the debrief — the end-of-match screen as the human's two-screen
+choreography — and M19, the weapons as GLB assets with the attachments visible on the gun, is the
+milestone now in progress, under Milestone 12, the content backlog. Both are below, in full.
 
 **Survival mode is cancelled** — permanently, not deferred. See "Roadmap update — post-M8" in
 [12-post-m8-round-4.md](docs/archive/plan/12-post-m8-round-4.md).
@@ -54,9 +54,10 @@ This index makes no claim about what is complete. The honest answer to that ques
 | 22 | Milestone 15 — proposed: the front end, rebuilt to fit one screen | 1,566 | [22-m15-front-end.md](docs/archive/plan/22-m15-front-end.md) |
 | 23 | Milestone 16 — proposed: the body other players see (B6, the wire) | 234 | [23-m16-body-on-the-wire.md](docs/archive/plan/23-m16-body-on-the-wire.md) |
 | 24 | Milestone 17 — the front end's second pass: the chrome, Play Solo, Settings, the splash, and six fixes | 267 | [24-m17-front-end-second-pass.md](docs/archive/plan/24-m17-front-end-second-pass.md) |
+| 25 | Milestone 18 — the debrief: the result, the podium, the XP, and the board on a tab | 126 | [25-m18-the-debrief.md](docs/archive/plan/25-m18-the-debrief.md) |
 
-What stays in this file: **Milestone 12 — proposed** (the content backlog) and **Milestone 18 —
-the debrief**, the milestone now in progress.
+What stays in this file: **Milestone 12 — proposed** (the content backlog) and **Milestone 19 —
+the weapons as assets**, the milestone now in progress.
 
 ## How this file stays short
 
@@ -521,131 +522,174 @@ removed from them.
 
 ---
 
----
+# Milestone 19 — the weapons as assets: GLB viewmodels, and the attachments visible on the gun
 
-# Milestone 18 — the debrief: the result, the podium, the XP, and the board on a tab
-
-Opened 2026-09-20 from the human's brief in chat, with two reference images (a result card —
-VICTORY over two team plates, a match summary and an XP bar — and a two-column scoreboard with
-an awards row) and three playtest reports. The plan was described to the human before any code
-was written and built after their answers, which are the decisions below. Everything here was
-built in the session that opened it; what remains is the human's playtest.
+Opened 2026-09-22 from the human's request in chat: twenty-five Sketchfab GLBs brought over
+three rounds — *"go over the project and tell me which models fit, which do not, and what is
+missing; and the attachments must be visible on the weapon"*. The review, its verdicts and the
+plan were described to the human before any code was written; the decisions below are their
+answers. Stage 0 was built in the session that opened it.
 
 ## The brief, as read
 
-The end-of-match screen as *two screens in one*. **The first** opens on the result card: how
-much each side made, against whom, on which map, how much XP was earned. Then the team plates
-rise and go, the word shrinks to the top, the map card drops and goes, the XP stays at the
-foot — and the best players of the match come in, stand on a podium (gold, silver, bronze;
-MVP on the first) and their statistics rise under them. PLAY AGAIN and a way back to the menu
-at the side. **The second** is the full board: score, kills, deaths, assists for everybody on
-both sides, the reference's second image. Space is PLAY AGAIN. And the second button is *not*
-"return to lobby" — in multiplayer PLAY AGAIN already is the lobby — it returns to the main
-menu, under another name.
+This changes the oldest assumption the viewmodels carry — S2's *"zero external assets"*,
+which M13 already broke for the bodies — and it does so for a reason the procedural guns
+cannot answer: **the five attachments are numbers only.** `Attachments.ts` scales ADS time,
+range and spread; nothing in `WeaponMeshParts` reads the loadout, and the `optic` field in
+`WeaponModelSpecs` is the weapon's own fixed sight, not the HYBRID OPTIC. A player fitting a
+suppressor sees the same rifle. The human wants the rifle to change.
 
-The three reports: Play Solo has no way back; the intro's overview stands beside the map rather
-than over it; the device gate on a phone is small and cluttered.
+So: the twelve weapons and the knife move from `WeaponModelSpec` records to GLB files, weapon by
+weapon, behind the **same `WeaponModel` contract** (`WeaponMesh.ts`: a root, a `magazine` group
+the reload drops, a `chargingHandle` group the empty reload pulls, a `muzzle` point, a
+`sightHeight` the ADS pose cancels); and a shared attachment pack — one red dot, one suppressor,
+one vertical grip, one laser box — mounts on named sockets every weapon file carries. The
+procedural builder stays as the fallback, exactly as `CharacterAvatarProvider` falls back to the
+box rig when a skin is missing.
 
-## Decisions taken (2026-09-20, the human's answers)
+## The review, in one table
 
-1. **Three on the podium, from the whole match.** Gold, silver and bronze are a set of three,
-   and the podium ranks individuals: the ladder's top three whichever side they were on, the
-   crowned winner pinned first where a mode crowns one. A hostile MVP on a DEFEAT screen says
-   what happened. (It was the winning side's five; `Lineup.ts` now says why.)
-2. **The board is a tab.** PODIUM | SCOREBOARD in the head, and Tab turns it, as in a match.
-   Never automatic: the podium is the moment.
-3. **PLAY AGAIN restarts the same match in single-player** — map, mode, difficulty as they
-   stand. Connected it reads NEXT MATCH with the server's countdown, because the server runs
-   the ballot and the rotation and there is no "again" to give.
-4. **MAIN MENU** is the secondary's name, with the arrow BACK carries elsewhere. Offered in
-   single-player too, now that the primary no longer goes there.
-5. **AFTER ACTION REPORT** names the place in the header, with the mode and the map under it
-   — which is also where the map's name stays once the mission card has left.
-6. **The XP accordion stays**, and the cadence starts when the podium has landed. It does not
-   open on its own here (D2's rule): the list would open over the stat cards. The strip
-   says how many unlocks it holds and a click opens it.
-7. **Team emblems — the human's two, later the same day.** A wolf on a shield with the blue
-   edge and a horned demon on the same shield with the red edge, supplied as JPEGs with the
-   checkerboard baked in and keyed to alpha (`public/brand/team-allies.png`, `team-axis.png`;
-   `Emblem.ts` says how). On the result card's plates, over the top edge, and before ALLIES /
-   AXIS on the board's headings. The colours are the artwork's: the sides are relative, so the
-   wolf is always the viewer's own and the demon always the other, and a colourblind palette
-   recolours the plate and the name around them.
-8. **The keys arm a second in.** Space, Escape and Tab mean nothing for the first second —
-   the hand still holding jump, the Escape aimed at the pause menu — and any other key or a
-   click on nothing skips the choreography to its rest.
-9. **The score stays with the word.** When the plates lift, `75 — 62` docks beside VICTORY in
-   the head rather than leaving with them.
-10. **Sharp motion, no bounce.** One ease, decisive.
-11. **The hold is thirty seconds, not fourteen.** The human's change to the plan: the
-    choreography is not to be squeezed into five seconds; it has ten, and twenty remain for the
-    board. `SUMMARY_HOLD_SECONDS` defaults to 30 (README, DEPLOY.md).
-12. **The gate's copy is two lines**, the human's own: *PROTOCOL SEVEN is a desktop shooter* ·
-    *Open it on a computer.*
+Twenty-five files, 313 MB. What fits, per weapon id:
 
-## What was built
-
-### The three fixes (commit `aa1ef08`)
-
-- **Play Solo**: BACK at the action bar's left end, Settings' button in Settings' place, and
-  Escape is the same press (`Menus.handleEscape`).
-- **The intro's overview** (`IntroPlan.ts`): the heading eases once, with the climb, from the
-  approach's onto the map's centre — a heading that held while the ray turned put the camera
-  beside the map looking past it. Measured before: 30° to 150° off-axis on twelve of
-  Foundry's sixteen spawns and six of Depot's eighteen. After: every spawn within 1°. The
-  fan now prefers the *smallest* turn that clears, in two bands — up to 60° at every
-  elevation before anything wider at any — so Foundry B's spawns take 36° straight back over
-  45° from across the map, and the largest turn left on any map is 60°. `npm run intro` green.
-- **The device gate** off the frame's scale: `op-screen--gate` takes the zoom off its viewport
-  and the screen is laid out in window pixels as a portrait column — the lockup at two thirds
-  of the width, the two lines, FIGHT · SURVIVE · WIN at the foot.
-
-### The debrief (`EndOfMatch.ts`, rewritten; `app.css` `.dbf`)
-
-The shared chrome, then three rows in the frame: the head (64), the body (694), the band
-(84). The choreography runs on the render clock (`tick`), one class per phase on the frame,
-the staggers inside a phase as `transition-delay`s in the stylesheet:
-
-| at | phase | what |
+| weapon | source (Sketchfab, licence) | note |
 |---|---|---|
-| 0.0 | `dbf--card` | the word lands (a hit), the reason, the plates in from the sides with VS, the mission card up, the band |
-| 4.2 | `dbf--dock` | the plates lift and fade, the card drops, the word is FLIPped onto the head's box; a sweep |
-| 4.8 | `dbf--docked` | the head takes over: the small word, the score, the reason, the tabs |
-| 4.9 | `dbf--podium` | the stage fades in; bronze, silver, gold walk onto their blocks, 0.3 s apart |
-| 7.0 | `dbf--plates` | the medal and the name under each, bronze first, a note each |
-| 7.6 | `dbf--stats` | the stat cards: score, kills, deaths, K/D |
-| 8.2 | `dbf--rest` | the XP cadence starts |
+| `ar_carbine` | *Free – M4 Modular Kit*, Karnaval, CC-BY | an exploded kit: the assembled core plus alternates spread around it; two suppressors, a large magazine, a vertical grip |
+| `ar_vulcan` | *AK-74 Pack*, Armored Wave, CC-BY | eight assembled rifles; the tactical one (rail handguard, `tactical_grip`, AimPoint Pro, side-folding stock) |
+| `ar_halcyon` | *TAR-21 Tavor*, Nik Vega, CC-BY | the black set; collimator, suppressor, grip and under-rail as separate nodes |
+| `ar_longbow` | *[FREE – Modular] L1A1 SLR*, Aperture Aerospace, CC-BY | the polymer rig; 20- and 30-round magazines; skinned, no rail |
+| `smg_wasp` | *Free Modular MP5 Kit*, Karnaval, Sketchfab Standard | exploded kit; SD handguard, drum, retractable stock, bolt separate |
+| `smg_meridian` | *Modular P90 Tactical*, doomsentinel, CC-BY | assembled; silencer, collimator, foregrip, flashlight as modules |
+| `shotgun_breacher` | *Spas 12*, Luiz Bueno, CC-BY | the pump is its own mesh (`Plane.003`) |
+| `sniper_kestrel` | *L115A3*, Mortavex, CC-BY | 195k triangles and the suppressor baked into the body — usable after a decimate and a cut |
+| `sniper_vantage` | *M150 Sniper Rifle*, Bl4ckGh0st, CC-BY | skinned; magazine, charging handle and foregrip on bones |
+| `pistol_talon` | *Beretta M9*, eNse7en, CC-BY | a display scene: two pistols and loose rounds, 113 meshes; slide and magazine separate |
+| knife | *MTech USA Xtreme Tactical Knife*, xivxiy, Sketchfab Standard | |
+| `lmg_bastion`, `lmg_monolith` | **none** | every LMG brought was a rip (below); the 1963 M60 has no UVs and no textures |
 
-`settle` is the skip and the layout probe's: every phase at once, the transitions off for
-the frame it takes, the bodies on their marks, the cadence started. `settleCard` holds the
-card alone for the probe's `summary/card`.
+Attachment pack: the **AimPoint Pro** from the AK-74 pack (glass and an emissive reticle), the
+M4 kit's **suppressor** and **vertical grip**, and *Rifle Laser Sight* (a DBAL-A2, trolosqlfod,
+CC-BY, 2k triangles) for the laser. The PEQ-15 brought beside it needs a spec-gloss to
+metal-rough conversion first — three r185 dropped `KHR_materials_pbrSpecularGlossiness`, and it
+loads white.
 
-- **The podium** is `CharacterStage` with a new platform (`PODIUM_STAGE`): three blocks at
-  `PODIUM_X` and `PODIUM_STEPS` (`Lineup.ts`, pure, tested), the lens tilted down so the feet
-  land in the upper two thirds of the canvas and the plates hang in the lower third.
-  `walkIn` puts each body 3.2 m behind its block and moves it onto the mark at 2.4 m/s; the
-  avatar reads its own planar speed and its selector answers with the walk clip, so the walk
-  is the same walk a bot walks. A body is invisible until its turn.
-- **The board tab** is the same `Scoreboard`, each side a plate with its name on the top edge
-  in its colour, and an awards row under it: MVP, BEST K/D, MOST ASSISTS, LONGEST STREAK.
-- **The header's card follows the bar**: `XpSummary.onLevel` → `EndOfMatch.setShownLevel`,
-  so LEVEL 55 beside the callsign flips with the flourish rather than before it.
-  `XpSummary.prime` paints the strip before the cadence so it reads from the first second.
-- **Three cues** in `ProceduralAudio`: `playDebriefHit` (the splash's hit with a bright
-  partial on a win), `playDebriefSweep` (the dock), `playDebriefMedal` (523 / 659 / 784 Hz
-  as bronze, silver, gold land — a chord, the gold's with a second partial).
-- **PLAY AGAIN in single-player**: `Game.leaveSummary` tears the world down and enters MATCH,
-  which builds a fresh one on the same selection — a fresh intro, deck and seed.
-- **Edge cases**: Free-for-All's plates are the winner and the runner-up with their kills; a
-  draw's podium is the ladder's top three under DRAW; the Range has no summary, as before.
+**Six files are game rips and never ship**, whatever their Sketchfab page says: the CS2 USP
+(Valve), and everything from the user `ardickasaretas` — *FN Minimi* (materials named
+`BruenMk9_*`, Call of Duty's name for it), *XM250*, *Pulemyot Kalashnikova*, *M249 SAW*, *Negev
+NG7* (`wpn_p17_lm_ngolf7_*`, the "Sakin MG38"). The tell is in the file: `.smd` mesh names,
+`tag_*` bones, `wpn_*`/`att_*` materials, and gunsmith-style variants (`mag_extended`,
+`barrel_long`, `stock_light`) in a "free" model. They were the best-built LMGs in the set, which
+is exactly why the rule is written down.
+
+## Decisions taken (2026-09-22, the human's answers)
+
+1. **The rips go.** The two LMGs stay procedural beside the GLB weapons until a legitimate M249 /
+   M60 / PKM / MG3 is found; a mixed arsenal for a while beats an asset that cannot ship.
+2. **The laser is the DBAL-A2**, not the PEQ-15: a third of the triangles and no conversion.
+3. **The L115A3's suppressor is cut** in Blender (headless; 5.2 is installed, not on PATH) so
+   `KESTREL` keeps its SUPPRESSOR toggle, rather than searching for another AWM.
+4. **Camo over PBR is an overlay**: the pattern multiplied onto the albedo through a short
+   `onBeforeCompile` on the shared material, keeping the model's detail, rather than replacing the
+   base map as the procedural surfaces do today.
+5. **The M4 alone proves the path** — ADS, reload, hip, camo, the loadout preview — before a
+   second weapon enters. The sight line under an optic is where this will break, and it should
+   break on one weapon.
+
+## The authoring contract
+
+Every `public/models/weapons/<weaponId>.glb` is built by `scripts/weapon-build.mjs` from a
+recipe and a source outside the repository (`../GLB_files/weapons/`, the sibling of
+`../FBX_files` the bodies came from; 313 MB of sources do not belong in git). The built file
+carries:
+
+- **Units and axes as the viewmodel's**: metres, the barrel down **-Z**, +Y up, the origin at
+  the centre of the receiver — `WeaponMesh`'s local space, so nothing downstream converts.
+- **Groups by the contract's names**: `body` (everything static), `magazine` (dropped on
+  reload), `charge` (the charging handle, bolt or pump; may be empty), `magazine_ext` (the
+  extended magazine, present where the kit had one), `optic_default` (the irons, hidden when an
+  optic mounts).
+- **Sockets as empty nodes**: `socket_muzzle` (barrel tip, on the bore), `socket_rail_top`
+  (the optic's mount, on the receiver's rail), `socket_rail_front` (the handguard's top rail,
+  the laser's), `socket_rail_bottom` (the grip's), `socket_sight` (the iron sight line — its Y is `WeaponModel.sightHeight`). A socket's +Y is
+  the mount's up and -Z its forward; the pack's parts have their origin at the mating face so
+  an attachment is `parent.add(part)` and nothing else.
+- **Budgets, as a gate** (`check:weapons`): <= 30k triangles, <= 4 MB, textures <= 1024 on a side
+  and WebP or JPEG, the contract nodes present, and an `asset.extras.attribution` block (title,
+  author, licence, URL) — CC-BY is a condition, not a courtesy — mirrored in
+  `public/models/weapons/CREDITS.md`.
+- **A second file per weapon, `<id>.lod1.glb`**, <= 10k triangles and one primitive per
+  material, for the ten bodies at twenty metres (`buildHeldWeapon`'s replacement). 5k was
+  written first; meshopt cannot collapse across UV seams and a kit mesh is mostly seams, so the
+  M4 stalls at a third whatever the ratio, and the number that matters at that distance — the
+  draw calls — is what `join` cuts.
+
+The geometry pass is the JSON chunk edited directly — select, re-parent, rename, bake the world
+matrices, add the sockets — with no parser package (`glb-images.mjs` set that precedent), and
+then `npx @gltf-transform/cli@4.5.0` pinned, as `skin-compress.mjs` runs it: `prune`, `dedup`,
+`resize`, `webp`, and `simplify` for the LOD. S2 admits no new package; none is added.
+
+## The stages
+
+- **Stage 0 — the assets, as a script.** `weapon-build.mjs` with the M4 recipe and the pack's
+  four; `check-weapons.mjs` in the gate; `CREDITS.md`. Nothing at runtime changes. **Built.**
+- **Stage 1 — the loading path.** `WeaponAssetService` beside `CharacterAssetService` (a cache
+  for the application's life, a clone per instance, warmed for the loadout only, never the
+  arsenal); `buildWeaponModel` gains a GLB branch that returns the same `WeaponModel` from the
+  file's nodes, and falls back to the procedural builder when the file is missing or fails.
+  `sightHeight` comes from `socket_sight`. Proved on the M4 and nothing else (decision 5).
+- **Stage 2 — the attachments, visible.** One function, `attachVisuals(model, attachmentIds)`:
+  the optic hides `optic_default`, mounts on `socket_rail_top` and **moves the sight line** —
+  `ViewmodelAnim` cancels `sightHeight`, and under an optic that number is the optic's; the
+  suppressor mounts on `socket_muzzle` and moves the flash's `muzzle` point forward by its
+  length; grip and laser on `socket_rail_bottom`, the laser wired to the existing
+  `laserVisible`; the extended magazine shows `magazine_ext` where the file has one and
+  stretches `magazine` x1.4 along the well where it does not.
+- **Stage 3 — the arsenal and the bodies.** The kits first (P90, MP5, AK-74, Tavor), then the
+  SPAS-12, the M150 and L1A1 (skinned: `SkeletonUtils.clone`, the bodies' path), the Beretta and
+  the knife, the L115A3 last after its cut. `<id>.lod1.glb` into `BotRenderer`'s held-weapon
+  cache, with the suppressor and nothing else at that distance. The killfeed glyphs stay
+  projected from `WeaponModelSpec`; the camo overlay (decision 4) lands here.
+
+## What was built — stage 0 (2026-09-22)
+
+- **`scripts/weapon-build.mjs`**: five recipes — `ar_carbine` from the M4 kit's assembled core
+  (upper, lower, Keymod handguard, grip, classic stock, trigger; the "Light" magazine as
+  `magazine`), and the pack — `att_suppressor` and `att_grip` from the same kit,
+  `att_optic` (the AimPoint Pro, its glass and its reticle from the AK-74 pack's tactical
+  rifle), `att_laser` (the DBAL-A2). The measurements are the mesh's: the bore is the mean of
+  the handguard's vertices at its tip, the rail the receiver's top over its middle half where
+  no sight stands, the sight line the rear sight's top less 4 mm. Two things were found by
+  looking rather than by measuring and are now in the recipes: the kit's "Large" magazine is
+  thicker, not longer, so the extended magazine will be the stretch; and the DBAL's emitters
+  face +X in the source, not -X — the first build mounted it backwards.
+- **The M4, measured** (source cm, origin at the bore's height and the receiver's middle):
+  0.715 m long, 24,276 triangles, 2.21 MB (15 WebP textures at 1024, 0.71 MB of it);
+  sockets at muzzle z=-0.370, rail top y=+0.038, rail front y=+0.039 z=-0.226, rail bottom
+  y=-0.029, sight y=+0.068. The pack: suppressor 842 triangles / 0.09 MB, grip 1,416 / 0.12,
+  optic 7,618 / 0.50, laser 1,967 / 0.24. The LOD 8,396 triangles / 0.75 MB, five primitives.
+  **3.91 MB in all**, and the build is byte-identical on a second run.
+- **The pack, mounted**: the four parts on the four sockets in a viewer, by `socket.add(part)`
+  and nothing else — the red dot on the receiver's rail, the laser on the handguard forward of
+  it with the emitters forward, the grip under the handguard, the can on the muzzle. The
+  picture the human asked for, as a file.
+- **`scripts/check-weapons.mjs`** in `npm run check` (the seven rules in its header), and
+  `glb-images.mjs` reads WebP dimensions now. **`CREDITS.md`** regenerated by the build, and
+  the credit is never typed from memory: a Sketchfab download carries title, author, licence
+  and URL in its own `asset.extras`, and the build refuses a recipe whose record disagrees with
+  its file (the human's ask, after stage 0: *"I want to ensure we never miss an attribution"*).
+- **M18 closed** into the archive (`25-m18-the-debrief.md`); its open item was the human's
+  playtest, and two playtest rounds have landed since (`897c14d`, `974f9d7`).
 
 ### Verified
 
-`npm run check` (150 tests, the podium's among them), `npm run layout` (every surface at six
-viewports, the debrief at `summary/card`, `summary/{2,6,10}`, `/xp`, `/board`, `/ffa`), and the
-screen driven end to end in the browser pane: the choreography, Tab, the click that skips,
-Space into a new match, Escape to the menu.
+`npm run check` green with `check:weapons` in it (150 tests). The M4 and the mounted pack
+inspected in a three.js viewer with an axes helper: metres, the barrel down -Z, +Y up, every
+socket where the recipe says. Nothing at runtime reads the files yet.
 
 ## Open
 
-- **The human's playtest**, with sound.
+- **Stage 1**: the loading path, on the M4 alone.
+- The M4's geometry is 1.5 MB of its 2.21 — split normals at every hard edge. `quantize` would
+  roughly halve it; left for when the budget bites rather than done on a guess.
+- The optic's glass carries `KHR_materials_transmission`; three loads it as a
+  `MeshPhysicalMaterial` with a transmission pass. Stage 2 swaps it for the project's `lens`
+  material, as the procedural red dot uses.

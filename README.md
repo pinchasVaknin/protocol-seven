@@ -12,6 +12,13 @@ The whole build is TypeScript, Three.js and Vite.
 See [the character asset pipeline](docs/CHARACTER-ASSETS.md) for the GLB export contract,
 runtime ownership model, and the current source-asset limitations.
 
+**Weapon assets (M19, in progress).** `public/models/weapons/` holds GLB weapons and an
+attachment pack built by `scripts/weapon-build.mjs` from Sketchfab sources kept outside the
+repository (`../GLB_files/weapons/`); one recipe per file, the sockets measured from the mesh,
+`npm run check:weapons` holding every file to its budget and its attribution
+(`public/models/weapons/CREDITS.md`). The runtime does not read them yet — the viewmodels are
+still built in code — and PLAN.md's Milestone 19 is the record of the stages that will.
+
 ---
 
 ## Setup

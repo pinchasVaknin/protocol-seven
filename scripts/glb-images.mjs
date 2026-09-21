@@ -43,13 +43,32 @@ function jpegSize(data) {
   return null;
 }
 
+/**
+ * WebP (M19): a RIFF container whose first chunk is VP8 (lossy), VP8L (lossless) or VP8X
+ * (extended). Each keeps the dimensions in its own place; all three are 14-bit fields, minus
+ * one in two of them.
+ */
+function webpSize(data) {
+  if (data.length < 30 || data.toString('ascii', 0, 4) !== 'RIFF' || data.toString('ascii', 8, 12) !== 'WEBP') return null;
+  const chunk = data.toString('ascii', 12, 16);
+  if (chunk === 'VP8 ') return { width: data.readUInt16LE(26) & 0x3fff, height: data.readUInt16LE(28) & 0x3fff };
+  if (chunk === 'VP8L') {
+    const b = data.readUInt32LE(21);
+    return { width: (b & 0x3fff) + 1, height: ((b >>> 14) & 0x3fff) + 1 };
+  }
+  if (chunk === 'VP8X') {
+    return { width: (data.readUIntLE(24, 3) & 0xffffff) + 1, height: (data.readUIntLE(27, 3) & 0xffffff) + 1 };
+  }
+  return null;
+}
+
 /** Every image in the file: its index, MIME type, byte size, pixel size and name. */
 export function glbImages({ json, bin }) {
   return (json.images ?? []).map((image, index) => {
     const view = json.bufferViews[image.bufferView];
     const start = view.byteOffset ?? 0;
     const data = bin.subarray(start, start + view.byteLength);
-    const size = pngSize(data) ?? jpegSize(data);
+    const size = pngSize(data) ?? jpegSize(data) ?? webpSize(data);
     return {
       index,
       mimeType: image.mimeType ?? '?',

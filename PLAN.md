@@ -1034,9 +1034,70 @@ their arithmetic with the six that were not. The LONGBOW's and the BREACHER's si
 still further back than their real rear sights (playtest 3's note), so those two are the ones
 to look at first.
 
+## Playtest 5 (2026-09-22, the human): six findings, one root
+
+Five of the six were the same mistake in five places: **a socket measured from a part's
+bounding box instead of from the thing on it**, and in the lateral axis from the *body's*
+centre rather than the part's. Measured, each one:
+
+| weapon | what the file says | what it did |
+|---|---|---|
+| VULCAN 74 | the side mount spans x −0.047 … 0.000, so its centre is **−0.0235**; `socket_rail_top` was x = 0 | every optic sat 2.3 cm to the right of the rail it was clamped to |
+| VULCAN 74 | the receiver's top is y **0.052**, the sight line was **0.050** | the eye was 2 mm *under* the dust cover: the irons looked into the receiver's flank — *"held on his face"* |
+| HALCYON B5 | the collimator spans x −0.012 … +0.039, centre **+0.0135**; both sockets were x = 0 | a mounted optic sat 1.35 cm left of the rail, and the dot the runtime added sat that far from the reticle the source already draws — the two reticles |
+| MERIDIAN P40 | the collimator is y 0.071 … 0.134; the sight was at 0.62 of that | the dot rode the bottom edge of the glass and the weapon rode high to match |
+| WASP 9 | the front post's tip is y **0.063**, the drum's axis **0.041** | aiming along the drum stood the post and its hood over the target |
+
+So: every rail and sight socket now comes off **its own part**, laterally included. The AK's
+sight line is 6 mm proud of its dust cover, the Tavor's is its collimator's window (tuned
+against the drawn ring: 0.6 of the housing → 0.693, measured twice), the P90's is 0.78 of
+its window, and the MP5's is halfway between the drum's top and the front post's tip.
+
+**The dot only where the glass is empty.** The injected reticle now needs the file to ask for
+it — a `socket_reticle` node the recipe writes — and it is placed 8 mm *inside* the housing.
+The P90's source draws an empty window and has one; the Tavor's draws a ring and does not.
+That is the second reticle gone, and the dot no longer floats over the sight at the hip.
+
+**The editor's grey weapons.** `weaponFileArrived` matched slots on `slot.figure.weaponId`,
+and `setWeapon` — which is how the editor puts a weapon in the operator's hands — never
+rewrites the figure. So the swap never ran there and the stage kept the primitives until a
+skin change rebuilt the body. It matches on what the body is **holding** now.
+
+**The stock and the hands.** `STOCK_BEHIND_HAND_MAX` 22 cm → **18**.
+
+**The reload is the support hand's.** The support glove and its forearm are their own node in
+the viewmodel (`supportHand`) rather than merged into the body, and during a reload it leaves
+the handguard, rides the magazine out and back, and returns — the trigger hand never leaves
+the grip. Following the magazine's own displacement rather than animating a second path is
+what keeps the two in step.
+
+### Verified
+
+`npm run check` green: 25 files, 27.32 MB, 150 tests, every audit. In the Range, at full ADS,
+stationary, the red dot's offset from the frame's exact centre (1125 × 875):
+
+| weapon | dx | dy |
+|---|---|---|
+| VULCAN 74 + HYBRID OPTIC | +1.3 px | +4.8 px |
+| HALCYON B5, its own collimator | −2.7 px | +11.6 px → retuned to ≈0 |
+| MERIDIAN P40, its own collimator | −1.1 px | +2.2 px |
+
+And by eye: the AK's irons are a rail view down the dust cover instead of a wall; the AK's
+optic sits over its mount; the Tavor shows **one** reticle; the P90's dot is in the middle of
+its glass; the MP5's aperture is on the axis with the target visible through it; the editor's
+operator holds the file's weapon on the first entry, no longer grey; and a twelve-frame strip
+of an MP5 reload shows the weapon raised with the support glove down at the well.
+
+### Not verified here
+
+The Tavor's final 0.693 was computed from two measurements either side of centre rather than
+measured a third time; it should land within a couple of pixels but the next playtest is what
+confirms it. The BREACHER's and the LONGBOW's sight sockets are still the old kind — measured
+from a bounding box — and are the next two to fix.
+
 ## Open
 
-- **The LONGBOW's and the BREACHER's sight sockets**, and the playtest of the distances.
+- **The BREACHER's and the LONGBOW's sight sockets**, the last two of the old kind.
 - **The list's weapon drawings** (finding 11).
 - **The knife's swing in the match** — a look at the file's blade in the hand during a melee,
   which the pane could not trigger.

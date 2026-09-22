@@ -117,6 +117,13 @@ const REFERENCE_SIGHT_HEIGHT = 0.0915;
  */
 const FILE_RELOAD = { dropY: -0.085, dropZ: 0.075, pitch: 52, roll: 26, yaw: 10, magThrow: 0.13, magSlide: 0.09 };
 
+/**
+ * Where the support hand meets the magazine, metres in the magazine's own space (M19,
+ * playtest 5): a little below it and a little toward the eye, so the glove wraps the
+ * magazine's body rather than sitting inside it.
+ */
+const MAG_HAND_OFFSET = new Vector3(0.02, -0.055, 0.02);
+
 /** How fast the weapon drops for a throw and comes back. Brisk: this is not a swap. */
 const THROW_LOWER_RATE = 14;
 
@@ -349,11 +356,13 @@ export class ViewmodelAnim {
       ry += (file ? FILE_RELOAD.yaw : cfg.reloadYaw) * down;
       rz += (file ? FILE_RELOAD.roll : cfg.reloadRoll) * down;
       this.poseMagazine(f, times, cfg);
+      this.poseSupportHand(f, times);
       this.poseChargingHandle(drive.reloadEmpty ? f : -1, cfg);
     } else {
       this.model.magazine.position.set(0, 0, 0);
       this.model.magazine.rotation.set(0, 0, 0);
       this.model.chargingHandle.position.set(0, 0, 0);
+      if (this.model.supportHand !== null) this.model.supportHand.position.set(0, 0, 0);
     }
 
     // ---- bob ----------------------------------------------------------------
@@ -568,6 +577,35 @@ export class ViewmodelAnim {
     const tumble = falls ? tilt : 0;
     this.model.magazine.rotation.set(tumble, 0, tumble * 0.4);
   }
+
+  /**
+   * The support hand changes the magazine (M19, playtest 5).
+   *
+   * The trigger hand never leaves the grip — it is merged into the body and cannot — so this
+   * is the hand that does the work: it leaves the handguard as the weapon comes up, rides the
+   * magazine out and back (`poseMagazine` has already put the magazine where it is going, so
+   * following it is one vector rather than a second animation to keep in step), and returns to
+   * the handguard as the weapon comes down. The blend at each end is what keeps it from
+   * snapping between the two places.
+   */
+  private poseSupportHand(f: number, times: { down: number; magOut: number; magIn: number; magSeated: number; raise: number }): void {
+    const hand = this.model.supportHand;
+    if (hand === null) return;
+    // Away from the handguard over the dip, back to it over the raise.
+    const held = smoothstep(0, times.down, f) * (1 - smoothstep(times.magSeated, times.raise, f));
+    if (held <= 0) {
+      hand.position.set(0, 0, 0);
+      return;
+    }
+    const target = this.handTarget;
+    target.copy(this.model.magazine.position).add(MAG_HAND_OFFSET);
+    // The magazine's own home is the weapon's origin, and so is the hand's: the difference
+    // between where the hand is built and where the magazine sits is already in the geometry,
+    // so the hand only has to travel the magazine's own displacement plus the grip offset.
+    hand.position.copy(target).multiplyScalar(held);
+  }
+
+  private readonly handTarget = new Vector3();
 
   /** `f` below zero means "not an empty reload"; the handle stays home. */
   private poseChargingHandle(f: number, cfg: ViewmodelConfig): void {

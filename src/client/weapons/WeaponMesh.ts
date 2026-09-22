@@ -108,6 +108,17 @@ export interface WeaponModel {
    * and comes off upward and back; a file says so with a `socket_mag_exit` node.
    */
   readonly magazineExit: THREE.Vector3;
+  /**
+   * The support hand and its forearm, as one node, or null when the model has no hands
+   * (the loadout preview, the bodies' LOD) or is the primitives'.
+   *
+   * Its own group rather than part of the body because it is the hand that **changes the
+   * magazine** (M19, playtest 5): the trigger hand stays on the grip and this one travels to
+   * the well, carries the empty magazine away and brings the fresh one up. A reload the player
+   * cannot see is a reload that might as well be a fade to black, and the well was the one
+   * thing the raised pose made visible — so something had to arrive at it.
+   */
+  readonly supportHand: THREE.Object3D | null;
   dispose(): void;
 }
 
@@ -191,6 +202,9 @@ export function buildWeaponModel(
     weaponId,
     source: 'procedural',
     magazineExit: MAGAZINE_EXIT_DOWN.clone(),
+    // The primitives keep their hands in the body: their reload is the old dip, and nothing
+    // down there is worth watching (only the two LMGs are built this way now).
+    supportHand: null,
     dispose(): void {
       // Only the geometry is per model. The three materials and their textures are shared
       // for the life of the process in `cachedSurfaces` and `baseTextures` here and the camo cache in
@@ -259,11 +273,22 @@ function buildFromTemplate(
     }
   });
 
-  dressOwnOptic(root, template, surfaces, disposables);
+  dressOwnOptic(root, surfaces, disposables);
 
+  let supportHand: THREE.Object3D | null = null;
   if (options.hands) {
     const boxes = handBoxesAt(spec, template.sockets.socket_grip, template.sockets.socket_support);
-    addMerged(groups.body, boxes, [], surfaces, disposables, 'hands');
+    // `handBoxes` lists the trigger pair first and the support pair second (its own comment
+    // says so); the split is by that order, as `handBoxesAt` already relies on it.
+    addMerged(groups.body, boxes.slice(0, 2), [], surfaces, disposables, 'hands');
+    const support = boxes.slice(2);
+    if (support.length > 0) {
+      const group = new THREE.Group();
+      group.name = 'viewmodel:hand:support';
+      addMerged(group, support, [], surfaces, disposables, 'hand-support');
+      root.add(group);
+      supportHand = group;
+    }
   }
 
   const bareMuzzle = root.getObjectByName('socket_muzzle');
@@ -285,6 +310,7 @@ function buildFromTemplate(
     weaponId: template.weaponId,
     source: 'glb',
     magazineExit: magazineExitOf(root),
+    supportHand,
     dispose(): void {
       for (const d of disposables) d.dispose();
       root.clear();
@@ -390,6 +416,8 @@ function magazineExitOf(root: THREE.Object3D): THREE.Vector3 {
 
 /** The dot a file's own collimator gets, metres across. A red dot is a dot, not a disc. */
 const OWN_RETICLE_RADIUS = 0.0022;
+/** How far back inside the housing the dot sits, metres: enough that the glass is in front of it. */
+const RETICLE_INSET = 0.008;
 
 /**
  * What a file's own optics need before anything is mounted on them (playtest 4).
@@ -398,14 +426,15 @@ const OWN_RETICLE_RADIUS = 0.0022;
  *
  * - `scope_glass` — a lens the build carved out of a scope whose tube, rings and glass are one
  *   material — takes the project's `lens`, so the tube stays solid and you can see down it.
- * - A weapon whose sight *is* its own collimator (the P90's, the Tavor's) gets the project's
- *   reticle: a small emissive disc at `socket_sight`, facing the eye. The sources draw an empty
- *   window, which is finding 6 — *"completely missing the red dot reticle"*. It is added under
- *   `optic_default` so that mounting a red dot, which hides that group, hides this with it.
+ * - A weapon whose collimator draws an **empty window** — the P90's — gets the project's
+ *   reticle: a small emissive disc at the file's own `socket_reticle`, which is the recipe
+ *   saying *"this glass has nothing in it"*. A sight that already carries a reticle, the
+ *   Tavor's, has no such node and gets nothing; adding one regardless is what put two dots on
+ *   it (playtest 5). The disc goes under `optic_default`, so mounting a red dot — which hides
+ *   that group — hides this with it.
  */
 function dressOwnOptic(
   root: THREE.Object3D,
-  template: WeaponAssetTemplate,
   surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
   disposables: Array<{ dispose(): void }>,
 ): void {
@@ -414,15 +443,17 @@ function dressOwnOptic(
   if (glass !== undefined && lens !== undefined) glass.material = lens;
 
   const own = root.getObjectByName('optic_default');
+  const at = root.getObjectByName('socket_reticle');
   const reticle = surfaces.get('reticle');
-  if (own === undefined || own.children.length === 0 || reticle === undefined) return;
+  if (own === undefined || at === undefined || own.children.length === 0 || reticle === undefined) return;
   const geometry = new THREE.CircleGeometry(OWN_RETICLE_RADIUS, 12);
   disposables.push(geometry);
   const dot = new THREE.Mesh(geometry, reticle);
   dot.name = 'optic_default:reticle';
-  // At the sight line, facing back down the barrel at the eye. The window is a few millimetres
-  // ahead of it, so the dot reads as floating in the glass rather than painted on it.
-  dot.position.copy(template.sockets.socket_sight);
+  // Where the file says the glass is, and a few millimetres inside it: on the window's own
+  // plane the disc read as a dot floating over the sight from the hip (playtest 5).
+  dot.position.copy(at.position);
+  dot.position.z += RETICLE_INSET;
   own.add(dot);
 }
 

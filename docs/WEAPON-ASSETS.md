@@ -69,7 +69,10 @@ A recipe names the source, the unit and the source's forward and up axes, the no
 under each group, and two functions — `origin` and `sockets` — that answer in source space
 from measurements the script takes on the mesh (`bounds`, `tip`, `top`, `bottom`,
 `plateau`). Numbers are measured rather than typed: the bore is the mean of the barrel's
-vertices at its tip, the rail is the plateau of the receiver's top where no sight stands. A
+vertices at its tip, the rail is the plateau of the receiver's top where no sight stands — and
+a rail or sight socket is measured **on the part it belongs to, in all three axes**: a side
+mount that hangs off the receiver's flank carries its optic there, and a socket on the body's
+centre line puts it where the weapon has no rail (playtest 5). A
 recipe can also `split` a box of triangles out of a part into a node of its own — in output
 space, for the iron sights the runtime hides under an optic and for a scope's glass —
 `move` nodes before the fix (a kit laid out flat), swap a node's material,

@@ -327,8 +327,18 @@ export const RECIPES = {
         // The frame's right-hand face, at its middle height, for the laser.
         socket_rail_front: { at: [(frame.min[0] + frame.max[0]) / 2 - (frame.max[0] - frame.min[0]) * 0.15, (frame.min[1] + frame.max[1]) / 2, m.side({ name: 'FrameLP001' }, 0.3, 0.8)], roll: -90 },
         socket_rail_bottom: [(frame.min[0] + frame.max[0]) / 2, frame.min[1], 0],
-        // The collimator's window: the upper half of its box.
-        socket_sight: [0, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.62, 0],
+        /**
+         * The collimator's **window**, not its housing: the glass is the upper part of the box
+         * and the dot belongs in the middle of it. At 0.62 of the height the dot sat along the
+         * window's bottom edge and the weapon rode correspondingly high (playtest 5, finding 4).
+         */
+        socket_sight: [0, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.78, 0],
+        /**
+         * This source draws an empty window, so the runtime puts the project's dot in it. A
+         * weapon whose own sight already carries a reticle — the Tavor's — has no such node and
+         * gets nothing, which is what stopped it wearing two (playtest 5, finding 2).
+         */
+        socket_reticle: [0, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.78, 0],
         /**
          * The trigger hand on the grip; the support hand **in the front loop**, a quarter of
          * the weapon ahead of it and under the body (playtest 4). They were 4.5 cm apart, and
@@ -410,8 +420,13 @@ export const RECIPES = {
         // The handguard's top is the cocking tube; the laser goes on its right-hand rail.
         socket_rail_front: { at: [(guard.min[0] + guard.max[0]) / 2, (guard.min[1] + guard.max[1]) / 2, guard.max[2]], roll: -90 },
         socket_rail_bottom: [(guard.min[0] + guard.max[0]) / 2, guard.min[1], 0],
-        // The rear drum sight's axis.
-        socket_sight: [0, (drum.min[1] + drum.max[1]) / 2, 0],
+        /**
+         * The line the two sights share. The drum's *axis* is 2.2 cm below the front post's tip
+         * in this kit, and aiming along it stood the post and its hood over the target — the
+         * weapon "raised far above the eye" (playtest 5, finding 3). Halfway between the drum's
+         * top and the post's tip puts one just under the line and the other just over it.
+         */
+        socket_sight: [0, (drum.max[1] + m.top({ name: 'Gas Block Picat_low_7' }, 0.55, 0.8)) / 2, 0],
         socket_grip: [trigger.min[0] - 0.03, lower.min[1] + (lower.max[1] - lower.min[1]) * 0.35, 0],
         socket_support: [(guard.min[0] + guard.max[0]) / 2, guard.min[1] - 0.015, 0],
       };
@@ -462,7 +477,12 @@ export const RECIPES = {
         // The brake's side ports pull the tip's mean a centimetre off the bore; the bore is on
         // the body's centre line.
         socket_muzzle: [x, bore[1], bore[2]],
-        socket_rail_top: [x, m.plateau({ name: 'SideMount_picantiny.002' }, 0.1, 0.9), (mount.min[2] + mount.max[2]) / 2],
+        /**
+         * On the **mount's** own centre line, not the body's. The side mount hangs 2.3 cm to the
+         * left of the receiver's axis, and a socket on the body's centre put every optic that far
+         * off its rail (playtest 5, finding 1).
+         */
+        socket_rail_top: [(mount.min[0] + mount.max[0]) / 2, m.plateau({ name: 'SideMount_picantiny.002' }, 0.1, 0.9), (mount.min[2] + mount.max[2]) / 2],
         // The quad rail's right-hand rail at the bore's height, for the laser.
         socket_rail_front: { at: [m.side({ name: 'rails2.001' }, 0.2, 0.8), bore[1], (guard.min[2] + guard.max[2]) / 2], roll: -90 },
         socket_rail_bottom: [x, guard.min[1], (guard.min[2] + guard.max[2]) / 2],
@@ -470,11 +490,13 @@ export const RECIPES = {
          * The sight line runs along the top of the receiver, over the **rear of the handguard**
          * where an AK's rear leaf sits — not over the middle of the receiver, which is where
          * this was and which put the eye level with the receiver's flank (playtest 4, finding
-         * 4). This pack's tactical variant has no rear leaf modelled, so the line is the
-         * plateau of the receiver's top, a millimetre proud of it, in line with the front post
-         * at the muzzle end.
+         * 4). This pack's tactical variant has no rear leaf modelled and its dust cover is a
+         * flat rail, so the line is that rail **6 mm proud of it** — the eye clears the cover
+         * and looks along it to the front block. A millimetre proud, which is what this was,
+         * put the eye 2 mm *below* the cover and the player looked into the receiver's flank
+         * (playtest 5, finding 1).
          */
-        socket_sight: [x, m.plateau({ name: 'AK-74_body.007' }, 0.35, 0.6) + 0.001 / 0.5, guard.max[2]],
+        socket_sight: [x, m.plateau({ name: 'AK-74_body.007' }, 0.35, 0.6) + 0.012 / 0.5, guard.max[2]],
         socket_grip: [x, grip.max[1] - (grip.max[1] - grip.min[1]) * 0.45, (grip.min[2] + grip.max[2]) / 2],
         socket_support: [x, guard.min[1] - 0.018, guard.min[2] + (guard.max[2] - guard.min[2]) * 0.55],
       };
@@ -514,16 +536,28 @@ export const RECIPES = {
       const length = body.max[0] - body.min[0];
       const height = body.max[1] - body.min[1];
       const optic = m.bounds({ name: 'Collimator' });
+      const zOptic = (optic.min[2] + optic.max[2]) / 2;
       const rail = m.bounds({ name: 'Rail_Down' });
       return {
         socket_muzzle: [bore[0], bore[1], z],
         // The top rail, under the collimator for the optic and over the handguard for the laser.
-        socket_rail_top: [(optic.min[0] + optic.max[0]) / 2, m.plateau({ name: 'TAR - 21' }, 0.45, 0.62), z],
+        /**
+         * Over the collimator's **own centre line**, not the body's: this Tavor's sight sits
+         * 1.35 cm to the right of the receiver's axis, and a rail socket on the body's centre
+         * put a mounted optic that far off it (playtest 5, finding 2).
+         */
+        socket_rail_top: [(optic.min[0] + optic.max[0]) / 2, m.plateau({ name: 'TAR - 21' }, 0.45, 0.62), zOptic],
         // The body's right-hand face ahead of the trigger, at the bore's height, for the laser.
         socket_rail_front: { at: [body.min[0] + length * 0.22, bore[1], m.side({ name: 'TAR - 21' }, 0.72, 0.9)], roll: -90 },
         socket_rail_bottom: [(rail.min[0] + rail.max[0]) / 2, rail.min[1], z],
         // The collimator's window.
-        socket_sight: [(optic.min[0] + optic.max[0]) / 2, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.6, z],
+        /**
+         * The collimator's own window, laterally as well: its reticle is drawn in the glass,
+         * so the ADS pose has to bring *that* onto the camera's axis. On the body's centre line
+         * the drawn ring sat 1.35 cm to the side of where the round went, and the dot the
+         * runtime used to add sat beside it — the report's two reticles (playtest 5).
+         */
+        socket_sight: [(optic.min[0] + optic.max[0]) / 2, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.693, zOptic],
         // The grip hangs under the body's middle, the support hand under its front.
         socket_grip: [body.min[0] + length * 0.44, body.min[1] + height * 0.32, z],
         socket_support: [body.min[0] + length * 0.2, body.min[1] + height * 0.42, z],

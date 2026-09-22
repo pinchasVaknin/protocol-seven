@@ -531,8 +531,14 @@ export class CharacterStage {
       asset.geometry.dispose();
     }
     for (const slot of this.slots) {
-      if (slot.figure.weaponId !== weaponId) continue;
-      slot.weapon = this.heldWeapon(weaponId, slot.figure.camo ?? null, slot.figure.attachments ?? []);
+      // What the body is **holding**, not what its figure was created with: `setWeapon` puts a
+      // weapon in a figure's hands without rewriting the figure, so matching on the figure left
+      // the editor's operator with the primitives until a skin change rebuilt it — the report's
+      // *"every weapon is grey until I move something"* (playtest 5, finding 5).
+      if (slot.weapon?.weaponId !== weaponId) continue;
+      const camo = slot === this.slots[0] && this.slots.length === 1 ? this.camo : (slot.figure.camo ?? null);
+      const attachments = slot === this.slots[0] && this.slots.length === 1 ? this.attachments : (slot.figure.attachments ?? []);
+      slot.weapon = this.heldWeapon(weaponId, camo, attachments);
       slot.avatar?.setWeapon(slot.weapon);
     }
   }

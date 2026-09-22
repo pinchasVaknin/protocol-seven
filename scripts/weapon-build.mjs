@@ -21,9 +21,11 @@
  * optic sits (`socket_rail_top`), the handguard's top rail where the laser sits
  * (`socket_rail_front`), the rail under the handguard (`socket_rail_bottom`), the iron
  * sight line (`socket_sight`, whose Y is `WeaponModel.sightHeight`), and the two hands
- * (`socket_grip`, `socket_support`, where the first-person gloves and a body's palms go). A
- * pack part is the same recipe with its origin on the mating face, so mounting is
- * `socket.add(part)`.
+ * (`socket_grip`, `socket_support`, where the first-person gloves and a body's palms go). Two
+ * are optional: `socket_sight_front`, a front post whose line from `socket_sight` is not
+ * parallel to the bore (the ADS pose turns the weapon onto it), and `socket_reticle`, an empty
+ * collimator window the runtime puts its dot in. A pack part is the same recipe with its
+ * origin on the mating face, so mounting is `socket.add(part)`.
  *
  * The measurements are taken from the vertices, not typed in: the bore is the mean of the
  * barrel's vertices at its tip, the rail is the top of the receiver. A number typed from a
@@ -88,6 +90,11 @@ const LOD_ERROR = 0.1;
 const PLATEAU_SHARE = 0.4;
 /** Metres the optic's clamp plate sinks below the rail surface it mounts on. See `att_optic`. */
 const OPTIC_CLAMP_SINK = 0.006;
+/**
+ * Metres from the eye to `socket_sight` at full ADS — `SIGHT_DISTANCE` in `WeaponMesh.ts`,
+ * restated for `sightOver`, which needs to know where the eye is to know what it sees.
+ */
+const SIGHT_EYE_DISTANCE = 0.2;
 
 // -- the sources ---------------------------------------------------------------
 
@@ -317,6 +324,11 @@ export const RECIPES = {
       const body = m.bounds({ name: 'P90Low003' });
       const frame = m.bounds({ name: 'FrameLP001' });
       const optic = m.bounds({ name: 'ColimatorLP001' });
+      // The collimator's head — the frame around its window, standing on a long low base.
+      const head = m.boundsAbove({ name: 'ColimatorLP001' }, 0.75);
+      // The window's middle: at 0.78 of the housing's height (playtest 5), on its centre line.
+      const windowY = optic.min[1] + (optic.max[1] - optic.min[1]) * 0.78;
+      const windowZ = (optic.min[2] + optic.max[2]) / 2;
       const length = body.max[0] - body.min[0];
       // The body's own rail, under the collimator, for the optic; the frame's top for the
       // laser and its underside for the grip, where the kit's own foregrip sat.
@@ -331,14 +343,19 @@ export const RECIPES = {
          * The collimator's **window**, not its housing: the glass is the upper part of the box
          * and the dot belongs in the middle of it. At 0.62 of the height the dot sat along the
          * window's bottom edge and the weapon rode correspondingly high (playtest 5, finding 4).
+         * Along the barrel it stays at the base's rear end, which is the distance from the eye
+         * the ADS picture was accepted at; only its height and its line have to be the dot's.
          */
-        socket_sight: [0, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.78, 0],
+        socket_sight: [0, windowY, windowZ],
         /**
          * This source draws an empty window, so the runtime puts the project's dot in it. A
          * weapon whose own sight already carries a reticle — the Tavor's — has no such node and
-         * gets nothing, which is what stopped it wearing two (playtest 5, finding 2).
+         * gets nothing, which is what stopped it wearing two (playtest 5, finding 2). **In** the
+         * window, halfway through the head's depth: at x = 0 it was at the base's rear end,
+         * 7.8 cm behind the glass, a dot floating in the air beside the sight from the hip
+         * (playtest 6).
          */
-        socket_reticle: [0, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.78, 0],
+        socket_reticle: [(head.min[0] + head.max[0]) / 2, windowY, windowZ],
         /**
          * The trigger hand on the grip; the support hand **in the front loop**, a quarter of
          * the weapon ahead of it and under the body (playtest 4). They were 4.5 cm apart, and
@@ -459,44 +476,61 @@ export const RECIPES = {
       charge: [],
       optic_default: [],
     },
-    // The receiver: from the stock's hinge at the body's rear to the handguard's rear.
+    /**
+     * The receiver: from the stock's hinge at the body's rear to the handguard's rear, on the
+     * **bore's** centre line. The body's bounding box is 1.07 cm right of it — the charging
+     * handle sticks out of the right-hand side — and every socket measured from the box's
+     * centre sat that far right of the gun: the muzzle, the hands and the sight line
+     * (playtest 6). The tip's mean is the bore: the brake is symmetric about it.
+     */
     origin: (m) => {
       const bore = m.tip({ name: 'AK-74_body.007' });
       const body = m.bounds({ name: 'AK-74_body.007' });
       const guard = m.bounds({ name: 'rails2.001' });
-      return [(body.min[0] + body.max[0]) / 2, bore[1], (body.max[2] + guard.max[2]) / 2];
+      return [bore[0], bore[1], (body.max[2] + guard.max[2]) / 2];
     },
     sockets: (m) => {
       const bore = m.tip({ name: 'AK-74_body.007' });
-      const body = m.bounds({ name: 'AK-74_body.007' });
-      const x = (body.min[0] + body.max[0]) / 2;
+      const x = bore[0];
       const mount = m.bounds({ name: 'SideMount_picantiny.002' });
       const guard = m.bounds({ name: 'rails2.001' });
       const grip = m.bounds({ name: 'tactical_grip' });
+      // The front post's tip, in a strip 3 mm wide down the middle so the hood's ears either
+      // side of it (3 mm taller) are not what answers; and the rear sight's block.
+      const post = m.peak({ name: 'AK-74_body.007' }, 0.8, 0.95, [x - 0.0015, x + 0.0015]);
+      const block = m.peak({ name: 'AK-74_body.007' }, 0.3, 0.42, [x - 0.02, x + 0.02]);
       return {
-        // The brake's side ports pull the tip's mean a centimetre off the bore; the bore is on
-        // the body's centre line.
-        socket_muzzle: [x, bore[1], bore[2]],
+        socket_muzzle: bore,
         /**
-         * On the **mount's** own centre line, not the body's. The side mount hangs 2.3 cm to the
-         * left of the receiver's axis, and a socket on the body's centre put every optic that far
-         * off its rail (playtest 5, finding 1).
+         * On the **rail's** own centre line: the vertices on the mount's top surface, which lie
+         * exactly over the bore. Its box is no answer — the clamp arm runs down the receiver's
+         * left flank to the side rail, which put the box's centre 1.3 cm left of the rail and
+         * every optic off it (playtest 6); the body's box, before that, was 1.1 cm right of it
+         * (playtest 5).
          */
-        socket_rail_top: [(mount.min[0] + mount.max[0]) / 2, m.plateau({ name: 'SideMount_picantiny.002' }, 0.1, 0.9), (mount.min[2] + mount.max[2]) / 2],
+        socket_rail_top: [m.midline({ name: 'SideMount_picantiny.002' }, 0.1, 0.9), m.plateau({ name: 'SideMount_picantiny.002' }, 0.1, 0.9), (mount.min[2] + mount.max[2]) / 2],
         // The quad rail's right-hand rail at the bore's height, for the laser.
         socket_rail_front: { at: [m.side({ name: 'rails2.001' }, 0.2, 0.8), bore[1], (guard.min[2] + guard.max[2]) / 2], roll: -90 },
         socket_rail_bottom: [x, guard.min[1], (guard.min[2] + guard.max[2]) / 2],
         /**
-         * The sight line runs along the top of the receiver, over the **rear of the handguard**
-         * where an AK's rear leaf sits — not over the middle of the receiver, which is where
-         * this was and which put the eye level with the receiver's flank (playtest 4, finding
-         * 4). This pack's tactical variant has no rear leaf modelled and its dust cover is a
-         * flat rail, so the line is that rail **6 mm proud of it** — the eye clears the cover
-         * and looks along it to the front block. A millimetre proud, which is what this was,
-         * put the eye 2 mm *below* the cover and the player looked into the receiver's flank
-         * (playtest 5, finding 1).
+         * The irons are a **line**, not a point (playtest 6). Measured over the bore: the post's
+         * tip 4.7 cm, the rear block 5.1, the side mount's rail 5.2, the quad rail's top 5.3 —
+         * the rail stands 6 mm over the post, so no line level with the bore sees the post, and
+         * the level line over the rail that stood here (7.2 cm) put the post under the screen's
+         * centre. `socket_sight` is over the rear block, where an AK's rear leaf would be, on
+         * the line through the post's tip that shows its top 4 mm over the rail's front edge;
+         * `socket_sight_front` is the tip; the ADS pose turns the weapon by the slope between
+         * them (2.8°, the muzzle up) so the line is the camera's axis. Under an optic neither
+         * applies: the optic's line is parallel to the bore.
          */
-        socket_sight: [x, m.plateau({ name: 'AK-74_body.007' }, 0.35, 0.6) + 0.012 / 0.5, guard.max[2]],
+        socket_sight: m.sightOver({
+          post,
+          edge: [x, m.plateau({ name: 'rails2.001' }, 0.1, 0.9), guard.min[2]],
+          rear: [x, 0, block[2]],
+          show: 0.004,
+          eye: SIGHT_EYE_DISTANCE,
+        }),
+        socket_sight_front: [x, post[1], post[2]],
         socket_grip: [x, grip.max[1] - (grip.max[1] - grip.min[1]) * 0.45, (grip.min[2] + grip.max[2]) / 2],
         socket_support: [x, guard.min[1] - 0.018, guard.min[2] + (guard.max[2] - guard.min[2]) * 0.55],
       };
@@ -919,15 +953,22 @@ export const RECIPES = {
     // underside the plate hovers over the slats and the tube stands 4.2 cm up (the human's
     // "floating"); sunk 6 mm it wraps the rail as a clamp does, and the axis lands 3.6 cm
     // above it — Aimpoint's own lower-third co-witness height, the front post just under the dot.
+    //
+    // Laterally on the **reticle**, which is the tube's axis and is where the artist stood it
+    // over the rifle's rail. The part's box is 1.3 mm left of it — the clamp's lever — and a
+    // box-centred origin and sight put every mounted optic's dot that far right of the screen's
+    // centre, five pixels at full ADS (playtests 4–6).
     origin: (m) => {
       const b = m.bounds({ name: 'Cylinder.002', all: true });
-      return [(b.min[0] + b.max[0]) / 2, b.min[1] + OPTIC_CLAMP_SINK, (b.min[2] + b.max[2]) / 2];
+      const dot = m.bounds({ name: 'Cylinder.002', material: 'M_Reticle' });
+      return [(dot.min[0] + dot.max[0]) / 2, b.min[1] + OPTIC_CLAMP_SINK, (b.min[2] + b.max[2]) / 2];
     },
     sockets: (m) => {
       const glass = m.bounds({ name: 'Cylinder.002', material: 'M_glass' });
+      const dot = m.bounds({ name: 'Cylinder.002', material: 'M_Reticle' });
       const b = m.bounds({ name: 'Cylinder.002', all: true });
       // The tube's axis: the sight line the ADS pose cancels once this is mounted.
-      return { socket_sight: [(b.min[0] + b.max[0]) / 2, (glass.min[1] + glass.max[1]) / 2, (b.min[2] + b.max[2]) / 2] };
+      return { socket_sight: [(dot.min[0] + dot.max[0]) / 2, (glass.min[1] + glass.max[1]) / 2, (b.min[2] + b.max[2]) / 2] };
     },
   },
 
@@ -1370,6 +1411,130 @@ class Source {
     out[k] = edge;
     return out;
   }
+
+  /** The world-space vertices of a selection within a band along `forward`, as `top` walks them. */
+  *inBand(sel, forward, from, to) {
+    const indices = this.select(sel);
+    const axis = AXES[forward];
+    const k = axis.findIndex((c) => c !== 0);
+    const b = this.bounds(sel);
+    const span = b.max[k] - b.min[k];
+    const rear = axis[k] > 0 ? b.min[k] : b.max[k];
+    const dir = axis[k];
+    for (const i of indices) {
+      const m = this.placed(i);
+      for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
+        for (const p of positions(this.glb, prim.attributes.POSITION)) {
+          const v = apply(m, p);
+          if (this.cutAway(i, v)) continue;
+          const f = ((v[k] - rear) * dir) / span;
+          if (f >= from && f <= to) yield v;
+        }
+      }
+    }
+  }
+
+  /** The source's right axis (forward × up) as an index and a sign, as `side` derives it. */
+  rightOf(forward) {
+    const up = [0, 0, 0];
+    up[this.upK] = this.upSign;
+    const right = cross(AXES[forward], up);
+    const k = right.findIndex((c) => c !== 0);
+    return { k, sign: right[k] };
+  }
+
+  /**
+   * The lateral centre of the surface `plateau` finds (playtest 6): the middle of the vertices
+   * lying on it, across the barrel, as that axis's raw coordinate. The bounding box is the
+   * whole part and a part is rarely symmetric about its own rail: the AK's side mount has a
+   * clamp arm down the receiver's left flank, so its box centre stood 1.3 cm left of the rail
+   * on its top, and the optic floated there. The rail is the vertices on the rail.
+   */
+  midline(sel, forward, from, to) {
+    const surface = this.plateau(sel, forward, from, to) * this.upSign;
+    const tolerance = 0.1 / this.cmPerUnit;
+    const { k } = this.rightOf(forward);
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const v of this.inBand(sel, forward, from, to)) {
+      if (Math.abs(v[this.upK] * this.upSign - surface) > tolerance) continue;
+      if (v[k] < lo) lo = v[k];
+      if (v[k] > hi) hi = v[k];
+    }
+    if (lo === Infinity) throw new Error(`midline(${JSON.stringify(sel)}): no vertices on the surface`);
+    return (lo + hi) / 2;
+  }
+
+  /**
+   * The highest point of a selection within a band along `forward` and a strip `across` it
+   * (raw coordinates on the right axis): the mean of the vertices within half a millimetre of
+   * the highest. A front post's tip, where `top` would answer with the hood's ears either side
+   * of it, three millimetres taller.
+   */
+  peak(sel, forward, from, to, across) {
+    const { k } = this.rightOf(forward);
+    const hits = [];
+    let best = -Infinity;
+    for (const v of this.inBand(sel, forward, from, to)) {
+      if (v[k] < across[0] || v[k] > across[1]) continue;
+      const h = v[this.upK] * this.upSign;
+      hits.push([v, h]);
+      if (h > best) best = h;
+    }
+    if (hits.length === 0) throw new Error(`peak(${JSON.stringify(sel)}): no vertices in the band and strip`);
+    const near = hits.filter(([, h]) => best - h <= 0.05 / this.cmPerUnit);
+    const sum = [0, 0, 0];
+    for (const [v] of near) for (let j = 0; j < 3; j++) sum[j] += v[j];
+    return sum.map((s) => s / near.length);
+  }
+
+  /**
+   * The bounds of the vertices above a fraction of a selection's height: the head of a
+   * collimator standing on its base, whose middle along the barrel is where its window is.
+   */
+  boundsAbove(sel, fraction) {
+    const b = this.bounds(sel);
+    const lo = Math.min(b.min[this.upK] * this.upSign, b.max[this.upK] * this.upSign);
+    const hi = Math.max(b.min[this.upK] * this.upSign, b.max[this.upK] * this.upSign);
+    const floor = lo + (hi - lo) * fraction;
+    const min = [Infinity, Infinity, Infinity];
+    const max = [-Infinity, -Infinity, -Infinity];
+    for (const v of this.inBand(sel, 'x+', 0, 1)) {
+      if (v[this.upK] * this.upSign < floor) continue;
+      for (let j = 0; j < 3; j++) {
+        if (v[j] < min[j]) min[j] = v[j];
+        if (v[j] > max[j]) max[j] = v[j];
+      }
+    }
+    return { min, max };
+  }
+}
+
+/**
+ * The rear point of an irons line that sees its front post over something standing taller
+ * than the post (playtest 6), in source units along the recipe's axes.
+ *
+ * The VULCAN's quad rail stands 6 mm over its front post's tip, so a line level with the bore
+ * through the two sights runs inside the rail, and a line level over the rail puts the post
+ * 2.5 cm under the eye — beneath the screen's centre. The line that works goes through the
+ * post's tip and falls toward it from over the rail, and the ADS pose turns the weapon by that
+ * slope so the line is the camera's axis (`WeaponModel.adsPitch`). The slope is the least that
+ * lets `show` of the post's top be seen over `edge` — the obstruction's top edge nearest the
+ * post — from an eye `eye` behind the rear point, which is where the ADS pose holds it.
+ */
+function sightOver({ post, edge, rear, show, eye }, forward, up) {
+  const f = AXES[forward];
+  const k = f.findIndex((c) => c !== 0);
+  const u = AXES[up];
+  const uk = u.findIndex((c) => c !== 0);
+  const behind = (p) => (post[k] - p[k]) * f[k];
+  const height = (p) => p[uk] * u[uk];
+  const toEdge = behind(edge);
+  const toEye = behind(rear) + eye;
+  const slope = (height(edge) - height(post) + show - (show * toEdge) / toEye) / toEdge;
+  const out = [...rear];
+  out[uk] = (height(post) + slope * behind(rear)) * u[uk];
+  return out;
 }
 
 // -- the rewrite -----------------------------------------------------------------
@@ -1576,6 +1741,11 @@ function rewrite(id, recipe, src) {
     bottom: (sel, from, to) => src.bottom(sel, forward, from, to),
     plateau: (sel, from, to) => src.plateau(sel, forward, from, to),
     side: (sel, from, to) => src.side(sel, forward, from, to),
+    midline: (sel, from, to) => src.midline(sel, forward, from, to),
+    peak: (sel, from, to, across) => src.peak(sel, forward, from, to, across),
+    boundsAbove: (sel, fraction) => src.boundsAbove(sel, fraction),
+    // `show` and `eye` in metres, the points in source units.
+    sightOver: ({ show, eye, ...points }) => sightOver({ ...points, show: show / recipe.unit, eye: eye / recipe.unit }, forward, recipe.up),
   };
   const origin = recipe.origin(measure);
   const fix = fixMatrix(recipe, origin);

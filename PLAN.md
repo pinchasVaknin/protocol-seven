@@ -1095,9 +1095,74 @@ measured a third time; it should land within a couple of pixels but the next pla
 confirms it. The BREACHER's and the LONGBOW's sight sockets are still the old kind — measured
 from a bounding box — and are the next two to fix.
 
+## Playtest 6 (2026-09-22, the human): four findings, and the rule applied once more
+
+Planned first and approved decision by decision (the irons as a line with a pitch, the side
+mount kept, the P90's ADS distance kept, the roll by the magazine's side). Three of the four
+were playtest 5's mistake again — a lateral coordinate from a bounding box — in places the
+last round did not reach, and measuring them properly turned up a fourth on the optic itself.
+
+| finding | what the file says | what it did | now |
+|---|---|---|---|
+| P40 dot floats beside the glass at the hip | the collimator's head (its window frame) is 7.8 cm ahead of the base's rear end | `socket_reticle` was x = 0 — the base's rear end — and `RETICLE_INSET` pushed it 8 mm *further back*, toward the eye: a dot in the air 8.6 cm behind the glass | halfway through the head's depth (`boundsAbove` 0.75), at the window's height and centre line; the inset is gone |
+| P40 dot too big at ADS | — | 2.2 mm radius at 19.2 cm | the move puts it at 27.9 cm; `OWN_RETICLE_RADIUS` 2.2 → **1.6 mm** is half the apparent size |
+| VULCAN irons look at the gun's side | the bore, the dust cover, the mount's rail and the front post share x = 0.3233; the body's box centre is 1.07 cm right (the charging handle) | every AK socket — origin, muzzle, sight, hands — sat 1 cm right of the gun; the sight line stood 7.2 cm over the bore (`0.012 / 0.5` is 2.4 cm, not the 6 mm its comment said), so the post sat under and left of the centre | origin and sockets on the bore; the irons a **line** (below) |
+| VULCAN optic floats left of its rail | the mount's top surface spans x 0.3127 … 0.3339, centre 0.3233 — over the bore | the mount's *box* includes the clamp arm down the left flank: 1.3 cm left of the rail (playtest 5 had moved it there from the body's box, 1.1 cm right) | `midline`: the lateral centre of the vertices on the plateau |
+| (found measuring) the HYBRID OPTIC's dot 5 px right on every weapon | its glass and reticle are centred at x 0.3233; its box, with the clamp lever, at 0.3220 | playtest 4's *"residue … geometry, not pose"*: a box-centred origin and sight put the reticle 1.3 mm right of the sight line | origin and `socket_sight` laterally on `M_Reticle` |
+
+**The irons are a line.** Measured over the VULCAN's bore: the front post's tip 4.7 cm, the
+hood's ears 5.0, the rear block 5.1, the side mount's rail 5.2, the quad rail's top 5.3. The
+rail stands 6 mm over the post, so no line level with the bore sees the post, and raising the
+level line — the ask — only sinks the sights further under the centre. The file now carries
+`socket_sight` over the rear block and `socket_sight_front` at the post's tip (`peak`, in a
+3 mm strip so the ears do not answer); `sightOver` puts the rear point on the line through the
+tip that shows its top 4 mm over the rail's front edge from an eye 20 cm behind. `WeaponMesh`
+turns the two into `adsPitch` (2.8°, muzzle up) when no optic is mounted, and `ViewmodelAnim`
+rotates the weapon by it at ADS and lands the sight point where the rotation carries it. Under
+an optic the pitch is zero: its line is parallel to the bore.
+
+**The reload rolls toward the well.** `FILE_RELOAD.roll` was +26° for every weapon, which from
+the eye turns the top left and a well underneath right and away — the AK's magazine left and
+arrived out of sight. The sign now comes from `socket_mag_exit` (`wellSide`): a well underneath
+rolls clockwise (35°), its magazine coming out to the left into the frame; the P90's, on top,
+rolls the other way so its magazine faces the eye. The pose came up and in with it (`dropY`
+−0.085 → −0.03, a new `shiftX` −0.04, the pitch 52° → 42°) so the magazine's travel stays in
+the frame. `MAG_HAND_OFFSET` is unchanged: flipping it for the P90 put the glove over the
+receiver rather than on the magazine (the hand follows the magazine's displacement from the
+front loop, so it never reaches the magazine's body) — left as it was.
+
+**The same mistake elsewhere?** `midline` against every weapon's `socket_rail_top`: all within
+0.3 mm but the KESTREL's, 5 mm off — a scoped rifle never mounts an optic there, so it stands.
+
+### Verified
+
+`npm run check` green: 25 files, 27.32 MB, 150 tests, every audit. In the Testbed, in a
+1280 × 960 frame (driven by the usual synthetic lock), at full ADS, stationary:
+
+| weapon | what was measured | result |
+|---|---|---|
+| VULCAN 74, irons | the post's tip against a centre mark, magnified 12× | on the vertical line, ~2 px under the centre, inside its hood with the rail running to it |
+| VULCAN 74 + HYBRID OPTIC | the dot's centroid over 20 frames | dx **+0.1** (was +5.1), dy −3.8, idle drift ±3.3 |
+| MERIDIAN P40, its collimator | the dot's centroid and size | dx −1.3 … +2.8, dy −3.4 … −5.1; **10 px** across (the old dot at 19 cm works out to ~24) |
+
+The dy of about −4 px on every weapon is `adsY`'s shared 1 mm under the axis, not a file's.
+By eye: the P40's dot in the middle of its window from the hip; the AK's optic on its rail
+over the receiver's centre line; an AK reload strip with the rifle canted top-right and the
+bakelite magazine out to the left in the glove, in frame the whole way; the P90's with its
+magazine turned to the eye.
+
+### Not verified here
+
+The Tavor's 0.693, and the WASP, BREACHER, LONGBOW and TALON at ADS — as playtest 5 left them.
+The P90's support glove during its reload sits beside the gun rather than on the magazine.
+
 ## Open
 
-- **The BREACHER's and the LONGBOW's sight sockets**, the last two of the old kind.
+- **The BREACHER's and the LONGBOW's sight sockets**, the last two of the old kind. The
+  VULCAN's `socket_sight_front` and `sightOver` are the tool if either's irons turn out not to
+  be parallel to its bore.
+- **The P90's reload hand**: it follows the magazine's displacement from the front loop and
+  never reaches the magazine's body; a target on the magazine itself would.
 - **The list's weapon drawings** (finding 11).
 - **The knife's swing in the match** — a look at the file's blade in the hand during a melee,
   which the pane could not trigger.

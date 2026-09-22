@@ -111,11 +111,15 @@ const REFERENCE_SIGHT_HEIGHT = 0.0915;
  *
  * Dipping it is what a shooter does and what the shared pose has always done, and it is also
  * what hides the reload: the magazine well goes below the frame and the player watches an empty
- * screen for two seconds. Raised 52° with the muzzle toward the sky, rolled 26° toward the eye
- * and drawn in a little, the well and the charging handle sit in the middle of the picture
- * where the hand meets them — which is the one thing the animation is for.
+ * screen for two seconds. Raised with the muzzle toward the sky and drawn in a little, the well
+ * and the charging handle sit in the middle of the picture where the hand meets them — which
+ * is the one thing the animation is for.
+ *
+ * The roll is `roll` degrees **toward the well's side** (`wellSide`, playtest 6): the AK's well
+ * turns left, into the frame, and the magazine leaves and arrives in plain view. It was 26°
+ * one way for every weapon, which turned a well underneath to the right and away from the eye.
  */
-const FILE_RELOAD = { dropY: -0.085, dropZ: 0.075, pitch: 52, roll: 26, yaw: 10, magThrow: 0.13, magSlide: 0.09 };
+const FILE_RELOAD = { shiftX: -0.04, dropY: -0.03, dropZ: 0.075, pitch: 42, roll: 35, yaw: 10, magThrow: 0.13, magSlide: 0.09 };
 
 /**
  * Where the support hand meets the magazine, metres in the magazine's own space (M19,
@@ -289,20 +293,28 @@ export class ViewmodelAnim {
     // The sight point is what ADS lands on the camera axis, all three of it (playtest 3).
     const sight = this.model.sightPoint;
     const file = this.model.source === 'glb';
+    // Irons whose line is not parallel to the bore turn the weapon onto it (playtest 6), and
+    // the sight point is landed where that turn carries it rather than where it was: the turn
+    // is about the root's origin, and the rear sight is well above it.
+    const pitch = this.model.adsPitch;
+    const cos = Math.cos(pitch * DEG2RAD);
+    const sin = Math.sin(pitch * DEG2RAD);
+    const sightY = sight.y * cos - sight.z * sin;
+    const sightZ = sight.y * sin + sight.z * cos;
     let px = lerp(cfg.hipX, -sight.x, ads);
     // `adsY` was tuned against the carbine's sight line. A weapon whose sights sit higher
     // has to be held correspondingly lower for them to land on the screen centre, so the
     // difference is applied here rather than being a second tuned constant per weapon —
     // there is one ADS pose and twelve sight heights, not twelve poses (M5).
-    const sightOffset = sight.y - REFERENCE_SIGHT_HEIGHT;
+    const sightOffset = sightY - REFERENCE_SIGHT_HEIGHT;
     let py = lerp(cfg.hipY, cfg.adsY - sightOffset, ads);
     // Along the barrel a file is placed by its sight: the sight point lands
     // `adsSightDistance` in front of the eye, and the rest of the weapon falls where the
     // weapon's own proportions put it (playtest 3, findings 5 and 6). The primitives keep
     // `adsZ` and the spec's `adsOffsetZ`, the pose they were tuned in.
-    const aimZ = file ? -this.model.adsSightDistance - sight.z : cfg.adsZ + this.model.adsOffsetZ;
+    const aimZ = file ? -this.model.adsSightDistance - sightZ : cfg.adsZ + this.model.adsOffsetZ;
     let pz = lerp(cfg.hipZ, aimZ, ads);
-    let rx = lerp(cfg.hipPitch, 0, ads);
+    let rx = lerp(cfg.hipPitch, pitch, ads);
     let ry = lerp(cfg.hipYaw, 0, ads);
     let rz = lerp(cfg.hipRoll, 0, ads);
 
@@ -349,12 +361,12 @@ export class ViewmodelAnim {
       const times = drive.reloadEmpty ? EMPTY_TIMES : TACTICAL_TIMES;
       const f = clamp01(drive.reloadFraction);
       const down = smoothstep(0, times.down, f) * (1 - smoothstep(times.raise, 1, f));
-      px += cfg.hipX * 0.12 * down;
+      px += (file ? FILE_RELOAD.shiftX : cfg.hipX * 0.12) * down;
       py += (file ? FILE_RELOAD.dropY : cfg.reloadDropY) * down;
       pz += (file ? FILE_RELOAD.dropZ : cfg.reloadDropZ) * down;
       rx += (file ? FILE_RELOAD.pitch : cfg.reloadPitch) * down;
       ry += (file ? FILE_RELOAD.yaw : cfg.reloadYaw) * down;
-      rz += (file ? FILE_RELOAD.roll : cfg.reloadRoll) * down;
+      rz += (file ? FILE_RELOAD.roll * this.wellSide() : cfg.reloadRoll) * down;
       this.poseMagazine(f, times, cfg);
       this.poseSupportHand(f, times);
       this.poseChargingHandle(drive.reloadEmpty ? f : -1, cfg);
@@ -606,6 +618,17 @@ export class ViewmodelAnim {
   }
 
   private readonly handTarget = new Vector3();
+
+  /**
+   * Which way a file's reload rolls the weapon, as the sign of `rz` (playtest 6): whichever
+   * turns its magazine well **toward the screen's centre**, where the support hand comes from.
+   * A well underneath rolls clockwise from the eye (negative), the top to the right and the
+   * well to the left; the P90's, on top, rolls the other way for the same reason. One roll for
+   * every weapon turned the AK's well right and away, toward the frame's edge.
+   */
+  private wellSide(): number {
+    return this.model.magazineExit.y > 0 ? 1 : -1;
+  }
 
   /** `f` below zero means "not an empty reload"; the handle stays home. */
   private poseChargingHandle(f: number, cfg: ViewmodelConfig): void {

@@ -14,7 +14,7 @@
  * it after a rebuild that changes a file.
  */
 
-export const WEAPON_ASSET_VERSION = '2026-09-22-m19-playtest-5';
+export const WEAPON_ASSET_VERSION = '2026-09-22-m19-playtest-6';
 
 const WEAPON_ROOT = '/models/weapons';
 

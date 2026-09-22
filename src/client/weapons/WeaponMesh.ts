@@ -97,6 +97,17 @@ export interface WeaponModel {
    * `adsOffsetZ` and is not derived from a sight point at all.
    */
   readonly adsSightDistance: number;
+  /**
+   * Degrees the weapon turns about its own X at full ADS, the muzzle up (M19, playtest 6).
+   *
+   * Zero wherever the sight line is parallel to the bore, which is everywhere but a file whose
+   * irons are a line that is not: the VULCAN's quad rail stands over its front post, and the
+   * only line that sees the post falls toward it from over the rail. The file says so with a
+   * `socket_sight_front` at the post's tip, this is the slope from `sightPoint` to it, and the
+   * ADS pose turns the weapon by it so that line is the camera's axis. A mounted optic's line is
+   * parallel to the bore again, so it is zero under one.
+   */
+  readonly adsPitch: number;
   /** Per-weapon correction to the shared ADS pose. See `WeaponModelSpec.adsOffsetZ`. */
   readonly adsOffsetZ: number;
   readonly weaponId: string;
@@ -198,6 +209,7 @@ export function buildWeaponModel(
     sightHeight: spec.sightHeight * spec.scale,
     sightPoint: new THREE.Vector3(0, spec.sightHeight * spec.scale, 0),
     adsSightDistance: 0,
+    adsPitch: 0,
     adsOffsetZ: spec.adsOffsetZ,
     weaponId,
     source: 'procedural',
@@ -295,6 +307,7 @@ function buildFromTemplate(
   if (bareMuzzle === undefined) throw new Error(`Weapon clone "${template.weaponId}" has no socket_muzzle.`);
   const mounted = mountAttachments(root, groups.magazine, template, options, surfaces);
   const sightPoint = mounted.sightPoint ?? template.sockets.socket_sight.clone();
+  const front = mounted.sightPoint === undefined ? root.getObjectByName('socket_sight_front') : undefined;
 
   return {
     root,
@@ -306,6 +319,7 @@ function buildFromTemplate(
     // A scope is held at eye relief; irons and a red dot at a shouldered rifle's sight
     // distance. `mountAttachments` leaves a scoped weapon its scope, so the two cannot disagree.
     adsSightDistance: spec.optic === 'scope' ? SCOPE_EYE_RELIEF : SIGHT_DISTANCE,
+    adsPitch: front === undefined ? 0 : ironsPitch(sightPoint, front.position),
     adsOffsetZ: spec.adsOffsetZ,
     weaponId: template.weaponId,
     source: 'glb',
@@ -414,10 +428,22 @@ function magazineExitOf(root: THREE.Object3D): THREE.Vector3 {
   return exit.lengthSq() > 0 ? exit.normalize() : MAGAZINE_EXIT_DOWN.clone();
 }
 
-/** The dot a file's own collimator gets, metres across. A red dot is a dot, not a disc. */
-const OWN_RETICLE_RADIUS = 0.0022;
-/** How far back inside the housing the dot sits, metres: enough that the glass is in front of it. */
-const RETICLE_INSET = 0.008;
+/**
+ * The slope of an irons line from the rear point to the front post, degrees, positive when the
+ * post is lower — the turn about X, the muzzle up, that makes the line level. See `adsPitch`.
+ */
+function ironsPitch(rear: THREE.Vector3, front: THREE.Vector3): number {
+  const run = rear.z - front.z;
+  if (run <= 0) return 0;
+  return Math.atan2(rear.y - front.y, run) * THREE.MathUtils.RAD2DEG;
+}
+
+/**
+ * The radius of the dot a file's own collimator gets, metres. A red dot is a dot, not a disc:
+ * 2.2 mm at 19 cm from the eye read as one (playtest 6), and in the window at 28 cm this is
+ * half the size it looked.
+ */
+const OWN_RETICLE_RADIUS = 0.0016;
 
 /**
  * What a file's own optics need before anything is mounted on them (playtest 4).
@@ -450,10 +476,10 @@ function dressOwnOptic(
   disposables.push(geometry);
   const dot = new THREE.Mesh(geometry, reticle);
   dot.name = 'optic_default:reticle';
-  // Where the file says the glass is, and a few millimetres inside it: on the window's own
-  // plane the disc read as a dot floating over the sight from the hip (playtest 5).
+  // Where the file says the window is: the recipe measures it in all three axes, halfway
+  // through the head. An offset here once pushed it the other way, out of the back of the
+  // housing, and from the hip it floated beside the sight (playtests 5 and 6).
   dot.position.copy(at.position);
-  dot.position.z += RETICLE_INSET;
   own.add(dot);
 }
 

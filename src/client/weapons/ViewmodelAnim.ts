@@ -542,8 +542,11 @@ export class ViewmodelAnim {
       drop = 1 - easeOutCubic(t);
       tilt = (1 - t) * 0.35;
     }
-    this.model.magazine.position.set(0, -drop * cfg.magThrow, 0);
-    this.model.magazine.rotation.set(tilt, 0, tilt * 0.4);
+    // Along the weapon's own exit direction (M19): down for all but the P90.
+    this.model.magazine.position.copy(this.model.magazineExit).multiplyScalar(drop * cfg.magThrow);
+    // The tumble is a falling magazine's; one that lifts off the top (the P90's) slides straight.
+    const tumble = this.model.magazineExit.y < -0.5 ? tilt : 0;
+    this.model.magazine.rotation.set(tumble, 0, tumble * 0.4);
   }
 
   /** `f` below zero means "not an empty reload"; the handle stays home. */

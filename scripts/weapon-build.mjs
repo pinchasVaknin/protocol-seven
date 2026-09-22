@@ -67,7 +67,11 @@ export const OUT_DIR = path.join(ROOT, 'public/models/weapons');
 const CLI = '@gltf-transform/cli@4.5.0';
 const NPX_CLI = path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npx-cli.js');
 
-/** The viewmodel's texture ceiling; the bodies' LOD takes a quarter of it. */
+/**
+ * The viewmodel's texture ceiling, and the bodies' LOD takes a quarter of it. A recipe may set
+ * `textureSide` lower: the pistol is a fifth of a rifle's screen and its nine materials at
+ * 1024 were 2.8 MB.
+ */
 const MAX_SIDE = 1024;
 const LOD_SIDE = 256;
 const WEBP_QUALITY = 85;
@@ -103,6 +107,62 @@ const AK74_PACK = {
   license: 'CC-BY-4.0',
   url: 'https://sketchfab.com/3d-models/ak-74-pack-game-asset-29978f495f824173b44a3ba40cb8ebd8',
 };
+const P90 = {
+  file: 'modular_p90_tactical.glb',
+  title: 'Modular P90 Tactical',
+  author: 'doomsentinel',
+  authorUrl: 'https://sketchfab.com/doomsentinel',
+  license: 'CC-BY-4.0',
+  url: 'https://sketchfab.com/3d-models/modular-p90-tactical-080897fc0366455884b1a916684313fe',
+};
+const MP5_KIT = {
+  file: 'free_modular_mp5_kit.glb',
+  title: 'Free Modular MP5 Kit',
+  author: 'Karnaval',
+  authorUrl: 'https://sketchfab.com/amadions',
+  license: 'SKETCHFAB Standard',
+  url: 'https://sketchfab.com/3d-models/free-modular-mp5-kit-d381a0438a8b45c2bac6f59120fbb52f',
+};
+const TAVOR = {
+  file: 'tar-21_tavor.glb',
+  title: 'TAR - 21 (Tavor). Black and White.',
+  author: 'Nik Vega',
+  authorUrl: 'https://sketchfab.com/Nik_Vega',
+  license: 'CC-BY-4.0',
+  url: 'https://sketchfab.com/3d-models/tar-21-tavor-black-and-white-40dc15941e0b456692c83a97bfcd2474',
+};
+const SPAS_12 = {
+  file: 'spas_12.glb',
+  title: 'Spas 12',
+  author: 'Luiz Bueno',
+  authorUrl: 'https://sketchfab.com/Luiz159753',
+  license: 'CC-BY-4.0',
+  url: 'https://sketchfab.com/3d-models/spas-12-614140daf5e4467fa0e36b6c23d70621',
+};
+const BERETTA_M9 = {
+  file: 'beretta_m9.glb',
+  title: 'Beretta M9',
+  author: 'eNse7en',
+  authorUrl: 'https://sketchfab.com/ense7en.design',
+  license: 'CC-BY-4.0',
+  url: 'https://sketchfab.com/3d-models/beretta-m9-348015284eca46fe8e1822508381dfd8',
+};
+const M150 = {
+  file: 'm150_sniper_rifle_game_ready.glb',
+  title: 'M150 Sniper Rifle (Game Ready)',
+  author: 'Bl4ckGh0st',
+  authorUrl: 'https://sketchfab.com/Bl4ckGh0st',
+  license: 'CC-BY-4.0',
+  url: 'https://sketchfab.com/3d-models/m150-sniper-rifle-game-ready-0f71498f1f694b30be77c9779361c6cc',
+};
+const L1A1 = {
+  file: 'free_-_modular_l1a1_slr.glb',
+  title: '[FREE - Modular] L1A1 SLR',
+  author: 'Aperture Aerospace',
+  authorUrl: 'https://sketchfab.com/Apeture_Aerospace',
+  license: 'CC-BY-4.0',
+  url: 'https://sketchfab.com/3d-models/free-modular-l1a1-slr-d63c3e0d97464bc5b2a58cadf35e52f5',
+};
 const DBAL_A2 = {
   file: 'rifle_laser_sight.glb',
   title: 'Rifle Laser Sight',
@@ -117,11 +177,23 @@ const DBAL_A2 = {
 /**
  * A selector names mesh nodes in the source. `name` matches the node or its parent (Sketchfab
  * exports put the mesh on a child called `defaultMaterial`), `material` the first primitive's
- * material; a selector must match exactly one node unless `all` is set.
+ * material, `joint` the joint most of a skinned mesh's vertices are bound to (a rigged rifle's
+ * magazine is the mesh on the magazine bone); a selector must match exactly one node unless
+ * `all` is set; `match` is a regular expression over the same names and takes every hit,
+ * `except` a regular expression that drops a hit, and `within` keeps a hit only when the
+ * centre of its bounds lies inside the given axis ranges — one of two pistols in a scene.
+ * `useMaterial` swaps the kept primitives onto another of the source's materials by name —
+ * the Tavor's white body onto its black set's texture.
  *
  * `forward` and `up` are the source's axes for the barrel and the top of the weapon, and the
  * fix rotates them onto -Z and +Y. `unit` is metres per source unit. `origin` and `sockets`
  * receive the measurements (`m`) and answer in source world space, before the fix.
+ *
+ * `moves` assembles a spread kit: each entry carries every part in `parts` by the vector from
+ * the centre of `anchor`'s bounds to the centre of `target`'s — the alternative handguard onto
+ * the place the assembled one occupies — before anything is measured, so the sockets see the
+ * assembled weapon. `magazineExit` is the direction the magazine leaves along on a reload,
+ * in the source's axes; absent means straight down, which is every weapon but the P90.
  */
 export const RECIPES = {
   ar_carbine: {
@@ -176,6 +248,444 @@ export const RECIPES = {
         // little short of halfway along. The first-person gloves are built on these.
         socket_grip: [0, grip.max[1] - (grip.max[1] - grip.min[1]) * 0.4, (grip.min[2] + grip.max[2]) / 2],
         socket_support: [0, guard.min[1] - 1.8, guard.min[2] + (guard.max[2] - guard.min[2]) * 0.42],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * MERIDIAN P40: the P90, assembled with every module on. The body and the rail frame are
+   * the weapon; the silencer, foregrip and flashlight are the pack's job and are left out; the
+   * collimator stays as `optic_default` — the def's sight is a red dot and this is it — and
+   * hides when the HYBRID OPTIC mounts. The magazine lies along the top and leaves upward and
+   * backward, which `magazineExit` says.
+   *
+   * The source's unit is not a millimetre: the body is 854 units for a 500 mm bullpup. The
+   * magazine's 488 units for FN's 260 mm agrees within 10%, so the body sets the scale.
+   */
+  smg_meridian: {
+    kind: 'weapon',
+    source: P90,
+    unit: 0.5 / 854,
+    forward: 'x-',
+    up: 'y+',
+    parts: {
+      body: [{ name: 'P90Low003' }, { name: 'FrameLP001' }],
+      magazine: [{ name: 'MagBody' }, { name: 'MagazineLPB001' }],
+      charge: [],
+      optic_default: [{ name: 'ColimatorLP001' }],
+    },
+    magazineExit: [0.55, 1, 0],
+    // The receiver: the bore's height, and the body's middle along the barrel.
+    origin: (m) => {
+      const bore = m.tip({ name: 'P90Low003' });
+      const body = m.bounds({ name: 'P90Low003' });
+      return [(body.min[0] + body.max[0]) / 2, bore[1], 0];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'P90Low003' });
+      const body = m.bounds({ name: 'P90Low003' });
+      const frame = m.bounds({ name: 'FrameLP001' });
+      const optic = m.bounds({ name: 'ColimatorLP001' });
+      const length = body.max[0] - body.min[0];
+      // The body's own rail, under the collimator, for the optic; the frame's top for the
+      // laser and its underside for the grip, where the kit's own foregrip sat.
+      const railTop = m.plateau({ name: 'P90Low003' }, 0.66, 0.92);
+      return {
+        socket_muzzle: bore,
+        socket_rail_top: [(optic.min[0] + optic.max[0]) / 2, railTop, 0],
+        socket_rail_front: [(frame.min[0] + frame.max[0]) / 2 - (frame.max[0] - frame.min[0]) * 0.15, m.plateau({ name: 'FrameLP001' }, 0.3, 0.8), 0],
+        socket_rail_bottom: [(frame.min[0] + frame.max[0]) / 2, frame.min[1], 0],
+        // The collimator's window: the upper half of its box.
+        socket_sight: [0, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.62, 0],
+        // The trigger hand on the grip two fifths of the way back; the support hand in the
+        // front loop, ahead of the trigger and under the frame.
+        socket_grip: [body.min[0] + length * 0.42, body.min[1] + (body.max[1] - body.min[1]) * 0.3, 0],
+        socket_support: [body.min[0] + length * 0.33, body.min[1] + (body.max[1] - body.min[1]) * 0.47, 0],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * WASP 9: the MP5 kit's assembled core — the SD's fat handguard swapped for the kit's
+   * Picatinny handguard and its plain gas block, carried from where they lie below the rifle
+   * onto the place the SD gas block occupies (the two gas blocks are the same casting). The
+   * fixed stock is the assembled one and stays; the retractable stock lies apart with nothing
+   * assembled to align it to. The drum is left out: the extended magazine is the stretch.
+   */
+  smg_wasp: {
+    kind: 'weapon',
+    source: MP5_KIT,
+    unit: 1,
+    forward: 'x+',
+    up: 'y+',
+    moves: [
+      {
+        parts: [{ name: 'Gas Block Picat_low_7' }, { name: 'Picat Handguard_low_6' }],
+        anchor: { name: 'Gas Block Picat_low_7' },
+        target: { name: 'Gas Block SD_low_8' },
+      },
+    ],
+    parts: {
+      body: [
+        { name: 'Upper_low_40' },
+        { name: 'Lower_low_41' },
+        { name: 'Trigger_low_28' },
+        { name: 'Mag Catch_low_29' },
+        { name: 'Fire Selector_low_30' },
+        { name: 'Bolt Plate_low_31' },
+        { name: 'Rail_low_32' },
+        { match: /^Sight (Cylinder|Housing|Holder)_low/ },
+        { match: /^Lower (Screw|Back Screw|Bolt|Insides)_low/ },
+        { name: 'Mag Release Button_low_37' },
+        { name: 'Picatinny Fixation_low_39' },
+        { name: 'Rail Catch_low_43' },
+        { match: /^Mag Well/ },
+        { match: /^Stock Full/ },
+        { name: 'Interns_low_61' },
+        { name: 'Gas Block Picat_low_7' },
+        { name: 'Picat Handguard_low_6' },
+      ],
+      magazine: [{ match: /^Magazine Standard/ }],
+      charge: [{ name: 'Bolt_low_60' }],
+      optic_default: [],
+    },
+    origin: (m) => {
+      const bore = m.tip({ name: 'Gas Block Picat_low_7' });
+      const upper = m.bounds({ name: 'Upper_low_40' });
+      return [(upper.min[0] + upper.max[0]) / 2, bore[1], 0];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'Gas Block Picat_low_7' });
+      const rail = m.bounds({ name: 'Rail_low_32' });
+      const guard = m.bounds({ name: 'Picat Handguard_low_6' });
+      const lower = m.bounds({ name: 'Lower_low_41' });
+      const trigger = m.bounds({ name: 'Trigger_low_28' });
+      const drum = m.bounds({ name: 'Sight Cylinder_low_33' });
+      return {
+        socket_muzzle: bore,
+        socket_rail_top: [(rail.min[0] + rail.max[0]) / 2, m.plateau({ name: 'Rail_low_32' }, 0.1, 0.9), 0],
+        // The handguard's top is the cocking tube; the laser goes on its right-hand rail.
+        socket_rail_front: { at: [(guard.min[0] + guard.max[0]) / 2, (guard.min[1] + guard.max[1]) / 2, guard.max[2]], roll: -90 },
+        socket_rail_bottom: [(guard.min[0] + guard.max[0]) / 2, guard.min[1], 0],
+        // The rear drum sight's axis.
+        socket_sight: [0, (drum.min[1] + drum.max[1]) / 2, 0],
+        socket_grip: [trigger.min[0] - 0.03, lower.min[1] + (lower.max[1] - lower.min[1]) * 0.35, 0],
+        socket_support: [(guard.min[0] + guard.max[0]) / 2, guard.min[1] - 0.015, 0],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * VULCAN 74: the AK-74 pack's tactical rifle — the eighth body in the row, with its rail
+   * handguard, side-folding stock, tactical pistol grip, bakelite magazine, the receiver's
+   * side rail and the Picatinny side mount that stands over it. The AimPoint that sat on the
+   * mount is the pack's part; the mount stays, and is the optic's socket.
+   */
+  ar_vulcan: {
+    kind: 'weapon',
+    source: AK74_PACK,
+    unit: 1,
+    forward: 'z-',
+    up: 'y+',
+    parts: {
+      body: [
+        { name: 'AK-74_body.007' },
+        { name: 'side_rail.004' },
+        { name: 'SideMount_picantiny.002' },
+        { name: 'stock_2.001' },
+        { name: 'rails2.001' },
+        { name: 'tactical_grip' },
+      ],
+      magazine: [{ name: 'AK-74_bak_mag30.002' }],
+      charge: [],
+      optic_default: [],
+    },
+    // The receiver: from the stock's hinge at the body's rear to the handguard's rear.
+    origin: (m) => {
+      const bore = m.tip({ name: 'AK-74_body.007' });
+      const body = m.bounds({ name: 'AK-74_body.007' });
+      const guard = m.bounds({ name: 'rails2.001' });
+      return [(body.min[0] + body.max[0]) / 2, bore[1], (body.max[2] + guard.max[2]) / 2];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'AK-74_body.007' });
+      const body = m.bounds({ name: 'AK-74_body.007' });
+      const x = (body.min[0] + body.max[0]) / 2;
+      const mount = m.bounds({ name: 'SideMount_picantiny.002' });
+      const guard = m.bounds({ name: 'rails2.001' });
+      const grip = m.bounds({ name: 'tactical_grip' });
+      return {
+        // The brake's side ports pull the tip's mean a centimetre off the bore; the bore is on
+        // the body's centre line.
+        socket_muzzle: [x, bore[1], bore[2]],
+        socket_rail_top: [x, m.plateau({ name: 'SideMount_picantiny.002' }, 0.1, 0.9), (mount.min[2] + mount.max[2]) / 2],
+        socket_rail_front: [x, m.plateau({ name: 'rails2.001' }, 0.2, 0.8), (guard.min[2] + guard.max[2]) / 2],
+        socket_rail_bottom: [x, guard.min[1], (guard.min[2] + guard.max[2]) / 2],
+        // The front sight post's tip, at the muzzle end of the body, less the width of the notch.
+        socket_sight: [x, m.top({ name: 'AK-74_body.007' }, 0.88, 1) - 0.003, (body.max[2] + guard.max[2]) / 2],
+        socket_grip: [x, grip.max[1] - (grip.max[1] - grip.min[1]) * 0.45, (grip.min[2] + grip.max[2]) / 2],
+        socket_support: [x, guard.min[1] - 0.018, guard.min[2] + (guard.max[2] - guard.min[2]) * 0.55],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * HALCYON B5: the Tavor. The source is two rifles — a white one assembled with its black
+   * accessories, and a black one lying apart with its white ones — so the assembled body is
+   * kept and put on the black set's texture (`useMaterial`): the two bodies are one mesh with
+   * two maps. The collimator is the def's red dot and stays as `optic_default`; the
+   * suppressor and the grip are the pack's job and are left with the rounds on the floor.
+   */
+  ar_halcyon: {
+    kind: 'weapon',
+    source: TAVOR,
+    unit: 1,
+    forward: 'x-',
+    up: 'y+',
+    parts: {
+      body: [{ name: 'TAR - 21', useMaterial: 'Tavor_Dark' }, { name: 'Rail_Down' }],
+      magazine: [{ name: 'Mag' }, { name: 'Bullets' }],
+      charge: [],
+      optic_default: [{ name: 'Collimator' }],
+    },
+    // A bullpup's receiver is behind the grip: the body's rear third.
+    origin: (m) => {
+      const bore = m.tip({ name: 'TAR - 21' });
+      const body = m.bounds({ name: 'TAR - 21' });
+      return [body.max[0] - (body.max[0] - body.min[0]) * 0.25, bore[1], (body.min[2] + body.max[2]) / 2];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'TAR - 21' });
+      const body = m.bounds({ name: 'TAR - 21' });
+      const z = (body.min[2] + body.max[2]) / 2;
+      const length = body.max[0] - body.min[0];
+      const height = body.max[1] - body.min[1];
+      const optic = m.bounds({ name: 'Collimator' });
+      const rail = m.bounds({ name: 'Rail_Down' });
+      return {
+        socket_muzzle: [bore[0], bore[1], z],
+        // The top rail, under the collimator for the optic and over the handguard for the laser.
+        socket_rail_top: [(optic.min[0] + optic.max[0]) / 2, m.plateau({ name: 'TAR - 21' }, 0.45, 0.62), z],
+        socket_rail_front: [body.min[0] + length * 0.22, m.plateau({ name: 'TAR - 21' }, 0.72, 0.9), z],
+        socket_rail_bottom: [(rail.min[0] + rail.max[0]) / 2, rail.min[1], z],
+        // The collimator's window.
+        socket_sight: [(optic.min[0] + optic.max[0]) / 2, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.6, z],
+        // The grip hangs under the body's middle, the support hand under its front.
+        socket_grip: [body.min[0] + length * 0.44, body.min[1] + height * 0.32, z],
+        socket_support: [body.min[0] + length * 0.2, body.min[1] + height * 0.42, z],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * BREACHER 12: the SPAS-12, nine meshes named by the modeller's primitives. `Plane` is the
+   * receiver with the grip, `Plane.002` the barrel and its magazine tube, `Plane.003` the
+   * pump — the one part that moves, as `charge` — and the rest are the folding stock, the
+   * sights and the trigger. The tube feeds from below and nothing drops on a reload, so the
+   * magazine group is empty, as the procedural shotgun's was. The source is twice life size.
+   */
+  shotgun_breacher: {
+    kind: 'weapon',
+    source: SPAS_12,
+    unit: 0.52,
+    forward: 'z+',
+    up: 'y+',
+    parts: {
+      body: [{ name: 'Plane' }, { name: 'Plane.002' }, { name: 'Plane.004' }, { name: 'Plane.005' }, { name: 'Plane.006' }, { name: 'Cube' }, { name: 'Cube.001' }, { name: 'Circle' }],
+      magazine: [],
+      charge: [{ name: 'Plane.003' }],
+      optic_default: [],
+    },
+    origin: (m) => {
+      const bore = m.tip({ name: 'Plane.002' });
+      const receiver = m.bounds({ name: 'Plane' });
+      return [(receiver.min[0] + receiver.max[0]) / 2, bore[1], (receiver.min[2] + receiver.max[2]) / 2];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'Plane.002' });
+      const receiver = m.bounds({ name: 'Plane' });
+      const x = (receiver.min[0] + receiver.max[0]) / 2;
+      const barrel = m.bounds({ name: 'Plane.002' });
+      const pump = m.bounds({ name: 'Plane.003' });
+      const rz = receiver.max[2] - receiver.min[2];
+      return {
+        socket_muzzle: [x, bore[1], bore[2]],
+        // No rail on a SPAS: the optic on the receiver's top, the laser on the barrel behind the pump.
+        socket_rail_top: [x, m.plateau({ name: 'Plane' }, 0.35, 0.8), receiver.min[2] + rz * 0.6],
+        // The barrel is an extrusion with vertices only at its ends: the rear ring's top, and
+        // the front section's for the sight line.
+        socket_rail_front: [x, m.plateau({ name: 'Plane.002' }, 0, 0.1), barrel.min[2] + (barrel.max[2] - barrel.min[2]) * 0.15],
+        socket_rail_bottom: [x, pump.min[1], (pump.min[2] + pump.max[2]) / 2],
+        // A bead on a barrel: the sight line runs along the barrel's top.
+        socket_sight: [x, m.plateau({ name: 'Plane.002' }, 0.6, 1) + 0.01 / 0.52, 0],
+        socket_grip: [x, receiver.min[1] + (receiver.max[1] - receiver.min[1]) * 0.28, receiver.min[2] + rz * 0.22],
+        socket_support: [x, pump.min[1] - 0.012 / 0.52, (pump.min[2] + pump.max[2]) / 2],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * TALON 9: the Beretta M9. The source is a display of two pistols lying flat among loose
+   * rounds; the second — the threaded-barrel one, with its magazine in the grip — is taken by
+   * where it lies (`within`), the rounds by their names are left. Lying flat means its up is
+   * +Z and its forward -X. The slide, with the sights, safeties and extractor that ride on
+   * it, is `charge`: the empty reload racks it. The source's unit is about 1.45 cm.
+   */
+  pistol_talon: {
+    kind: 'weapon',
+    source: BERETTA_M9,
+    unit: 0.217 / 15,
+    textureSide: 512,
+    forward: 'x-',
+    up: 'z+',
+    parts: {
+      body: [
+        {
+          match: /^LP /,
+          except: /Bullet|Slide|Sight|Safety|Magazine|Extractor/,
+          within: { z: [-10, 2] },
+        },
+      ],
+      magazine: [{ match: /^LP Magazine(002| Stock Pad002)$/ }],
+      charge: [{ match: /Slide|Sight|Safety|Extractor/, except: /Bullet|001$|003$|004$/, within: { z: [-10, 2] } }],
+      optic_default: [],
+    },
+    origin: (m) => {
+      const bore = m.tip({ name: 'LP *Threaded* Barrel' });
+      const frame = m.bounds({ name: 'LP *Standart* Frame' });
+      return [(frame.min[0] + frame.max[0]) / 2, bore[1], bore[2]];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'LP *Threaded* Barrel' });
+      const frame = m.bounds({ name: 'LP *Standart* Frame' });
+      const slide = m.bounds({ name: 'LP *Standart* Slide' });
+      const grip = m.bounds({ match: /^LP Stock Grip (Right|Left)$/ });
+      const rear = m.bounds({ name: 'LP Parts Tail Sight Stock' });
+      const y = bore[1];
+      return {
+        socket_muzzle: [bore[0], y, bore[2]],
+        // The optic on the slide's rear; the laser under the dust cover, hung upside down.
+        socket_rail_top: [slide.max[0] - (slide.max[0] - slide.min[0]) * 0.28, y, m.plateau({ name: 'LP *Standart* Slide' }, 0.05, 0.4)],
+        socket_rail_front: { at: [frame.min[0] + (frame.max[0] - frame.min[0]) * 0.18, y, bore[2] - 1.2], roll: 180 },
+        socket_rail_bottom: { at: [frame.min[0] + (frame.max[0] - frame.min[0]) * 0.3, y, bore[2] - 1.2], roll: 180 },
+        // The rear sight's notch.
+        socket_sight: [(rear.min[0] + rear.max[0]) / 2, y, rear.max[2] - 0.15],
+        socket_grip: [(grip.min[0] + grip.max[0]) / 2, y, grip.max[2] - (grip.max[2] - grip.min[2]) * 0.45],
+        // Two-handed: the support hand wraps the firing hand, a little ahead, left and low.
+        socket_support: [(grip.min[0] + grip.max[0]) / 2 - 1.2, y - 2, grip.max[2] - (grip.max[2] - grip.min[2]) * 0.5],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * VANTAGE SR: the M150, a rigged rifle whose parts are rigid pieces bound each to one bone,
+   * so they are named here by joint. The scope is the def's — a scoped weapon keeps it, and
+   * the HYBRID OPTIC does not replace it (`mountAttachments` skips the red dot on a scope) —
+   * and stays in the body, without its lids. The vertical grip on the handguard is the pack's
+   * job and is left out. Twice life size.
+   */
+  sniper_vantage: {
+    kind: 'weapon',
+    source: M150,
+    unit: 0.5,
+    forward: 'z+',
+    up: 'y+',
+    parts: {
+      body: [
+        { joint: 'Grip3_00', all: true },
+        { joint: 'Rail7_031', all: true },
+        { joint: 'Canister_06', all: true },
+        { joint: 'Lid_027', all: true },
+        { joint: 'Trigger_02', all: true },
+        { joint: 'Scope_010', all: true },
+        // The objective glass hangs on the front lid's bone; the two lid discs themselves are
+        // posed open in mid-air a hand above the tube, and stay out.
+        { joint: 'ScopeLid1_012', all: true, except: /^Object_57$/ },
+        { joint: 'Nossle1_018', all: true },
+        { joint: 'Nossle2_016', all: true },
+        { joint: 'Nossle3_014', all: true },
+      ],
+      magazine: [{ joint: 'Magazine_04', all: true }],
+      charge: [{ joint: 'Reloader_029', all: true }],
+      optic_default: [],
+    },
+    origin: (m) => {
+      const bore = m.tip({ name: 'Object_43' });
+      const upper = m.bounds({ name: 'Object_74' });
+      return [0, bore[1], (upper.min[2] + upper.max[2]) / 2];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'Object_43' });
+      const upper = m.bounds({ name: 'Object_74' });
+      const guardBottom = m.bounds({ name: 'Object_24' });
+      const foregrip = m.bounds({ joint: 'Grip2_08', all: true });
+      const grip = m.bounds({ name: 'Object_45' });
+      const glass = m.bounds({ name: 'Object_55' });
+      const zGrip = (foregrip.min[2] + foregrip.max[2]) / 2;
+      return {
+        socket_muzzle: [0, bore[1], bore[2]],
+        socket_rail_top: [0, m.plateau({ name: 'Object_74' }, 0.4, 0.9), (upper.min[2] + upper.max[2]) / 2],
+        // The handguard's top rail, ahead of the scope's objective.
+        socket_rail_front: [0, m.plateau({ name: 'Object_27' }, 0.6, 0.9), guardBottom.min[2] + (guardBottom.max[2] - guardBottom.min[2]) * 0.75],
+        socket_rail_bottom: [0, guardBottom.min[1], zGrip],
+        // The scope's axis: the centre of its ocular glass.
+        socket_sight: [0, (glass.min[1] + glass.max[1]) / 2, 0],
+        socket_grip: [0, grip.min[1] + (grip.max[1] - grip.min[1]) * 0.42, (grip.min[2] + grip.max[2]) / 2],
+        socket_support: [0, guardBottom.min[1] - 0.02 / 0.5, zGrip],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * LONGBOW MK3: the L1A1 in its polymer furniture, a rigged rifle whose three meshes are
+   * the receiver with the barrel, the furniture and the 20-round magazine. The bolt and the
+   * charging handle are bones inside the receiver mesh, not meshes, so `charge` is empty. In
+   * the file's node space the rifle stands on end: its length runs down -Y and its top faces
+   * +Z, which the axes below say. No rail: the optic sits on the dust cover, the laser on the
+   * handguard.
+   */
+  ar_longbow: {
+    kind: 'weapon',
+    source: L1A1,
+    unit: 1,
+    forward: 'y-',
+    up: 'z+',
+    parts: {
+      body: [{ name: 'Object_31' }, { name: 'Object_33' }],
+      magazine: [{ name: 'Object_29' }],
+      charge: [],
+      optic_default: [],
+    },
+    origin: (m) => {
+      const bore = m.tip({ name: 'Object_31' });
+      const mag = m.bounds({ name: 'Object_29' });
+      // The receiver's centre sits just behind the magazine well.
+      return [bore[0], mag.max[1] + 0.02, bore[2]];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'Object_31' });
+      const x = bore[0];
+      const receiver = m.bounds({ name: 'Object_31' });
+      const furniture = m.bounds({ name: 'Object_33' });
+      const mag = m.bounds({ name: 'Object_29' });
+      const guardY = receiver.max[1] - (receiver.max[1] - receiver.min[1]) * 0.62;
+      return {
+        socket_muzzle: [x, bore[1], bore[2]],
+        socket_rail_top: [x, mag.max[1] + 0.04, m.plateau({ name: 'Object_31' }, 0.32, 0.5)],
+        socket_rail_front: [x, guardY, m.plateau({ name: 'Object_33' }, 0.6, 0.78)],
+        socket_rail_bottom: [x, guardY, m.bottom({ name: 'Object_33' }, 0.55, 0.78)],
+        // The rear aperture sight stands on the receiver's rear.
+        socket_sight: [x, receiver.max[1] - 0.12, m.top({ name: 'Object_31' }, 0, 0.2) - 0.005],
+        socket_grip: [x, mag.max[1] + 0.09, furniture.min[2] + 0.06],
+        socket_support: [x, guardY, m.bottom({ name: 'Object_33' }, 0.55, 0.78) - 0.018],
       };
     },
     lod: true,
@@ -338,12 +848,30 @@ function* positions(glb, accessorIndex) {
   }
 }
 
+/** The first joint index of every vertex of a primitive, whatever the component type. */
+function* jointIndices(glb, accessorIndex) {
+  const { json, bin } = glb;
+  const acc = json.accessors[accessorIndex];
+  const view = json.bufferViews[acc.bufferView];
+  const bytes = COMPONENT_BYTES[acc.componentType];
+  const stride = view.byteStride ?? bytes * TYPE_COUNT[acc.type];
+  const base = (view.byteOffset ?? 0) + (acc.byteOffset ?? 0);
+  for (let i = 0; i < acc.count; i++) {
+    const at = base + i * stride;
+    yield bytes === 1 ? bin.readUInt8(at) : bytes === 2 ? bin.readUInt16LE(at) : bin.readUInt32LE(at);
+  }
+}
+
 class Source {
-  constructor(glb, unit) {
+  constructor(glb, unit, up) {
     this.glb = glb;
     this.json = glb.json;
-    /** Source units per centimetre, so the plateau bins are half a millimetre whatever the unit. */
-    this.unitToCm = 1 / (unit * 100);
+    /** The source's up axis: `top` and `plateau` measure along it. A pistol lying flat is up +Z. */
+    const upAxis = AXES[up];
+    this.upK = upAxis.findIndex((c) => c !== 0);
+    this.upSign = upAxis[this.upK];
+    /** Centimetres per source unit, so the plateau bins are half a millimetre whatever the unit. */
+    this.cmPerUnit = unit * 100;
     this.parent = new Map();
     this.json.nodes.forEach((n, i) => (n.children ?? []).forEach((c) => this.parent.set(c, i)));
     this.worlds = new Map();
@@ -365,18 +893,80 @@ class Source {
     return mat === undefined ? '' : (this.json.materials[mat].name ?? '');
   }
 
+  /**
+   * The joint most of a skinned mesh node's vertices are bound to, by name; '' for a rigid
+   * node. A rigged rifle's parts are rigid pieces each weighted wholly to one bone, so the
+   * first weight's joint on a sample of vertices names the part.
+   */
+  jointName(nodeIndex) {
+    const node = this.json.nodes[nodeIndex];
+    if (node.skin === undefined) return '';
+    const skin = this.json.skins[node.skin];
+    const counts = new Map();
+    for (const prim of this.json.meshes[node.mesh].primitives) {
+      const acc = prim.attributes.JOINTS_0;
+      if (acc === undefined) continue;
+      for (const j of jointIndices(this.glb, acc)) counts.set(j, (counts.get(j) ?? 0) + 1);
+    }
+    let best = -1;
+    let n = -1;
+    for (const [j, c] of counts) if (c > n) { n = c; best = j; }
+    if (best < 0) return '';
+    return this.json.nodes[skin.joints[best]]?.name ?? '';
+  }
+
+  /** A per-node translation applied before the fix: the spread kit assembled. */
+  setMoves(moves) {
+    this.moves = new Map();
+    for (const move of moves ?? []) {
+      const a = this.centre(this.bounds(move.anchor));
+      const b = this.centre(this.bounds(move.target));
+      const delta = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      for (const sel of move.parts) for (const i of this.select(sel)) this.moves.set(i, delta);
+    }
+  }
+
+  centre(b) {
+    return [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
+  }
+
+  /** The world matrix with the node's move, if any, applied on top. */
+  placed(i) {
+    const w = this.world(i);
+    const d = this.moves?.get(i);
+    if (d === undefined) return w;
+    return mul([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, d[0], d[1], d[2], 1], w);
+  }
+
   /** Mesh node indices a selector names. */
   select(sel) {
     const hits = [];
     this.json.nodes.forEach((n, i) => {
       if (n.mesh === undefined) return;
-      const parentName = this.parent.has(i) ? (this.json.nodes[this.parent.get(i)].name ?? '') : '';
-      if (sel.name !== undefined && n.name !== sel.name && parentName !== sel.name) return;
+      // The node's own name and its two nearest ancestors': Sketchfab puts the mesh on a child
+      // named for its material, sometimes under an anonymous `Object_N` between it and the
+      // object the artist named.
+      const names = [n.name ?? ''];
+      for (let p = this.parent.get(i), depth = 0; p !== undefined && depth < 2; p = this.parent.get(p), depth++) {
+        names.push(this.json.nodes[p].name ?? '');
+      }
+      const parentName = names[1] ?? '';
+      if (sel.name !== undefined && !names.includes(sel.name)) return;
+      if (sel.match !== undefined && !names.some((name) => sel.match.test(name))) return;
       if (sel.material !== undefined && this.materialName(n) !== sel.material) return;
+      if (sel.joint !== undefined && this.jointName(i) !== sel.joint) return;
+      if (sel.within !== undefined) {
+        const c = this.centre(this.bounds({ index: i }));
+        for (const [axis, [lo, hi]] of Object.entries(sel.within)) {
+          const k = axis === 'x' ? 0 : axis === 'y' ? 1 : 2;
+          if (c[k] < lo || c[k] > hi) return;
+        }
+      }
+      if (sel.except !== undefined && names.some((name) => sel.except.test(name))) return;
       hits.push(i);
     });
     if (hits.length === 0) throw new Error(`selector ${JSON.stringify(sel)} matched nothing`);
-    if (sel.all) return hits;
+    if (sel.all || sel.match !== undefined) return hits;
     if (hits.length > 1 && sel.pick === 'highest') {
       hits.sort((a, b) => this.bounds({ index: b }).max[1] - this.bounds({ index: a }).max[1]);
       return [hits[0]];
@@ -391,7 +981,7 @@ class Source {
     const min = [Infinity, Infinity, Infinity];
     const max = [-Infinity, -Infinity, -Infinity];
     for (const i of indices) {
-      const m = this.world(i);
+      const m = this.placed(i);
       for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
         for (const p of positions(this.glb, prim.attributes.POSITION)) {
           const v = apply(m, p);
@@ -420,18 +1010,45 @@ class Source {
     const dir = axis[k];
     let best = -Infinity;
     for (const i of indices) {
-      const m = this.world(i);
+      const m = this.placed(i);
       for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
         for (const p of positions(this.glb, prim.attributes.POSITION)) {
           const v = apply(m, p);
           const f = ((v[k] - rear) * dir) / span;
           if (f < from || f > to) continue;
-          if (v[1] > best) best = v[1];
+          const h = v[this.upK] * this.upSign;
+          if (h > best) best = h;
         }
       }
     }
     if (best === -Infinity) throw new Error(`top(${JSON.stringify(sel)}): no vertices in the band`);
-    return best;
+    return best * this.upSign;
+  }
+
+  /** The lowest point of a selection within a band along `forward`, as `top` is the highest. */
+  bottom(sel, forward, from, to) {
+    const indices = this.select(sel);
+    const axis = AXES[forward];
+    const k = axis.findIndex((c) => c !== 0);
+    const b = this.bounds(sel);
+    const span = b.max[k] - b.min[k];
+    const rear = axis[k] > 0 ? b.min[k] : b.max[k];
+    const dir = axis[k];
+    let best = Infinity;
+    for (const i of indices) {
+      const m = this.placed(i);
+      for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
+        for (const p of positions(this.glb, prim.attributes.POSITION)) {
+          const v = apply(m, p);
+          const f = ((v[k] - rear) * dir) / span;
+          if (f < from || f > to) continue;
+          const h = v[this.upK] * this.upSign;
+          if (h < best) best = h;
+        }
+      }
+    }
+    if (best === Infinity) throw new Error(`bottom(${JSON.stringify(sel)}): no vertices in the band`);
+    return best * this.upSign;
   }
 
   /**
@@ -453,22 +1070,23 @@ class Source {
     const inBand = [];
     let top = -Infinity;
     for (const i of indices) {
-      const m = this.world(i);
+      const m = this.placed(i);
       for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
         for (const p of positions(this.glb, prim.attributes.POSITION)) {
           const v = apply(m, p);
           const f = ((v[k] - rear) * dir) / span;
           if (f < from || f > to) continue;
-          inBand.push(v[1]);
-          if (v[1] > top) top = v[1];
+          const h = v[this.upK] * this.upSign;
+          inBand.push(h);
+          if (h > top) top = h;
         }
       }
     }
     if (inBand.length === 0) throw new Error(`plateau(${JSON.stringify(sel)}): no vertices in the band`);
     const bins = new Map();
     for (const y of inBand) {
-      if (top - y > 1.5 / this.unitToCm) continue;
-      const bin = Math.round(y * this.unitToCm * 20) / 20;
+      if ((top - y) * this.cmPerUnit > 1.5) continue;
+      const bin = Math.round(y * this.cmPerUnit * 20) / 20;
       bins.set(bin, (bins.get(bin) ?? 0) + 1);
     }
     const fullest = Math.max(...bins.values());
@@ -476,7 +1094,7 @@ class Source {
     for (const [bin, n] of bins) {
       if (n >= fullest * PLATEAU_SHARE && bin > best) best = bin;
     }
-    return best / this.unitToCm;
+    return (best / this.cmPerUnit) * this.upSign;
   }
 
   /**
@@ -494,7 +1112,7 @@ class Source {
     const sum = [0, 0, 0];
     let n = 0;
     for (const i of indices) {
-      const m = this.world(i);
+      const m = this.placed(i);
       for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
         for (const p of positions(this.glb, prim.attributes.POSITION)) {
           const v = apply(m, p);
@@ -525,10 +1143,12 @@ function round(v) {
  */
 function rewrite(id, recipe, src) {
   const forward = recipe.forward;
+  src.setMoves(recipe.moves);
   const measure = {
     bounds: (sel) => src.bounds(sel),
     tip: (sel) => src.tip(sel, forward),
     top: (sel, from, to) => src.top(sel, forward, from, to),
+    bottom: (sel, from, to) => src.bottom(sel, forward, from, to),
     plateau: (sel, from, to) => src.plateau(sel, forward, from, to),
   };
   const origin = recipe.origin(measure);
@@ -540,6 +1160,7 @@ function rewrite(id, recipe, src) {
   nodes.push(root);
 
   const kept = [];
+  const materialSwaps = new Map();
   for (const [group, selectors] of Object.entries(recipe.parts)) {
     const g = { name: group, children: [] };
     const gi = nodes.push(g) - 1;
@@ -549,21 +1170,47 @@ function rewrite(id, recipe, src) {
         const n = src.json.nodes[i];
         const parentName = src.parent.has(i) ? src.json.nodes[src.parent.get(i)].name : undefined;
         const label = n.name && n.name !== 'defaultMaterial' ? n.name : (parentName ?? `node${i}`);
-        const ni = nodes.push({ name: label, mesh: n.mesh, matrix: mul(fix, src.world(i)).map((x) => Math.round(x * 1e7) / 1e7) }) - 1;
+        // A skinned node keeps its mesh and loses its skin: the vertices are at the bind pose
+        // and the loader draws a rigid mesh, which is what a part of a rifle is.
+        const ni = nodes.push({ name: label, mesh: n.mesh, matrix: mul(fix, src.placed(i)).map((x) => Math.round(x * 1e7) / 1e7) }) - 1;
         g.children.push(ni);
         kept.push(i);
+        if (sel.useMaterial !== undefined) materialSwaps.set(n.mesh, sel.useMaterial);
       }
     }
   }
 
   const placed = {};
-  for (const [name, point] of Object.entries(sockets)) {
+  for (const [name, socket] of Object.entries(sockets)) {
+    // A socket is a point, or `{ at, roll }` for a mount on the weapon's side: `roll` turns
+    // the socket's up about the barrel, in degrees, negative toward the right-hand side.
+    const point = Array.isArray(socket) ? socket : socket.at;
     const t = round(apply(fix, point));
     placed[name] = t;
-    root.children.push(nodes.push({ name, translation: t }) - 1);
+    const node = { name, translation: t };
+    if (!Array.isArray(socket) && socket.roll !== undefined) {
+      const half = (socket.roll * Math.PI) / 360;
+      node.rotation = [0, 0, Math.round(Math.sin(half) * 1e6) / 1e6, Math.round(Math.cos(half) * 1e6) / 1e6];
+    }
+    root.children.push(nodes.push(node) - 1);
+  }
+  if (recipe.magazineExit !== undefined) {
+    // A direction, carried as a point one metre along it from the origin: the fix's rotation
+    // without its translation or scale.
+    const R = fixMatrix({ ...recipe, unit: 1 }, [0, 0, 0]);
+    const d = apply(R, recipe.magazineExit);
+    const len = Math.hypot(d[0], d[1], d[2]);
+    const t = round([d[0] / len, d[1] / len, d[2] / len]);
+    placed.socket_mag_exit = t;
+    root.children.push(nodes.push({ name: 'socket_mag_exit', translation: t }) - 1);
   }
 
   const json = structuredClone(src.json);
+  for (const [meshIndex, materialName] of materialSwaps) {
+    const target = json.materials.findIndex((m) => m.name === materialName);
+    if (target < 0) throw new Error(`${id}: useMaterial "${materialName}" names no material in the source`);
+    for (const prim of json.meshes[meshIndex].primitives) prim.material = target;
+  }
   json.nodes = nodes;
   // The scene is not the root: three's loader would rename the second of two nodes called
   // `id` to `id_1`, and the root is the one the runtime looks up by name.
@@ -661,7 +1308,7 @@ export function buildOne(id, work) {
 
   const glb = readGlb(sourceFile);
   verifyAttribution(id, recipe.source, glb.json.asset?.extras);
-  const src = new Source(glb, recipe.unit);
+  const src = new Source(glb, recipe.unit, recipe.up);
   const { json, sockets, kept, origin } = rewrite(id, recipe, src);
 
   const staged = path.join(work, `${id}.staged.glb`);
@@ -671,7 +1318,8 @@ export function buildOne(id, work) {
   const deduped = path.join(work, `${id}.dedup.glb`);
   run(['dedup', pruned, deduped]);
   const resized = path.join(work, `${id}.resized.glb`);
-  run(['resize', deduped, resized, '--width', String(MAX_SIDE), '--height', String(MAX_SIDE)]);
+  const side = recipe.textureSide ?? MAX_SIDE;
+  run(['resize', deduped, resized, '--width', String(side), '--height', String(side)]);
   const out = path.join(OUT_DIR, `${id}.glb`);
   run(['webp', resized, out, '--quality', String(WEBP_QUALITY)]);
 
@@ -689,7 +1337,8 @@ export function buildOne(id, work) {
     const rerooted = path.join(work, `${id}.rerooted.glb`);
     reroot(joined, rerooted, id, sockets);
     const small = path.join(work, `${id}.small.glb`);
-    run(['resize', rerooted, small, '--width', String(LOD_SIDE), '--height', String(LOD_SIDE)]);
+    const lodSide = Math.min(LOD_SIDE, side / 4);
+    run(['resize', rerooted, small, '--width', String(lodSide), '--height', String(lodSide)]);
     const lod = path.join(OUT_DIR, `${id}.lod1.glb`);
     run(['webp', small, lod, '--quality', String(WEBP_QUALITY)]);
     report.lod1 = { triangles: triangles(readGlb(lod).json), bytes: statSync(lod).size };
@@ -723,7 +1372,33 @@ export function creditsMarkdown() {
   ].join('\n');
 }
 
+/**
+ * `--list <file>`: every mesh node of a source with the names a selector can use, its
+ * material, the joint it hangs on if skinned, and its world bounds. What a recipe is written
+ * from.
+ */
+function listSource(file) {
+  const glb = readGlb(path.isAbsolute(file) ? file : path.join(SOURCE_DIR, file));
+  const src = new Source(glb, 1, 'y+');
+  src.json.nodes.forEach((n, i) => {
+    if (n.mesh === undefined) return;
+    const names = [n.name ?? ''];
+    for (let p = src.parent.get(i), depth = 0; p !== undefined && depth < 2; p = src.parent.get(p), depth++) names.push(src.json.nodes[p].name ?? '');
+    const b = src.bounds({ index: i });
+    const f = (v) => v.map((x) => x.toFixed(3)).join(',');
+    const joint = src.jointName(i);
+    console.log(
+      `${String(i).padStart(4)}  ${names.map((s) => JSON.stringify(s)).join(' < ')}  mat=${src.materialName(n)}${joint ? `  joint=${joint}` : ''}  min=[${f(b.min)}] max=[${f(b.max)}]`,
+    );
+  });
+}
+
 function main() {
+  const listAt = process.argv.indexOf('--list');
+  if (listAt >= 0) {
+    listSource(process.argv[listAt + 1]);
+    return;
+  }
   const wanted = process.argv.slice(2).filter((a) => !a.startsWith('--'));
   const ids = wanted.length > 0 ? wanted : Object.keys(RECIPES);
   mkdirSync(OUT_DIR, { recursive: true });

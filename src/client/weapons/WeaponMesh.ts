@@ -80,6 +80,12 @@ export interface WeaponModel {
   readonly weaponId: string;
   /** Where the triangles came from (M19): the file, or the primitives standing in for it. */
   readonly source: 'glb' | 'procedural';
+  /**
+   * The direction the magazine leaves along on a reload, a unit vector in weapon space (M19,
+   * stage 3). Straight down for every weapon but the P90, whose magazine lies along the top
+   * and comes off upward and back; a file says so with a `socket_mag_exit` node.
+   */
+  readonly magazineExit: THREE.Vector3;
   dispose(): void;
 }
 
@@ -160,6 +166,7 @@ export function buildWeaponModel(
     adsOffsetZ: spec.adsOffsetZ,
     weaponId,
     source: 'procedural',
+    magazineExit: MAGAZINE_EXIT_DOWN.clone(),
     dispose(): void {
       // Only the geometry is per model. The three materials and their textures are shared
       // for the life of the process in `cachedSurfaces` and `baseTextures` here and the camo cache in
@@ -242,11 +249,22 @@ function buildFromTemplate(
     adsOffsetZ: spec.adsOffsetZ,
     weaponId: template.weaponId,
     source: 'glb',
+    magazineExit: magazineExitOf(root),
     dispose(): void {
       for (const d of disposables) d.dispose();
       root.clear();
     },
   };
+}
+
+const MAGAZINE_EXIT_DOWN = new THREE.Vector3(0, -1, 0);
+
+/** The file's `socket_mag_exit`, a unit direction carried as a point; down when it has none. */
+function magazineExitOf(root: THREE.Object3D): THREE.Vector3 {
+  const socket = root.getObjectByName('socket_mag_exit');
+  if (socket === undefined) return MAGAZINE_EXIT_DOWN.clone();
+  const exit = socket.position.clone();
+  return exit.lengthSq() > 0 ? exit.normalize() : MAGAZINE_EXIT_DOWN.clone();
 }
 
 /** What mounting changed about the contract's numbers; absent means the bare weapon's. */
@@ -274,6 +292,11 @@ interface Mounted {
  *
  * A part the weapon has no socket for is skipped, as `resolveWeaponDef` skips an attachment
  * the weapon has no slot for; the two lists are the same list, so this is belt and braces.
+ *
+ * Two rules from stage 3: a weapon whose spec has a scope keeps it — the HYBRID OPTIC on a
+ * sniper is a better scope (its effect is on the sway), not a red dot in place of one — and
+ * a weapon with a sight of its own in `optic_default` (the P90's and the Tavor's collimators)
+ * hides it when the red dot goes on, so two sights do not stand on one rail.
  */
 function mountAttachments(
   root: THREE.Object3D,
@@ -287,11 +310,13 @@ function mountAttachments(
   const attachments = options.attachments ?? [];
   if (assets === null || attachments.length === 0) return out;
 
+  const spec = modelSpecFor(template.weaponId);
   for (const id of attachments) {
     if (id === 'mag_extended') {
       magazine.scale.y = MAGAZINE_EXTENDED_STRETCH;
       continue;
     }
+    if (id === 'optic_reflex' && spec.optic === 'scope') continue;
     const partId = ATTACHMENT_PARTS[id];
     const part = assets.part(partId);
     const socket = root.getObjectByName(ATTACHMENT_PART_SOCKETS[partId]);
@@ -310,6 +335,8 @@ function mountAttachments(
       });
       const sight = part.sockets.socket_sight;
       if (sight !== undefined) out.sightHeight = template.sockets.socket_rail_top.y + sight.y;
+      const own = root.getObjectByName('optic_default');
+      if (own !== undefined) own.visible = false;
     } else if (partId === 'att_suppressor') {
       const muzzle = clone.getObjectByName('socket_muzzle');
       if (muzzle !== undefined) out.muzzle = muzzle;

@@ -7,6 +7,13 @@ attribution wherever the models are distributed, and each `.glb` carries the sam
 
 | Source | Author | Licence | Built files |
 |---|---|---|---|
-| [AK-74 Pack (game asset)](https://sketchfab.com/3d-models/ak-74-pack-game-asset-29978f495f824173b44a3ba40cb8ebd8) | [Armored Wave](https://sketchfab.com/armoredwave) | CC-BY-4.0 | att_optic.glb |
+| [[FREE - Modular] L1A1 SLR](https://sketchfab.com/3d-models/free-modular-l1a1-slr-d63c3e0d97464bc5b2a58cadf35e52f5) | [Aperture Aerospace](https://sketchfab.com/Apeture_Aerospace) | CC-BY-4.0 | ar_longbow.glb |
+| [AK-74 Pack (game asset)](https://sketchfab.com/3d-models/ak-74-pack-game-asset-29978f495f824173b44a3ba40cb8ebd8) | [Armored Wave](https://sketchfab.com/armoredwave) | CC-BY-4.0 | ar_vulcan.glb, att_optic.glb |
+| [Beretta M9](https://sketchfab.com/3d-models/beretta-m9-348015284eca46fe8e1822508381dfd8) | [eNse7en](https://sketchfab.com/ense7en.design) | CC-BY-4.0 | pistol_talon.glb |
 | [Free - M4 Modular Kit Gun](https://sketchfab.com/3d-models/free-m4-modular-kit-gun-1665416c071747bb9c20aa652849b579) | [Karnaval](https://sketchfab.com/amadions) | CC-BY-4.0 | ar_carbine.glb, att_suppressor.glb, att_grip.glb |
+| [Free Modular MP5 Kit](https://sketchfab.com/3d-models/free-modular-mp5-kit-d381a0438a8b45c2bac6f59120fbb52f) | [Karnaval](https://sketchfab.com/amadions) | SKETCHFAB Standard | smg_wasp.glb |
+| [M150 Sniper Rifle (Game Ready)](https://sketchfab.com/3d-models/m150-sniper-rifle-game-ready-0f71498f1f694b30be77c9779361c6cc) | [Bl4ckGh0st](https://sketchfab.com/Bl4ckGh0st) | CC-BY-4.0 | sniper_vantage.glb |
+| [Modular P90 Tactical](https://sketchfab.com/3d-models/modular-p90-tactical-080897fc0366455884b1a916684313fe) | [doomsentinel](https://sketchfab.com/doomsentinel) | CC-BY-4.0 | smg_meridian.glb |
 | [Rifle Laser Sight](https://sketchfab.com/3d-models/rifle-laser-sight-55d74d7d4f6a4071af856d2ffc2c429a) | [trolosqlfod](https://sketchfab.com/trolosqlfod) | CC-BY-4.0 | att_laser.glb |
+| [Spas 12](https://sketchfab.com/3d-models/spas-12-614140daf5e4467fa0e36b6c23d70621) | [Luiz Bueno](https://sketchfab.com/Luiz159753) | CC-BY-4.0 | shotgun_breacher.glb |
+| [TAR - 21 (Tavor). Black and White.](https://sketchfab.com/3d-models/tar-21-tavor-black-and-white-40dc15941e0b456692c83a97bfcd2474) | [Nik Vega](https://sketchfab.com/Nik_Vega) | CC-BY-4.0 | ar_halcyon.glb |

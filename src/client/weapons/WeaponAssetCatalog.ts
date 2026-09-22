@@ -14,12 +14,22 @@
  * it after a rebuild that changes a file.
  */
 
-export const WEAPON_ASSET_VERSION = '2026-09-22-m19-stage-2b';
+export const WEAPON_ASSET_VERSION = '2026-09-22-m19-stage-3';
 
 const WEAPON_ROOT = '/models/weapons';
 
 /** Weapon ids with a built file. The order is the arsenal's; the set is what matters. */
-export const WEAPON_ASSET_IDS: ReadonlySet<string> = new Set(['ar_carbine']);
+export const WEAPON_ASSET_IDS: ReadonlySet<string> = new Set([
+  'ar_carbine',
+  'ar_vulcan',
+  'ar_halcyon',
+  'ar_longbow',
+  'smg_wasp',
+  'smg_meridian',
+  'shotgun_breacher',
+  'sniper_vantage',
+  'pistol_talon',
+]);
 
 export function hasWeaponAsset(weaponId: string): boolean {
   return WEAPON_ASSET_IDS.has(weaponId);

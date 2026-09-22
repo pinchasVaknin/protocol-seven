@@ -171,8 +171,8 @@ export class BotMesh implements ActorAvatar {
   /** The shoulder pads' frames, on the outer face of each arm box (M13 C3). Static: the arms are baked. */
   private readonly shoulderFrames: Readonly<Record<ActorIndicatorFrameAnchor, THREE.Object3D>>;
   /** The weapon in the hands. Null until the renderer knows which one this body carries. */
-  private weapon: THREE.Mesh | null = null;
-  private weaponId: string | null = null;
+  private weapon: THREE.Object3D | null = null;
+  private heldAsset: HeldWeaponAsset | null = null;
 
   private readonly quat = new THREE.Quaternion();
   private readonly axis = new THREE.Vector3();
@@ -259,16 +259,19 @@ export class BotMesh implements ActorAvatar {
    * with.
    */
   setWeapon(asset: HeldWeaponAsset | null): void {
-    const weaponId = asset?.weaponId ?? null;
-    if (weaponId === this.weaponId) return;
-    this.weaponId = weaponId;
+    // The asset, not its id (M19): the same weapon's file arriving after its primitives is a
+    // new asset for the same id.
+    if (asset === this.heldAsset) return;
+    this.heldAsset = asset;
     if (this.weapon !== null) {
       this.group.remove(this.weapon);
       this.weapon = null;
     }
     if (asset === null) return;
-    const mesh = new THREE.Mesh(asset.geometry, asset.material);
-    mesh.castShadow = true;
+    const mesh = asset.template !== null ? asset.template.clone(true) : new THREE.Mesh(asset.geometry, asset.material);
+    mesh.traverse((node) => {
+      node.castShadow = true;
+    });
     mesh.position.set(WEAPON_OFFSET.x, WEAPON_OFFSET.y, WEAPON_OFFSET.z);
     this.weapon = mesh;
     this.group.add(mesh);

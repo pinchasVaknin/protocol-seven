@@ -83,11 +83,21 @@ const LINE_Y = 0.012;
 const ARM_WRIST_RADIUS = 0.048;
 const ARM_ELBOW_RADIUS = 0.062;
 
-export function buildKnifeModel(anisotropy: number): KnifeModel {
+/**
+ * `template` is the knife's file (M19, stage 3), cloned in place of the grip, guard and blade
+ * boxes when it is there; the fist, the cuff and the forearm stay the boxes they were, since
+ * the file is a picture of a knife and not of a hand. Null builds every box, as before.
+ */
+export function buildKnifeModel(anisotropy: number, template: THREE.Object3D | null = null): KnifeModel {
   const surfaces = sharedWeaponSurfaces(anisotropy);
   const root = new THREE.Group();
   root.name = 'viewmodel:knife';
   root.scale.setScalar(KNIFE_SCALE);
+  if (template !== null) {
+    const blade = template.clone(true);
+    blade.name = 'viewmodel:knife:file';
+    root.add(blade);
+  }
 
   const bySurface = new Map<SurfaceKey, THREE.BufferGeometry[]>();
   const push = (key: SurfaceKey, geometry: THREE.BufferGeometry): void => {
@@ -134,16 +144,18 @@ export function buildKnifeModel(anisotropy: number): KnifeModel {
   box('glove', 0.076, 0.030, 0.052, 0, 0.030, 0.020);
   box('glove', 0.096, 0.096, 0.046, 0, 0.000, 0.098);
 
-  // Grip, slightly nose-down so the blade sits along the natural line of a held knife.
-  box('polymer', 0.030, 0.038, 0.110, 0, LINE_Y - 0.002, -0.010, 0.06);
-  box('polymer', 0.034, 0.014, 0.026, 0, LINE_Y - 0.018, 0.040);
+  if (template === null) {
+    // Grip, slightly nose-down so the blade sits along the natural line of a held knife.
+    box('polymer', 0.030, 0.038, 0.110, 0, LINE_Y - 0.002, -0.010, 0.06);
+    box('polymer', 0.034, 0.014, 0.026, 0, LINE_Y - 0.018, 0.040);
 
-  // Guard and ricasso: the two blocks that make a blade look attached to something.
-  box('gunmetal', 0.050, 0.020, 0.014, 0, LINE_Y + 0.002, -0.072);
-  box('gunmetal', 0.011, 0.034, 0.024, 0, LINE_Y, -0.090);
+    // Guard and ricasso: the two blocks that make a blade look attached to something.
+    box('gunmetal', 0.050, 0.020, 0.014, 0, LINE_Y + 0.002, -0.072);
+    box('gunmetal', 0.011, 0.034, 0.024, 0, LINE_Y, -0.090);
 
-  blade(0.104, -0.134, false);
-  blade(0.056, -0.213, true);
+    blade(0.104, -0.134, false);
+    blade(0.056, -0.213, true);
+  }
 
   const disposables: Array<{ dispose(): void }> = [];
   for (const [key, list] of bySurface) {

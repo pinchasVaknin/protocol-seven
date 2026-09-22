@@ -158,6 +158,7 @@ export class GameScreens {
       },
       // The podium's bodies (M15, D1): the same service and the same filtering as the match's.
       characterAssets: deps.characterAssets,
+      weaponAssets: deps.weaponAssets,
       anisotropy: deps.anisotropy,
       profile: deps.profile,
       audio: deps.audio,

@@ -648,7 +648,8 @@ then `npx @gltf-transform/cli@4.5.0` pinned, as `skin-compress.mjs` runs it: `pr
   SPAS-12, the M150 and L1A1 (skinned: `SkeletonUtils.clone`, the bodies' path), the Beretta and
   the knife, the L115A3 last after its cut. `<id>.lod1.glb` into `BotRenderer`'s held-weapon
   cache, with the suppressor and nothing else at that distance. The killfeed glyphs stay
-  projected from `WeaponModelSpec`; the camo overlay (decision 4) lands here.
+  projected from `WeaponModelSpec`; the camo overlay (decision 4) lands here. **Built**, in
+  two parts; the LMGs stay procedural (no legitimate source), the bodies carry the bare LOD.
 
 ## What was built — stage 0 (2026-09-22)
 
@@ -794,9 +795,93 @@ Verified in the pane: the clamp meets the rail from the side and from behind in 
 the DBAL's clamp sits on the handguard's slat tops; in the Range, ADS with the tube seated,
 `sightHeight` 0.0719, the resolved def's `muzzleFlashScale` 0.4. Asset version `stage-2b`.
 
+## What was built — stage 3 (2026-09-22)
+
+**Part 1 — eight weapons from their files.** Each a recipe in `weapon-build.mjs`, each
+measured, each verified in the viewer with the pack mounted before it went in:
+
+| weapon | source | what the recipe had to do |
+|---|---|---|
+| VULCAN 74 | AK-74 pack (the tactical rifle of the set) | the `body.007` node set; the muzzle centred on the bore, since the brake's ports pulled `tip` sideways |
+| HALCYON B5 | Tavor | the white body given the black set's texture (`useMaterial`); its own collimator as `optic_default`, hidden under the red dot; magazine and bullets as one group |
+| LONGBOW MK3 | L1A1 polymer | a rigged rifle taken rigid at bind pose; forward `y−`, up `z+` |
+| WASP 9 | MP5 kit | the Picatinny handguard and gas block **moved** onto the SD's place (`moves`); the front rail socket rolled −90° to the side |
+| MERIDIAN P40 | P90 | forward `x−`; the collimator as the default optic; `socket_mag_exit` up and back — the magazine leaves along the receiver's top |
+| BREACHER 12 | SPAS-12 | the pump as the charge group; the measurement bands moved onto the extruded barrel's vertex rings |
+| VANTAGE SR | M150 | nodes chosen by **joint** (the dominant `JOINTS_0` of each mesh); the scope's lids excluded |
+| TALON 9 | Beretta M9 (threaded barrel) | the slide as the charge group, the parts chosen by where they lie (`within`); textures held to 512 (2.76 → 1.62 MB); the rail sockets rolled 180° for the under-barrel laser |
+
+The build grew for them: `moves` (a translation per node before the fix, for a kit laid out
+flat), material swaps, `joint` / `match` / `except` / `within` selectors, `pick: 'highest'`,
+sockets as `{ at, roll }`, a per-recipe `textureSide`, `magazineExit`, and `--list <file>`
+to read a source's tree. The rail sockets measure the plateau along the recipe's own up
+axis. At runtime: a weapon whose spec says `optic: 'scope'` keeps its scope and the OPTIC
+does not mount; a file's own sight (`optic_default`) hides under the red dot; the magazine
+leaves along the file's exit (`WeaponModel.magazineExit`; `ViewmodelAnim` tumbles it only
+when it drops). Asset version `stage-3`.
+
+**Part 2 — the L115A3, the knife, the bodies, the camo.**
+
+- **KESTREL .338** from the L115A3: two meshes at 195k triangles, four times life size, the
+  suppressor modelled into the barrel. `cuts` takes it off — every triangle of `Cube.001`
+  beyond z −2.05 in the source's frame is dropped from a new index buffer, the measurements
+  stop seeing those vertices, and the SUPPRESSOR mounts on the bare muzzle that is left. A
+  per-recipe `simplify` (0.145) brings the viewmodel under the 30k budget before the
+  textures (27,744; 1.41 MB). A bolt gun reloads with nothing moving, as the procedural one
+  did: both groups empty.
+- **The knife** from the MTech: `kind: 'knife'`, a root and a `body`, no sockets, the origin
+  at the handle's centre where `KnifeMesh` closes the fist. `buildKnifeModel(anisotropy,
+  template)` clones the file's blade in place of the grip, guard and blade boxes; the fist,
+  the cuff and the forearm stay boxes. `WeaponAssetService.preloadKnife` rides with the
+  warm-up. 4,433 triangles, 0.31 MB.
+- **The bodies carry the files.** `HeldWeaponAsset` gains a `template`; `CharacterSkin` and
+  `BotMesh` clone it in place of the geometry-and-material mesh when it is there
+  (`BotMesh` now compares by asset, not by id, the way `CharacterSkin` already did). The
+  service loads `<id>.lod1.glb` on demand (`preloadLod` / `lod`: the root and its two hand
+  sockets, which are the anchors); `BotRenderer.heldWeapon` and `CharacterStage.heldWeapon`
+  build on the primitives, ask for the LOD once, and drop their cache entry when it lands,
+  so the next frame's `setWeapon` sees a new asset and swaps the mesh. Ten bodies carrying
+  four weapons fetch four files. The bodies wear no attachments — the bare LOD, at that
+  distance.
+- **The camo, as an overlay (decision 4).** `camoMaterial(material, camo)` is the file's own
+  material cloned with the pattern multiplied into the albedo after `map_fragment`
+  (`onBeforeCompile`, a `customProgramCacheKey` per camo): the artist's normal map,
+  roughness and baked wear show through the paint, and the pattern is scaled by the file's
+  own brightness so a black albedo keeps the paint dark and a worn edge lifts it. The
+  sampler reads the mesh's `uv` through a varying of its own (`CAMO_OVERLAY_REPEAT` 6 across
+  the atlas), so a plain-colour part paints the same as a textured one. GOLD and OBSIDIAN
+  take the metalness the procedural set gives them. One variant per (material, camo), kept
+  for the process like the surfaces. `paintCamo(root)` applies it to every opaque material
+  under a root — `buildFromTemplate` before the hands and the pack parts arrive (a
+  suppressor is not painted with the weapon's camo, the gloves stay grey), and the editor's
+  stage on the LOD. Transparent materials — a file's own optic glass — are left.
+- The gate: rule 5 knows a knife (root and `body`); rule 8 holds the catalog's ten ids to
+  the recipes. 25 files, 27.29 MB, 15 recipes.
+
+Not built, and not going to be from these sources: the LMGs (BASTION and MONOLITH) stay
+procedural — every LMG file offered was a game rip.
+
+### Verified
+
+`npm run check` green. In the browser pane: the editor's stage fetches `ar_carbine.lod1.glb`
+and the operator holds the M4's LOD; with the camos earned (the pane's own save edited), the
+preview paints the M4's file in DIGITAL, TIGER and GOLD with the file's shading through the
+pattern, the optic on top unpainted, and the stage's LOD wears the same TIGER; a FOUNDRY
+match fetches eight LODs for the bots' weapons, each once, a GLB body seen up close carrying
+its rifle's file, the viewmodel in TIGER with the AimPoint and the can on it; the KESTREL
+.338 in the match — the green chassis, the scope, the pack's suppressor on the cut muzzle,
+5 / 40. The knife's file loads (`GLB knife is ready`) and was verified in the viewer; the
+swing itself needs pointer lock, which the pane does not grant — the human's playtest. No
+shader errors, no console errors.
+
 ## Open
 
-- **Stage 3**: the arsenal and the bodies.
+- **The knife's swing in the match** — a look at the file's blade in the hand during a melee,
+  which the pane could not trigger.
+- **The camo's tuning.** `CAMO_OVERLAY_REPEAT` (6) and the brightness curve
+  (`0.6 + 1.4·lum`) are first values, chosen against the M4; a playtest across the ten files
+  decides whether the pattern reads at one size on the P90's atlas and the L115A3's.
+- The LMGs stay procedural until a legitimate source appears.
 - The M4's geometry is 1.5 MB of its 2.21 — split normals at every hard edge. `quantize` would
   roughly halve it; left for when the budget bites rather than done on a guess.
 - The optic's glass carries `KHR_materials_transmission`; three loads it as a

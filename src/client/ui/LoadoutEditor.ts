@@ -279,7 +279,7 @@ export class LoadoutEditor {
       height: STAGE_PREVIEW_HEIGHT,
       className: 'lo-preview--stage',
     });
-    this.stage = new CharacterStage({ characterAssets: deps.characterAssets, anisotropy: deps.anisotropy });
+    this.stage = new CharacterStage({ characterAssets: deps.characterAssets, anisotropy: deps.anisotropy, weaponAssets: deps.weaponAssets });
     const { layer, viewport, frame } = createScreen('op-screen lo');
     this.screen = layer;
     this.viewport = viewport;

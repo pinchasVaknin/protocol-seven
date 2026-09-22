@@ -6,6 +6,7 @@ import { relationTo, type ViewerContext } from '../../shared/ui/TeamColour';
 import { ActorIndicator, buildActorIndicatorAssets } from './ActorIndicator';
 import { BotMesh, buildBotAssets, type BotAssets } from './BotMesh';
 import { buildHeldWeapon, heldWeaponMaterial } from '../weapons/WeaponMesh';
+import type { WeaponAssetService } from '../weapons/WeaponAssetService';
 import type { ActorAvatar, HeldWeaponAsset } from '../characters/ActorAvatar';
 import type {
   CharacterAvatarProvider,
@@ -102,6 +103,8 @@ export class BotRenderer {
     private readonly viewer: () => ViewerContext,
     anisotropy = 1,
     private readonly characterProviderFor: CharacterAvatarProviderResolver,
+    /** Game's weapon files (M19, stage 3); null and every body carries the primitives. */
+    private readonly weaponAssets: WeaponAssetService | null = null,
   ) {
     this.assets = buildBotAssets();
     // The viewmodel's own gunmetal, already built for the process. A held weapon allocates no
@@ -334,12 +337,25 @@ export class BotRenderer {
     const existing = this.weapons.get(weaponId);
     if (existing !== undefined) return existing;
     const built = buildHeldWeapon(weaponId);
+    // The weapon's own file for the bodies when it has arrived (M19, stage 3); the primitives
+    // until then, and the cache entry dropped when the file lands so the next frame's
+    // `setWeapon` sees a new asset and swaps the mesh.
+    const lod = this.weaponAssets?.lod(weaponId) ?? null;
+    if (lod === null && this.weaponAssets !== null && this.weaponAssets.statusFor(weaponId) !== 'none') {
+      void this.weaponAssets.preloadLod(weaponId).then(
+        () => {
+          if (this.weapons.get(weaponId) === asset) this.weapons.delete(weaponId);
+        },
+        () => undefined,
+      );
+    }
     const asset: HeldWeaponAsset = {
       weaponId,
       geometry: built.geometry,
       material: this.weaponMaterial,
-      gripAnchor: built.gripAnchor,
-      supportAnchor: built.supportAnchor,
+      template: lod?.scene ?? null,
+      gripAnchor: lod?.gripAnchor ?? built.gripAnchor,
+      supportAnchor: lod?.supportAnchor ?? built.supportAnchor,
     };
     this.weapons.set(weaponId, asset);
     return asset;

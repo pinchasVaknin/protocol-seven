@@ -322,6 +322,7 @@ const summary = new EndOfMatch({
   onContinue: noop,
   onExit: noop,
   characterAssets,
+  weaponAssets: null,
   anisotropy: () => 1,
   profile,
   audio: { playDebriefHit: noop, playDebriefSweep: noop, playDebriefMedal: noop },

@@ -3,6 +3,7 @@ import type { ColumnDef, MatchResult } from '../../shared/modes/GameMode';
 import { personalOutcome, type PersonalOutcome } from '../../shared/modes/MatchOutcome';
 import { relationClass, relationTo, teamLabel, teamsInViewOrder, type ViewerContext } from '../../shared/ui/TeamColour';
 import type { CharacterAssetService } from '../characters/CharacterAssetService';
+import type { WeaponAssetService } from '../weapons/WeaponAssetService';
 import type { CharacterId } from '../characters/CharacterCatalog';
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
 import type { Profile } from '../meta/Profile';
@@ -86,6 +87,8 @@ export interface SummaryDeps {
   readonly onExit: () => void;
   /** The skins, for the podium (D1). The same service the match drew the bodies from. */
   readonly characterAssets: CharacterAssetService;
+  /** The weapon files the podium's bodies hold (M19, stage 3). */
+  readonly weaponAssets: WeaponAssetService | null;
   readonly anisotropy: () => number;
   /** The player, for the header's card. */
   readonly profile: Profile;
@@ -252,7 +255,7 @@ export class EndOfMatch {
 
     this.stageBox = document.createElement('div');
     this.stageBox.className = 'dbf-stage';
-    this.stage = new CharacterStage({ characterAssets: deps.characterAssets, anisotropy: deps.anisotropy }, PODIUM_STAGE);
+    this.stage = new CharacterStage({ characterAssets: deps.characterAssets, anisotropy: deps.anisotropy, weaponAssets: deps.weaponAssets }, PODIUM_STAGE);
     this.plates = document.createElement('div');
     this.plates.className = 'dbf-stage__plates';
     this.stageBox.append(this.stage.canvas, this.plates);

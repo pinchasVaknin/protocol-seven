@@ -19,7 +19,7 @@ export class CharacterSkin {
   private readonly headBone: THREE.Object3D;
   /** One calibrated node per shoulder, parented to its upper-arm bone; the pads' frames. */
   private readonly shoulderFrames: Readonly<Record<ActorIndicatorFrameAnchor, THREE.Object3D>>;
-  private weapon: THREE.Mesh | null = null;
+  private weapon: THREE.Object3D | null = null;
   private heldAsset: HeldWeaponAsset | null = null;
   private hasSupportGrip = false;
 
@@ -61,9 +61,11 @@ export class CharacterSkin {
     this.supportGripTarget.visible = false;
     if (asset === null) return;
 
-    const weapon = new THREE.Mesh(asset.geometry, asset.material);
+    const weapon = asset.template !== null ? asset.template.clone(true) : new THREE.Mesh(asset.geometry, asset.material);
     weapon.name = `held-weapon:${asset.weaponId}`;
-    weapon.castShadow = true;
+    weapon.traverse((node) => {
+      node.castShadow = true;
+    });
     // `weaponSocket` sits at the hand. Move the mesh so its trigger grip — rather than the
     // centre of its receiver — occupies that point. The socket rotation remains rig-owned.
     weapon.position.copy(asset.gripAnchor).multiplyScalar(-1);

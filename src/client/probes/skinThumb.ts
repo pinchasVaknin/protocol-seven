@@ -37,6 +37,8 @@ const stage = new CharacterStage({
   characterAssets: new CharacterAssetService(),
   // 1: the thumbnail is 320 px wide and the gunmetal's anisotropy is a match-distance concern.
   anisotropy: () => 1,
+  // No weapon files either: the thumbnail's operator holds the primitives.
+  weaponAssets: null,
 });
 host.appendChild(stage.canvas);
 stage.hold(POSE, 3.3);

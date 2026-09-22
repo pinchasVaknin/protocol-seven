@@ -570,6 +570,7 @@ export class Match {
       // handle reads the app-level GLB cache and exposes a factory only when it is safe to
       // create instances; the procedural body remains the non-blocking fallback.
       deps.characterAvatarProvider,
+      deps.weaponAssets,
     );
     deps.scene.add(this.botRenderer.group);
 
@@ -681,7 +682,7 @@ export class Match {
      * third element that is not a weapon. A knife is a thing you *do*, which is the same reason
      * `Melee` is not a `Weapon`; see the header of `weapons/Melee.ts`.
      */
-    this.knifeModel = buildKnifeModel(deps.anisotropy);
+    this.knifeModel = buildKnifeModel(deps.anisotropy, deps.weaponAssets?.knife() ?? null);
     this.knifeModel.root.visible = false;
     this.knifeModel.arm.visible = false;
     deps.viewmodel.add(this.knifeModel.root);

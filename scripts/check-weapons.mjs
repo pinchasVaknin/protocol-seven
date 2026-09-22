@@ -20,6 +20,7 @@
  *   4. **Textures ≤ 1024 on a side (the LOD 256), WebP or JPEG.** A 2048 PNG normal map is
  *      the usual way a 4 MB file becomes a 20 MB one.
  *   5. **The contract's nodes.** A weapon carries a root named for it, `body`, `magazine`,
+ *      (the knife only a root and a `body`),
  *      `charge` and the seven sockets (the muzzle, the three rails, the sight line, the two
  *      hands); its LOD the root and `socket_muzzle`; a pack part `part`, and the optic its
  *      own `socket_sight` (the sight line the ADS pose cancels once it is mounted), the
@@ -161,7 +162,7 @@ for (const file of onDisk) {
   const names = new Set((json.nodes ?? []).map((n) => n.name));
   const rootNames = json.scenes[json.scene ?? 0].nodes.map((i) => json.nodes[i].name);
   if (!rootNames.includes(spec.id)) problems.push(`${label} has no root node named "${spec.id}" (roots: ${rootNames.join(', ') || 'none'}).`);
-  const required = spec.lod ? LOD_NODES : isWeapon ? WEAPON_NODES : (PART_NODES[spec.id] ?? ['part']);
+  const required = spec.lod ? LOD_NODES : isWeapon ? WEAPON_NODES : spec.recipe.kind === 'knife' ? ['body'] : (PART_NODES[spec.id] ?? ['part']);
   for (const name of required) {
     if (!names.has(name)) problems.push(`${label} has no node "${name}"; the contract needs it — ${FIX}.`);
   }

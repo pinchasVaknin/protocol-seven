@@ -163,6 +163,22 @@ const L1A1 = {
   license: 'CC-BY-4.0',
   url: 'https://sketchfab.com/3d-models/free-modular-l1a1-slr-d63c3e0d97464bc5b2a58cadf35e52f5',
 };
+const L115A3 = {
+  file: 'l115a3.glb',
+  title: 'L115A3',
+  author: 'Mortavex',
+  authorUrl: 'https://sketchfab.com/Mortavex',
+  license: 'CC-BY-4.0',
+  url: 'https://sketchfab.com/3d-models/l115a3-3b732b97c72440229c17b78e565f965e',
+};
+const MTECH_KNIFE = {
+  file: 'mtech_usa_xtreme_tactical_knife_low-poly.glb',
+  title: 'MTech USA Xtreme Tactical Knife Low-poly',
+  author: 'xivxiy',
+  authorUrl: 'https://sketchfab.com/xivxiy',
+  license: 'SKETCHFAB Standard',
+  url: 'https://sketchfab.com/3d-models/mtech-usa-xtreme-tactical-knife-low-poly-789da4919af740479eb8dc7c4901ae89',
+};
 const DBAL_A2 = {
   file: 'rifle_laser_sight.glb',
   title: 'Rifle Laser Sight',
@@ -691,6 +707,81 @@ export const RECIPES = {
     lod: true,
   },
 
+  /**
+   * KESTREL .338: the L115A3, two meshes — the rifle and its scope — at 195k triangles, four
+   * times life size, with the suppressor modelled as part of the barrel. The suppressor is cut
+   * off (`cuts`: the barrel steps from a 0.13-unit can to a 0.08-unit tube at z −2.05 in the
+   * source's frame, and everything beyond goes) so the SUPPRESSOR attachment has a bare muzzle
+   * to mount on, and the whole is simplified to a sixth before the textures. The magazine and
+   * the bolt are in the rifle's mesh, so both groups are empty: a bolt gun reloads with nothing
+   * moving, as the procedural one did. The scope is the def's and stays.
+   */
+  sniper_kestrel: {
+    kind: 'weapon',
+    source: L115A3,
+    unit: 0.25,
+    forward: 'z-',
+    up: 'y+',
+    simplify: 0.145,
+    cuts: [{ part: { name: 'Cube.001' }, axis: 'z', at: -2.05, keep: 'above' }],
+    parts: {
+      body: [{ name: 'Cube.001' }, { name: 'Scope ' }],
+      magazine: [],
+      charge: [],
+      optic_default: [],
+    },
+    origin: (m) => {
+      const bore = m.tip({ name: 'Cube.001' });
+      const scope = m.bounds({ name: 'Scope ' });
+      // The receiver sits under the scope.
+      return [(scope.min[0] + scope.max[0]) / 2, bore[1], (scope.min[2] + scope.max[2]) / 2];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'Cube.001' });
+      const body = m.bounds({ name: 'Cube.001' });
+      const scope = m.bounds({ name: 'Scope ' });
+      const x = (scope.min[0] + scope.max[0]) / 2;
+      const zScope = (scope.min[2] + scope.max[2]) / 2;
+      const length = body.max[2] - body.min[2];
+      // The forend: the chassis ahead of the scope, two thirds of the way to the muzzle.
+      const zForend = body.max[2] - length * 0.66;
+      return {
+        socket_muzzle: [x, bore[1], bore[2]],
+        socket_rail_top: [x, m.plateau({ name: 'Cube.001' }, 0.55, 0.7), zScope],
+        socket_rail_front: [x, m.top({ name: 'Cube.001' }, 0.6, 0.72), zForend],
+        socket_rail_bottom: [x, m.bottom({ name: 'Cube.001' }, 0.6, 0.72), zForend],
+        // The scope's axis.
+        socket_sight: [x, (scope.min[1] + scope.max[1]) / 2, zScope],
+        // The thumbhole grip hangs behind the receiver; the support hand under the forend.
+        socket_grip: [x, bore[1] - 0.45, zScope + length * 0.17],
+        socket_support: [x, m.bottom({ name: 'Cube.001' }, 0.6, 0.72) - 0.1, zForend],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * The knife: the MTech without its lanyard, life size, the blade already down -Z. The
+   * origin is the handle's centre, where `KnifeMesh` closes the fist; the procedural blade
+   * began at the guard 7 cm ahead of it and this one does too. A knife has no sockets and
+   * nothing that moves, so the file is a root and a `body`.
+   */
+  knife: {
+    kind: 'knife',
+    source: MTECH_KNIFE,
+    unit: 1,
+    forward: 'z-',
+    up: 'y+',
+    textureSide: 512,
+    parts: { body: [{ name: 'kn01_nolace' }] },
+    origin: (m) => {
+      const b = m.bounds({ name: 'kn01_nolace' });
+      // The handle: the rear half.
+      return [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2 + 0.004, b.max[2] - 0.062];
+    },
+    sockets: () => ({}),
+  },
+
   att_suppressor: {
     kind: 'attachment',
     source: M4_KIT,
@@ -915,6 +1006,26 @@ class Source {
     return this.json.nodes[skin.joints[best]]?.name ?? '';
   }
 
+  /**
+   * A cut takes a slice off a part along a world axis — the L115A3's suppressor, modelled as
+   * one mesh with its barrel. The measurements stop seeing the cut-away vertices here; the
+   * triangles go in `applyCuts`, where the index buffer is rewritten.
+   */
+  setCuts(cuts) {
+    this.cuts = new Map();
+    for (const cut of cuts ?? []) {
+      const k = cut.axis === 'x' ? 0 : cut.axis === 'y' ? 1 : 2;
+      for (const i of this.select(cut.part)) this.cuts.set(i, { k, at: cut.at, keep: cut.keep });
+    }
+  }
+
+  /** Whether a world-space vertex of node `i` lies on the cut-away side of its cut. */
+  cutAway(i, v) {
+    const cut = this.cuts?.get(i);
+    if (cut === undefined) return false;
+    return cut.keep === 'above' ? v[cut.k] < cut.at : v[cut.k] > cut.at;
+  }
+
   /** A per-node translation applied before the fix: the spread kit assembled. */
   setMoves(moves) {
     this.moves = new Map();
@@ -985,6 +1096,7 @@ class Source {
       for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
         for (const p of positions(this.glb, prim.attributes.POSITION)) {
           const v = apply(m, p);
+          if (this.cutAway(i, v)) continue;
           for (let k = 0; k < 3; k++) {
             if (v[k] < min[k]) min[k] = v[k];
             if (v[k] > max[k]) max[k] = v[k];
@@ -1014,6 +1126,7 @@ class Source {
       for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
         for (const p of positions(this.glb, prim.attributes.POSITION)) {
           const v = apply(m, p);
+          if (this.cutAway(i, v)) continue;
           const f = ((v[k] - rear) * dir) / span;
           if (f < from || f > to) continue;
           const h = v[this.upK] * this.upSign;
@@ -1040,6 +1153,7 @@ class Source {
       for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
         for (const p of positions(this.glb, prim.attributes.POSITION)) {
           const v = apply(m, p);
+          if (this.cutAway(i, v)) continue;
           const f = ((v[k] - rear) * dir) / span;
           if (f < from || f > to) continue;
           const h = v[this.upK] * this.upSign;
@@ -1074,6 +1188,7 @@ class Source {
       for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
         for (const p of positions(this.glb, prim.attributes.POSITION)) {
           const v = apply(m, p);
+          if (this.cutAway(i, v)) continue;
           const f = ((v[k] - rear) * dir) / span;
           if (f < from || f > to) continue;
           const h = v[this.upK] * this.upSign;
@@ -1116,6 +1231,7 @@ class Source {
       for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
         for (const p of positions(this.glb, prim.attributes.POSITION)) {
           const v = apply(m, p);
+          if (this.cutAway(i, v)) continue;
           if (Math.abs(v[k] - edge) > sliver) continue;
           for (let j = 0; j < 3; j++) sum[j] += v[j];
           n++;
@@ -1141,9 +1257,53 @@ function round(v) {
  * under the root. Everything else in the JSON — meshes, materials, textures, accessors — is
  * left in place for `prune` to sweep.
  */
+/**
+ * Drop every triangle of a cut node whose three corners lie on the cut-away side. The new
+ * index list is appended to the binary chunk as its own buffer view and accessor; the old
+ * accessor is left for `prune`. Vertices are not compacted — the cut-away ones stay in the
+ * position buffer, unreferenced, a tenth of the L115A3's — and `weld` and `simplify` on the
+ * LOD do not mind them.
+ */
+function applyCuts(json, bin, src) {
+  if (src.cuts === undefined || src.cuts.size === 0) return bin;
+  const chunks = [bin];
+  let length = bin.length;
+  for (const [i, cut] of src.cuts) {
+    const node = json.nodes[i];
+    const m = src.placed(i);
+    for (const prim of json.meshes[node.mesh].primitives) {
+      const pos = [...positions(src.glb, prim.attributes.POSITION)].map((p) => apply(m, p));
+      const away = pos.map((v) => (cut.keep === 'above' ? v[cut.k] < cut.at : v[cut.k] > cut.at));
+      const indices = prim.indices !== undefined ? [...jointIndices(src.glb, prim.indices)] : pos.map((_, k) => k);
+      const kept = [];
+      for (let k = 0; k + 2 < indices.length; k += 3) {
+        const a = indices[k], b = indices[k + 1], c = indices[k + 2];
+        if (away[a] && away[b] && away[c]) continue;
+        kept.push(a, b, c);
+      }
+      const data = Buffer.alloc(kept.length * 4);
+      kept.forEach((v, k) => data.writeUInt32LE(v, k * 4));
+      const pad = (4 - (length % 4)) % 4;
+      if (pad > 0) {
+        chunks.push(Buffer.alloc(pad));
+        length += pad;
+      }
+      json.bufferViews.push({ buffer: 0, byteOffset: length, byteLength: data.length, target: 34963 });
+      chunks.push(data);
+      length += data.length;
+      json.accessors.push({ bufferView: json.bufferViews.length - 1, componentType: 5125, count: kept.length, type: 'SCALAR' });
+      prim.indices = json.accessors.length - 1;
+    }
+  }
+  const out = Buffer.concat(chunks);
+  json.buffers[0].byteLength = out.length;
+  return out;
+}
+
 function rewrite(id, recipe, src) {
   const forward = recipe.forward;
   src.setMoves(recipe.moves);
+  src.setCuts(recipe.cuts);
   const measure = {
     bounds: (sel) => src.bounds(sel),
     tip: (sel) => src.tip(sel, forward),
@@ -1206,6 +1366,7 @@ function rewrite(id, recipe, src) {
   }
 
   const json = structuredClone(src.json);
+  const bin = applyCuts(json, src.glb.bin, src);
   for (const [meshIndex, materialName] of materialSwaps) {
     const target = json.materials.findIndex((m) => m.name === materialName);
     if (target < 0) throw new Error(`${id}: useMaterial "${materialName}" names no material in the source`);
@@ -1225,7 +1386,7 @@ function rewrite(id, recipe, src) {
     attribution: { title: recipe.source.title, author: recipe.source.author, authorUrl: recipe.source.authorUrl, license: recipe.source.license, url: recipe.source.url },
     protocolSeven: { recipe: id, kind: recipe.kind, source: recipe.source.file, sockets: placed },
   };
-  return { json, sockets: placed, kept, origin };
+  return { json, bin, sockets: placed, kept, origin };
 }
 
 /**
@@ -1309,14 +1470,23 @@ export function buildOne(id, work) {
   const glb = readGlb(sourceFile);
   verifyAttribution(id, recipe.source, glb.json.asset?.extras);
   const src = new Source(glb, recipe.unit, recipe.up);
-  const { json, sockets, kept, origin } = rewrite(id, recipe, src);
+  const { json, bin, sockets, kept, origin } = rewrite(id, recipe, src);
 
   const staged = path.join(work, `${id}.staged.glb`);
-  writeGlb(staged, json, glb.bin);
+  writeGlb(staged, json, bin);
   const pruned = path.join(work, `${id}.pruned.glb`);
   run(['prune', staged, pruned, '--keep-leaves', 'true']);
-  const deduped = path.join(work, `${id}.dedup.glb`);
-  run(['dedup', pruned, deduped]);
+  const dedupedRaw = path.join(work, `${id}.dedup.glb`);
+  run(['dedup', pruned, dedupedRaw]);
+  // A source over the viewmodel's budget is simplified here, before the textures: the L115A3
+  // is 195k triangles, most of them on its scope.
+  let deduped = dedupedRaw;
+  if (recipe.simplify !== undefined) {
+    const welded = path.join(work, `${id}.welded0.glb`);
+    run(['weld', dedupedRaw, welded]);
+    deduped = path.join(work, `${id}.simplified0.glb`);
+    run(['simplify', welded, deduped, '--ratio', String(recipe.simplify), '--error', String(LOD_ERROR), '--lock-border', 'false']);
+  }
   const resized = path.join(work, `${id}.resized.glb`);
   const side = recipe.textureSide ?? MAX_SIDE;
   run(['resize', deduped, resized, '--width', String(side), '--height', String(side)]);

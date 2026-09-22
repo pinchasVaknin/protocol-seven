@@ -67,9 +67,14 @@ node scripts/weapon-build.mjs ar_carbine  # one
 
 A recipe names the source, the unit and the source's forward and up axes, the nodes to keep
 under each group, and two functions — `origin` and `sockets` — that answer in source space
-from measurements the script takes on the mesh (`bounds`, `tip`, `top`). Numbers are measured
-rather than typed: the bore is the mean of the barrel's vertices at its tip, the rail is the
-top of the receiver where no sight stands. The build refuses a recipe whose attribution
+from measurements the script takes on the mesh (`bounds`, `tip`, `top`, `bottom`,
+`plateau`). Numbers are measured rather than typed: the bore is the mean of the barrel's
+vertices at its tip, the rail is the plateau of the receiver's top where no sight stands. A
+recipe can also `move` nodes before the fix (a kit laid out flat), swap a node's material,
+choose nodes by name, material, skin joint, regex or where they lie, `cut` a slice off a node
+along an axis (the L115A3's modelled suppressor), `simplify` a source over the budget, and
+hold its textures under a lower ceiling. `node scripts/weapon-build.mjs --list <file>` prints
+a source's tree with each node's material, joint and bounds, which is where a recipe starts. The build refuses a recipe whose attribution
 record disagrees with the source file's own `asset.extras` (Sketchfab writes the title,
 author, licence and URL into every download), and rewrites `CREDITS.md` from the records.
 
@@ -97,17 +102,39 @@ page is not the uploader's to give.
 - **A template is never disposed by an instance.** `dispose` on a model from a file releases
   the gloves' geometry and clears the tree; the service releases the templates when the
   application is torn down.
+- **The bodies** (`BotRenderer` in the match, `CharacterStage` in the editor and the debrief)
+  ask the service for `<id>.lod1.glb` the first time a body needs a weapon, hold the
+  primitives until it lands, and swap once: `HeldWeaponAsset.template` is the LOD's root,
+  cloned per body, its `socket_grip` and `socket_support` the two anchors. `preloadLod` is
+  one fetch per weapon however many bodies carry it.
+- **The camo** on a file is a material variant, one per (material, camo), kept for the
+  process like the procedural surfaces: `paintCamo(root, camo)` swaps every opaque
+  `MeshStandardMaterial` under the root for its `camoMaterial`. The viewmodel is painted
+  before the gloves and the pack parts are added, so neither is; the stage's LOD is painted
+  the same way. A transparent material — a file's own optic glass — is never painted.
 
 ## Where it stands
 
-| weapon | file |
-|---|---|
-| `ar_carbine` | `ar_carbine.glb`, from the M4 kit |
-| every other weapon | the primitives, until its stage-3 recipe lands |
+| weapon | file | source |
+|---|---|---|
+| `ar_carbine` M4 CARBINE | `ar_carbine.glb` | the M4 kit |
+| `ar_vulcan` VULCAN 74 | `ar_vulcan.glb` | the AK-74 pack |
+| `ar_halcyon` HALCYON B5 | `ar_halcyon.glb` | the Tavor |
+| `ar_longbow` LONGBOW MK3 | `ar_longbow.glb` | the L1A1 |
+| `smg_wasp` WASP 9 | `smg_wasp.glb` | the MP5 kit |
+| `smg_meridian` MERIDIAN P40 | `smg_meridian.glb` | the P90 |
+| `shotgun_breacher` BREACHER 12 | `shotgun_breacher.glb` | the SPAS-12 |
+| `sniper_vantage` VANTAGE SR | `sniper_vantage.glb` | the M150 |
+| `sniper_kestrel` KESTREL .338 | `sniper_kestrel.glb` | the L115A3, its suppressor cut off |
+| `pistol_talon` TALON 9 | `pistol_talon.glb` | the Beretta M9 |
+| the knife | `knife.glb` | the MTech |
+| `lmg_bastion`, `lmg_monolith` | the primitives | no legitimate source found; every LMG offered was a game rip |
 
-The attachment pack mounts on any weapon with a file: the optic on `socket_rail_top` (and the
-sight line moves to its own `socket_sight`), the suppressor on `socket_muzzle` (and the flash
-moves to its own), the grip on `socket_rail_bottom`, the laser on `socket_rail_front`, and the
-extended magazine as the `magazine` group stretched along the well. The camo is not applied to
-a file yet (decision 4: an overlay on the albedo, stage 3), and the bodies still carry
-`buildHeldWeapon`'s primitives (stage 3).
+Each weapon has a `<id>.lod1.glb` beside it for the bodies. The attachment pack mounts on any
+weapon with a file: the optic on `socket_rail_top` (and the sight line moves to its own
+`socket_sight`) unless the weapon's spec says `optic: 'scope'`, the suppressor on
+`socket_muzzle` (and the flash moves to its own), the grip on `socket_rail_bottom`, the laser
+on `socket_rail_front`, and the extended magazine as the `magazine` group stretched along the
+well. The camo is an overlay on the file's own materials (`camoMaterial` in `WeaponMesh`:
+the pattern multiplied into the albedo, the file's shading through it); the bodies carry the
+LOD, bare.

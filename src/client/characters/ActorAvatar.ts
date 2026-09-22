@@ -27,6 +27,12 @@ export interface HeldWeaponAsset {
   readonly weaponId: string;
   readonly geometry: THREE.BufferGeometry;
   readonly material: THREE.Material;
+  /**
+   * The weapon's own file for the bodies (M19, stage 3), cloned in place of the geometry and
+   * the material when present: a rifle from its LOD wears its own materials, and the
+   * primitives' single gunmetal is the fallback it stands beside.
+   */
+  readonly template: THREE.Object3D | null;
   /** The trigger grip. This is the point that sits at the hand socket. */
   readonly gripAnchor: THREE.Vector3;
   /** The support palm. This is where the other hand is pulled to. */

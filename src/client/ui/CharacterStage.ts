@@ -5,7 +5,8 @@ import type { CharacterAvatarProvider } from '../characters/CharacterAvatarProvi
 import { characterDefinition, type CharacterId } from '../characters/CharacterCatalog';
 import type { CharacterAssetService } from '../characters/CharacterAssetService';
 import type { CamoId } from '../../shared/meta/Camos';
-import { buildHeldWeapon, heldWeaponMaterial } from '../weapons/WeaponMesh';
+import { buildHeldWeapon, heldWeaponMaterial, paintCamo } from '../weapons/WeaponMesh';
+import type { WeaponAssetService } from '../weapons/WeaponAssetService';
 import { PODIUM_STEPS, PODIUM_X } from './Lineup';
 
 /**
@@ -54,6 +55,8 @@ import { PODIUM_STEPS, PODIUM_X } from './Lineup';
 export interface CharacterStageDeps {
   readonly characterAssets: CharacterAssetService;
   readonly anisotropy: () => number;
+  /** The weapon files (M19, stage 3); null and the operator holds the primitives. */
+  readonly weaponAssets: WeaponAssetService | null;
 }
 
 /** What one stage differs from another in. The editor's is the default; the debrief's is `PODIUM_STAGE`. */
@@ -460,12 +463,31 @@ export class CharacterStage {
     const existing = this.weapons.get(key);
     if (existing !== undefined) return existing;
     const built = buildHeldWeapon(weaponId);
+    // The weapon's file for the bodies (M19, stage 3), in the finish the class chose — the
+    // camo overlaid on the file's own materials — and the primitives until it lands, the
+    // cache entry dropped on arrival so the next refresh swaps it in.
+    const assets = this.deps.weaponAssets;
+    const lod = assets?.lod(weaponId) ?? null;
+    if (lod === null && assets !== null && assets.statusFor(weaponId) !== 'none') {
+      void assets.preloadLod(weaponId).then(
+        () => {
+          if (this.weapons.get(key) === asset) this.weapons.delete(key);
+        },
+        () => undefined,
+      );
+    }
+    let template: THREE.Object3D | null = null;
+    if (lod !== null) {
+      template = lod.scene.clone(true);
+      if (camo !== null) paintCamo(template, camo, this.deps.anisotropy());
+    }
     const asset: HeldWeaponAsset = {
       weaponId,
       geometry: built.geometry,
       material: heldWeaponMaterial(this.deps.anisotropy(), camo),
-      gripAnchor: built.gripAnchor,
-      supportAnchor: built.supportAnchor,
+      template,
+      gripAnchor: lod?.gripAnchor ?? built.gripAnchor,
+      supportAnchor: lod?.supportAnchor ?? built.supportAnchor,
     };
     this.weapons.set(key, asset);
     return asset;

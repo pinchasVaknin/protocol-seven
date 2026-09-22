@@ -1590,6 +1590,7 @@ export class Game {
     for (const weaponId of [slot.primary.weaponId, slot.secondary.weaponId]) {
       void this.weaponAssets.preload(weaponId).catch(() => undefined);
     }
+    void this.weaponAssets.preloadKnife().catch(() => undefined);
   }
 
   // -- world ---------------------------------------------------------------

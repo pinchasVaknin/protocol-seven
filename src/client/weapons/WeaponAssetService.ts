@@ -5,6 +5,8 @@ import {
   ATTACHMENT_PART_IDS,
   ATTACHMENT_PART_OWN_SOCKETS,
   hasWeaponAsset,
+  KNIFE_ASSET_ID,
+  weaponLodUrl,
   weaponAssetUrl,
   WEAPON_ASSET_VERSION,
   WEAPON_GROUP_NODES,
@@ -42,6 +44,14 @@ export interface AttachmentPartTemplate {
   readonly sockets: Readonly<Partial<Record<'socket_sight' | 'socket_muzzle', THREE.Vector3>>>;
 }
 
+/** A weapon's file for the bodies (stage 3): the LOD's root and the two hand points it carries. */
+export interface WeaponLodTemplate {
+  readonly weaponId: string;
+  readonly scene: THREE.Object3D;
+  readonly gripAnchor: THREE.Vector3;
+  readonly supportAnchor: THREE.Vector3;
+}
+
 export type WeaponAssetStatus = 'idle' | 'loading' | 'ready' | 'error' | 'none';
 
 /**
@@ -69,6 +79,10 @@ export class WeaponAssetService {
   private readonly templates = new Map<string, WeaponAssetTemplate>();
   private readonly parts = new Map<AttachmentPartId, AttachmentPartTemplate>();
   private packTask: Promise<void> | null = null;
+  private knifeScene: THREE.Object3D | null = null;
+  private knifeTask: Promise<void> | null = null;
+  private readonly lods = new Map<string, WeaponLodTemplate>();
+  private readonly lodTasks = new Map<string, Promise<void>>();
   private readonly loading = new Map<string, Promise<void>>();
   private readonly statuses = new Map<string, WeaponAssetStatus>();
   private disposed = false;
@@ -80,6 +94,83 @@ export class WeaponAssetService {
   template(weaponId: string): WeaponAssetTemplate | null {
     if (this.disposed || !this.packReady()) return null;
     return this.templates.get(weaponId) ?? null;
+  }
+
+  /** The bodies' template for a weapon, or null: no file, or not arrived, and the primitives stand in. */
+  lod(weaponId: string): WeaponLodTemplate | null {
+    return this.disposed ? null : (this.lods.get(weaponId) ?? null);
+  }
+
+  /**
+   * Fetch a weapon's LOD. Ten bodies carrying four weapons ask for four files, each once;
+   * a weapon without a file resolves at once and the bodies keep the primitives.
+   */
+  preloadLod(weaponId: string): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error('Weapon asset service has been disposed.'));
+    if (!hasWeaponAsset(weaponId) || this.lods.has(weaponId)) return Promise.resolve();
+    const existing = this.lodTasks.get(weaponId);
+    if (existing !== undefined) return existing;
+    const task = this.loader.loadAsync(weaponLodUrl(weaponId)).then((gltf) => {
+      if (this.disposed) {
+        disposeTemplate(gltf.scene);
+        throw new Error('Weapon asset service was disposed while a LOD was loading.');
+      }
+      const root = gltf.scene.getObjectByName(weaponId);
+      const grip = root?.getObjectByName('socket_grip');
+      const support = root?.getObjectByName('socket_support');
+      if (root === undefined || grip === undefined || support === undefined) {
+        disposeTemplate(gltf.scene);
+        throw new Error(`LOD file "${weaponId}" has no root with socket_grip and socket_support.`);
+      }
+      this.lods.set(weaponId, { weaponId, scene: root, gripAnchor: grip.position.clone(), supportAnchor: support.position.clone() });
+    });
+    this.lodTasks.set(weaponId, task);
+    void task.then(
+      () => {
+        if (this.lodTasks.get(weaponId) === task) this.lodTasks.delete(weaponId);
+      },
+      (error: unknown) => {
+        if (this.lodTasks.get(weaponId) === task) this.lodTasks.delete(weaponId);
+        log.warn(`GLB LOD unavailable for "${weaponId}"; the bodies keep the primitives. ${errorMessage(error)}`);
+      },
+    );
+    return task;
+  }
+
+  /** The knife's template (stage 3), or null while it has not arrived: `KnifeMesh` builds the boxes. */
+  knife(): THREE.Object3D | null {
+    return this.disposed ? null : this.knifeScene;
+  }
+
+  /** Fetch the knife's file; it rides with the weapons' warm-up and fails to the boxes alone. */
+  preloadKnife(): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error('Weapon asset service has been disposed.'));
+    if (this.knifeScene !== null) return Promise.resolve();
+    if (this.knifeTask !== null) return this.knifeTask;
+    const task = this.loader.loadAsync(weaponAssetUrl(KNIFE_ASSET_ID)).then((gltf) => {
+      if (this.disposed) {
+        disposeTemplate(gltf.scene);
+        throw new Error('Weapon asset service was disposed while the knife was loading.');
+      }
+      const root = gltf.scene.getObjectByName(KNIFE_ASSET_ID);
+      if (root === undefined || root.getObjectByName('body') === undefined) {
+        disposeTemplate(gltf.scene);
+        throw new Error('Knife file has no root named "knife" with a "body" group.');
+      }
+      this.knifeScene = root;
+      log.info(`GLB knife is ready (${WEAPON_ASSET_VERSION}).`);
+    });
+    this.knifeTask = task;
+    void task.then(
+      () => {
+        if (this.knifeTask === task) this.knifeTask = null;
+      },
+      (error: unknown) => {
+        if (this.knifeTask === task) this.knifeTask = null;
+        log.warn(`GLB knife unavailable; the procedural blade stands in. ${errorMessage(error)}`);
+      },
+    );
+    return task;
   }
 
   /** A pack part's template. Never null once `template` has answered for any weapon. */
@@ -185,6 +276,11 @@ export class WeaponAssetService {
     this.disposed = true;
     for (const template of this.templates.values()) disposeTemplate(template.scene);
     for (const part of this.parts.values()) disposeTemplate(part.scene);
+    if (this.knifeScene !== null) disposeTemplate(this.knifeScene);
+    this.knifeScene = null;
+    for (const lod of this.lods.values()) disposeTemplate(lod.scene);
+    this.lods.clear();
+    this.lodTasks.clear();
     this.templates.clear();
     this.parts.clear();
     this.loading.clear();

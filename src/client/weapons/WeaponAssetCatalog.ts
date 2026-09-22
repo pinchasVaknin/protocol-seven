@@ -27,6 +27,7 @@ export const WEAPON_ASSET_IDS: ReadonlySet<string> = new Set([
   'smg_wasp',
   'smg_meridian',
   'shotgun_breacher',
+  'sniper_kestrel',
   'sniper_vantage',
   'pistol_talon',
 ]);
@@ -34,6 +35,14 @@ export const WEAPON_ASSET_IDS: ReadonlySet<string> = new Set([
 export function hasWeaponAsset(weaponId: string): boolean {
   return WEAPON_ASSET_IDS.has(weaponId);
 }
+
+/** The bodies' file for a weapon (stage 3): the same weapon joined per material under 10k triangles. */
+export function weaponLodUrl(weaponId: string): string {
+  return `${WEAPON_ROOT}/${weaponId}.lod1.glb?v=${encodeURIComponent(WEAPON_ASSET_VERSION)}`;
+}
+
+/** The knife's file (stage 3): a root and a `body`, no sockets, loaded beside the weapons. */
+export const KNIFE_ASSET_ID = 'knife';
 
 export function weaponAssetUrl(weaponId: string): string {
   return `${WEAPON_ROOT}/${weaponId}.glb?v=${encodeURIComponent(WEAPON_ASSET_VERSION)}`;

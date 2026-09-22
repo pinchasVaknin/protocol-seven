@@ -12,14 +12,15 @@ The whole build is TypeScript, Three.js and Vite.
 See [the character asset pipeline](docs/CHARACTER-ASSETS.md) for the GLB export contract,
 runtime ownership model, and the current source-asset limitations.
 
-**Weapon assets (M19, in progress).** `public/models/weapons/` holds GLB weapons and an
-attachment pack built by `scripts/weapon-build.mjs` from Sketchfab sources kept outside the
-repository (`../GLB_files/weapons/`); one recipe per file, the sockets measured from the mesh,
-`npm run check:weapons` holding every file to its budget and its attribution
-(`public/models/weapons/CREDITS.md`). The M4 CARBINE is drawn from its file in the match and
-in the loadout editor, with its attachments mounted on the file's sockets; every other weapon
-is still built in code, which is also every weapon's fallback. See [the weapon asset pipeline](docs/WEAPON-ASSETS.md) for the file's contract, the
-build and the runtime ownership, and PLAN.md's Milestone 19 for the stages still to come.
+**Weapon assets (M19).** `public/models/weapons/` holds GLB weapons, their bodies' LODs, the
+knife and an attachment pack built by `scripts/weapon-build.mjs` from Sketchfab sources kept
+outside the repository (`../GLB_files/weapons/`); one recipe per file, the sockets measured
+from the mesh, `npm run check:weapons` holding every file to its budget and its attribution
+(`public/models/weapons/CREDITS.md`). Ten of the twelve weapons and the knife are drawn from
+their files in the match, on the bodies and in the loadout editor, with the attachments
+mounted on the file's sockets and the camo overlaid on the file's own materials; the two LMGs
+are still built in code, which is also every weapon's fallback. See [the weapon asset pipeline](docs/WEAPON-ASSETS.md) for the file's contract, the
+build and the runtime ownership.
 
 ---
 

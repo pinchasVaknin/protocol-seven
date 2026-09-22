@@ -16,8 +16,10 @@ runtime ownership model, and the current source-asset limitations.
 attachment pack built by `scripts/weapon-build.mjs` from Sketchfab sources kept outside the
 repository (`../GLB_files/weapons/`); one recipe per file, the sockets measured from the mesh,
 `npm run check:weapons` holding every file to its budget and its attribution
-(`public/models/weapons/CREDITS.md`). The runtime does not read them yet — the viewmodels are
-still built in code — and PLAN.md's Milestone 19 is the record of the stages that will.
+(`public/models/weapons/CREDITS.md`). The M4 CARBINE is drawn from its file in the match and
+in the loadout editor; every other weapon is still built in code, which is also every weapon's
+fallback. See [the weapon asset pipeline](docs/WEAPON-ASSETS.md) for the file's contract, the
+build and the runtime ownership, and PLAN.md's Milestone 19 for the stages still to come.
 
 ---
 

@@ -636,6 +636,7 @@ then `npx @gltf-transform/cli@4.5.0` pinned, as `skin-compress.mjs` runs it: `pr
   arsenal); `buildWeaponModel` gains a GLB branch that returns the same `WeaponModel` from the
   file's nodes, and falls back to the procedural builder when the file is missing or fails.
   `sightHeight` comes from `socket_sight`. Proved on the M4 and nothing else (decision 5).
+  **Built.**
 - **Stage 2 — the attachments, visible.** One function, `attachVisuals(model, attachmentIds)`:
   the optic hides `optic_default`, mounts on `socket_rail_top` and **moves the sight line** —
   `ViewmodelAnim` cancels `sightHeight`, and under an optic that number is the optic's; the
@@ -685,9 +686,50 @@ then `npx @gltf-transform/cli@4.5.0` pinned, as `skin-compress.mjs` runs it: `pr
 inspected in a three.js viewer with an axes helper: metres, the barrel down -Z, +Y up, every
 socket where the recipe says. Nothing at runtime reads the files yet.
 
+## What was built — stage 1 (2026-09-22)
+
+- **`WeaponAssetCatalog.ts`**: the list of weapon ids with a file (`ar_carbine`), the
+  versioned URL, and the contract's node names restated where the loader reads them.
+  `check-weapons` rule 8 holds the list to the recipes.
+- **`WeaponAssetService.ts`**: `CharacterAssetService`'s shape — one fetch and parse per
+  file for the application's life, a promise cache, a failed request evicted for the retry,
+  and a synchronous `template()` for the callers that build on a frame. The contract is
+  validated once at load; the socket positions are read once into the template.
+- **`buildWeaponModel`** gains the branch: with a template it clones the file
+  (`buildFromTemplate`), returning the same `WeaponModel` — `magazine` and `charge` are the
+  file's groups, `muzzle` is `socket_muzzle`, `sightHeight` is `socket_sight`'s Y. Without
+  one it builds the primitives as before, and `WeaponModel.source` says which. The three
+  node fields widened from `Group` to `Object3D`; nothing read the flag.
+- **The gloves** follow the file: `handBoxesAt` carries the procedural hand and forearm pairs
+  to the file's `socket_grip` and `socket_support`, which the M4 recipe now measures (the
+  grip two fifths down the pistol grip, the palm under the handguard). The M4 kit's receiver
+  stands 16.6 cm tall where `AR_BASE` is 8.2, so the spec's anchors would have put the
+  trigger hand inside it.
+- **`ClientMatch`** builds both slots with the service and upgrades a slot in place when a
+  late file lands (`upgradeWhenLoaded`: mesh only, the weapon and its ammunition untouched,
+  the slot checked before the swap); `equip` goes through the same path. **`WeaponPreview`**
+  does the same by forgetting its key and showing again. **`Game`** owns the service and
+  warms the equipped class's two weapons on every screen outside a match.
+- **A found bug, fixed on the way**: `Fx.attachMuzzle` built the flash once and returned on
+  every later call, so after a swap or an `equip` the flash stayed on the first weapon's
+  muzzle — invisible under its hidden root. It re-parents now, and the flash follows the
+  active muzzle through a swap and through the upgrade.
+- **`docs/WEAPON-ASSETS.md`**: the pipeline's handover beside `CHARACTER-ASSETS.md`.
+
+### Verified
+
+`npm run check` green. In the browser pane: the template logged ready at the splash (the
+warm), the loadout editor's stage drew the M4 from its file and the VULCAN from the
+primitives, a solo match on Foundry held the M4 from its file (`model.source === 'glb'`,
+`sightHeight` 0.0677) — hip, ADS with the front post inside the rear aperture on the screen
+centre, a reload dropping the `magazine` group (y −0.192 mid-reload), the flash mesh
+parented to `socket_muzzle` — the swap to the procedural pistol and back with the flash
+following, and the upgrade path driven by hand (`template()` answering null once: the slot
+went primitives → file with the animation's model and the flash current). No console errors.
+
 ## Open
 
-- **Stage 1**: the loading path, on the M4 alone.
+- **Stage 2**: the attachments, visible.
 - The M4's geometry is 1.5 MB of its 2.21 — split normals at every hard edge. `quantize` would
   roughly halve it; left for when the budget bites rather than done on a guess.
 - The optic's glass carries `KHR_materials_transmission`; three loads it as a

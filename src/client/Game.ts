@@ -87,6 +87,7 @@ import {
 } from '../shared/meta/XpRules';
 import { MatchWorld } from './MatchWorld';
 import { CharacterAssetService } from './characters/CharacterAssetService';
+import { WeaponAssetService } from './weapons/WeaponAssetService';
 import {
   characterDefinition,
   DEFAULT_CHARACTER_ID,
@@ -253,6 +254,8 @@ export class Game {
   readonly backdrop: MenuBackdrop;
   /** Parsed GLB templates survive MatchWorld teardown and are shared by every mode. */
   private readonly characterAssets = new CharacterAssetService();
+  /** The weapons' templates (M19), on the same terms: the application's, never a match's. */
+  private readonly weaponAssets = new WeaponAssetService();
   /** Worlds built this session. Moves the skin deck between matches — see `buildWorld`. */
   private worldsBuilt = 0;
   /**
@@ -625,6 +628,7 @@ export class Game {
       unrestricted: () => findMode(this.selection.modeId).unrestricted,
       anisotropy: () => this.textures.anisotropy,
       characterAssets: this.characterAssets,
+      weaponAssets: this.weaponAssets,
     });
 
     this.input = new Input({
@@ -1566,7 +1570,26 @@ export class Game {
   private enterState(id: GameStateId): void {
     this.state = id;
     this.input.setBindingsActive(id === 'MATCH');
+    if (id !== 'MATCH') this.warmWeaponAssets();
     this.states.get(id)?.enter?.(id);
+  }
+
+  /**
+   * Fetch the equipped class's weapon files while a screen is up (M19, stage 1).
+   *
+   * The same reasoning as the default skin warmed at boot: the templates are the
+   * application's, a match should start with them ready, and the menu is where there is time.
+   * Only the two equipped weapons — never the arsenal — and `preload` is a no-op for a weapon
+   * that has no file or already has its template, so this is cheap to call on every screen
+   * the player passes through, which is how a class edited in the loadout editor is warm by
+   * the time they press Play. A failure is logged by the service and the match falls back to
+   * the primitives; nothing here waits on it.
+   */
+  private warmWeaponAssets(): void {
+    const slot = this.profile.equippedLoadout();
+    for (const weaponId of [slot.primary.weaponId, slot.secondary.weaponId]) {
+      void this.weaponAssets.preload(weaponId).catch(() => undefined);
+    }
   }
 
   // -- world ---------------------------------------------------------------
@@ -1643,6 +1666,7 @@ export class Game {
       bus: this.bus,
       scene: this.scene,
       renderer: this.renderer,
+      weaponAssets: this.weaponAssets,
       textures: this.textures,
       characterAvatarProvider: (actor) =>
         // The body the player declared (M16, B6), or the deal for one who did not — the

@@ -430,6 +430,35 @@ export function handBoxes(spec: WeaponModelSpec): BoxPart[] {
   return out;
 }
 
+/** A point in weapon-local metres. */
+export interface Anchor {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
+/**
+ * The same gloves on a weapon whose grip is somewhere else (M19, stage 1).
+ *
+ * A GLB weapon carries its own hand sockets, measured from its mesh, and its receiver is not
+ * the spec's box: the M4 kit's upper and lower stand 16.6 cm tall where `AR_BASE` is 8.2, so
+ * the spec's trigger hand lands inside the receiver. The gloves are still built from the spec
+ * — the forearm's length and angle are what make them read as arms — and then each pair is
+ * carried to the socket by the difference between the socket and the anchor the pair was
+ * built on. `handBoxes` lists the trigger hand and its forearm first, the support pair second;
+ * this relies on that order rather than on a flag per box.
+ */
+export function handBoxesAt(spec: WeaponModelSpec, grip: Anchor, support: Anchor): BoxPart[] {
+  const boxes = handBoxes(spec);
+  const trigger = triggerHandAnchor(spec);
+  const palm = supportHandAnchor(spec);
+  return boxes.map((box, index) => {
+    const from = index < 2 ? trigger : palm;
+    const to = index < 2 ? grip : support;
+    return { ...box, x: box.x + (to.x - from.x), y: box.y + (to.y - from.y), z: box.z + (to.z - from.z) };
+  });
+}
+
 export function bodyTubes(spec: WeaponModelSpec): TubePart[] {
   const out: TubePart[] = [];
   const by = barrelY(spec);

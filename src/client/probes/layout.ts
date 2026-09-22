@@ -353,6 +353,8 @@ const loadout = new LoadoutEditor({
   unrestricted: () => false,
   anisotropy: () => 1,
   characterAssets,
+  // The same reason as the bodies: a rifle that arrived would change nothing the probe measures.
+  weaponAssets: null,
   serverConfigured: () => true,
   onDisplayName: noop,
 });

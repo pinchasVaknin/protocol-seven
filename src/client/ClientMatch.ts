@@ -87,6 +87,7 @@ import { WeaponAudio } from './weapons/WeaponAudio';
 import { Melee } from '../shared/weapons/Melee';
 import { WEAPON_DEFS, type WeaponDef } from '../shared/weapons/WeaponDefs';
 import { buildWeaponModel, type WeaponModel } from './weapons/WeaponMesh';
+import type { WeaponAssetService } from './weapons/WeaponAssetService';
 import { buildKnifeModel, type KnifeModel } from './weapons/KnifeMesh';
 import { WeaponSystem, type WeaponSnapshot } from '../shared/weapons/WeaponSystem';
 
@@ -117,6 +118,11 @@ export interface MatchDeps {
   readonly scene: THREE.Scene;
   /** Resolves Match-scoped factory handles over Game's long-lived parsed character assets. */
   readonly characterAvatarProvider: CharacterAvatarProviderResolver;
+  /**
+   * Game's long-lived weapon templates (M19). Null where a match has no use for a file — the
+   * harnesses — and every weapon is then the primitives, as it was before M19.
+   */
+  readonly weaponAssets: WeaponAssetService | null;
   readonly viewmodel: ViewmodelLayer;
   readonly cameraRig: CameraRig;
   readonly cameraConfig: CameraConfig;
@@ -646,8 +652,8 @@ export class Match {
     this.slotCamos[0] = deps.loadout.primaryCamo;
     this.slotCamos[1] = deps.loadout.secondaryCamo;
     this.models = [
-      buildWeaponModel(deps.weaponDef.id, deps.anisotropy, deps.loadout.primaryCamo),
-      buildWeaponModel(deps.secondaryDef.id, deps.anisotropy, deps.loadout.secondaryCamo),
+      buildWeaponModel(deps.weaponDef.id, deps.anisotropy, deps.loadout.primaryCamo, this.modelOptions()),
+      buildWeaponModel(deps.secondaryDef.id, deps.anisotropy, deps.loadout.secondaryCamo, this.modelOptions()),
     ];
     for (const model of this.models) {
       deps.viewmodel.add(model.root);
@@ -657,6 +663,10 @@ export class Match {
     this.model.root.visible = true;
     this.fx.attachMuzzle(this.model.muzzle);
     this.anim = new ViewmodelAnim(this.model);
+    // A slot whose file has not arrived starts on the primitives and upgrades in place when it
+    // does (M19). `Game` warms the equipped class while the menu is up, so this is usually a
+    // no-op; when it is not, the match starts rather than waiting on a download.
+    this.models.forEach((_, slot) => this.upgradeWhenLoaded(slot));
 
     /**
      * The knife (round 2). One static model, built with the weapons and hidden until it swings.
@@ -1419,13 +1429,50 @@ export class Match {
     // return a gold rifle to grey.
     const nextCamo = camo === undefined ? (this.slotCamos[slotIndex] ?? null) : camo;
     this.slotCamos[slotIndex] = nextCamo;
-    const model = buildWeaponModel(def.id, this.deps.anisotropy, nextCamo);
+    const model = buildWeaponModel(def.id, this.deps.anisotropy, nextCamo, this.modelOptions());
     this.models[slotIndex] = model;
     this.deps.viewmodel.add(model.root);
     model.root.visible = wasVisible;
 
     this.weapons.equip(slotIndex, def);
     if (wasVisible) this.showSlot(slotIndex);
+    this.upgradeWhenLoaded(slotIndex);
+  }
+
+  private modelOptions(): { hands: true; assets: WeaponAssetService | null } {
+    return { hands: true, assets: this.deps.weaponAssets };
+  }
+
+  /**
+   * Swap a slot's primitives for its file once the file lands (M19, stage 1).
+   *
+   * Only the mesh changes: the weapon object, its ammunition and its state are untouched,
+   * which is what separates this from `equip`. The checks before the rebuild are the ones a
+   * late promise needs — the match may have ended, the slot may hold a different weapon by
+   * now, or a rebuild may already have happened — and each is answered by looking at the slot
+   * rather than by a flag kept in step with it.
+   */
+  private upgradeWhenLoaded(slotIndex: number): void {
+    const assets = this.deps.weaponAssets;
+    const model = this.models[slotIndex];
+    if (assets === null || model === undefined || model.source === 'glb') return;
+    if (assets.statusFor(model.weaponId) === 'none') return;
+    const weaponId = model.weaponId;
+    void assets.preload(weaponId).then(
+      () => {
+        const current = this.models[slotIndex];
+        if (current === undefined || current !== model || current.weaponId !== weaponId) return;
+        const wasVisible = current.root.visible;
+        this.deps.viewmodel.remove(current.root);
+        current.dispose();
+        const next = buildWeaponModel(weaponId, this.deps.anisotropy, this.slotCamos[slotIndex] ?? null, this.modelOptions());
+        this.models[slotIndex] = next;
+        this.deps.viewmodel.add(next.root);
+        next.root.visible = wasVisible;
+        if (wasVisible) this.showSlot(slotIndex);
+      },
+      () => undefined,
+    );
   }
 
   /**

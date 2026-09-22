@@ -20,6 +20,7 @@ import { ProfilePanel } from './ProfilePanel';
 import { makeScreenFooter, makeScreenHeader, type ScreenPlace } from './ScreenChrome';
 import { ICON_VIEWBOX, iconFor, makeIconSvg } from './WeaponIcons';
 import { WeaponPreview } from './WeaponPreview';
+import type { WeaponAssetService } from '../weapons/WeaponAssetService';
 
 /**
  * Create-a-Class (brief S6.3; rebuilt on the design frame by M15, Phase B): the `LOADOUT`
@@ -113,6 +114,8 @@ export interface LoadoutEditorDeps {
   readonly anisotropy: () => number;
   /** The skins, for the stage. The same service the match draws bodies from. */
   readonly characterAssets: CharacterAssetService;
+  /** The weapon templates the preview draws from (M19); null where no file should be fetched. */
+  readonly weaponAssets: WeaponAssetService | null;
   /** Whether a server is configured — the card's dot (R2.1). */
   readonly serverConfigured: () => boolean;
   /** The callsign's writer, for the profile panel's field (R2.2). */
@@ -271,6 +274,7 @@ export class LoadoutEditor {
     this.deps = deps;
     this.preview = new WeaponPreview({
       anisotropy: deps.anisotropy,
+      weaponAssets: deps.weaponAssets,
       width: STAGE_PREVIEW_WIDTH,
       height: STAGE_PREVIEW_HEIGHT,
       className: 'lo-preview--stage',

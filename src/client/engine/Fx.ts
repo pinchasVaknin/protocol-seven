@@ -161,7 +161,13 @@ export class Fx {
    * every animation the viewmodel does rather than being pinned in front of the camera.
    */
   attachMuzzle(parent: THREE.Object3D): void {
-    if (this.flashMesh !== null) return;
+    // Built once; re-parented on every call. A model rebuilt under it (`equip`, or M19's
+    // upgrade from the primitives to the file) takes the flash with it, where before the mesh
+    // stayed on the disposed root and the swapped-in weapon fired without one.
+    if (this.flashMesh !== null) {
+      if (this.flashMesh.parent !== parent) parent.add(this.flashMesh);
+      return;
+    }
     const geometry = buildFlashGeometry();
     const material = new THREE.MeshBasicMaterial({
       map: buildFlashTexture(),

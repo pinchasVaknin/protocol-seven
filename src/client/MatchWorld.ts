@@ -22,6 +22,7 @@ import type { FrameStats } from './debug/FrameStats';
 import type { MatchHarness } from './debug/MatchHarness';
 import type { Speedometer } from './debug/Speedometer';
 import { Match } from './ClientMatch';
+import type { WeaponAssetService } from './weapons/WeaponAssetService';
 import { KillConfirmed } from '../shared/modes/KillConfirmed';
 import { SearchAndDestroy } from '../shared/modes/SearchAndDestroy';
 import { STREAK_DEFS, type StreakId } from '../shared/streaks/StreakDefs';
@@ -98,6 +99,8 @@ export interface MatchWorldDeps {
   readonly textures: ProceduralTextures;
   /** Resolves Match-scoped handles over Game's app-lifetime character asset cache. */
   readonly characterAvatarProvider: CharacterAvatarProviderResolver;
+  /** Game's app-lifetime weapon templates (M19); null where no file is wanted. */
+  readonly weaponAssets: WeaponAssetService | null;
   readonly viewmodel: ViewmodelLayer;
   readonly cameraRig: CameraRig;
   readonly audio: ProceduralAudio;
@@ -354,6 +357,7 @@ export class MatchWorld {
       cheats: deps.cheats,
       scene: deps.scene,
       characterAvatarProvider: deps.characterAvatarProvider,
+      weaponAssets: deps.weaponAssets,
       viewmodel: deps.viewmodel,
       cameraRig: deps.cameraRig,
       cameraConfig: deps.cameraConfig,

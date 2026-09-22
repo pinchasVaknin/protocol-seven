@@ -2,6 +2,7 @@ import type { ProceduralAudio } from './engine/ProceduralAudio';
 import type { Match } from './ClientMatch';
 import type { Profile } from './meta/Profile';
 import type { CharacterAssetService } from './characters/CharacterAssetService';
+import type { WeaponAssetService } from './weapons/WeaponAssetService';
 import type { XpReport } from '../shared/meta/XpRules';
 import type { MatchResult } from '../shared/modes/GameMode';
 import { EndOfMatch, type LineupSource, type MatchFacts } from './ui/EndOfMatch';
@@ -77,6 +78,8 @@ export interface GameScreensDeps {
   readonly anisotropy: () => number;
   /** The skins, for the editor's stage (M15, B1). The same service the match draws bodies from. */
   readonly characterAssets: CharacterAssetService;
+  /** The weapon templates the loadout editor's preview draws from (M19). */
+  readonly weaponAssets: WeaponAssetService | null;
 }
 
 export class GameScreens {
@@ -106,6 +109,7 @@ export class GameScreens {
       anisotropy: deps.anisotropy,
       unrestricted: deps.unrestricted,
       characterAssets: deps.characterAssets,
+      weaponAssets: deps.weaponAssets,
       serverConfigured: deps.serverConfigured,
       onDisplayName: deps.onDisplayName,
     });

@@ -20,14 +20,18 @@
  *   4. **Textures ≤ 1024 on a side (the LOD 256), WebP or JPEG.** A 2048 PNG normal map is
  *      the usual way a 4 MB file becomes a 20 MB one.
  *   5. **The contract's nodes.** A weapon carries a root named for it, `body`, `magazine`,
- *      `charge` and the five sockets; its LOD the root and `socket_muzzle`; a pack part `part`,
- *      and the optic its own `socket_sight` (the sight line the ADS pose cancels once it is
- *      mounted), the suppressor its own `socket_muzzle` (where the flash moves to).
+ *      `charge` and the seven sockets (the muzzle, the three rails, the sight line, the two
+ *      hands); its LOD the root and `socket_muzzle`; a pack part `part`, and the optic its
+ *      own `socket_sight` (the sight line the ADS pose cancels once it is mounted), the
+ *      suppressor its own `socket_muzzle` (where the flash moves to).
  *   6. **Scale.** A weapon's length along Z is between 0.15 m and 1.5 m — the axis and the
  *      unit are the two things a recipe gets wrong first, and both show up here.
  *   7. **Attribution.** `asset.extras.attribution` names a title, an author, a licence and a
  *      URL, and `CREDITS.md` is what the build regenerates from the same records. CC-BY is a
  *      condition of use.
+ *   8. **The client's list and the recipes agree** (stage 1). `WeaponAssetCatalog.ts` names
+ *      the weapon ids the loader will fetch; a weapon recipe missing from it is a file nothing
+ *      loads, and an id in it with no recipe is a 404 at match time.
  *
  * Nothing here decodes a pixel or a vertex; the JSON chunk and the image headers are enough,
  * as they are for the skins. Exit code 1 on any violation.
@@ -40,6 +44,7 @@ import { creditsMarkdown, RECIPES } from './weapon-build.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = 'public/models/weapons';
+const CATALOG = 'src/client/weapons/WeaponAssetCatalog.ts';
 
 const MAX_WEAPON_BYTES = 4 * 1024 * 1024;
 const MAX_LOD_BYTES = 1024 * 1024;
@@ -52,7 +57,7 @@ const MAX_LOD_SIDE = 256;
 const FORMATS = new Set(['image/webp', 'image/jpeg']);
 const FIX = 'edit the recipe in scripts/weapon-build.mjs and run `node scripts/weapon-build.mjs`';
 
-const WEAPON_NODES = ['body', 'magazine', 'charge', 'socket_muzzle', 'socket_rail_top', 'socket_rail_bottom', 'socket_rail_front', 'socket_sight'];
+const WEAPON_NODES = ['body', 'magazine', 'charge', 'socket_muzzle', 'socket_rail_top', 'socket_rail_bottom', 'socket_rail_front', 'socket_sight', 'socket_grip', 'socket_support'];
 const LOD_NODES = ['socket_muzzle'];
 const PART_NODES = { att_optic: ['part', 'socket_sight'], att_suppressor: ['part', 'socket_muzzle'] };
 
@@ -172,6 +177,22 @@ for (const file of onDisk) {
   if (!a || !a.title || !a.author || !a.license || !a.url) problems.push(`${label} carries no asset.extras.attribution (title, author, license, url) — ${FIX}.`);
 }
 
+// ---- 8. the client's list and the recipes agree ------------------------------------
+const catalogSource = readFileSync(path.join(ROOT, CATALOG), 'utf8');
+const listed = /WEAPON_ASSET_IDS[^=]*=\s*new Set\(\[([^\]]*)\]\)/.exec(catalogSource);
+if (listed === null) {
+  problems.push(`${CATALOG} has no WEAPON_ASSET_IDS = new Set([...]) the audit can read.`);
+} else {
+  const ids = new Set([...listed[1].matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]));
+  const weaponRecipes = new Set(Object.entries(RECIPES).filter(([, r]) => r.kind === 'weapon').map(([id]) => id));
+  for (const id of weaponRecipes) {
+    if (!ids.has(id)) problems.push(`recipe "${id}" builds a weapon file that ${CATALOG} does not list; add it to WEAPON_ASSET_IDS.`);
+  }
+  for (const id of ids) {
+    if (!weaponRecipes.has(id)) problems.push(`${CATALOG} lists "${id}" but no weapon recipe builds it; the loader would fetch a file that is not there.`);
+  }
+}
+
 const credits = path.join(ROOT, DIR, 'CREDITS.md');
 if (!existsSync(credits)) problems.push(`${DIR}/CREDITS.md is missing — the build writes it.`);
 else if (readFileSync(credits, 'utf8').replace(/\r\n/g, '\n') !== creditsMarkdown()) {
@@ -188,5 +209,5 @@ if (problems.length > 0) {
 const total = onDisk.reduce((sum, f) => sum + readGlb(path.join(ROOT, DIR, f)).bytes, 0);
 console.log(
   `weapon audit ok — ${onDisk.length} file(s) in ${DIR} from ${Object.keys(RECIPES).length} recipe(s), ` +
-    `${(total / 1048576).toFixed(2)} MB in all; every file within budget, on the contract, attributed.`,
+    `${(total / 1048576).toFixed(2)} MB in all; every file within budget, on the contract, attributed, and the client's list agrees.`,
 );

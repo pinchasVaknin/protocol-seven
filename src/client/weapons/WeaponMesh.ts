@@ -9,6 +9,7 @@ import {
   barrelY,
   chargingBoxes,
   handBoxes,
+  handBoxesAt,
   magazineBoxes,
   magazineTubes,
   muzzleZ,
@@ -19,6 +20,7 @@ import {
   type TubePart,
 } from './WeaponMeshParts';
 import { modelSpecFor } from './WeaponModelSpecs';
+import { groupNodes, type WeaponAssetService, type WeaponAssetTemplate } from './WeaponAssetService';
 
 /**
  * Viewmodels, built from primitives in code (brief S2: zero external assets).
@@ -39,14 +41,25 @@ import { modelSpecFor } from './WeaponModelSpecs';
  *
  * Textures are built once per *process* and shared by every model — twelve weapons each
  * generating three 128px canvases would be thirty-six canvases for three distinct images.
+ *
+ * **M19 adds a second source behind the same contract.** A weapon with a built GLB
+ * (`WeaponAssetCatalog`) whose template has arrived (`WeaponAssetService`) is cloned from the
+ * file instead — `buildFromTemplate` below — and everything downstream reads the same
+ * `WeaponModel`: `ViewmodelAnim` drops the same `magazine`, `Fx` parents the flash to the same
+ * `muzzle`, the ADS pose cancels the same `sightHeight`. The file's groups and sockets carry
+ * the contract's names, so the two builders differ in where the triangles come from and in
+ * nothing else. When the template is not there — no file, not loaded yet, failed — the
+ * primitives are built exactly as before; `source` says which happened, so a caller can ask
+ * for the upgrade when the file lands.
  */
 
 export interface WeaponModel {
-  readonly root: THREE.Group;
+  /** `Object3D` rather than `Group` since M19: a GLB node is the former, and nothing here reads the flag. */
+  readonly root: THREE.Object3D;
   /** Slides out of the well and drops away during a reload. */
-  readonly magazine: THREE.Group;
+  readonly magazine: THREE.Object3D;
   /** Pulled and released on the empty reload. On a shotgun this is the pump. */
-  readonly chargingHandle: THREE.Group;
+  readonly chargingHandle: THREE.Object3D;
   /** Muzzle flash is parented here so it tracks every animation the gun does. */
   readonly muzzle: THREE.Object3D;
   /**
@@ -63,6 +76,8 @@ export interface WeaponModel {
   /** Per-weapon correction to the shared ADS pose. See `WeaponModelSpec.adsOffsetZ`. */
   readonly adsOffsetZ: number;
   readonly weaponId: string;
+  /** Where the triangles came from (M19): the file, or the primitives standing in for it. */
+  readonly source: 'glb' | 'procedural';
   dispose(): void;
 }
 
@@ -73,6 +88,13 @@ export interface WeaponModelOptions {
    * floating prop; off for a picture of the weapon alone, such as the loadout preview.
    */
   readonly hands: boolean;
+  /**
+   * Where a built GLB comes from (M19). Absent or null, every weapon is the primitives; given,
+   * a weapon whose template has arrived is cloned from the file. Never awaited here: the
+   * builder is synchronous, and a template that is still loading is a procedural model now
+   * and a `preload` promise for the caller to act on.
+   */
+  readonly assets?: WeaponAssetService | null;
 }
 
 const VIEWMODEL: WeaponModelOptions = { hands: true };
@@ -92,6 +114,9 @@ export function buildWeaponModel(
 ): WeaponModel {
   const spec = modelSpecFor(weaponId);
   const surfaces = sharedSurfaces(anisotropy, camo);
+
+  const template = options.assets?.template(weaponId) ?? null;
+  if (template !== null) return buildFromTemplate(template, anisotropy, surfaces, options);
 
   const root = new THREE.Group();
   root.name = `viewmodel:${weaponId}`;
@@ -127,6 +152,7 @@ export function buildWeaponModel(
     sightHeight: spec.sightHeight * spec.scale,
     adsOffsetZ: spec.adsOffsetZ,
     weaponId,
+    source: 'procedural',
     dispose(): void {
       // Only the geometry is per model. The three materials and their textures are shared
       // for the life of the process in `cachedSurfaces` and `baseTextures` here and the camo cache in
@@ -138,10 +164,81 @@ export function buildWeaponModel(
   };
 }
 
+/**
+ * A `WeaponModel` from a built GLB (M19, stage 1).
+ *
+ * The clone shares geometry and materials with the template, so what is per instance is the
+ * node tree and the gloves; `dispose` releases the gloves' merged geometry and clears the
+ * tree, and never touches the template's resources — `WeaponAssetService` owns those for the
+ * life of the application, as the character templates are owned.
+ *
+ * The file is already in viewmodel space (metres, -Z forward, the origin at the receiver:
+ * `weapon-build.mjs`'s fix), so the root's scale is 1 and the socket positions are the
+ * numbers the contract asks for. `sightHeight` is `socket_sight`'s Y — measured from the
+ * mesh, not typed into a spec — and `adsOffsetZ` still comes from the spec, because it is a
+ * correction to the shared pose and not a property of the geometry. The gloves are the same
+ * grey boxes every procedural weapon wears, carried to the file's `socket_grip` and
+ * `socket_support` (`handBoxesAt`): a body's hands are a later stage, and a rifle with no
+ * hands reads as a floating prop today.
+ *
+ * The camo is not applied. Decision 4 makes it an overlay on the albedo, and that lands with
+ * the arsenal (stage 3); until then a GLB weapon wears the finish the artist gave it.
+ */
+function buildFromTemplate(
+  template: WeaponAssetTemplate,
+  anisotropy: number,
+  surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
+  options: WeaponModelOptions,
+): WeaponModel {
+  const spec = modelSpecFor(template.weaponId);
+  const root = template.scene.clone(true);
+  root.name = `viewmodel:${template.weaponId}`;
+  const groups = groupNodes(root);
+  const disposables: Array<{ dispose(): void }> = [];
+
+  // The filtering the procedural textures get, on the file's — once per texture, and the
+  // textures are shared, so a second instance finds it set.
+  root.traverse((node) => {
+    const material = (node as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+    for (const m of Array.isArray(material) ? material : [material]) {
+      if (!(m instanceof THREE.Material)) continue;
+      for (const value of Object.values(m as unknown as Record<string, unknown>)) {
+        if (value instanceof THREE.Texture && value.anisotropy !== anisotropy) {
+          value.anisotropy = anisotropy;
+          value.needsUpdate = true;
+        }
+      }
+    }
+  });
+
+  if (options.hands) {
+    const boxes = handBoxesAt(spec, template.sockets.socket_grip, template.sockets.socket_support);
+    addMerged(groups.body, boxes, [], surfaces, disposables, 'hands');
+  }
+
+  const muzzle = root.getObjectByName('socket_muzzle');
+  if (muzzle === undefined) throw new Error(`Weapon clone "${template.weaponId}" has no socket_muzzle.`);
+
+  return {
+    root,
+    magazine: groups.magazine,
+    chargingHandle: groups.charge,
+    muzzle,
+    sightHeight: template.sockets.socket_sight.y,
+    adsOffsetZ: spec.adsOffsetZ,
+    weaponId: template.weaponId,
+    source: 'glb',
+    dispose(): void {
+      for (const d of disposables) d.dispose();
+      root.clear();
+    },
+  };
+}
+
 // -- assembly ---------------------------------------------------------------
 
 function addMerged(
-  parent: THREE.Group,
+  parent: THREE.Object3D,
   boxes: readonly BoxPart[],
   tubes: readonly TubePart[],
   surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,

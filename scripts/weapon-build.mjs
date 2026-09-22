@@ -19,9 +19,11 @@
  * baking every kept node's world matrix through one fix. The sockets are empty nodes at
  * measured points: the bore at the barrel tip (`socket_muzzle`), the rail surface where an
  * optic sits (`socket_rail_top`), the handguard's top rail where the laser sits
- * (`socket_rail_front`), the rail under the handguard (`socket_rail_bottom`), and the iron
- * sight line (`socket_sight`, whose Y is `WeaponModel.sightHeight`). A pack part is the
- * same recipe with its origin on the mating face, so mounting is `socket.add(part)`.
+ * (`socket_rail_front`), the rail under the handguard (`socket_rail_bottom`), the iron
+ * sight line (`socket_sight`, whose Y is `WeaponModel.sightHeight`), and the two hands
+ * (`socket_grip`, `socket_support`, where the first-person gloves and a body's palms go). A
+ * pack part is the same recipe with its origin on the mating face, so mounting is
+ * `socket.add(part)`.
  *
  * The measurements are taken from the vertices, not typed in: the bore is the mean of the
  * barrel's vertices at its tip, the rail is the top of the receiver. A number typed from a
@@ -150,6 +152,7 @@ export const RECIPES = {
       const bore = m.tip({ name: 'Handguard', material: 'Keymod_material' });
       const upper = m.bounds({ name: 'Upper', material: 'Body' });
       const guard = m.bounds({ name: 'Handguard', material: 'Keymod_material' });
+      const grip = m.bounds({ name: 'Grip', material: 'Grip_Default' });
       // The rail surface: the receiver's top over its middle half, where no sight stands.
       const railTop = m.top({ name: 'Upper', material: 'Body' }, 0.35, 0.85);
       return {
@@ -162,6 +165,11 @@ export const RECIPES = {
         socket_rail_front: [0, m.top({ name: 'Handguard', material: 'Keymod_material' }, 0.2, 0.7), guard.min[2] + (guard.max[2] - guard.min[2]) * 0.45],
         // The irons' line: the aperture sits just under the sight's top edge.
         socket_sight: [0, upper.max[1] - 0.4, 0],
+        // Where the hands go (stage 1). The trigger hand's centre sits on the pistol grip,
+        // two fifths of the way down it; the support palm cups the handguard's underside a
+        // little short of halfway along. The first-person gloves are built on these.
+        socket_grip: [0, grip.max[1] - (grip.max[1] - grip.min[1]) * 0.4, (grip.min[2] + grip.max[2]) / 2],
+        socket_support: [0, guard.min[1] - 1.8, guard.min[2] + (guard.max[2] - guard.min[2]) * 0.42],
       };
     },
     lod: true,

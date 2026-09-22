@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { CamoId } from '../../shared/meta/Camos';
 import { buildWeaponModel, type WeaponModel } from '../weapons/WeaponMesh';
 import type { WeaponAssetService } from '../weapons/WeaponAssetService';
+import type { AttachmentId } from '../../shared/weapons/Attachments';
 
 /**
  * The loadout editor's weapon preview (playtest round 4, F15).
@@ -138,14 +139,18 @@ export class WeaponPreview {
   /**
    * Show a weapon. Cheap to call every refresh: an unchanged (weapon, camo) pair is a no-op.
    */
-  show(weaponId: string, camo: CamoId | null, name: string): void {
-    const key = `${weaponId}|${camo ?? ''}`;
+  show(weaponId: string, camo: CamoId | null, name: string, attachments: readonly AttachmentId[] = []): void {
+    const key = `${weaponId}|${camo ?? ''}|${[...attachments].sort().join(',')}`;
     if (key !== this.modelKey) {
       this.modelKey = key;
       this.disposeModel();
       // A picture of the weapon, not of somebody holding it: no gloves.
-      const model = buildWeaponModel(weaponId, this.deps.anisotropy(), camo, { hands: false, assets: this.deps.weaponAssets });
-      this.upgradeWhenLoaded(model, key, weaponId, camo, name);
+      const model = buildWeaponModel(weaponId, this.deps.anisotropy(), camo, {
+        hands: false,
+        assets: this.deps.weaponAssets,
+        attachments,
+      });
+      this.upgradeWhenLoaded(model, key, weaponId, camo, name, attachments);
       /**
        * Framed by its own size rather than by a per-weapon number.
        *
@@ -180,14 +185,21 @@ export class WeaponPreview {
    * done by forgetting the key and showing again. A late promise checks the key first — the
    * pointer has usually moved on — and a weapon with no file resolves at once and does nothing.
    */
-  private upgradeWhenLoaded(model: WeaponModel, key: string, weaponId: string, camo: CamoId | null, name: string): void {
+  private upgradeWhenLoaded(
+    model: WeaponModel,
+    key: string,
+    weaponId: string,
+    camo: CamoId | null,
+    name: string,
+    attachments: readonly AttachmentId[],
+  ): void {
     const assets = this.deps.weaponAssets;
     if (assets === null || model.source === 'glb' || assets.statusFor(weaponId) === 'none') return;
     void assets.preload(weaponId).then(
       () => {
         if (this.modelKey !== key || this.model !== model) return;
         this.modelKey = '';
-        this.show(weaponId, camo, name);
+        this.show(weaponId, camo, name, attachments);
       },
       () => undefined,
     );

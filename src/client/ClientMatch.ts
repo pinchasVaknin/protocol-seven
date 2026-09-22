@@ -88,6 +88,7 @@ import { Melee } from '../shared/weapons/Melee';
 import { WEAPON_DEFS, type WeaponDef } from '../shared/weapons/WeaponDefs';
 import { buildWeaponModel, type WeaponModel } from './weapons/WeaponMesh';
 import type { WeaponAssetService } from './weapons/WeaponAssetService';
+import type { AttachmentId } from '../shared/weapons/Attachments';
 import { buildKnifeModel, type KnifeModel } from './weapons/KnifeMesh';
 import { WeaponSystem, type WeaponSnapshot } from '../shared/weapons/WeaponSystem';
 
@@ -335,6 +336,8 @@ export class Match {
   private readonly knifeModel: KnifeModel;
   /** The camo each slot is wearing, so a rebuild does not lose it. */
   private readonly slotCamos: Array<CamoId | null> = [];
+  /** The attachments each slot shows (M19, stage 2), kept for the same reason. */
+  private readonly slotAttachments: Array<readonly AttachmentId[]> = [];
   /** The visible one. Reassigned on a swap. */
   model: WeaponModel;
   readonly anim: ViewmodelAnim;
@@ -651,9 +654,11 @@ export class Match {
     // the swap key, which is the one frame that must not stutter.
     this.slotCamos[0] = deps.loadout.primaryCamo;
     this.slotCamos[1] = deps.loadout.secondaryCamo;
+    this.slotAttachments[0] = deps.loadout.primaryAttachments;
+    this.slotAttachments[1] = deps.loadout.secondaryAttachments;
     this.models = [
-      buildWeaponModel(deps.weaponDef.id, deps.anisotropy, deps.loadout.primaryCamo, this.modelOptions()),
-      buildWeaponModel(deps.secondaryDef.id, deps.anisotropy, deps.loadout.secondaryCamo, this.modelOptions()),
+      buildWeaponModel(deps.weaponDef.id, deps.anisotropy, deps.loadout.primaryCamo, this.modelOptions(0)),
+      buildWeaponModel(deps.secondaryDef.id, deps.anisotropy, deps.loadout.secondaryCamo, this.modelOptions(1)),
     ];
     for (const model of this.models) {
       deps.viewmodel.add(model.root);
@@ -1416,7 +1421,7 @@ export class Match {
    * Rebuilds that slot's mesh, because a weapon is its silhouette as much as its numbers.
    * Used by the debug weapon picker; M6's loadout editor is the real caller.
    */
-  equip(slotIndex: number, def: WeaponDef, camo?: CamoId | null): void {
+  equip(slotIndex: number, def: WeaponDef, camo?: CamoId | null, attachments?: readonly AttachmentId[]): void {
     const old = this.models[slotIndex];
     if (old === undefined) return;
     const wasVisible = old.root.visible;
@@ -1426,10 +1431,11 @@ export class Match {
     // `undefined` keeps whatever finish the slot already had; `null` strips it. The
     // distinction matters because M5's debug weapon picker calls this with two arguments
     // and has no idea camos exist — without it, opening the arsenal panel would silently
-    // return a gold rifle to grey.
+    // return a gold rifle to grey. The attachments follow the same rule (stage 2).
     const nextCamo = camo === undefined ? (this.slotCamos[slotIndex] ?? null) : camo;
     this.slotCamos[slotIndex] = nextCamo;
-    const model = buildWeaponModel(def.id, this.deps.anisotropy, nextCamo, this.modelOptions());
+    if (attachments !== undefined) this.slotAttachments[slotIndex] = attachments;
+    const model = buildWeaponModel(def.id, this.deps.anisotropy, nextCamo, this.modelOptions(slotIndex));
     this.models[slotIndex] = model;
     this.deps.viewmodel.add(model.root);
     model.root.visible = wasVisible;
@@ -1439,8 +1445,8 @@ export class Match {
     this.upgradeWhenLoaded(slotIndex);
   }
 
-  private modelOptions(): { hands: true; assets: WeaponAssetService | null } {
-    return { hands: true, assets: this.deps.weaponAssets };
+  private modelOptions(slotIndex: number): { hands: true; assets: WeaponAssetService | null; attachments: readonly AttachmentId[] } {
+    return { hands: true, assets: this.deps.weaponAssets, attachments: this.slotAttachments[slotIndex] ?? [] };
   }
 
   /**
@@ -1465,7 +1471,7 @@ export class Match {
         const wasVisible = current.root.visible;
         this.deps.viewmodel.remove(current.root);
         current.dispose();
-        const next = buildWeaponModel(weaponId, this.deps.anisotropy, this.slotCamos[slotIndex] ?? null, this.modelOptions());
+        const next = buildWeaponModel(weaponId, this.deps.anisotropy, this.slotCamos[slotIndex] ?? null, this.modelOptions(slotIndex));
         this.models[slotIndex] = next;
         this.deps.viewmodel.add(next.root);
         next.root.visible = wasVisible;
@@ -1518,8 +1524,8 @@ export class Match {
   /** The actual swap. Both weapons rebuilt, grenades replaced and refilled, perks re-derived. */
   private applyLoadoutNow(loadout: ResolvedLoadout): void {
     this.setStreakLoadout(loadout.streaks);
-    this.equip(0, loadout.primary, loadout.primaryCamo);
-    this.equip(1, loadout.secondary, loadout.secondaryCamo);
+    this.equip(0, loadout.primary, loadout.primaryCamo, loadout.primaryAttachments);
+    this.equip(1, loadout.secondary, loadout.secondaryCamo, loadout.secondaryAttachments);
     this.equipment.inventory.lethal = loadout.lethal;
     this.equipment.inventory.tactical = loadout.tactical;
     EquipmentSystem.refill(this.equipment.inventory);

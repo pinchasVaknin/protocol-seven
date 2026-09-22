@@ -2,11 +2,14 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { logger } from '../../shared/core/Log';
 import {
+  ATTACHMENT_PART_IDS,
+  ATTACHMENT_PART_OWN_SOCKETS,
   hasWeaponAsset,
   weaponAssetUrl,
   WEAPON_ASSET_VERSION,
   WEAPON_GROUP_NODES,
   WEAPON_SOCKET_NODES,
+  type AttachmentPartId,
   type WeaponGroupNode,
   type WeaponSocketNode,
 } from './WeaponAssetCatalog';
@@ -29,6 +32,16 @@ export interface WeaponAssetTemplate {
   readonly sockets: Readonly<Record<WeaponSocketNode, THREE.Vector3>>;
 }
 
+/**
+ * A parsed pack part (stage 2): the `part` group under a root named for it, and the sockets
+ * of its own — the optic's sight line, the suppressor's new muzzle — read once.
+ */
+export interface AttachmentPartTemplate {
+  readonly partId: AttachmentPartId;
+  readonly scene: THREE.Object3D;
+  readonly sockets: Readonly<Partial<Record<'socket_sight' | 'socket_muzzle', THREE.Vector3>>>;
+}
+
 export type WeaponAssetStatus = 'idle' | 'loading' | 'ready' | 'error' | 'none';
 
 /**
@@ -45,18 +58,38 @@ export type WeaponAssetStatus = 'idle' | 'loading' | 'ready' | 'error' | 'none';
  * list, and `weaponAssetUrl` never sees an id outside it. `Game` warms the equipped loadout's
  * weapons while the menu is up, so a match usually starts with its templates ready; when it
  * does not, the match starts on the procedural viewmodel and upgrades in place.
+ *
+ * **The pack rides with the first weapon** (stage 2). A weapon's `preload` also fetches the
+ * four attachment parts — a megabyte, once — and `template` answers null until the pack is
+ * there too, so a model built from a file always has every part it might mount. Half a state
+ * (the rifle with a suppressor that has not arrived) is not one the builder has to handle.
  */
 export class WeaponAssetService {
   private readonly loader = new GLTFLoader();
   private readonly templates = new Map<string, WeaponAssetTemplate>();
+  private readonly parts = new Map<AttachmentPartId, AttachmentPartTemplate>();
+  private packTask: Promise<void> | null = null;
   private readonly loading = new Map<string, Promise<void>>();
   private readonly statuses = new Map<string, WeaponAssetStatus>();
   private disposed = false;
 
-  /** The template for a weapon, if its file has arrived; null builds the procedural model. */
+  /**
+   * The template for a weapon, if its file and the pack have arrived; null builds the
+   * procedural model.
+   */
   template(weaponId: string): WeaponAssetTemplate | null {
-    if (this.disposed) return null;
+    if (this.disposed || !this.packReady()) return null;
     return this.templates.get(weaponId) ?? null;
+  }
+
+  /** A pack part's template. Never null once `template` has answered for any weapon. */
+  part(partId: AttachmentPartId): AttachmentPartTemplate | null {
+    if (this.disposed) return null;
+    return this.parts.get(partId) ?? null;
+  }
+
+  private packReady(): boolean {
+    return ATTACHMENT_PART_IDS.every((id) => this.parts.has(id));
   }
 
   statusFor(weaponId: string): WeaponAssetStatus {
@@ -71,25 +104,29 @@ export class WeaponAssetService {
    */
   preload(weaponId: string): Promise<void> {
     if (this.disposed) return Promise.reject(new Error('Weapon asset service has been disposed.'));
-    if (!hasWeaponAsset(weaponId) || this.templates.has(weaponId)) return Promise.resolve();
+    if (!hasWeaponAsset(weaponId) || (this.templates.has(weaponId) && this.packReady())) return Promise.resolve();
 
     const existing = this.loading.get(weaponId);
     if (existing !== undefined) return existing;
 
     this.statuses.set(weaponId, 'loading');
-    const task = this.loader.loadAsync(weaponAssetUrl(weaponId)).then((gltf) => {
-      if (this.disposed) {
-        disposeTemplate(gltf.scene);
-        throw new Error('Weapon asset service was disposed while a file was loading.');
-      }
-      let template: WeaponAssetTemplate;
-      try {
-        template = validateTemplate(weaponId, gltf.scene);
-      } catch (error) {
-        disposeTemplate(gltf.scene);
-        throw error;
-      }
-      this.templates.set(weaponId, template);
+    const weaponTask = this.templates.has(weaponId)
+      ? Promise.resolve()
+      : this.loader.loadAsync(weaponAssetUrl(weaponId)).then((gltf) => {
+          if (this.disposed) {
+            disposeTemplate(gltf.scene);
+            throw new Error('Weapon asset service was disposed while a file was loading.');
+          }
+          let template: WeaponAssetTemplate;
+          try {
+            template = validateTemplate(weaponId, gltf.scene);
+          } catch (error) {
+            disposeTemplate(gltf.scene);
+            throw error;
+          }
+          this.templates.set(weaponId, template);
+        });
+    const task = Promise.all([weaponTask, this.preloadPack()]).then(() => {
       this.statuses.set(weaponId, 'ready');
       log.info(`GLB weapon "${weaponId}" is ready (${WEAPON_ASSET_VERSION}).`);
     });
@@ -110,15 +147,63 @@ export class WeaponAssetService {
     return task;
   }
 
+  /** The four parts, fetched once and shared by every weapon; a failure is retried with the next `preload`. */
+  private preloadPack(): Promise<void> {
+    if (this.packReady()) return Promise.resolve();
+    if (this.packTask !== null) return this.packTask;
+    const task = Promise.all(
+      ATTACHMENT_PART_IDS.filter((id) => !this.parts.has(id)).map((partId) =>
+        this.loader.loadAsync(weaponAssetUrl(partId)).then((gltf) => {
+          if (this.disposed) {
+            disposeTemplate(gltf.scene);
+            throw new Error('Weapon asset service was disposed while the pack was loading.');
+          }
+          try {
+            this.parts.set(partId, validatePart(partId, gltf.scene));
+          } catch (error) {
+            disposeTemplate(gltf.scene);
+            throw error;
+          }
+        }),
+      ),
+    ).then(() => undefined);
+    this.packTask = task;
+    void task.then(
+      () => {
+        if (this.packTask === task) this.packTask = null;
+      },
+      () => {
+        if (this.packTask === task) this.packTask = null;
+      },
+    );
+    return task;
+  }
+
   /** Called when the application is torn down, after every viewmodel built from a template is gone. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     for (const template of this.templates.values()) disposeTemplate(template.scene);
+    for (const part of this.parts.values()) disposeTemplate(part.scene);
     this.templates.clear();
+    this.parts.clear();
     this.loading.clear();
     this.statuses.clear();
   }
+}
+
+/** A pack part against its contract: the root named for it, a `part` group, its own sockets. */
+function validatePart(partId: AttachmentPartId, scene: THREE.Object3D): AttachmentPartTemplate {
+  const root = scene.getObjectByName(partId);
+  if (root === undefined) throw new Error(`Attachment file "${partId}" has no root node named "${partId}".`);
+  if (root.getObjectByName('part') === undefined) throw new Error(`Attachment file "${partId}" has no "part" group.`);
+  const sockets: Partial<Record<'socket_sight' | 'socket_muzzle', THREE.Vector3>> = {};
+  for (const name of ATTACHMENT_PART_OWN_SOCKETS[partId]) {
+    const socket = root.getObjectByName(name);
+    if (socket === undefined) throw new Error(`Attachment file "${partId}" has no "${name}" socket.`);
+    sockets[name] = socket.position.clone();
+  }
+  return { partId, scene: root, sockets };
 }
 
 /**

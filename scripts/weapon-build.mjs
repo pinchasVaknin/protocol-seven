@@ -507,7 +507,9 @@ function rewrite(id, recipe, src) {
 
   const json = structuredClone(src.json);
   json.nodes = nodes;
-  json.scenes = [{ name: id, nodes: [0] }];
+  // The scene is not the root: three's loader would rename the second of two nodes called
+  // `id` to `id_1`, and the root is the one the runtime looks up by name.
+  json.scenes = [{ name: `${id}.scene`, nodes: [0] }];
   json.scene = 0;
   delete json.skins;
   delete json.animations;
@@ -567,6 +569,7 @@ function reroot(from, to, id, sockets) {
   const glb = readGlb(from);
   const json = glb.json;
   const scene = json.scenes[json.scene ?? 0];
+  scene.name = `${id}.scene`;
   const rootIndex = json.nodes.push({ name: id, children: [...scene.nodes] }) - 1;
   for (const [name, translation] of Object.entries(sockets)) {
     json.nodes[rootIndex].children.push(json.nodes.push({ name, translation }) - 1);

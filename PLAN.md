@@ -643,7 +643,7 @@ then `npx @gltf-transform/cli@4.5.0` pinned, as `skin-compress.mjs` runs it: `pr
   suppressor mounts on `socket_muzzle` and moves the flash's `muzzle` point forward by its
   length; grip and laser on `socket_rail_bottom`, the laser wired to the existing
   `laserVisible`; the extended magazine shows `magazine_ext` where the file has one and
-  stretches `magazine` x1.4 along the well where it does not.
+  stretches `magazine` x1.4 along the well where it does not. **Built.**
 - **Stage 3 — the arsenal and the bodies.** The kits first (P90, MP5, AK-74, Tavor), then the
   SPAS-12, the M150 and L1A1 (skinned: `SkeletonUtils.clone`, the bodies' path), the Beretta and
   the knife, the L115A3 last after its cut. `<id>.lod1.glb` into `BotRenderer`'s held-weapon
@@ -727,9 +727,52 @@ parented to `socket_muzzle` — the swap to the procedural pistol and back with 
 following, and the upgrade path driven by hand (`template()` answering null once: the slot
 went primitives → file with the animation's model and the flash current). No console errors.
 
+## What was built — stage 2 (2026-09-22)
+
+- **The pack rides with the weapon.** `WeaponAssetService.preload(weaponId)` fetches the four
+  parts with the first weapon file (a megabyte, once), validates each against its own
+  contract (`part` under a root named for it; the optic's `socket_sight`, the suppressor's
+  `socket_muzzle`), and `template()` answers null until the pack is there — so a model built
+  from a file always has every part it might mount, and there is no half state to handle.
+- **`mountAttachments`** in `WeaponMesh.buildFromTemplate`: each part a clone of its template
+  under the weapon's socket (`ATTACHMENT_PART_SOCKETS` in the catalog), and then the two
+  numbers the contract hands out — an optic's own sight line above the rail socket becomes
+  `sightHeight` (0.0677 bare, **0.0806** with the AimPoint), a suppressor's own `socket_muzzle`
+  becomes `muzzle`, inside the clone so the flash rides the can (13.75 cm forward, measured in
+  the match). The extended magazine is the `magazine` group stretched ×1.4 along the well
+  (`MAGAZINE_EXTENDED_STRETCH`); the reload writes position and rotation and leaves scale
+  alone. The optic's glass and reticle take the project's `lens` and `reticle` materials in
+  place of the artist's transmission glass, so the dot is the same emissive dot the procedural
+  red dot draws.
+- **The ids travel with the loadout.** `ResolvedLoadout` carries `primaryAttachments` /
+  `secondaryAttachments` (copies) beside the camos; `ClientMatch` keeps them per slot as it
+  keeps the camo, `equip` takes them as a fourth argument on the same "undefined keeps"
+  rule, and the editor's preview key includes them — the class's, on the class's weapon; a
+  hovered weapon is shown bare, as it is shown unpainted.
+- The glTF scene of a built file is now named `<id>.scene` rather than `<id>`: three's loader
+  renamed the second of two nodes called `att_suppressor` to `att_suppressor_1`, and the root
+  is the one the runtime finds by name. Rebuilt (byte-identical otherwise) and
+  `WEAPON_ASSET_VERSION` bumped to `stage-2`.
+- Nothing in the procedural builder changed: a weapon without a file still shows no
+  attachment, as before M19. Stage 3 brings the files.
+
+### Verified
+
+`npm run check` green. In the browser pane, in the Range (every attachment unlocked): the
+editor's stage with all five on the M4 — the AimPoint with its red dot on the receiver, the
+DBAL on the handguard, the grip under it, the can on the muzzle, the long magazine — toggled
+live from the ATTACHMENTS tab; then the match: `sightHeight` 0.0806, ADS looking through the
+tube with the dot on the screen centre and the front post in the lower half of the window, the
+flash mesh parented to the suppressor's `socket_muzzle` 13.75 cm ahead of the bare one, eight
+rounds fired (45 → 37, the extended magazine's count), a reload dropping the stretched
+magazine. No console errors.
+
 ## Open
 
-- **Stage 2**: the attachments, visible.
+- **Stage 3**: the arsenal and the bodies.
+- The suppressor changes where the flash is, not how big: `muzzleFlashScale` is the def's and
+  `Attachments.ts` does not touch it. A smaller, dimmer flash on a can is a one-field effect in
+  the same table, and a balance decision, so it is noted rather than made.
 - The M4's geometry is 1.5 MB of its 2.21 — split normals at every hard edge. `quantize` would
   roughly halve it; left for when the budget bites rather than done on a guess.
 - The optic's glass carries `KHR_materials_transmission`; three loads it as a

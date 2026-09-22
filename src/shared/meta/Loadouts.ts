@@ -64,6 +64,13 @@ export interface ResolvedLoadout {
   readonly secondary: WeaponDef;
   readonly primaryCamo: CamoId | null;
   readonly secondaryCamo: CamoId | null;
+  /**
+   * The attachment ids the two defs above were resolved with (M19, stage 2). The def carries
+   * their *numbers*; the viewmodel mounts their *parts* on the weapon's sockets, and it needs
+   * the ids to know which. Copies, so a later edit to the slot cannot reach a match.
+   */
+  readonly primaryAttachments: readonly AttachmentId[];
+  readonly secondaryAttachments: readonly AttachmentId[];
   readonly lethal: EquipmentId;
   readonly tactical: EquipmentId;
   readonly fieldUpgrade: FieldUpgradeId;
@@ -194,6 +201,8 @@ export function resolveLoadout(slot: LoadoutSlot, slotIndex: number): ResolvedLo
     secondary: resolveWeaponDef(secondaryBase, slot.secondary.attachments, modifiers),
     primaryCamo: slot.primary.camo,
     secondaryCamo: slot.secondary.camo,
+    primaryAttachments: [...slot.primary.attachments],
+    secondaryAttachments: [...slot.secondary.attachments],
     lethal: slot.lethal,
     tactical: slot.tactical,
     fieldUpgrade: slot.fieldUpgrade,

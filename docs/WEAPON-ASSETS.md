@@ -40,8 +40,8 @@ down -Z, +Y up, the origin at the centre of the receiver** (`WeaponMesh`'s local
 | `body` | everything static |
 | `magazine` | dropped and re-seated by the reload; identity transform at rest |
 | `charge` | the charging handle, bolt or pump, pulled on the empty reload; may be empty |
-| `magazine_ext` | the extended magazine where the source had one (stage 2) |
-| `optic_default` | the irons, hidden when an optic mounts (stage 2) |
+| `magazine_ext` | the extended magazine where the source had one; absent, the stretch is used |
+| `optic_default` | the irons, hidden when an optic mounts; may be empty |
 | `socket_muzzle` | the barrel tip, on the bore: the flash's parent, the suppressor's mount |
 | `socket_rail_top` | the receiver's rail: the optic's mount |
 | `socket_rail_front` | the handguard's top rail: the laser's mount |
@@ -105,6 +105,9 @@ page is not the uploader's to give.
 | `ar_carbine` | `ar_carbine.glb`, from the M4 kit |
 | every other weapon | the primitives, until its stage-3 recipe lands |
 
-The camo is not applied to a file yet (decision 4: an overlay on the albedo, stage 3), the
-attachments are not mounted yet (stage 2), and the bodies still carry `buildHeldWeapon`'s
-primitives (stage 3).
+The attachment pack mounts on any weapon with a file: the optic on `socket_rail_top` (and the
+sight line moves to its own `socket_sight`), the suppressor on `socket_muzzle` (and the flash
+moves to its own), the grip on `socket_rail_bottom`, the laser on `socket_rail_front`, and the
+extended magazine as the `magazine` group stretched along the well. The camo is not applied to
+a file yet (decision 4: an overlay on the albedo, stage 3), and the bodies still carry
+`buildHeldWeapon`'s primitives (stage 3).

@@ -1360,8 +1360,11 @@ export class LoadoutEditor {
       // The weapon under the pointer, or the equipped one — in its finish only when it is the
       // equipped one, because a hovered weapon has not been given this class's camo.
       const shown = this.hoveredWeaponId ?? equipped.weaponId;
-      const camo = shown === equipped.weaponId ? equipped.camo : null;
-      this.preview.show(shown, camo, requireWeapon(shown).name);
+      const isEquipped = shown === equipped.weaponId;
+      const camo = isEquipped ? equipped.camo : null;
+      // The attachments too (M19, stage 2): the class's, on the class's weapon; a hovered
+      // weapon has not been fitted with them any more than it has been painted.
+      this.preview.show(shown, camo, requireWeapon(shown).name, isEquipped ? equipped.attachments : []);
     } else {
       this.preview.release();
       this.stage.setWeapon(equipped.weaponId, equipped.camo);

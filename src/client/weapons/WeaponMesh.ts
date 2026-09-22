@@ -21,6 +21,8 @@ import {
 } from './WeaponMeshParts';
 import { modelSpecFor } from './WeaponModelSpecs';
 import { groupNodes, type WeaponAssetService, type WeaponAssetTemplate } from './WeaponAssetService';
+import { ATTACHMENT_PARTS, ATTACHMENT_PART_SOCKETS, MAGAZINE_EXTENDED_STRETCH } from './WeaponAssetCatalog';
+import type { AttachmentId } from '../../shared/weapons/Attachments';
 
 /**
  * Viewmodels, built from primitives in code (brief S2: zero external assets).
@@ -95,6 +97,11 @@ export interface WeaponModelOptions {
    * and a `preload` promise for the caller to act on.
    */
   readonly assets?: WeaponAssetService | null;
+  /**
+   * The attachments to show on the gun (M19, stage 2). Read only by a model built from a file:
+   * the pack mounts on sockets, and the primitives have none. Absent means bare.
+   */
+  readonly attachments?: readonly AttachmentId[];
 }
 
 const VIEWMODEL: WeaponModelOptions = { hands: true };
@@ -183,6 +190,12 @@ export function buildWeaponModel(
  *
  * The camo is not applied. Decision 4 makes it an overlay on the albedo, and that lands with
  * the arsenal (stage 3); until then a GLB weapon wears the finish the artist gave it.
+ *
+ * **The attachments are mounted here** (stage 2), because they change two numbers the
+ * contract hands out: an optic moves the sight line the ADS pose cancels, and a suppressor
+ * moves the muzzle the flash is parented to. Both are settled before the model is returned,
+ * so nothing downstream learns that a gun can change shape — `ViewmodelAnim` reads
+ * `sightHeight`, `Fx` parents to `muzzle`, and the values are simply different.
  */
 function buildFromTemplate(
   template: WeaponAssetTemplate,
@@ -216,15 +229,16 @@ function buildFromTemplate(
     addMerged(groups.body, boxes, [], surfaces, disposables, 'hands');
   }
 
-  const muzzle = root.getObjectByName('socket_muzzle');
-  if (muzzle === undefined) throw new Error(`Weapon clone "${template.weaponId}" has no socket_muzzle.`);
+  const bareMuzzle = root.getObjectByName('socket_muzzle');
+  if (bareMuzzle === undefined) throw new Error(`Weapon clone "${template.weaponId}" has no socket_muzzle.`);
+  const mounted = mountAttachments(root, groups.magazine, template, options, surfaces);
 
   return {
     root,
     magazine: groups.magazine,
     chargingHandle: groups.charge,
-    muzzle,
-    sightHeight: template.sockets.socket_sight.y,
+    muzzle: mounted.muzzle ?? bareMuzzle,
+    sightHeight: mounted.sightHeight ?? template.sockets.socket_sight.y,
     adsOffsetZ: spec.adsOffsetZ,
     weaponId: template.weaponId,
     source: 'glb',
@@ -233,6 +247,75 @@ function buildFromTemplate(
       root.clear();
     },
   };
+}
+
+/** What mounting changed about the contract's numbers; absent means the bare weapon's. */
+interface Mounted {
+  muzzle?: THREE.Object3D;
+  sightHeight?: number;
+}
+
+/**
+ * The pack on the sockets (M19, stage 2).
+ *
+ * Each part is a clone of its template under the weapon's socket — the part's origin is on its
+ * mating face and the socket's frame is the mount's, so the clone is added and nothing else.
+ * Then the two numbers: an optic's own `socket_sight` sits above the rail socket, and the sum
+ * is the sight line the ADS pose now has to cancel; a suppressor's own `socket_muzzle` is where
+ * the flash leaves from now, and the returned node is inside the clone so the flash rides the
+ * can. The extended magazine is the magazine group stretched along the well
+ * (`MAGAZINE_EXTENDED_STRETCH`); the reload writes the group's position and rotation and leaves
+ * its scale alone, and the well hides the top.
+ *
+ * The optic's glass and reticle take the project's `lens` and `reticle` materials in place of
+ * the artist's (the source carries `KHR_materials_transmission`, a render pass the viewmodel
+ * does not pay for), so the dot is the same emissive dot the procedural red dot draws and the
+ * glass has the same `depthWrite: false` that keeps the target visible through it.
+ *
+ * A part the weapon has no socket for is skipped, as `resolveWeaponDef` skips an attachment
+ * the weapon has no slot for; the two lists are the same list, so this is belt and braces.
+ */
+function mountAttachments(
+  root: THREE.Object3D,
+  magazine: THREE.Object3D,
+  template: WeaponAssetTemplate,
+  options: WeaponModelOptions,
+  surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
+): Mounted {
+  const out: Mounted = {};
+  const assets = options.assets ?? null;
+  const attachments = options.attachments ?? [];
+  if (assets === null || attachments.length === 0) return out;
+
+  for (const id of attachments) {
+    if (id === 'mag_extended') {
+      magazine.scale.y = MAGAZINE_EXTENDED_STRETCH;
+      continue;
+    }
+    const partId = ATTACHMENT_PARTS[id];
+    const part = assets.part(partId);
+    const socket = root.getObjectByName(ATTACHMENT_PART_SOCKETS[partId]);
+    if (part === null || socket === undefined) continue;
+    const clone = part.scene.clone(true);
+    clone.name = `attachment:${partId}`;
+    socket.add(clone);
+
+    if (partId === 'att_optic') {
+      clone.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        const material = mesh.material;
+        if (!(material instanceof THREE.Material)) return;
+        if (material.name === 'M_glass') mesh.material = surfaces.get('lens') ?? material;
+        else if (material.name === 'M_Reticle') mesh.material = surfaces.get('reticle') ?? material;
+      });
+      const sight = part.sockets.socket_sight;
+      if (sight !== undefined) out.sightHeight = template.sockets.socket_rail_top.y + sight.y;
+    } else if (partId === 'att_suppressor') {
+      const muzzle = clone.getObjectByName('socket_muzzle');
+      if (muzzle !== undefined) out.muzzle = muzzle;
+    }
+  }
+  return out;
 }
 
 // -- assembly ---------------------------------------------------------------

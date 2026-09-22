@@ -17,8 +17,8 @@ attachment pack built by `scripts/weapon-build.mjs` from Sketchfab sources kept 
 repository (`../GLB_files/weapons/`); one recipe per file, the sockets measured from the mesh,
 `npm run check:weapons` holding every file to its budget and its attribution
 (`public/models/weapons/CREDITS.md`). The M4 CARBINE is drawn from its file in the match and
-in the loadout editor; every other weapon is still built in code, which is also every weapon's
-fallback. See [the weapon asset pipeline](docs/WEAPON-ASSETS.md) for the file's contract, the
+in the loadout editor, with its attachments mounted on the file's sockets; every other weapon
+is still built in code, which is also every weapon's fallback. See [the weapon asset pipeline](docs/WEAPON-ASSETS.md) for the file's contract, the
 build and the runtime ownership, and PLAN.md's Milestone 19 for the stages still to come.
 
 ---

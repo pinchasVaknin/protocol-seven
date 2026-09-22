@@ -14,7 +14,7 @@
  * it after a rebuild that changes a file.
  */
 
-export const WEAPON_ASSET_VERSION = '2026-09-22-m19-stage-1';
+export const WEAPON_ASSET_VERSION = '2026-09-22-m19-stage-2';
 
 const WEAPON_ROOT = '/models/weapons';
 
@@ -28,6 +28,42 @@ export function hasWeaponAsset(weaponId: string): boolean {
 export function weaponAssetUrl(weaponId: string): string {
   return `${WEAPON_ROOT}/${weaponId}.glb?v=${encodeURIComponent(WEAPON_ASSET_VERSION)}`;
 }
+
+/**
+ * The attachment pack (stage 2): one part per attachment that is a thing on the gun, built
+ * with its origin on its mating face so mounting is `socket.add(part)`. The extended
+ * magazine is not a part — it is the weapon's own magazine stretched, because a magazine is
+ * the one attachment that cannot be shared across calibres — and so it has no file.
+ */
+export const ATTACHMENT_PARTS = {
+  optic_reflex: 'att_optic',
+  muzzle_suppressor: 'att_suppressor',
+  grip_foregrip: 'att_grip',
+  laser_tactical: 'att_laser',
+} as const;
+
+export type AttachmentPartId = (typeof ATTACHMENT_PARTS)[keyof typeof ATTACHMENT_PARTS];
+
+export const ATTACHMENT_PART_IDS: readonly AttachmentPartId[] = Object.values(ATTACHMENT_PARTS);
+
+/** Where each part mounts, by the weapon's socket name. */
+export const ATTACHMENT_PART_SOCKETS: Readonly<Record<AttachmentPartId, WeaponSocketNode>> = {
+  att_optic: 'socket_rail_top',
+  att_suppressor: 'socket_muzzle',
+  att_grip: 'socket_rail_bottom',
+  att_laser: 'socket_rail_front',
+};
+
+/** The sockets a part carries of its own: the optic's sight line, the suppressor's new muzzle. */
+export const ATTACHMENT_PART_OWN_SOCKETS: Readonly<Record<AttachmentPartId, readonly ('socket_sight' | 'socket_muzzle')[]>> = {
+  att_optic: ['socket_sight'],
+  att_suppressor: ['socket_muzzle'],
+  att_grip: [],
+  att_laser: [],
+};
+
+/** How much longer an extended magazine draws than the standard one, along the well. */
+export const MAGAZINE_EXTENDED_STRETCH = 1.4;
 
 /**
  * The nodes a built weapon file carries, by name — the authoring contract in

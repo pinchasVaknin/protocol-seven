@@ -767,12 +767,36 @@ flash mesh parented to the suppressor's `socket_muzzle` 13.75 cm ahead of the ba
 rounds fired (45 → 37, the extended magazine's count), a reload dropping the stretched
 magazine. No console errors.
 
+### Playtest (2026-09-22, the human): the optic floated
+
+*"It looks like it is floating or mounted on an unnaturally tall gap above the actual
+picatinny rail during ADS."* Two causes, both in the build script, both measured:
+
+- **The rail socket was 3 mm proud of the rail.** `top()` answered with the highest vertex in
+  the band — a notch at 7.30 cm in the kit's units, sixteen vertices — where the slat tops are
+  at 7.05 (120 vertices) and the rail's base flange at 6.35 (227). `plateau()` replaces it for
+  the rail sockets: half-millimetre bins over the top 1.5 cm of the band, the highest bin
+  holding at least 40% of the fullest bin's count (`PLATEAU_SHARE`). `socket_rail_top` moved
+  from 0.0383 to 0.0355, `socket_rail_front` from 0.0385 to 0.0355.
+- **The AimPoint carries an AK side-mount's clamp** — a 1.2 cm plate under a stem under the
+  tube. Set on the rail by its underside, the plate hovered over the slats and the tube stood
+  4.2 cm up. The part's origin is now 6 mm above its underside (`OPTIC_CLAMP_SINK`), so the
+  plate wraps the rail the way a clamp does and the axis lands 3.6 cm above it — Aimpoint's
+  own lower-third co-witness height. `sightHeight` with the optic: 0.0806 → **0.0719**, the
+  front post 4 mm under the dot.
+
+**The suppressor's flash, decided:** `AttachmentEffects.muzzleFlashMult`, ×0.4 on the
+SUPPRESSOR — the mesh and the muzzle light both scale by `muzzleFlashScale`, so a can flashes
+smaller and dimmer; nothing the simulation reads changes. The benefit line says so, and the
+arsenal panel shows the row.
+
+Verified in the pane: the clamp meets the rail from the side and from behind in the viewer,
+the DBAL's clamp sits on the handguard's slat tops; in the Range, ADS with the tube seated,
+`sightHeight` 0.0719, the resolved def's `muzzleFlashScale` 0.4. Asset version `stage-2b`.
+
 ## Open
 
 - **Stage 3**: the arsenal and the bodies.
-- The suppressor changes where the flash is, not how big: `muzzleFlashScale` is the def's and
-  `Attachments.ts` does not touch it. A smaller, dimmer flash on a can is a one-field effect in
-  the same table, and a balance decision, so it is noted rather than made.
 - The M4's geometry is 1.5 MB of its 2.21 — split normals at every hard edge. `quantize` would
   roughly halve it; left for when the budget bites rather than done on a guess.
 - The optic's glass carries `KHR_materials_transmission`; three loads it as a

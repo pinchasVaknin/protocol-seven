@@ -80,6 +80,10 @@ const WEBP_QUALITY = 85;
  */
 const LOD_RATIO = 0.15;
 const LOD_ERROR = 0.1;
+/** A plateau bin counts as a surface when it holds this share of the fullest bin. See `plateau`. */
+const PLATEAU_SHARE = 0.4;
+/** Metres the optic's clamp plate sinks below the rail surface it mounts on. See `att_optic`. */
+const OPTIC_CLAMP_SINK = 0.006;
 
 // -- the sources ---------------------------------------------------------------
 
@@ -153,8 +157,10 @@ export const RECIPES = {
       const upper = m.bounds({ name: 'Upper', material: 'Body' });
       const guard = m.bounds({ name: 'Handguard', material: 'Keymod_material' });
       const grip = m.bounds({ name: 'Grip', material: 'Grip_Default' });
-      // The rail surface: the receiver's top over its middle half, where no sight stands.
-      const railTop = m.top({ name: 'Upper', material: 'Body' }, 0.35, 0.85);
+      // The rail surface: the slat tops of the receiver's rail over its middle half, where no
+      // sight stands. `top` answered 3 mm proud of them (a notch), and an optic sat on the
+      // notch with daylight under its clamp.
+      const railTop = m.plateau({ name: 'Upper', material: 'Body' }, 0.35, 0.85);
       return {
         socket_muzzle: bore,
         // Over the receiver, where a red dot sits: the rear third of the rail.
@@ -162,7 +168,7 @@ export const RECIPES = {
         // Under the handguard, at the middle of its length.
         socket_rail_bottom: [0, guard.min[1], (guard.min[2] + guard.max[2]) / 2],
         // The handguard's top rail, forward of the optic and behind the front sight: the laser's.
-        socket_rail_front: [0, m.top({ name: 'Handguard', material: 'Keymod_material' }, 0.2, 0.7), guard.min[2] + (guard.max[2] - guard.min[2]) * 0.45],
+        socket_rail_front: [0, m.plateau({ name: 'Handguard', material: 'Keymod_material' }, 0.2, 0.7), guard.min[2] + (guard.max[2] - guard.min[2]) * 0.45],
         // The irons' line: the aperture sits just under the sight's top edge.
         socket_sight: [0, upper.max[1] - 0.4, 0],
         // Where the hands go (stage 1). The trigger hand's centre sits on the pistol grip,
@@ -217,10 +223,14 @@ export const RECIPES = {
     up: 'y+',
     // The AimPoint Pro on the pack's tactical rifle: the tube, its glass and the reticle.
     parts: { part: [{ name: 'Cylinder.002', all: true }] },
-    // The mount's underside, centred: the face that meets the rail.
+    // The clamp's underside less `OPTIC_CLAMP_SINK`, centred. The pack's AimPoint comes off an
+    // AK side mount: a 1.2 cm plate under a stem under the tube. Set on the rail by its
+    // underside the plate hovers over the slats and the tube stands 4.2 cm up (the human's
+    // "floating"); sunk 6 mm it wraps the rail as a clamp does, and the axis lands 3.6 cm
+    // above it — Aimpoint's own lower-third co-witness height, the front post just under the dot.
     origin: (m) => {
       const b = m.bounds({ name: 'Cylinder.002', all: true });
-      return [(b.min[0] + b.max[0]) / 2, b.min[1], (b.min[2] + b.max[2]) / 2];
+      return [(b.min[0] + b.max[0]) / 2, b.min[1] + OPTIC_CLAMP_SINK, (b.min[2] + b.max[2]) / 2];
     },
     sockets: (m) => {
       const glass = m.bounds({ name: 'Cylinder.002', material: 'M_glass' });
@@ -329,9 +339,11 @@ function* positions(glb, accessorIndex) {
 }
 
 class Source {
-  constructor(glb) {
+  constructor(glb, unit) {
     this.glb = glb;
     this.json = glb.json;
+    /** Source units per centimetre, so the plateau bins are half a millimetre whatever the unit. */
+    this.unitToCm = 1 / (unit * 100);
     this.parent = new Map();
     this.json.nodes.forEach((n, i) => (n.children ?? []).forEach((c) => this.parent.set(c, i)));
     this.worlds = new Map();
@@ -423,6 +435,51 @@ class Source {
   }
 
   /**
+   * The highest surface many vertices in a band share: a Picatinny rail's slat tops, where
+   * `top` would answer with the one screw head or notch that stands a few millimetres proud
+   * of them, and the most populated bin would be the rail's base flange a centimetre under
+   * them. Bins of half a millimetre over the top 1.5 cm of the band; the highest bin holding
+   * at least `PLATEAU_SHARE` of the fullest bin's count is the surface. On the M4 kit the
+   * slat tops are 120 vertices, the notch 16, the flange 227.
+   */
+  plateau(sel, forward, from, to) {
+    const indices = this.select(sel);
+    const axis = AXES[forward];
+    const k = axis.findIndex((c) => c !== 0);
+    const b = this.bounds(sel);
+    const span = b.max[k] - b.min[k];
+    const rear = axis[k] > 0 ? b.min[k] : b.max[k];
+    const dir = axis[k];
+    const inBand = [];
+    let top = -Infinity;
+    for (const i of indices) {
+      const m = this.world(i);
+      for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
+        for (const p of positions(this.glb, prim.attributes.POSITION)) {
+          const v = apply(m, p);
+          const f = ((v[k] - rear) * dir) / span;
+          if (f < from || f > to) continue;
+          inBand.push(v[1]);
+          if (v[1] > top) top = v[1];
+        }
+      }
+    }
+    if (inBand.length === 0) throw new Error(`plateau(${JSON.stringify(sel)}): no vertices in the band`);
+    const bins = new Map();
+    for (const y of inBand) {
+      if (top - y > 1.5 / this.unitToCm) continue;
+      const bin = Math.round(y * this.unitToCm * 20) / 20;
+      bins.set(bin, (bins.get(bin) ?? 0) + 1);
+    }
+    const fullest = Math.max(...bins.values());
+    let best = -Infinity;
+    for (const [bin, n] of bins) {
+      if (n >= fullest * PLATEAU_SHARE && bin > best) best = bin;
+    }
+    return best / this.unitToCm;
+  }
+
+  /**
    * The bore at the barrel's tip: the mean of the vertices within a sliver of the selection's
    * furthest extent along `forward`. A barrel ends in a ring; the ring's centre is the bore.
    */
@@ -472,6 +529,7 @@ function rewrite(id, recipe, src) {
     bounds: (sel) => src.bounds(sel),
     tip: (sel) => src.tip(sel, forward),
     top: (sel, from, to) => src.top(sel, forward, from, to),
+    plateau: (sel, from, to) => src.plateau(sel, forward, from, to),
   };
   const origin = recipe.origin(measure);
   const fix = fixMatrix(recipe, origin);
@@ -603,7 +661,7 @@ export function buildOne(id, work) {
 
   const glb = readGlb(sourceFile);
   verifyAttribution(id, recipe.source, glb.json.asset?.extras);
-  const src = new Source(glb);
+  const src = new Source(glb, recipe.unit);
   const { json, sockets, kept, origin } = rewrite(id, recipe, src);
 
   const staged = path.join(work, `${id}.staged.glb`);

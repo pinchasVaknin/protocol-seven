@@ -46,6 +46,12 @@ export interface AttachmentEffects {
   readonly scopeSwayMult?: number;
   readonly sprintOutMult?: number;
   readonly swapMult?: number;
+  /**
+   * Multiplies `muzzleFlashScale` (M19, stage 2 — the human's call after seeing the can on the
+   * gun). The flash mesh and the muzzle light both scale by it, so a suppressed weapon flashes
+   * smaller and dimmer; it changes nothing the simulation reads.
+   */
+  readonly muzzleFlashMult?: number;
   /** Overrides the flag outright rather than scaling it. */
   readonly minimapPing?: boolean;
   readonly laserVisible?: boolean;
@@ -89,9 +95,9 @@ export const ATTACHMENTS: Readonly<Record<AttachmentId, AttachmentDef>> = {
     id: 'muzzle_suppressor',
     name: 'SUPPRESSOR',
     slot: 'muzzle',
-    benefit: 'No minimap ping on fire',
+    benefit: 'No minimap ping on fire, a smaller and dimmer flash',
     cost: '-10% range',
-    effects: { minimapPing: false, rangeMult: 0.9 },
+    effects: { minimapPing: false, rangeMult: 0.9, muzzleFlashMult: 0.4 },
   },
   mag_extended: {
     id: 'mag_extended',
@@ -219,6 +225,7 @@ function applyEffects(def: WeaponDef, fx: AttachmentEffects): void {
     def.swapInTime *= fx.swapMult;
     def.swapOutTime *= fx.swapMult;
   }
+  if (fx.muzzleFlashMult !== undefined) def.muzzleFlashScale *= fx.muzzleFlashMult;
   if (fx.minimapPing !== undefined) def.minimapPing = fx.minimapPing;
   if (fx.laserVisible !== undefined) def.laserVisible = fx.laserVisible;
 }

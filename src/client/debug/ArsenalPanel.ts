@@ -472,6 +472,7 @@ function describeResolved(base: WeaponDef, resolvedDef: WeaponDef): string {
   num('ADS spread', base.spread.ads, resolvedDef.spread.ads, '°');
   num('Recoil vert', base.recoil.verticalScale, resolvedDef.recoil.verticalScale, 'x');
   num('Sprint to fire', base.sprintOutTime, resolvedDef.sprintOutTime, ' s');
+  num('Flash size', base.muzzleFlashScale, resolvedDef.muzzleFlashScale, 'x', 2);
   if (base.minimapPing !== resolvedDef.minimapPing) {
     rows.push(`${'Minimap ping'.padEnd(16)} ${String(base.minimapPing)} -> ${String(resolvedDef.minimapPing)}`);
   }

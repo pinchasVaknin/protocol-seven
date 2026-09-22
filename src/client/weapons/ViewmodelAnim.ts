@@ -106,6 +106,15 @@ const EMPTY_TIMES = { down: 0.15, magOut: 0.34, magIn: 0.42, magSeated: 0.58, ra
  */
 const REFERENCE_SIGHT_HEIGHT = 0.0915;
 
+/**
+ * The reload on a file (playtest 3, finding 8). The shared pose drops the weapon 11.5 cm and
+ * takes the magazine well below the frame, which on the primitives was the point — nothing
+ * down there was worth a look. A file's well is; so a file dips a third as far, rolls
+ * further toward the eye so the well and the charging handle face it, and its magazine
+ * slides a hand's length rather than the 22 cm throw that carried the P90's over the gun.
+ */
+const FILE_RELOAD = { dropY: -0.04, dropZ: 0.03, pitch: -9, roll: 34, yaw: 18, magThrow: 0.13, magSlide: 0.09 };
+
 /** How fast the weapon drops for a throw and comes back. Brisk: this is not a swap. */
 const THROW_LOWER_RATE = 14;
 
@@ -268,17 +277,22 @@ export class ViewmodelAnim {
     const aimed = clamp01(drive.adsFraction);
 
     // ---- base pose: hip -> ADS, then blended toward the lowered pose -------
-    let px = lerp(cfg.hipX, 0, ads);
+    // The sight point is what ADS lands on the camera axis, all three of it (playtest 3).
+    const sight = this.model.sightPoint;
+    const file = this.model.source === 'glb';
+    let px = lerp(cfg.hipX, -sight.x, ads);
     // `adsY` was tuned against the carbine's sight line. A weapon whose sights sit higher
     // has to be held correspondingly lower for them to land on the screen centre, so the
     // difference is applied here rather than being a second tuned constant per weapon —
     // there is one ADS pose and twelve sight heights, not twelve poses (M5).
-    const sightOffset = this.model.sightHeight - REFERENCE_SIGHT_HEIGHT;
+    const sightOffset = sight.y - REFERENCE_SIGHT_HEIGHT;
     let py = lerp(cfg.hipY, cfg.adsY - sightOffset, ads);
-    // `adsOffsetZ` is the weapon's own correction to the shared pose: the sight-height
-    // compensation puts the sight line on the camera axis but says nothing about how much
-    // of the screen a short weapon's body and hands take. Zero on everything but the pistol.
-    let pz = lerp(cfg.hipZ, cfg.adsZ + this.model.adsOffsetZ, ads);
+    // Along the barrel a file is placed by its sight: the sight point lands
+    // `adsSightDistance` in front of the eye, and the rest of the weapon falls where the
+    // weapon's own proportions put it (playtest 3, findings 5 and 6). The primitives keep
+    // `adsZ` and the spec's `adsOffsetZ`, the pose they were tuned in.
+    const aimZ = file ? -this.model.adsSightDistance - sight.z : cfg.adsZ + this.model.adsOffsetZ;
+    let pz = lerp(cfg.hipZ, aimZ, ads);
     let rx = lerp(cfg.hipPitch, 0, ads);
     let ry = lerp(cfg.hipYaw, 0, ads);
     let rz = lerp(cfg.hipRoll, 0, ads);
@@ -327,11 +341,11 @@ export class ViewmodelAnim {
       const f = clamp01(drive.reloadFraction);
       const down = smoothstep(0, times.down, f) * (1 - smoothstep(times.raise, 1, f));
       px += cfg.hipX * 0.12 * down;
-      py += cfg.reloadDropY * down;
-      pz += cfg.reloadDropZ * down;
-      rx += cfg.reloadPitch * down;
-      ry += cfg.reloadYaw * down;
-      rz += cfg.reloadRoll * down;
+      py += (file ? FILE_RELOAD.dropY : cfg.reloadDropY) * down;
+      pz += (file ? FILE_RELOAD.dropZ : cfg.reloadDropZ) * down;
+      rx += (file ? FILE_RELOAD.pitch : cfg.reloadPitch) * down;
+      ry += (file ? FILE_RELOAD.yaw : cfg.reloadYaw) * down;
+      rz += (file ? FILE_RELOAD.roll : cfg.reloadRoll) * down;
       this.poseMagazine(f, times, cfg);
       this.poseChargingHandle(drive.reloadEmpty ? f : -1, cfg);
     } else {
@@ -542,10 +556,14 @@ export class ViewmodelAnim {
       drop = 1 - easeOutCubic(t);
       tilt = (1 - t) * 0.35;
     }
-    // Along the weapon's own exit direction (M19): down for all but the P90.
-    this.model.magazine.position.copy(this.model.magazineExit).multiplyScalar(drop * cfg.magThrow);
+    // Along the weapon's own exit direction (M19): down for all but the P90. A file's
+    // magazine travels a hand's length — it stays in the picture — and one that leaves along
+    // the receiver rather than out of the well travels less.
+    const falls = this.model.magazineExit.y < -0.5;
+    const reach = this.model.source === 'glb' ? (falls ? FILE_RELOAD.magThrow : FILE_RELOAD.magSlide) : cfg.magThrow;
+    this.model.magazine.position.copy(this.model.magazineExit).multiplyScalar(drop * reach);
     // The tumble is a falling magazine's; one that lifts off the top (the P90's) slides straight.
-    const tumble = this.model.magazineExit.y < -0.5 ? tilt : 0;
+    const tumble = falls ? tilt : 0;
     this.model.magazine.rotation.set(tumble, 0, tumble * 0.4);
   }
 

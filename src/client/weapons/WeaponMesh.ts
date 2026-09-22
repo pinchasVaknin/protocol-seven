@@ -75,6 +75,28 @@ export interface WeaponModel {
    * the six weapons whose scale is not 1.
    */
   readonly sightHeight: number;
+  /**
+   * The sight line as a point in weapon space (M19, playtest 3): `sightHeight` is its Y, and
+   * its X and Z are what the ADS pose brings onto the camera axis at the eye's distance. On
+   * the primitives it is (0, sightHeight, 0), the pose the config was tuned against; on a file
+   * it is `socket_sight`, or the mounted optic's own sight above the rail socket — a P90's
+   * collimator twelve centimetres ahead of the receiver's centre, an AK's rear leaf on it,
+   * and `ViewmodelAnim` holds every one at the same distance from the eye.
+   */
+  readonly sightPoint: THREE.Vector3;
+  /**
+   * How far in front of the eye `sightPoint` is held at full ADS, metres (M19, playtest 3).
+   *
+   * A shouldered rifle puts its rear sight or its red dot about 20 cm from the eye, and a
+   * scope its ocular about 10 — that is eye relief, and it is why a scope fills the view and
+   * a red dot does not. Holding every weapon at one distance is what put the AK's receiver
+   * across the screen and the P90's collimator at arm's length; holding the *sight* at the
+   * right distance puts the rest of each weapon where the eye expects it.
+   *
+   * Zero on the primitives, whose pose is `ViewmodelConfig.adsZ` plus the spec's own
+   * `adsOffsetZ` and is not derived from a sight point at all.
+   */
+  readonly adsSightDistance: number;
   /** Per-weapon correction to the shared ADS pose. See `WeaponModelSpec.adsOffsetZ`. */
   readonly adsOffsetZ: number;
   readonly weaponId: string;
@@ -163,6 +185,8 @@ export function buildWeaponModel(
     chargingHandle,
     muzzle,
     sightHeight: spec.sightHeight * spec.scale,
+    sightPoint: new THREE.Vector3(0, spec.sightHeight * spec.scale, 0),
+    adsSightDistance: 0,
     adsOffsetZ: spec.adsOffsetZ,
     weaponId,
     source: 'procedural',
@@ -243,13 +267,18 @@ function buildFromTemplate(
   const bareMuzzle = root.getObjectByName('socket_muzzle');
   if (bareMuzzle === undefined) throw new Error(`Weapon clone "${template.weaponId}" has no socket_muzzle.`);
   const mounted = mountAttachments(root, groups.magazine, template, options, surfaces);
+  const sightPoint = mounted.sightPoint ?? template.sockets.socket_sight.clone();
 
   return {
     root,
     magazine: groups.magazine,
     chargingHandle: groups.charge,
     muzzle: mounted.muzzle ?? bareMuzzle,
-    sightHeight: mounted.sightHeight ?? template.sockets.socket_sight.y,
+    sightHeight: sightPoint.y,
+    sightPoint,
+    // A scope is held at eye relief; irons and a red dot at a shouldered rifle's sight
+    // distance. `mountAttachments` leaves a scoped weapon its scope, so the two cannot disagree.
+    adsSightDistance: spec.optic === 'scope' ? SCOPE_EYE_RELIEF : SIGHT_DISTANCE,
     adsOffsetZ: spec.adsOffsetZ,
     weaponId: template.weaponId,
     source: 'glb',
@@ -342,6 +371,11 @@ export function camoMaterial(material: THREE.MeshStandardMaterial, camo: CamoId,
   return variant;
 }
 
+/** Where a file's rear sight or red dot is held at ADS, metres from the eye. */
+const SIGHT_DISTANCE = 0.2;
+/** Where a file's scope ocular is held: eye relief, so the tube fills the view. */
+const SCOPE_EYE_RELIEF = 0.1;
+
 const MAGAZINE_EXIT_DOWN = new THREE.Vector3(0, -1, 0);
 
 /** The file's `socket_mag_exit`, a unit direction carried as a point; down when it has none. */
@@ -355,7 +389,7 @@ function magazineExitOf(root: THREE.Object3D): THREE.Vector3 {
 /** What mounting changed about the contract's numbers; absent means the bare weapon's. */
 interface Mounted {
   muzzle?: THREE.Object3D;
-  sightHeight?: number;
+  sightPoint?: THREE.Vector3;
 }
 
 /**
@@ -419,7 +453,7 @@ function mountAttachments(
         else if (material.name === 'M_Reticle') mesh.material = surfaces.get('reticle') ?? material;
       });
       const sight = part.sockets.socket_sight;
-      if (sight !== undefined) out.sightHeight = template.sockets.socket_rail_top.y + sight.y;
+      if (sight !== undefined) out.sightPoint = template.sockets.socket_rail_top.clone().add(sight);
       const own = root.getObjectByName('optic_default');
       if (own !== undefined) own.visible = false;
     } else if (partId === 'att_suppressor') {

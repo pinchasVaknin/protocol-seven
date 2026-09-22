@@ -5,8 +5,9 @@ import type { CharacterAvatarProvider } from '../characters/CharacterAvatarProvi
 import { characterDefinition, type CharacterId } from '../characters/CharacterCatalog';
 import type { CharacterAssetService } from '../characters/CharacterAssetService';
 import type { CamoId } from '../../shared/meta/Camos';
-import { buildHeldWeapon, heldWeaponMaterial, paintCamo } from '../weapons/WeaponMesh';
+import { buildHeldWeapon, buildWeaponModel, heldWeaponMaterial, type WeaponModel } from '../weapons/WeaponMesh';
 import type { WeaponAssetService } from '../weapons/WeaponAssetService';
+import type { AttachmentId } from '../../shared/weapons/Attachments';
 import { PODIUM_STEPS, PODIUM_X } from './Lineup';
 
 /**
@@ -86,6 +87,8 @@ export interface StageFigure {
   readonly weaponId: string | null;
   /** The weapon's finish; a lineup's bodies carry none (the wire has none to give them). */
   readonly camo?: CamoId | null;
+  /** What is fitted to it (M19, playtest 3): the class's attachments on the editor's operator; none on a lineup. */
+  readonly attachments?: readonly AttachmentId[];
   /** Metres from the stage's centre; +Z is toward the camera. */
   readonly x: number;
   readonly z: number;
@@ -130,6 +133,16 @@ export const PODIUM_STAGE: StageOptions = {
 };
 
 /** Radians per second when nobody is holding it. */
+function weaponKey(weaponId: string, camo: CamoId | null, attachments: readonly AttachmentId[]): string {
+  return `${weaponId}|${camo ?? ''}|${[...attachments].sort().join(',')}`;
+}
+
+function sameAttachments(a: readonly AttachmentId[], b: readonly AttachmentId[]): boolean {
+  if (a.length !== b.length) return false;
+  const sorted = [...b].sort();
+  return [...a].sort().every((id, i) => id === sorted[i]);
+}
+
 const IDLE_TURN = 0.1;
 /** Radians of turn per pixel of drag, in frame pixels. */
 const DRAG_RADIANS_PER_PX = 0.008;
@@ -181,8 +194,11 @@ export class CharacterStage {
   /** The one-figure API's weapon and its finish, so `setWeapon` before or after `show` means the same thing. */
   private weaponId: string | null = null;
   private camo: CamoId | null = null;
-  /** Keyed by weapon and finish: a camo'd weapon is a different asset with the same geometry. */
+  private attachments: readonly AttachmentId[] = [];
+  /** Keyed by weapon, finish and attachments: each combination is its own asset. */
   private readonly weapons = new Map<string, HeldWeaponAsset>();
+  /** The file models behind the assets (M19, playtest 3), released with the stage. */
+  private readonly models: WeaponModel[] = [];
 
   /**
    * Where the turntable is. Starts at a half turn: a body at yaw 0 faces -Z, the camera stands
@@ -285,17 +301,18 @@ export class CharacterStage {
   show(characterId: CharacterId): void {
     const only = this.slots.length === 1 ? this.slots[0] : undefined;
     if (only !== undefined && only.figure.characterId === characterId) return;
-    this.showLineup([{ characterId, weaponId: this.weaponId, camo: this.camo, x: 0, z: 0, yaw: 0 }]);
+    this.showLineup([{ characterId, weaponId: this.weaponId, camo: this.camo, attachments: this.attachments, x: 0, z: 0, yaw: 0 }]);
   }
 
-  /** The weapon in the one figure's hands, in its finish. Null empties them. */
-  setWeapon(weaponId: string | null, camo: CamoId | null = null): void {
-    if (weaponId === this.weaponId && camo === this.camo) return;
+  /** The weapon in the one figure's hands, in its finish, with its attachments. Null empties them. */
+  setWeapon(weaponId: string | null, camo: CamoId | null = null, attachments: readonly AttachmentId[] = []): void {
+    if (weaponId === this.weaponId && camo === this.camo && sameAttachments(attachments, this.attachments)) return;
     this.weaponId = weaponId;
     this.camo = camo;
+    this.attachments = [...attachments];
     const only = this.slots.length === 1 ? this.slots[0] : undefined;
     if (only === undefined) return;
-    only.weapon = weaponId === null ? null : this.heldWeapon(weaponId, camo);
+    only.weapon = weaponId === null ? null : this.heldWeapon(weaponId, camo, this.attachments);
     only.avatar?.setWeapon(only.weapon);
   }
 
@@ -309,7 +326,7 @@ export class CharacterStage {
     this.slots = figures.map((figure) => ({
       figure,
       provider: this.deps.characterAssets.avatarProvider(characterDefinition(figure.characterId)),
-      weapon: figure.weaponId === null ? null : this.heldWeapon(figure.weaponId, figure.camo ?? null),
+      weapon: figure.weaponId === null ? null : this.heldWeapon(figure.weaponId, figure.camo ?? null, figure.attachments ?? []),
       avatar: null,
       entrance: null,
     }));
@@ -437,6 +454,8 @@ export class CharacterStage {
     this.release();
     for (const asset of this.weapons.values()) asset.geometry.dispose();
     this.weapons.clear();
+    for (const model of this.models) model.dispose();
+    this.models.length = 0;
     disposePlatform(this.platform);
     this.renderer?.dispose();
     this.renderer = null;
@@ -457,40 +476,65 @@ export class CharacterStage {
     this.slots = [];
   }
 
-  /** The held weapon for an id and a finish, built once and kept — `BotRenderer.heldWeapon`'s shape. */
-  private heldWeapon(weaponId: string, camo: CamoId | null): HeldWeaponAsset {
-    const key = `${weaponId}|${camo ?? ''}`;
+  /**
+   * The held weapon for an id, a finish and a set of attachments, built once and kept —
+   * `BotRenderer.heldWeapon`'s shape, with one difference (M19, playtest 3): a stage's body
+   * is a metre or two from the lens, so it holds the weapon the viewmodel is built from —
+   * `buildWeaponModel` on the file, without the gloves, with the class's attachments on the
+   * sockets and the camo over the materials — and not the bodies' LOD. Until the file lands
+   * it holds the primitives, and `weaponFileArrived` swaps them the moment it does.
+   */
+  private heldWeapon(weaponId: string, camo: CamoId | null, attachments: readonly AttachmentId[]): HeldWeaponAsset {
+    const key = weaponKey(weaponId, camo, attachments);
     const existing = this.weapons.get(key);
     if (existing !== undefined) return existing;
     const built = buildHeldWeapon(weaponId);
-    // The weapon's file for the bodies (M19, stage 3), in the finish the class chose — the
-    // camo overlaid on the file's own materials — and the primitives until it lands, the
-    // cache entry dropped on arrival so the next refresh swaps it in.
     const assets = this.deps.weaponAssets;
-    const lod = assets?.lod(weaponId) ?? null;
-    if (lod === null && assets !== null && assets.statusFor(weaponId) !== 'none') {
-      void assets.preloadLod(weaponId).then(
-        () => {
-          if (this.weapons.get(key) === asset) this.weapons.delete(key);
-        },
+    const file = assets?.template(weaponId) ?? null;
+    let template: THREE.Object3D | null = null;
+    let gripAnchor = built.gripAnchor;
+    let supportAnchor = built.supportAnchor;
+    if (file !== null && assets !== null) {
+      const model = buildWeaponModel(weaponId, this.deps.anisotropy(), camo, { hands: false, assets, attachments });
+      this.models.push(model);
+      template = model.root;
+      gripAnchor = file.sockets.socket_grip.clone();
+      supportAnchor = file.sockets.socket_support.clone();
+    } else if (assets !== null && assets.statusFor(weaponId) !== 'none') {
+      void assets.preload(weaponId).then(
+        () => this.weaponFileArrived(weaponId),
         () => undefined,
       );
-    }
-    let template: THREE.Object3D | null = null;
-    if (lod !== null) {
-      template = lod.scene.clone(true);
-      if (camo !== null) paintCamo(template, camo, this.deps.anisotropy());
     }
     const asset: HeldWeaponAsset = {
       weaponId,
       geometry: built.geometry,
       material: heldWeaponMaterial(this.deps.anisotropy(), camo),
       template,
-      gripAnchor: lod?.gripAnchor ?? built.gripAnchor,
-      supportAnchor: lod?.supportAnchor ?? built.supportAnchor,
+      gripAnchor,
+      supportAnchor,
     };
     this.weapons.set(key, asset);
     return asset;
+  }
+
+  /**
+   * A weapon's file has landed: every asset built on its primitives goes, and every figure
+   * holding that weapon is handed the file's the same frame. Before this the cache entry was
+   * dropped and nothing asked again, so the operator kept the primitives until a skin change
+   * rebuilt the figure (playtest 3, finding 1).
+   */
+  private weaponFileArrived(weaponId: string): void {
+    for (const [key, asset] of this.weapons) {
+      if (asset.weaponId !== weaponId || asset.template !== null) continue;
+      this.weapons.delete(key);
+      asset.geometry.dispose();
+    }
+    for (const slot of this.slots) {
+      if (slot.figure.weaponId !== weaponId) continue;
+      slot.weapon = this.heldWeapon(weaponId, slot.figure.camo ?? null, slot.figure.attachments ?? []);
+      slot.avatar?.setWeapon(slot.weapon);
+    }
   }
 
   private ensureRenderer(): THREE.WebGLRenderer {

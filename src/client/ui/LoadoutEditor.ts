@@ -1367,7 +1367,7 @@ export class LoadoutEditor {
       this.preview.show(shown, camo, requireWeapon(shown).name, isEquipped ? equipped.attachments : []);
     } else {
       this.preview.release();
-      this.stage.setWeapon(equipped.weaponId, equipped.camo);
+      this.stage.setWeapon(equipped.weaponId, equipped.camo, equipped.attachments);
     }
   }
 

@@ -23,6 +23,28 @@ export type ActorIndicatorFrameAnchor = (typeof INDICATOR_FRAME_ANCHORS)[number]
  * cannot disagree about which weapon they describe. Both anchors are in the geometry's own
  * space, with the model scale already baked in — the same space the vertices are in.
  */
+/**
+ * How far a held weapon may reach behind the hand, metres (M19, playtest 3). A body holds a
+ * weapon by its trigger grip, and a bullpup's grip is far forward — the Tavor's stock reached
+ * half a metre behind the hand, through the shoulder and out the back. Past this a weapon is
+ * carried forward by the excess: the hand sits a little behind the grip and the stock stops at
+ * the shoulder, which is the better of the two lies. An M4 reaches 25 cm and is untouched.
+ */
+export const STOCK_BEHIND_HAND_MAX = 0.3;
+
+const stockBox = new THREE.Box3();
+
+/**
+ * The forward shift that keeps `weapon`'s stock at the shoulder: zero for most weapons, the
+ * excess over `STOCK_BEHIND_HAND_MAX` for a bullpup. Measured on the object at identity, in
+ * weapon space, where +Z is the stock's way.
+ */
+export function stockShift(weapon: THREE.Object3D, gripAnchor: THREE.Vector3): number {
+  stockBox.setFromObject(weapon);
+  if (stockBox.isEmpty()) return 0;
+  return Math.max(0, stockBox.max.z - gripAnchor.z - STOCK_BEHIND_HAND_MAX);
+}
+
 export interface HeldWeaponAsset {
   readonly weaponId: string;
   readonly geometry: THREE.BufferGeometry;

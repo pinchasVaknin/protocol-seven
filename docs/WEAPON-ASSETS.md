@@ -107,6 +107,14 @@ page is not the uploader's to give.
   primitives until it lands, and swap once: `HeldWeaponAsset.template` is the LOD's root,
   cloned per body, its `socket_grip` and `socket_support` the two anchors. `preloadLod` is
   one fetch per weapon however many bodies carry it.
+- **The ADS pose** reads two numbers off the model (playtest 3): `sightPoint`, the sight
+  line as a point in weapon space — `socket_sight`, or the mounted optic's own sight above
+  the rail — and `adsSightDistance`, how far in front of the eye that point is held: 20 cm
+  for irons and a red dot, 10 cm for a scope, which is eye relief. `ViewmodelAnim` lands the
+  point on the camera axis at that distance and the rest of the weapon falls where its own
+  proportions put it. A recipe's `socket_sight` must therefore be the **rear-most aiming
+  element** — the rear sight, the collimator's window, the scope's ocular — because that is
+  the point the eye is placed behind.
 - **The camo** on a file is a material variant, one per (material, camo), kept for the
   process like the procedural surfaces: `paintCamo(root, camo)` swaps every opaque
   `MeshStandardMaterial` under the root for its `camoMaterial`. The viewmodel is painted

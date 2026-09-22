@@ -78,6 +78,8 @@ const BLADE_FLATTEN = 0.22;
 const BLADE_HALF = 0.021;
 /** Height the blade and grip sit above the fist's centre line. */
 const LINE_Y = 0.012;
+/** How far the file's knife is carried forward in the fist, metres before `KNIFE_SCALE`. */
+const FILE_KNIFE_FORWARD = 0.03;
 
 /** Forearm thickness at each end, metres. Not scaled by `KNIFE_SCALE` — see the build. */
 const ARM_WRIST_RADIUS = 0.048;
@@ -96,6 +98,9 @@ export function buildKnifeModel(anisotropy: number, template: THREE.Object3D | n
   if (template !== null) {
     const blade = template.clone(true);
     blade.name = 'viewmodel:knife:file';
+    // Held by the rear of the handle rather than its middle (playtest 3, finding 12): the
+    // fist covered the guard and most of the blade, and a knife you cannot see is a punch.
+    blade.position.z = -FILE_KNIFE_FORWARD;
     root.add(blade);
   }
 
@@ -140,9 +145,10 @@ export function buildKnifeModel(anisotropy: number, template: THREE.Object3D | n
   // The hand, and the cuff that covers the joint where the forearm meets it. The cuff is a
   // little wider than the arm on purpose: the fist yaws with the blade and the arm does not,
   // so without it the seam opens at the extremes of the swing.
-  box('glove', 0.072, 0.082, 0.100, 0, -0.004, 0.052);
-  box('glove', 0.076, 0.030, 0.052, 0, 0.030, 0.020);
-  box('glove', 0.096, 0.096, 0.046, 0, 0.000, 0.098);
+  // Slimmer than it was (playtest 3): 7.2 × 8.2 cm of glove hid the knife it held.
+  box('glove', 0.060, 0.066, 0.092, 0, -0.004, 0.056);
+  box('glove', 0.064, 0.026, 0.046, 0, 0.026, 0.026);
+  box('glove', 0.084, 0.084, 0.046, 0, 0.000, 0.102);
 
   if (template === null) {
     // Grip, slightly nose-down so the blade sits along the natural line of a held knife.

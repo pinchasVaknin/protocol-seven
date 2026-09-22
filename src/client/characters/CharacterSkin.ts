@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { ActorIndicatorAnchor, ActorIndicatorFrameAnchor, HeldWeaponAsset } from './ActorAvatar';
+import { stockShift, type ActorIndicatorAnchor, type ActorIndicatorFrameAnchor, type HeldWeaponAsset } from './ActorAvatar';
 import type { CharacterIndicatorPadProfile, CharacterRigProfile } from './CharacterCatalog';
 import { WeaponSupportHandConstraint } from './WeaponSupportHandConstraint';
 
@@ -67,11 +67,15 @@ export class CharacterSkin {
       node.castShadow = true;
     });
     // `weaponSocket` sits at the hand. Move the mesh so its trigger grip — rather than the
-    // centre of its receiver — occupies that point. The socket rotation remains rig-owned.
+    // centre of its receiver — occupies that point, less what keeps a long stock at the
+    // shoulder (`stockShift`). The socket rotation remains rig-owned.
+    const shift = stockShift(weapon, asset.gripAnchor);
     weapon.position.copy(asset.gripAnchor).multiplyScalar(-1);
+    weapon.position.z -= shift;
     // The target is a sibling of the mesh under the same calibrated socket. Subtracting the
     // trigger anchor maps the semantic weapon-local support grip into that socket space.
     this.supportGripTarget.position.copy(asset.supportAnchor).sub(asset.gripAnchor);
+    this.supportGripTarget.position.z -= shift;
     this.supportGripTarget.visible = true;
     this.hasSupportGrip = true;
     this.weaponSocket.add(weapon);

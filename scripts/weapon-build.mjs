@@ -255,8 +255,9 @@ export const RECIPES = {
         socket_rail_top: [0, railTop, upper.min[2] + (upper.max[2] - upper.min[2]) * 0.62],
         // Under the handguard, at the middle of its length.
         socket_rail_bottom: [0, guard.min[1], (guard.min[2] + guard.max[2]) / 2],
-        // The handguard's top rail, forward of the optic and behind the front sight: the laser's.
-        socket_rail_front: [0, m.plateau({ name: 'Handguard', material: 'Keymod_material' }, 0.2, 0.7), guard.min[2] + (guard.max[2] - guard.min[2]) * 0.45],
+        // The handguard's right-hand face at the bore's height, halfway along: the laser's.
+        // On the top rail it stood in the optic's line of sight (playtest 3).
+        socket_rail_front: { at: [m.side({ name: 'Handguard', material: 'Keymod_material' }, 0.3, 0.6), bore[1], guard.min[2] + (guard.max[2] - guard.min[2]) * 0.45], roll: -90 },
         // The irons' line: the aperture sits just under the sight's top edge.
         socket_sight: [0, upper.max[1] - 0.4, 0],
         // Where the hands go (stage 1). The trigger hand's centre sits on the pistol grip,
@@ -291,7 +292,9 @@ export const RECIPES = {
       charge: [],
       optic_default: [{ name: 'ColimatorLP001' }],
     },
-    magazineExit: [0.55, 1, 0],
+    // Back along the receiver's top with a little lift: it used to be mostly up, and a
+    // magazine thrown 20 cm into the air over the gun read as a part flying off (playtest 3).
+    magazineExit: [1, 0.3, 0],
     // The receiver: the bore's height, and the body's middle along the barrel.
     origin: (m) => {
       const bore = m.tip({ name: 'P90Low003' });
@@ -310,7 +313,8 @@ export const RECIPES = {
       return {
         socket_muzzle: bore,
         socket_rail_top: [(optic.min[0] + optic.max[0]) / 2, railTop, 0],
-        socket_rail_front: [(frame.min[0] + frame.max[0]) / 2 - (frame.max[0] - frame.min[0]) * 0.15, m.plateau({ name: 'FrameLP001' }, 0.3, 0.8), 0],
+        // The frame's right-hand face, at its middle height, for the laser.
+        socket_rail_front: { at: [(frame.min[0] + frame.max[0]) / 2 - (frame.max[0] - frame.min[0]) * 0.15, (frame.min[1] + frame.max[1]) / 2, m.side({ name: 'FrameLP001' }, 0.3, 0.8)], roll: -90 },
         socket_rail_bottom: [(frame.min[0] + frame.max[0]) / 2, frame.min[1], 0],
         // The collimator's window: the upper half of its box.
         socket_sight: [0, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.62, 0],
@@ -438,7 +442,8 @@ export const RECIPES = {
         // the body's centre line.
         socket_muzzle: [x, bore[1], bore[2]],
         socket_rail_top: [x, m.plateau({ name: 'SideMount_picantiny.002' }, 0.1, 0.9), (mount.min[2] + mount.max[2]) / 2],
-        socket_rail_front: [x, m.plateau({ name: 'rails2.001' }, 0.2, 0.8), (guard.min[2] + guard.max[2]) / 2],
+        // The quad rail's right-hand rail at the bore's height, for the laser.
+        socket_rail_front: { at: [m.side({ name: 'rails2.001' }, 0.2, 0.8), bore[1], (guard.min[2] + guard.max[2]) / 2], roll: -90 },
         socket_rail_bottom: [x, guard.min[1], (guard.min[2] + guard.max[2]) / 2],
         // The front sight post's tip, at the muzzle end of the body, less the width of the notch.
         socket_sight: [x, m.top({ name: 'AK-74_body.007' }, 0.88, 1) - 0.003, (body.max[2] + guard.max[2]) / 2],
@@ -486,7 +491,8 @@ export const RECIPES = {
         socket_muzzle: [bore[0], bore[1], z],
         // The top rail, under the collimator for the optic and over the handguard for the laser.
         socket_rail_top: [(optic.min[0] + optic.max[0]) / 2, m.plateau({ name: 'TAR - 21' }, 0.45, 0.62), z],
-        socket_rail_front: [body.min[0] + length * 0.22, m.plateau({ name: 'TAR - 21' }, 0.72, 0.9), z],
+        // The body's right-hand face ahead of the trigger, at the bore's height, for the laser.
+        socket_rail_front: { at: [body.min[0] + length * 0.22, bore[1], m.side({ name: 'TAR - 21' }, 0.72, 0.9)], roll: -90 },
         socket_rail_bottom: [(rail.min[0] + rail.max[0]) / 2, rail.min[1], z],
         // The collimator's window.
         socket_sight: [(optic.min[0] + optic.max[0]) / 2, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.6, z],
@@ -535,7 +541,7 @@ export const RECIPES = {
         socket_rail_top: [x, m.plateau({ name: 'Plane' }, 0.35, 0.8), receiver.min[2] + rz * 0.6],
         // The barrel is an extrusion with vertices only at its ends: the rear ring's top, and
         // the front section's for the sight line.
-        socket_rail_front: [x, m.plateau({ name: 'Plane.002' }, 0, 0.1), barrel.min[2] + (barrel.max[2] - barrel.min[2]) * 0.15],
+        socket_rail_front: { at: [m.side({ name: 'Plane.002' }, 0, 0.1), bore[1], barrel.min[2] + (barrel.max[2] - barrel.min[2]) * 0.15], roll: -90 },
         socket_rail_bottom: [x, pump.min[1], (pump.min[2] + pump.max[2]) / 2],
         // A bead on a barrel: the sight line runs along the barrel's top.
         socket_sight: [x, m.plateau({ name: 'Plane.002' }, 0.6, 1) + 0.01 / 0.52, 0],
@@ -648,8 +654,8 @@ export const RECIPES = {
       return {
         socket_muzzle: [0, bore[1], bore[2]],
         socket_rail_top: [0, m.plateau({ name: 'Object_74' }, 0.4, 0.9), (upper.min[2] + upper.max[2]) / 2],
-        // The handguard's top rail, ahead of the scope's objective.
-        socket_rail_front: [0, m.plateau({ name: 'Object_27' }, 0.6, 0.9), guardBottom.min[2] + (guardBottom.max[2] - guardBottom.min[2]) * 0.75],
+        // The handguard's right-hand rail at the bore's height, ahead of the scope's objective.
+        socket_rail_front: { at: [m.side({ name: 'Object_27' }, 0.6, 0.9), bore[1], guardBottom.min[2] + (guardBottom.max[2] - guardBottom.min[2]) * 0.75], roll: -90 },
         socket_rail_bottom: [0, guardBottom.min[1], zGrip],
         // The scope's axis: the centre of its ocular glass.
         socket_sight: [0, (glass.min[1] + glass.max[1]) / 2, 0],
@@ -696,7 +702,8 @@ export const RECIPES = {
       return {
         socket_muzzle: [x, bore[1], bore[2]],
         socket_rail_top: [x, mag.max[1] + 0.04, m.plateau({ name: 'Object_31' }, 0.32, 0.5)],
-        socket_rail_front: [x, guardY, m.plateau({ name: 'Object_33' }, 0.6, 0.78)],
+        // The furniture's right-hand face at the bore's height, for the laser.
+        socket_rail_front: { at: [m.side({ name: 'Object_33' }, 0.6, 0.78), guardY, bore[2]], roll: -90 },
         socket_rail_bottom: [x, guardY, m.bottom({ name: 'Object_33' }, 0.55, 0.78)],
         // The rear aperture sight stands on the receiver's rear.
         socket_sight: [x, receiver.max[1] - 0.12, m.top({ name: 'Object_31' }, 0, 0.2) - 0.005],
@@ -748,10 +755,11 @@ export const RECIPES = {
       return {
         socket_muzzle: [x, bore[1], bore[2]],
         socket_rail_top: [x, m.plateau({ name: 'Cube.001' }, 0.55, 0.7), zScope],
-        socket_rail_front: [x, m.top({ name: 'Cube.001' }, 0.6, 0.72), zForend],
+        socket_rail_front: { at: [m.side({ name: 'Cube.001' }, 0.6, 0.72), bore[1], zForend], roll: -90 },
         socket_rail_bottom: [x, m.bottom({ name: 'Cube.001' }, 0.6, 0.72), zForend],
-        // The scope's axis.
-        socket_sight: [x, (scope.min[1] + scope.max[1]) / 2, zScope],
+        // The scope's ocular: the eye goes behind *this*, at eye relief, and a socket on the
+        // tube's middle would have put the eyepiece behind the camera (playtest 3).
+        socket_sight: [x, (scope.min[1] + scope.max[1]) / 2, scope.max[2] - 0.12],
         // The thumbhole grip hangs behind the receiver; the support hand under the forend.
         socket_grip: [x, bore[1] - 0.45, zScope + length * 0.17],
         socket_support: [x, m.bottom({ name: 'Cube.001' }, 0.6, 0.72) - 0.1, zForend],
@@ -1138,6 +1146,43 @@ class Source {
     return best * this.upSign;
   }
 
+  /**
+   * The right-hand face of a selection within a band along `forward`: the extreme along the
+   * source's right axis (forward × up), returned as that axis's raw coordinate so a recipe
+   * can drop it into the lateral slot of a socket. The laser sockets sit here (playtest 3,
+   * finding 7): a DBAL on the top-front rail stood in the optic's line of sight.
+   */
+  side(sel, forward, from, to) {
+    const indices = this.select(sel);
+    const axis = AXES[forward];
+    const k = axis.findIndex((c) => c !== 0);
+    const up = [0, 0, 0];
+    up[this.upK] = this.upSign;
+    const right = cross(axis, up);
+    const rK = right.findIndex((c) => c !== 0);
+    const rSign = right[rK];
+    const b = this.bounds(sel);
+    const span = b.max[k] - b.min[k];
+    const rear = axis[k] > 0 ? b.min[k] : b.max[k];
+    const dir = axis[k];
+    let best = -Infinity;
+    for (const i of indices) {
+      const m = this.placed(i);
+      for (const prim of this.json.meshes[this.json.nodes[i].mesh].primitives) {
+        for (const p of positions(this.glb, prim.attributes.POSITION)) {
+          const v = apply(m, p);
+          if (this.cutAway(i, v)) continue;
+          const f = ((v[k] - rear) * dir) / span;
+          if (f < from || f > to) continue;
+          const s = v[rK] * rSign;
+          if (s > best) best = s;
+        }
+      }
+    }
+    if (best === -Infinity) throw new Error(`side(${JSON.stringify(sel)}): no vertices in the band`);
+    return best * rSign;
+  }
+
   /** The lowest point of a selection within a band along `forward`, as `top` is the highest. */
   bottom(sel, forward, from, to) {
     const indices = this.select(sel);
@@ -1300,6 +1345,40 @@ function applyCuts(json, bin, src) {
   return out;
 }
 
+/**
+ * Scope glass and optic windows arrive as `KHR_materials_transmission` (and sometimes
+ * `KHR_materials_volume`): three loads them as a transmissive `MeshPhysicalMaterial`, and a
+ * transmissive material on screen makes the renderer draw the whole scene a second time into a
+ * texture, every frame — the sniper's lag (playtest 3, finding 10), and a body's LOD carried it
+ * too. The glass becomes ordinary blended glass: the two extensions go, the alpha mode is
+ * BLEND, and the base colour's alpha is held under a third so the target shows through.
+ */
+const GLASS_ALPHA = 0.3;
+function stripTransmission(json) {
+  const gone = new Set(['KHR_materials_transmission', 'KHR_materials_volume']);
+  let stripped = false;
+  for (const material of json.materials ?? []) {
+    const ext = material.extensions;
+    if (ext === undefined || ![...gone].some((name) => name in ext)) continue;
+    for (const name of gone) delete ext[name];
+    if (Object.keys(ext).length === 0) delete material.extensions;
+    material.alphaMode = 'BLEND';
+    delete material.alphaCutoff;
+    const pbr = (material.pbrMetallicRoughness ??= {});
+    const colour = pbr.baseColorFactor ?? [1, 1, 1, 1];
+    pbr.baseColorFactor = [colour[0], colour[1], colour[2], Math.min(colour[3], GLASS_ALPHA)];
+    stripped = true;
+  }
+  if (!stripped) return;
+  const stillUsed = new Set();
+  for (const material of json.materials ?? []) for (const name of Object.keys(material.extensions ?? {})) stillUsed.add(name);
+  for (const key of ['extensionsUsed', 'extensionsRequired']) {
+    if (!Array.isArray(json[key])) continue;
+    json[key] = json[key].filter((name) => !gone.has(name) || stillUsed.has(name));
+    if (json[key].length === 0) delete json[key];
+  }
+}
+
 function rewrite(id, recipe, src) {
   const forward = recipe.forward;
   src.setMoves(recipe.moves);
@@ -1310,6 +1389,7 @@ function rewrite(id, recipe, src) {
     top: (sel, from, to) => src.top(sel, forward, from, to),
     bottom: (sel, from, to) => src.bottom(sel, forward, from, to),
     plateau: (sel, from, to) => src.plateau(sel, forward, from, to),
+    side: (sel, from, to) => src.side(sel, forward, from, to),
   };
   const origin = recipe.origin(measure);
   const fix = fixMatrix(recipe, origin);
@@ -1366,6 +1446,7 @@ function rewrite(id, recipe, src) {
   }
 
   const json = structuredClone(src.json);
+  stripTransmission(json);
   const bin = applyCuts(json, src.glb.bin, src);
   for (const [meshIndex, materialName] of materialSwaps) {
     const target = json.materials.findIndex((m) => m.name === materialName);

@@ -874,8 +874,89 @@ its rifle's file, the viewmodel in TIGER with the AimPoint and the can on it; th
 swing itself needs pointer lock, which the pane does not grant — the human's playtest. No
 shader errors, no console errors.
 
+## Playtest 3 (2026-09-22, the human): twelve findings on the arsenal
+
+The whole arsenal in a match and in the editor, twelve findings with four screenshots. What
+each was, and what was done:
+
+1. **The editor's operator did not take the weapon you picked** — and when it did, it held the
+   primitives. `CharacterStage` dropped its cache entry when a file landed and nothing asked
+   again, so the figure kept what it had until a skin change rebuilt it. `weaponFileArrived`
+   now hands every figure holding that weapon the file's model the frame it arrives.
+2. **No attachments on the operator's weapon.** The stage carried the bodies' bare LOD, which
+   is right for a body across a map and wrong for one two metres from the lens. It now builds
+   the same model the viewmodel does — `buildWeaponModel` on the file, without the gloves,
+   with the class's attachments on its sockets and the camo over its materials. No extra
+   download: the file is the one the preview already fetched.
+3. **Weapons held past the shoulder.** A body holds a weapon by its trigger grip, and a
+   bullpup's grip is far forward: the Tavor's stock reached 49 cm behind the hand, through
+   the shoulder and out of the back. `stockShift` measures the overhang and carries the
+   weapon forward by the excess over `STOCK_BEHIND_HAND_MAX` (30 cm) — the hand sits a little
+   behind the grip and the stock stops at the shoulder. An M4 reaches 25 cm and is untouched.
+4. **Sights off to the right at ADS.** 5 and 6, the weapon too far and too high, were the same
+   bug as 4: the ADS pose put the *receiver's centre* on the camera axis at a fixed distance
+   and left the sight wherever the weapon's proportions put it. `WeaponModel` now carries
+   `sightPoint` — the whole point, not just its height — and the pose lands that point on the
+   axis in all three axes. The alignment is now arithmetic rather than tuning: the sight sits
+   at (0, adsY + REFERENCE_SIGHT_HEIGHT, −adsSightDistance) for every file, whatever the
+   weapon.
+5. **The weapon held at arm's length**, and **6. the weapon too high, hiding the target.** The
+   distance is now the sight's, and per weapon: `adsSightDistance` is 20 cm for irons and a
+   red dot — a shouldered rifle's sight distance — and 10 cm for a scope, which is eye relief
+   and is why a scope fills the view. The rest of each weapon falls where its own proportions
+   put it, which is what stopped the AK's receiver standing across the screen. The L115A3's
+   sight socket moved from the middle of its scope tube to the ocular, or eye relief would
+   have put the eyepiece behind the camera.
+7. **The laser in the sight picture.** The DBAL sat on the top-front rail, in the optic's line
+   of sight. Every weapon's `socket_rail_front` now measures the *right-hand face* of the
+   handguard at the bore's height and is rolled 90° (`side()` in the build, beside `top` and
+   `plateau`), so the laser hangs off the side of the rail where a laser goes.
+8. **The reload happened off-screen.** The shared pose drops the weapon 11.5 cm and pitches it
+   19° nose-down, which took the magazine well below the frame — fine when the well was four
+   grey boxes, not fine now. A file dips a third as far, rolls 34° toward the eye so the well
+   and the charging handle face it, and its magazine travels a hand's length rather than the
+   22 cm throw that used to fling the P90's over the gun. The P90's `magazineExit` also went
+   from mostly-up to back-and-a-little-up.
+9. **The LONGBOW's recoil.** Approved: the vertical climb cut by 28% (first kick 1.05° →
+   0.76°), the first shot's multiplier 1.3 → 1.15 and the visual 1.5 → 1.2. The zig-zag that
+   makes it learnable is untouched.
+10. **The snipers stuttered.** Found: the M150's and the L115A3's scope glass carried
+    `KHR_materials_transmission`, and three renders the whole scene a second time, every
+    frame, when a transmissive material is on screen — and a bot's LOD carried it too, so it
+    cost even when you were not holding one. `stripTransmission` in the build turns that
+    glass into ordinary blended glass at 0.3 alpha; no file carries the extension now.
+11. **The list's weapon drawings** should match each weapon's real silhouette. Not done — it
+    is a projection of the LOD and belongs with the next art pass.
+12. **The knife hidden in the fist.** The glove was 7.2 × 8.2 cm around a 3 cm handle. It is
+    6.0 × 6.6 now and the file's knife is carried 3 cm further forward in the hand.
+
+### Verified
+
+`npm run check` green, 25 files, 27.28 MB. In the browser pane, with a magenta cross drawn at
+the exact centre of the viewport to measure against: the M4's iron sight ring and the TALON
+9's rear notch both sit **on** the cross at full ADS, at a sight picture that reads at 20 cm;
+the M4 with the HYBRID OPTIC has its dot on the cross and the DBAL clear of the tube, low and
+to the right. In the editor: picking a weapon swaps the operator's model at once and it is
+the file's, with the optic, the suppressor and the laser on it and the class's TIGER over
+them; the Tavor's stock sits at the shoulder rather than through it. A reload strip of twelve
+frames shows the weapon rolled into frame for the whole animation instead of dropping out of
+it.
+
+### Not verified here, and why
+
+The pane cannot hold pointer lock, so weapons had to be driven through synthetic events and
+the loadout through the save; switching weapon took a full match cycle each time. The AK, the
+Tavor, the P90, the SPAS, the two snipers and the LONGBOW's recoil were not seen at the new
+distance — the arithmetic that places them is the same one the three verified weapons use, but
+**the next playtest should look at each**, and especially at whether 20 cm and 10 cm are the
+right two numbers (`SIGHT_DISTANCE` and `SCOPE_EYE_RELIEF` in `WeaponMesh.ts`). Two sight
+sockets are known to sit further back than the weapon's real rear sight — the LONGBOW's, on
+the stock comb, and the BREACHER's — which pushes those two further out than they should be.
+
 ## Open
 
+- **The two sight sockets above** (LONGBOW, BREACHER) and the playtest of the distances.
+- **The list's weapon drawings** (finding 11).
 - **The knife's swing in the match** — a look at the file's blade in the hand during a melee,
   which the pane could not trigger.
 - **The camo's tuning.** `CAMO_OVERLAY_REPEAT` (6) and the brightness curve

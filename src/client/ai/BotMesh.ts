@@ -11,11 +11,12 @@ import {
   LEG_PIVOT_Y,
 } from '../../shared/ai/Gait';
 import { DEATH_VARIANTS, type ActorAnimationInput } from '../../shared/ai/BotVisualState';
-import type {
-  ActorAvatar,
-  ActorIndicatorAnchor,
-  ActorIndicatorFrameAnchor,
-  HeldWeaponAsset,
+import {
+  stockShift,
+  type ActorAvatar,
+  type ActorIndicatorAnchor,
+  type ActorIndicatorFrameAnchor,
+  type HeldWeaponAsset,
 } from '../characters/ActorAvatar';
 
 /**
@@ -272,7 +273,7 @@ export class BotMesh implements ActorAvatar {
     mesh.traverse((node) => {
       node.castShadow = true;
     });
-    mesh.position.set(WEAPON_OFFSET.x, WEAPON_OFFSET.y, WEAPON_OFFSET.z);
+    mesh.position.set(WEAPON_OFFSET.x, WEAPON_OFFSET.y, WEAPON_OFFSET.z - stockShift(mesh, asset.gripAnchor));
     this.weapon = mesh;
     this.group.add(mesh);
   }

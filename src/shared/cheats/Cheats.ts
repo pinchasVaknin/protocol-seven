@@ -112,6 +112,12 @@ export const CHEAT_FULL_SPECTATOR = Cheat.God | Cheat.Unseen | Cheat.NoClip;
  *   HUD *announces* it for a display duration.
  * - `'surface'` — a client surface with no simulation behind it. No bit, never sent to the
  *   server, and the store it writes is the one that already owns that surface.
+ * - `'unlock'` — a grant against the player's own **save**, which is the client's file and
+ *   nobody else's. No bit, never sent, and it writes through `Profile` like every other
+ *   progression write, so the unlock audit's rules and the loadout sanitiser see it the way
+ *   they see a kill threshold that has been met. Its lifetime is the save's: it is a
+ *   progression grant and it does not expire, which is what makes it useful for a test class
+ *   that has to survive a reload.
  *
  * F14 carried a `local` boolean as well, which meant the same thing as `'surface'` does and could
  * disagree with the bits; `check-cheats.mjs` now enforces the invariant that made that flag
@@ -124,7 +130,8 @@ export const CHEAT_FULL_SPECTATOR = Cheat.God | Cheat.Unseen | Cheat.NoClip;
 type CheatEffect =
   | { readonly kind: 'toggle'; readonly bits: number }
   | { readonly kind: 'instant'; readonly kills: number }
-  | { readonly kind: 'surface' };
+  | { readonly kind: 'surface' }
+  | { readonly kind: 'unlock' };
 
 /** A recognised code: what it is called and what it does. */
 export interface CheatCode {
@@ -156,6 +163,7 @@ const CODES: readonly CheatCode[] = [
   { code: 'SPEC[]3', effect: { kind: 'toggle', bits: Cheat.NoClip } },
   { code: 'SPEC[]4', effect: { kind: 'toggle', bits: CHEAT_FULL_SPECTATOR } },
   { code: 'MO951357', effect: { kind: 'instant', kills: CHEAT_WALLET_KILLS } },
+  { code: 'ATT7777', effect: { kind: 'unlock' } },
 ];
 
 /**
@@ -216,6 +224,11 @@ export const CHEAT_CODE_MAX = 24;
 /** Whether this code is the client's own business and must never reach the wire. */
 export function isSurfaceCheat(entry: CheatCode): boolean {
   return entry.effect.kind === 'surface';
+}
+
+/** Whether this code grants against the save. Client-owned like a surface, and never sent. */
+export function isUnlockCheat(entry: CheatCode): boolean {
+  return entry.effect.kind === 'unlock';
 }
 
 export function parseCheatCode(raw: string): CheatCode | null {
@@ -308,6 +321,8 @@ export const CheatOutcome = {
   InstantApplied: 5,
   /** Recognised, but there is no seat to apply it to. */
   RefusedNoSeat: 6,
+  /** An `'unlock'` cheat wrote the save. Nothing latches; the grant is the progression itself. */
+  UnlockApplied: 7,
 } as const;
 
 /** One line for the player, beside the field they typed into. */
@@ -323,6 +338,8 @@ export function cheatOutcomeText(outcome: number): string {
       return `${CHEAT_WALLET_KILLS} kills added to your killstreak balance.`;
     case CheatOutcome.RefusedNoSeat:
       return 'Not in a match.';
+    case CheatOutcome.UnlockApplied:
+      return 'Every attachment unlocked on every weapon.';
     default:
       return 'Unknown code.';
   }

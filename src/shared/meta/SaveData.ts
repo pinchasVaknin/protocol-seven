@@ -493,6 +493,24 @@ export function normaliseSave(raw: unknown, fallbackSettings: SettingsV1): SaveR
     losses.push('loadouts missing or malformed; restored the shipped five');
   }
 
+  /**
+   * The Shooting Range's own class (M7 playtest), which the loader used to drop.
+   *
+   * Its comment says *"lives in the save so a range setup persists"* and it did not: nothing
+   * read the field back, so every range visit rebuilt the shipped default and the weapon you
+   * left there was the weapon you never saw again (found while measuring, M19 playtest 4).
+   * Normalised through the same door as the five, against the same rules.
+   */
+  const range = raw['rangeLoadout'];
+  if (isRecord(range)) {
+    const slot = defaultLoadouts()[0];
+    if (slot !== undefined) {
+      slot.name = 'RANGE';
+      normaliseSlot(slot, range, 0, losses);
+      out.rangeLoadout = slot;
+    }
+  }
+
   out.equippedLoadout = Math.min(
     LOADOUT_SLOT_COUNT - 1,
     Math.max(0, Math.round(num(raw['equippedLoadout'], 0))),

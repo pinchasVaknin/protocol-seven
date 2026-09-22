@@ -70,10 +70,13 @@ import {
   cheatOutcomeText,
   instantCheatLabel,
   isSurfaceCheat,
+  isUnlockCheat,
   parseCheatCode,
   toggleCheat,
   type CheatCode,
 } from '../shared/cheats/Cheats';
+import { ATTACHMENT_IDS, fitsWeapon } from '../shared/weapons/Attachments';
+import { ALL_WEAPONS } from '../shared/weapons/WeaponDefs';
 import type { Match } from './ClientMatch';
 import { isHostile } from '../shared/combat/Hostility';
 import type { MatchResult } from '../shared/modes/GameMode';
@@ -1285,6 +1288,12 @@ export class Game {
    *   Offline, the shared table is applied against `localCheats`, which is this process being
    *   the authority rather than a second copy of the rule.
    */
+  /** The caption for whichever screen the code was typed on: the pause menu, or the menu. */
+  private setCodeResult(text: string): void {
+    this.screens.pauseMenu.setCodeResult(text);
+    this.screens.menus.setCodeResult(text);
+  }
+
   private requestCheat(code: string): void {
     const entry = parseCheatCode(code);
     if (entry === null) {
@@ -1308,9 +1317,24 @@ export class Game {
        */
       const wasVisible = debugOverlayVisible(this.hudSurfaceState());
       this.debugRequest = wasVisible ? 'none' : 'onPause';
-      this.screens.pauseMenu.setCodeResult(
-        cheatOutcomeText(wasVisible ? CheatOutcome.Revoked : CheatOutcome.Granted),
-      );
+      this.setCodeResult(cheatOutcomeText(wasVisible ? CheatOutcome.Revoked : CheatOutcome.Granted));
+      return;
+    }
+
+    if (isUnlockCheat(entry)) {
+      /**
+       * A grant against this client's own save, which is the one store it is the authority for.
+       * It goes through `Profile.unlockAttachment` — the same writer a kill threshold uses — so
+       * the unlock state, the editor's chips and the loadout sanitiser all see it as progression
+       * rather than as a second rule about what is available.
+       */
+      for (const def of ALL_WEAPONS) {
+        for (const id of ATTACHMENT_IDS) {
+          if (fitsWeapon(def, id)) this.profile.unlockAttachment(def.id, id);
+        }
+      }
+      this.setCodeResult(cheatOutcomeText(CheatOutcome.UnlockApplied));
+      this.screens.loadoutEditor.repaint();
       return;
     }
 

@@ -99,6 +99,13 @@ for (const m of src.matchAll(/\{ code: '([^']+)', effect: \{ kind: '(\w+)'([^}]*
         'for itself.',
     );
   }
+  if (kind === 'unlock' && /bits/.test(rest)) {
+    problems.push(
+      `${code} is an 'unlock' code and carries entitlement bits. An unlock writes the player's ` +
+        'own save and never reaches the wire, so a bit on one is a bit a client can author ' +
+        'for itself.',
+    );
+  }
   if (kind === 'toggle' && !/bits/.test(rest)) {
     problems.push(`${code} is a 'toggle' and carries no bits, so it toggles nothing.`);
   }

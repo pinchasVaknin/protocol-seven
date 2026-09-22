@@ -307,6 +307,15 @@ export class LoadoutEditor {
     deps.host.appendChild(this.screen);
   }
 
+  /**
+   * Repaint in place: what is unlocked has changed under the screen (M19, playtest 4's code).
+   * Unlike `show`, the open list, the page and the slot are left where the player had them.
+   */
+  repaint(): void {
+    if (this.screen.hidden) return;
+    this.paint();
+  }
+
   show(): void {
     this.slotIndex = this.deps.profile.equippedIndex;
     this.open = null;

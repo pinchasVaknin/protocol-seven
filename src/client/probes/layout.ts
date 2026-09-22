@@ -276,6 +276,7 @@ const menus = new Menus({
   selection,
   onLaunch: noop,
   onPlayMultiplayer: noop,
+  onCheatCode: noop,
   // True, because a disabled Play Multiplayer button is one control shorter and therefore a
   // shorter menu. The probe has to measure the taller of the two.
   serverConfigured: () => true,

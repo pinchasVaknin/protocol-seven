@@ -230,9 +230,20 @@ export const RECIPES = {
       // The kit's assembled magazine; its "Large" is thicker, not longer, so the extended
       // magazine is the stretch, not a second mesh.
       magazine: [{ name: 'Magazine', material: 'Magazine_Light' }],
+      irons: [],
       charge: [],
       optic_default: [],
     },
+    /**
+     * The kit's own sights stand 3.5 cm over the receiver and 7.1 cm over the bore — a
+     * millimetre under a mounted red dot's line, which is where the playtest found them: in
+     * the middle of the sight picture. Each is a hand's width of vertices above the flat top
+     * of its part, so a box over that top takes the sight and leaves the rail it stands on.
+     */
+    splits: [
+      { part: { name: 'Upper', material: 'Body' }, group: 'irons', name: 'irons_rear', box: { y: [0.045, 1], z: [0.02, 0.05] } },
+      { part: { name: 'Handguard', material: 'Keymod_material' }, group: 'irons', name: 'irons_front', box: { y: [0.045, 1], z: [-0.33, -0.29] } },
+    ],
     // The receiver's centre: the bore's height, the upper and lower's middle along the barrel.
     origin: (m) => {
       const bore = m.tip({ name: 'Handguard', material: 'Keymod_material' });
@@ -318,10 +329,15 @@ export const RECIPES = {
         socket_rail_bottom: [(frame.min[0] + frame.max[0]) / 2, frame.min[1], 0],
         // The collimator's window: the upper half of its box.
         socket_sight: [0, optic.min[1] + (optic.max[1] - optic.min[1]) * 0.62, 0],
-        // The trigger hand on the grip two fifths of the way back; the support hand in the
-        // front loop, ahead of the trigger and under the frame.
+        /**
+         * The trigger hand on the grip; the support hand **in the front loop**, a quarter of
+         * the weapon ahead of it and under the body (playtest 4). They were 4.5 cm apart, and
+         * a body given two hand targets that close pulls its arms through each other — the
+         * report's *"hands completely twisted, flipped and broken"*. On a P90 the support hand
+         * is at the front of the shroud, which is where this now is.
+         */
         socket_grip: [body.min[0] + length * 0.42, body.min[1] + (body.max[1] - body.min[1]) * 0.3, 0],
-        socket_support: [body.min[0] + length * 0.33, body.min[1] + (body.max[1] - body.min[1]) * 0.47, 0],
+        socket_support: [body.min[0] + length * 0.12, frame.min[1] - 0.02, 0],
       };
     },
     lod: true,
@@ -371,6 +387,11 @@ export const RECIPES = {
       charge: [{ name: 'Bolt_low_60' }],
       optic_default: [],
     },
+    /** The drum at the back and the hooded post at the front, both under a red dot's line. */
+    splits: [
+      { part: { match: /^Sight (Cylinder|Housing)_low/ }, group: 'irons', name: 'irons_rear', box: { y: [0.046, 1] } },
+      { part: { name: 'Gas Block Picat_low_7' }, group: 'irons', name: 'irons_front', box: { y: [0.046, 1], z: [-0.29, -0.26] } },
+    ],
     origin: (m) => {
       const bore = m.tip({ name: 'Gas Block Picat_low_7' });
       const upper = m.bounds({ name: 'Upper_low_40' });
@@ -445,8 +466,15 @@ export const RECIPES = {
         // The quad rail's right-hand rail at the bore's height, for the laser.
         socket_rail_front: { at: [m.side({ name: 'rails2.001' }, 0.2, 0.8), bore[1], (guard.min[2] + guard.max[2]) / 2], roll: -90 },
         socket_rail_bottom: [x, guard.min[1], (guard.min[2] + guard.max[2]) / 2],
-        // The front sight post's tip, at the muzzle end of the body, less the width of the notch.
-        socket_sight: [x, m.top({ name: 'AK-74_body.007' }, 0.88, 1) - 0.003, (body.max[2] + guard.max[2]) / 2],
+        /**
+         * The sight line runs along the top of the receiver, over the **rear of the handguard**
+         * where an AK's rear leaf sits — not over the middle of the receiver, which is where
+         * this was and which put the eye level with the receiver's flank (playtest 4, finding
+         * 4). This pack's tactical variant has no rear leaf modelled, so the line is the
+         * plateau of the receiver's top, a millimetre proud of it, in line with the front post
+         * at the muzzle end.
+         */
+        socket_sight: [x, m.plateau({ name: 'AK-74_body.007' }, 0.35, 0.6) + 0.001 / 0.5, guard.max[2]],
         socket_grip: [x, grip.max[1] - (grip.max[1] - grip.min[1]) * 0.45, (grip.min[2] + grip.max[2]) / 2],
         socket_support: [x, guard.min[1] - 0.018, guard.min[2] + (guard.max[2] - guard.min[2]) * 0.55],
       };
@@ -523,6 +551,11 @@ export const RECIPES = {
       charge: [{ name: 'Plane.003' }],
       optic_default: [],
     },
+    /** The receiver's rear notch and the bead at the muzzle: both stand in a mounted dot's line. */
+    splits: [
+      { part: { name: 'Cube.001' }, group: 'irons', name: 'irons_rear', box: { y: [0.028, 1], z: [-0.16, -0.12] } },
+      { part: { name: 'Plane.002' }, group: 'irons', name: 'irons_bead', box: { y: [0.034, 1], z: [-0.58, -0.55] } },
+    ],
     origin: (m) => {
       const bore = m.tip({ name: 'Plane.002' });
       const receiver = m.bounds({ name: 'Plane' });
@@ -686,6 +719,11 @@ export const RECIPES = {
       charge: [],
       optic_default: [],
     },
+    /** The aperture on the receiver's rear and the post over the gas block. */
+    splits: [
+      { part: { name: 'Object_31' }, group: 'irons', name: 'irons_rear', box: { y: [0.038, 1], z: [0.11, 0.17] } },
+      { part: { name: 'Object_31' }, group: 'irons', name: 'irons_front', box: { y: [0.038, 1], z: [-0.43, -0.38] } },
+    ],
     origin: (m) => {
       const bore = m.tip({ name: 'Object_31' });
       const mag = m.bounds({ name: 'Object_29' });
@@ -737,6 +775,16 @@ export const RECIPES = {
       charge: [],
       optic_default: [],
     },
+    /**
+     * The scope's objective lens, into a node of its own so the runtime can give it the
+     * project's `lens` material (playtest 4). Tube, rings and glass share one material in this
+     * source, so the whole scope is opaque — which is right for the tube and a wall at the far
+     * end of it for the eye. The ocular is an open ring; the objective is a disc 3 mm across at
+     * its centre, and this box is that disc.
+     */
+    splits: [
+      { part: { name: 'Scope ' }, name: 'scope_glass', box: { x: [-0.02, 0.02], y: [0.029, 0.069], z: [-0.171, -0.149] } },
+    ],
     origin: (m) => {
       const bore = m.tip({ name: 'Cube.001' });
       const scope = m.bounds({ name: 'Scope ' });
@@ -1309,7 +1357,7 @@ function round(v) {
  * position buffer, unreferenced, a tenth of the L115A3's — and `weld` and `simplify` on the
  * LOD do not mind them.
  */
-function applyCuts(json, bin, src) {
+function applyCuts(json, bin, src, written) {
   if (src.cuts === undefined || src.cuts.size === 0) return bin;
   const chunks = [bin];
   let length = bin.length;
@@ -1319,7 +1367,7 @@ function applyCuts(json, bin, src) {
     for (const prim of json.meshes[node.mesh].primitives) {
       const pos = [...positions(src.glb, prim.attributes.POSITION)].map((p) => apply(m, p));
       const away = pos.map((v) => (cut.keep === 'above' ? v[cut.k] < cut.at : v[cut.k] > cut.at));
-      const indices = prim.indices !== undefined ? [...jointIndices(src.glb, prim.indices)] : pos.map((_, k) => k);
+      const indices = readIndices(src, written, prim, pos.length);
       const kept = [];
       for (let k = 0; k + 2 < indices.length; k += 3) {
         const a = indices[k], b = indices[k + 1], c = indices[k + 2];
@@ -1338,6 +1386,7 @@ function applyCuts(json, bin, src) {
       length += data.length;
       json.accessors.push({ bufferView: json.bufferViews.length - 1, componentType: 5125, count: kept.length, type: 'SCALAR' });
       prim.indices = json.accessors.length - 1;
+      written.set(prim.indices, kept);
     }
   }
   const out = Buffer.concat(chunks);
@@ -1350,10 +1399,11 @@ function applyCuts(json, bin, src) {
  * `KHR_materials_volume`): three loads them as a transmissive `MeshPhysicalMaterial`, and a
  * transmissive material on screen makes the renderer draw the whole scene a second time into a
  * texture, every frame — the sniper's lag (playtest 3, finding 10), and a body's LOD carried it
- * too. The glass becomes ordinary blended glass: the two extensions go, the alpha mode is
- * BLEND, and the base colour's alpha is held under a third so the target shows through.
+ * too. Only the extensions go: the alpha mode and the base colour the artist authored are left
+ * exactly as they are, because they are what the material looks like. Clamping the alpha here
+ * instead (playtest 3) turned the L115A3's whole scope into a ghost — its tube, its rings and its
+ * glass are one material, and a third of an alpha applied to that is a transparent rifle scope.
  */
-const GLASS_ALPHA = 0.3;
 function stripTransmission(json) {
   const gone = new Set(['KHR_materials_transmission', 'KHR_materials_volume']);
   let stripped = false;
@@ -1362,11 +1412,6 @@ function stripTransmission(json) {
     if (ext === undefined || ![...gone].some((name) => name in ext)) continue;
     for (const name of gone) delete ext[name];
     if (Object.keys(ext).length === 0) delete material.extensions;
-    material.alphaMode = 'BLEND';
-    delete material.alphaCutoff;
-    const pbr = (material.pbrMetallicRoughness ??= {});
-    const colour = pbr.baseColorFactor ?? [1, 1, 1, 1];
-    pbr.baseColorFactor = [colour[0], colour[1], colour[2], Math.min(colour[3], GLASS_ALPHA)];
     stripped = true;
   }
   if (!stripped) return;
@@ -1377,6 +1422,113 @@ function stripTransmission(json) {
     json[key] = json[key].filter((name) => !gone.has(name) || stillUsed.has(name));
     if (json[key].length === 0) delete json[key];
   }
+}
+
+/**
+ * Carve the triangles inside a box out of a part and give them their own node (playtest 4).
+ *
+ * The box is in **output space** — metres, barrel −Z, origin at the weapon's origin — because
+ * that is the space a human can read off a screenshot and the space every socket is written in;
+ * the vertices are carried there through `fix` before the test. A triangle moves only when all
+ * three of its corners are inside, so a box drawn around a front sight post takes the post and
+ * leaves the barrel it stands on.
+ *
+ * Two jobs, both from playtest 3's findings. `group: 'irons'` puts a weapon's own iron sights
+ * where the runtime can hide them when an optic is fitted — they stood in the middle of the
+ * sight picture, which is what the report showed. A `name` of `scope_glass` marks a lens the
+ * runtime swaps for the project's own, which is how the L115A3's objective becomes something
+ * you can see through while its tube stays solid.
+ *
+ * The split node shares the part's vertex buffers and carries its own index accessor, so this
+ * costs an index list and a mesh entry and no geometry at all.
+ */
+/**
+ * The triangle list a primitive has *now*: the source's, or the one an earlier cut or split
+ * wrote. Re-reading the source after a rewrite was the L1A1's crash — its receiver carries two
+ * splits, and the second asked the source for an accessor only this build had ever had.
+ */
+function readIndices(src, written, prim, vertexCount) {
+  if (prim.indices === undefined) return Array.from({ length: vertexCount }, (_, k) => k);
+  const already = written.get(prim.indices);
+  if (already !== undefined) return already;
+  return [...jointIndices(src.glb, prim.indices)];
+}
+
+function applySplits(json, bin, src, recipe, nodes, fix, written) {
+  const splits = recipe.splits ?? [];
+  if (splits.length === 0) return bin;
+  const chunks = [bin];
+  let length = bin.length;
+  const groups = new Map();
+  nodes.forEach((n, i) => {
+    if (n.children !== undefined && n.name !== undefined) groups.set(n.name, i);
+  });
+  const byMesh = new Map();
+  for (const n of nodes) if (n.mesh !== undefined) byMesh.set(n.mesh, (byMesh.get(n.mesh) ?? 0) + 1);
+
+  const appendIndices = (list) => {
+    const data = Buffer.alloc(list.length * 4);
+    list.forEach((v, k) => data.writeUInt32LE(v, k * 4));
+    const pad = (4 - (length % 4)) % 4;
+    if (pad > 0) {
+      chunks.push(Buffer.alloc(pad));
+      length += pad;
+    }
+    json.bufferViews.push({ buffer: 0, byteOffset: length, byteLength: data.length, target: 34963 });
+    chunks.push(data);
+    length += data.length;
+    json.accessors.push({ bufferView: json.bufferViews.length - 1, componentType: 5125, count: list.length, type: 'SCALAR' });
+    written.set(json.accessors.length - 1, list);
+    return json.accessors.length - 1;
+  };
+
+  for (const split of splits) {
+    const box = split.box;
+    const inside = (v) =>
+      ['x', 'y', 'z'].every((axis, k) => {
+        const range = box[axis];
+        return range === undefined || (v[k] >= range[0] && v[k] <= range[1]);
+      });
+    const parentName = split.group ?? 'body';
+    let parent = groups.get(parentName);
+    if (parent === undefined) {
+      parent = nodes.push({ name: parentName, children: [] }) - 1;
+      groups.set(parentName, parent);
+      nodes[0].children.push(parent);
+    }
+    let taken = 0;
+    for (const i of src.select(split.part)) {
+      const node = src.json.nodes[i];
+      if ((byMesh.get(node.mesh) ?? 0) > 1) {
+        throw new Error(`split "${split.name ?? parentName}": mesh ${node.mesh} is used by more than one kept node`);
+      }
+      const world = mul(fix, src.placed(i));
+      for (const prim of json.meshes[node.mesh].primitives) {
+        const pos = [...positions(src.glb, prim.attributes.POSITION)].map((p) => apply(world, p));
+        const inBox = pos.map(inside);
+        const indices = readIndices(src, written, prim, pos.length);
+        const mine = [];
+        const rest = [];
+        for (let k = 0; k + 2 < indices.length; k += 3) {
+          const a = indices[k], b = indices[k + 1], c = indices[k + 2];
+          (inBox[a] && inBox[b] && inBox[c] ? mine : rest).push(a, b, c);
+        }
+        if (mine.length === 0) continue;
+        taken += mine.length / 3;
+        prim.indices = appendIndices(rest);
+        const mesh = json.meshes.push({ name: `${split.name ?? parentName}.mesh`, primitives: [{ ...prim, indices: appendIndices(mine) }] }) - 1;
+        const placed = nodes.find((n) => n.mesh === node.mesh);
+        const ni = nodes.push({ name: split.name ?? parentName, mesh, matrix: placed?.matrix }) - 1;
+        nodes[parent].children.push(ni);
+      }
+    }
+    if (taken === 0) {
+      throw new Error(`split "${split.name ?? parentName}": the box caught no triangles — check it is in output space`);
+    }
+  }
+  const out = Buffer.concat(chunks);
+  json.buffers[0].byteLength = out.length;
+  return out;
 }
 
 function rewrite(id, recipe, src) {
@@ -1447,7 +1599,10 @@ function rewrite(id, recipe, src) {
 
   const json = structuredClone(src.json);
   stripTransmission(json);
-  const bin = applyCuts(json, src.glb.bin, src);
+  // Index lists this build has rewritten, by accessor: a part can be cut and split, or split
+  // twice, and each edit works on what the last one left rather than on the source.
+  const written = new Map();
+  const bin = applySplits(json, applyCuts(json, src.glb.bin, src, written), src, recipe, nodes, fix, written);
   for (const [meshIndex, materialName] of materialSwaps) {
     const target = json.materials.findIndex((m) => m.name === materialName);
     if (target < 0) throw new Error(`${id}: useMaterial "${materialName}" names no material in the source`);

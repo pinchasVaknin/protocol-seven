@@ -107,13 +107,15 @@ const EMPTY_TIMES = { down: 0.15, magOut: 0.34, magIn: 0.42, magSeated: 0.58, ra
 const REFERENCE_SIGHT_HEIGHT = 0.0915;
 
 /**
- * The reload on a file (playtest 3, finding 8). The shared pose drops the weapon 11.5 cm and
- * takes the magazine well below the frame, which on the primitives was the point — nothing
- * down there was worth a look. A file's well is; so a file dips a third as far, rolls
- * further toward the eye so the well and the charging handle face it, and its magazine
- * slides a hand's length rather than the 22 cm throw that carried the P90's over the gun.
+ * The reload on a file: the weapon comes **up**, not down (playtest 4, finding 7).
+ *
+ * Dipping it is what a shooter does and what the shared pose has always done, and it is also
+ * what hides the reload: the magazine well goes below the frame and the player watches an empty
+ * screen for two seconds. Raised 52° with the muzzle toward the sky, rolled 26° toward the eye
+ * and drawn in a little, the well and the charging handle sit in the middle of the picture
+ * where the hand meets them — which is the one thing the animation is for.
  */
-const FILE_RELOAD = { dropY: -0.04, dropZ: 0.03, pitch: -9, roll: 34, yaw: 18, magThrow: 0.13, magSlide: 0.09 };
+const FILE_RELOAD = { dropY: -0.085, dropZ: 0.075, pitch: 52, roll: 26, yaw: 10, magThrow: 0.13, magSlide: 0.09 };
 
 /** How fast the weapon drops for a throw and comes back. Brisk: this is not a swap. */
 const THROW_LOWER_RATE = 14;

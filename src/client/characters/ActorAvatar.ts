@@ -28,9 +28,10 @@ export type ActorIndicatorFrameAnchor = (typeof INDICATOR_FRAME_ANCHORS)[number]
  * weapon by its trigger grip, and a bullpup's grip is far forward — the Tavor's stock reached
  * half a metre behind the hand, through the shoulder and out the back. Past this a weapon is
  * carried forward by the excess: the hand sits a little behind the grip and the stock stops at
- * the shoulder, which is the better of the two lies. An M4 reaches 25 cm and is untouched.
+ * the shoulder, which is the better of the two lies. 30 cm left every rifle's stock in the
+ * shoulder (playtest 4); at 22 even the M4's 25 cm comes forward a little.
  */
-export const STOCK_BEHIND_HAND_MAX = 0.3;
+export const STOCK_BEHIND_HAND_MAX = 0.22;
 
 const stockBox = new THREE.Box3();
 

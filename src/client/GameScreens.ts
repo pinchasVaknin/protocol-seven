@@ -98,6 +98,7 @@ export class GameScreens {
       serverConfigured: deps.serverConfigured,
       profile: deps.profile,
       onDisplayName: deps.onDisplayName,
+      onCheatCode: deps.onCheatCode,
       onLoadout: deps.onLoadout,
       onSettings: deps.onSettings,
     });

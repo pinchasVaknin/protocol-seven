@@ -2,6 +2,7 @@ import type { BotDifficulty } from '../../shared/ai/DifficultyTiers';
 import type { GameModeId } from '../../shared/modes/GameMode';
 import { DEFAULT_MODE_ID, findMap, modesForMap } from '../../shared/modes/ModeRegistry';
 import type { Profile } from '../meta/Profile';
+import { CHEAT_CODE_MAX } from '../../shared/cheats/Cheats';
 import { createScreen } from './Frame';
 import { makeLockup } from './Emblem';
 import { PlayerCard } from './PlayerCard';
@@ -95,6 +96,8 @@ export interface MenuDeps {
   readonly onLoadout: () => void;
   /** M8: enter the `SETTINGS` state. */
   readonly onSettings: () => void;
+  /** A code typed on the menu (M19, playtest 4). The same door the pause screen's field uses. */
+  readonly onCheatCode: (code: string) => void;
 }
 
 type Page = 'MAIN' | 'PLAY';
@@ -133,6 +136,9 @@ export class Menus {
   private readonly frame: HTMLElement;
   private readonly card: PlayerCard;
   private readonly panel: ProfilePanel;
+  /** The code field under the nav and the line that answers it (playtest 4). Built once. */
+  private readonly codeResult = document.createElement('p');
+  private readonly codeForm: HTMLFormElement;
   private page: Page = 'MAIN';
   /** The mode the player had before the testbed took it (decision 5); what a real map restores. */
   private rememberedMode: GameModeId;
@@ -152,6 +158,8 @@ export class Menus {
       onChange: () => this.card.refresh(),
       onClose: () => this.card.refresh(),
     });
+    this.codeResult.className = 'op-screen__sub op-code__result';
+    this.codeForm = this.buildCodeForm();
     this.card = new PlayerCard({
       profile: deps.profile,
       online: deps.serverConfigured,
@@ -256,6 +264,44 @@ export class Menus {
 
   // -- pages -----------------------------------------------------------------
 
+  /**
+   * The code field, under the nav (playtest 4).
+   *
+   * Built once and re-appended by `paint`, rather than rebuilt with the page: the result line
+   * is written by `Game.requestCheat`'s reply, which arrives after a repaint would have thrown
+   * the element away. The same field the pause screen carries, and the same one door
+   * (`onCheatCode`) behind it — a code is input, wherever it is typed.
+   */
+  private buildCodeForm(): HTMLFormElement {
+    const form = document.createElement('form');
+    form.className = 'op-code op-code--menu';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'op-code__input';
+    input.placeholder = 'Code';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.maxLength = CHEAT_CODE_MAX;
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'op-btn op-btn--quiet op-code__go';
+    submit.textContent = 'Enter';
+    form.append(input, submit, this.codeResult);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const code = input.value.trim();
+      if (code === '') return;
+      input.value = '';
+      this.deps.onCheatCode(code);
+    });
+    return form;
+  }
+
+  /** What happened to the last code. One writer, `Game.requestCheat` and its reply. */
+  setCodeResult(text: string): void {
+    this.codeResult.textContent = text;
+  }
+
   private paint(): void {
     this.ungate();
     this.frame.classList.remove('op-boot');
@@ -309,7 +355,7 @@ export class Menus {
     const loadout = this.navButton('CREATE A CLASS', GLYPH.loadout, () => this.deps.onLoadout());
     const settings = this.navButton('SETTINGS', GLYPH.settings, () => this.deps.onSettings());
 
-    nav.append(multiplayer, solo, loadout, settings);
+    nav.append(multiplayer, solo, loadout, settings, this.codeForm);
     stage.appendChild(nav);
     return multiplayer.disabled ? solo : multiplayer;
   }

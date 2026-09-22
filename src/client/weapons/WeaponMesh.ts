@@ -259,6 +259,8 @@ function buildFromTemplate(
     }
   });
 
+  dressOwnOptic(root, template, surfaces, disposables);
+
   if (options.hands) {
     const boxes = handBoxesAt(spec, template.sockets.socket_grip, template.sockets.socket_support);
     addMerged(groups.body, boxes, [], surfaces, disposables, 'hands');
@@ -386,6 +388,44 @@ function magazineExitOf(root: THREE.Object3D): THREE.Vector3 {
   return exit.lengthSq() > 0 ? exit.normalize() : MAGAZINE_EXIT_DOWN.clone();
 }
 
+/** The dot a file's own collimator gets, metres across. A red dot is a dot, not a disc. */
+const OWN_RETICLE_RADIUS = 0.0022;
+
+/**
+ * What a file's own optics need before anything is mounted on them (playtest 4).
+ *
+ * Two jobs, both from a source that models the glass and leaves the picture to the engine:
+ *
+ * - `scope_glass` — a lens the build carved out of a scope whose tube, rings and glass are one
+ *   material — takes the project's `lens`, so the tube stays solid and you can see down it.
+ * - A weapon whose sight *is* its own collimator (the P90's, the Tavor's) gets the project's
+ *   reticle: a small emissive disc at `socket_sight`, facing the eye. The sources draw an empty
+ *   window, which is finding 6 — *"completely missing the red dot reticle"*. It is added under
+ *   `optic_default` so that mounting a red dot, which hides that group, hides this with it.
+ */
+function dressOwnOptic(
+  root: THREE.Object3D,
+  template: WeaponAssetTemplate,
+  surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
+  disposables: Array<{ dispose(): void }>,
+): void {
+  const glass = root.getObjectByName('scope_glass') as THREE.Mesh | undefined;
+  const lens = surfaces.get('lens');
+  if (glass !== undefined && lens !== undefined) glass.material = lens;
+
+  const own = root.getObjectByName('optic_default');
+  const reticle = surfaces.get('reticle');
+  if (own === undefined || own.children.length === 0 || reticle === undefined) return;
+  const geometry = new THREE.CircleGeometry(OWN_RETICLE_RADIUS, 12);
+  disposables.push(geometry);
+  const dot = new THREE.Mesh(geometry, reticle);
+  dot.name = 'optic_default:reticle';
+  // At the sight line, facing back down the barrel at the eye. The window is a few millimetres
+  // ahead of it, so the dot reads as floating in the glass rather than painted on it.
+  dot.position.copy(template.sockets.socket_sight);
+  own.add(dot);
+}
+
 /** What mounting changed about the contract's numbers; absent means the bare weapon's. */
 interface Mounted {
   muzzle?: THREE.Object3D;
@@ -454,8 +494,13 @@ function mountAttachments(
       });
       const sight = part.sockets.socket_sight;
       if (sight !== undefined) out.sightPoint = template.sockets.socket_rail_top.clone().add(sight);
-      const own = root.getObjectByName('optic_default');
-      if (own !== undefined) own.visible = false;
+      // The weapon's own sights go under a mounted optic: its collimator (`optic_default`) and
+      // its iron sights (`irons`, carved out by the build). Both stood in the middle of the
+      // sight picture (playtest 4, finding 3), which is what a real shooter removes them for.
+      for (const name of ['optic_default', 'irons']) {
+        const own = root.getObjectByName(name);
+        if (own !== undefined) own.visible = false;
+      }
     } else if (partId === 'att_suppressor') {
       const muzzle = clone.getObjectByName('socket_muzzle');
       if (muzzle !== undefined) out.muzzle = muzzle;

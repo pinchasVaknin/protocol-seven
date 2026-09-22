@@ -3123,6 +3123,21 @@ body.op-locked #viewport {
   margin-top: var(--s-2);
 }
 
+/*
+ * The menu carries the same field under its nav (M19, playtest 4), where the nav sets the
+ * width: a form as wide as a nav button reads as one more row of it, and the answer line wraps
+ * under the field rather than beside it.
+ */
+.op-code--menu {
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: var(--s-3);
+}
+
+.op-code--menu .op-code__result {
+  flex: 1 0 100%;
+}
+
 /* ==========================================================================
  * M8 — the FPS counter, the rebinding rows' first home; the settings screen is above (M17, C4).
  *

@@ -953,9 +953,90 @@ right two numbers (`SIGHT_DISTANCE` and `SCOPE_EYE_RELIEF` in `WeaponMesh.ts`). 
 sockets are known to sit further back than the weapon's real rear sight — the LONGBOW's, on
 the stock comb, and the BREACHER's — which pushes those two further out than they should be.
 
+## Playtest 4 (2026-09-22, the human): seven findings, and a cheat
+
+### What was done
+
+1. **Weapons still deep in the shoulder; the P90's hands broken.** `STOCK_BEHIND_HAND_MAX`
+   30 cm → **22**, which brings even the M4's 25 cm forward a little. The P90's hands were a
+   socket bug: `socket_grip` and `socket_support` were **4.5 cm apart**, so a body given two
+   hand targets that close pulled its arms through each other. The support socket is now in the
+   front loop, 15 cm ahead of the trigger hand and under the frame, which is where a P90 is
+   held.
+2. **The KESTREL's scope was a ghost.** Playtest 3's `stripTransmission` clamped every
+   transmissive material's alpha to 0.3 — and the L115A3's tube, rings and glass are **one
+   material**, so a third of an alpha made a transparent rifle scope. It now strips the
+   extensions and leaves the artist's `alphaMode` and colour alone: the M150's `Glass` is
+   0.675 again and the L115A3's `ScopeBar` is opaque. The tube being solid then closed the
+   sight picture, so the build carves the objective lens into its own node (`scope_glass`,
+   31 triangles) and the runtime gives it the project's `lens` material. Both snipers now
+   show a proper scope picture.
+3. **Iron sights across the optic.** New build feature, `splits`: the triangles inside a box —
+   given in **output space**, the same metres every socket is written in — are carved out of a
+   part into a node of their own. The M4, the MP5, the SPAS and the L1A1 get an `irons` group
+   that way, and `mountAttachments` hides it (with `optic_default`) the moment an optic is
+   fitted. The M4's ADS picture is clear of its front post for the first time.
+4. **The VULCAN's irons looked at the receiver's flank.** Its `socket_sight` sat over the
+   *middle of the receiver* at the front post's height. It is now the plateau of the receiver's
+   top over the **rear of the handguard**, where an AK's rear leaf sits, in line with the front
+   post at the muzzle.
+5. **The HALCYON's dot against the impact point.** Measured rather than adjusted (below): the
+   dot is **1.5 px right and 3.5 px below** the exact centre of a 1125 × 875 frame — a tenth of
+   a degree. The sockets are right; what the screenshot caught was the ADS pose still easing in
+   from the hip, where the weapon sits to the right by design.
+6. **The MERIDIAN's optic had no dot, and sat too far.** Its collimator is an empty window in
+   the source, so `dressOwnOptic` puts the project's reticle — the same emissive disc the pack's
+   red dot uses — at `socket_sight` under `optic_default`, which means a mounted red dot hides
+   it along with the collimator. The Tavor's own collimator gets one too. The distance is
+   playtest 3's `adsSightDistance` doing its job now that the dot exists to see.
+7. **The reload, upward.** `FILE_RELOAD` now **raises** the weapon 52° with the muzzle toward
+   the sky, rolls it 26° toward the eye and draws it in, instead of dipping it: the magazine
+   well and the charging handle sit in the middle of the picture for the whole animation. A
+   twelve-frame strip of an M4 reload shows the weapon in frame from the first raise to the
+   last.
+
+**`ATT7777`** (the human's request): a cheat code that unlocks every attachment on every
+weapon. A fourth `CheatEffect` kind, `'unlock'` — no entitlement bit, never sent to the wire,
+written through `Profile.unlockAttachment` so the unlock state, the editor's chips and the
+loadout sanitiser see it as progression rather than a second rule. `check-cheats.mjs` gained
+the matching invariant (an unlock code may not carry bits), and the code field the pause
+screen has always had is now on the main menu too, under the nav.
+
+**Found while measuring:** the save loader never read `rangeLoadout` back, so the Shooting
+Range rebuilt the shipped M4 every visit and *"lives in the save so a range setup persists"*
+was not true. It is now — normalised through the same door as the five class slots.
+
+### Verified
+
+`npm run check` green: 25 files, 27.32 MB, 150 tests, every audit including the cheat table's.
+In the browser pane, in the Range, at full ADS, stationary, the red dot's **pixel offset from
+the exact centre of the frame** (1125 × 875), found by sampling the emissive reticle's own
+colour:
+
+| weapon | dx | dy |
+|---|---|---|
+| M4 CARBINE + HYBRID OPTIC | +3.6 px | +2.4 px |
+| HALCYON B5 + HYBRID OPTIC | +1.5 px | +3.5 px |
+| VULCAN 74 + HYBRID OPTIC | +1.5 px | +3.6 px |
+| MERIDIAN P40, its own collimator | +2.6 px | +4.1 px |
+
+All four are inside half a degree, and the residue is the pack optic's own reticle mesh sitting
+1.2 mm right of its `socket_sight` — geometry, not pose. Also seen: the M4's tube clear of its
+iron post, the AK's receiver no longer across the picture, both snipers' scope pictures, the
+P90 held in two hands on the editor's stage, the Tavor's stock stopping at the shoulder, and
+the reload strip.
+
+### Not verified here
+
+The WASP, the BREACHER, the LONGBOW and the TALON were not measured — the pane cannot hold
+pointer lock, so each weapon costs a full match cycle, and the four that were measured share
+their arithmetic with the six that were not. The LONGBOW's and the BREACHER's sight sockets are
+still further back than their real rear sights (playtest 3's note), so those two are the ones
+to look at first.
+
 ## Open
 
-- **The two sight sockets above** (LONGBOW, BREACHER) and the playtest of the distances.
+- **The LONGBOW's and the BREACHER's sight sockets**, and the playtest of the distances.
 - **The list's weapon drawings** (finding 11).
 - **The knife's swing in the match** — a look at the file's blade in the hand during a melee,
   which the pane could not trigger.

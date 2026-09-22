@@ -70,7 +70,9 @@ under each group, and two functions — `origin` and `sockets` — that answer i
 from measurements the script takes on the mesh (`bounds`, `tip`, `top`, `bottom`,
 `plateau`). Numbers are measured rather than typed: the bore is the mean of the barrel's
 vertices at its tip, the rail is the plateau of the receiver's top where no sight stands. A
-recipe can also `move` nodes before the fix (a kit laid out flat), swap a node's material,
+recipe can also `split` a box of triangles out of a part into a node of its own — in output
+space, for the iron sights the runtime hides under an optic and for a scope's glass —
+`move` nodes before the fix (a kit laid out flat), swap a node's material,
 choose nodes by name, material, skin joint, regex or where they lie, `cut` a slice off a node
 along an axis (the L115A3's modelled suppressor), `simplify` a source over the budget, and
 hold its textures under a lower ceiling. `node scripts/weapon-build.mjs --list <file>` prints
@@ -107,6 +109,10 @@ page is not the uploader's to give.
   primitives until it lands, and swap once: `HeldWeaponAsset.template` is the LOD's root,
   cloned per body, its `socket_grip` and `socket_support` the two anchors. `preloadLod` is
   one fetch per weapon however many bodies carry it.
+- **A weapon's own sights** come off when an optic is mounted: `optic_default` (a collimator
+  the source models) and `irons` (the sights the build carved out with `splits`) are both
+  hidden by `mountAttachments`. A weapon whose sight *is* its own collimator gets the
+  project's reticle at `socket_sight`, because the sources draw an empty window.
 - **The ADS pose** reads two numbers off the model (playtest 3): `sightPoint`, the sight
   line as a point in weapon space — `socket_sight`, or the mounted optic's own sight above
   the rail — and `adsSightDistance`, how far in front of the eye that point is held: 20 cm

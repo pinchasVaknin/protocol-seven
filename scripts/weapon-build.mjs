@@ -636,6 +636,10 @@ export const RECIPES = {
       const barrel = m.bounds({ name: 'Plane.002' });
       const pump = m.bounds({ name: 'Plane.003' });
       const rz = receiver.max[2] - receiver.min[2];
+      // The bead's top, in a 3 mm strip down the barrel's middle, and the ghost ring's opening
+      // at the height the bead is cut to (a keyhole: a round hole over a slot).
+      const bead = m.peak({ name: 'Plane.002' }, 0.8, 1, [bore[0] - 0.0015 / 0.52, bore[0] + 0.0015 / 0.52]);
+      const ring = m.aperture({ name: 'Cube.001' }, 0, 1, [bead[0] - 0.0012 / 0.52, bead[0] + 0.0012 / 0.52], bead[1], 0.006 / 0.52);
       return {
         socket_muzzle: [x, bore[1], bore[2]],
         // No rail on a SPAS: the optic on the receiver's top, the laser on the barrel behind the pump.
@@ -644,8 +648,15 @@ export const RECIPES = {
         // the front section's for the sight line.
         socket_rail_front: { at: [m.side({ name: 'Plane.002' }, 0, 0.1), bore[1], barrel.min[2] + (barrel.max[2] - barrel.min[2]) * 0.15], roll: -90 },
         socket_rail_bottom: [x, pump.min[1], (pump.min[2] + pump.max[2]) / 2],
-        // A bead on a barrel: the sight line runs along the barrel's top.
-        socket_sight: [x, m.plateau({ name: 'Plane.002' }, 0.6, 1) + 0.01 / 0.52, 0],
+        /**
+         * The ghost ring's opening, and the bead (playtest 7). This stood at z = 0 of the
+         * source, which is the folded stock — 41 cm behind the ring, so the ADS pose held the
+         * whole gun that far out — and 1 cm over the barrel's top, with the bead under the
+         * screen's centre. The two sights are 1.6 mm apart in height over 44 cm, so the line
+         * turns the weapon 0.2°: the bead sits in the middle of the ring.
+         */
+        socket_sight: ring,
+        socket_sight_front: bead,
         socket_grip: [x, receiver.min[1] + (receiver.max[1] - receiver.min[1]) * 0.28, receiver.min[2] + rz * 0.22],
         socket_support: [x, pump.min[1] - 0.012 / 0.52, (pump.min[2] + pump.max[2]) / 2],
       };
@@ -805,14 +816,24 @@ export const RECIPES = {
       const furniture = m.bounds({ name: 'Object_33' });
       const mag = m.bounds({ name: 'Object_29' });
       const guardY = receiver.max[1] - (receiver.max[1] - receiver.min[1]) * 0.62;
+      // The front post's tip, in a 3 mm strip so its protective ears (6 mm taller) do not
+      // answer, and the rear aperture's hole at the post's height.
+      const post = m.peak({ name: 'Object_31' }, 0.66, 0.74, [x - 0.0015, x + 0.0015]);
+      const ring = m.aperture({ name: 'Object_31' }, 0.15, 0.25, [post[0] - 0.0012, post[0] + 0.0012], post[2], 0.006);
       return {
         socket_muzzle: [x, bore[1], bore[2]],
         socket_rail_top: [x, mag.max[1] + 0.04, m.plateau({ name: 'Object_31' }, 0.32, 0.5)],
         // The furniture's right-hand face at the bore's height, for the laser.
         socket_rail_front: { at: [m.side({ name: 'Object_33' }, 0.6, 0.78), guardY, bore[2]], roll: -90 },
         socket_rail_bottom: [x, guardY, m.bottom({ name: 'Object_33' }, 0.55, 0.78)],
-        // The rear aperture sight stands on the receiver's rear.
-        socket_sight: [x, receiver.max[1] - 0.12, m.top({ name: 'Object_31' }, 0, 0.2) - 0.005],
+        /**
+         * The rear aperture's hole, and the front post's tip (playtest 7). This was 12 cm from
+         * the receiver's rear, on the stock's comb — 9 cm behind the aperture, so the ADS pose
+         * held the rifle that much too far out — and 2 mm under the aperture. The L1A1's two
+         * sights are cut to one height (0.03 mm apart over 55 cm), so the line is level.
+         */
+        socket_sight: ring,
+        socket_sight_front: post,
         socket_grip: [x, mag.max[1] + 0.09, furniture.min[2] + 0.06],
         socket_support: [x, guardY, m.bottom({ name: 'Object_33' }, 0.55, 0.78) - 0.018],
       };
@@ -1489,6 +1510,44 @@ class Source {
   }
 
   /**
+   * The centre of a rear aperture's opening (playtest 7): within a band along `forward` and a
+   * strip `across` it (raw coordinates on the right axis), the middle of the widest gap
+   * between the vertices' heights within `reach` of `near` — the front sight's tip, the height
+   * an aperture is cut to look through. Only that window, because under the LONGBOW's ring
+   * there is open air down to its base, a wider gap than the hole; and the strip is the
+   * sight's middle column, where the ring's top and bottom are and its sides are not. Along
+   * the barrel, the mean of the vertices on the gap's two edges. A raw point, as `peak`'s.
+   */
+  aperture(sel, forward, from, to, across, near, reach) {
+    const { k } = this.rightOf(forward);
+    const fk = AXES[forward].findIndex((c) => c !== 0);
+    const target = near * this.upSign;
+    const hits = [];
+    for (const v of this.inBand(sel, forward, from, to)) {
+      if (v[k] < across[0] || v[k] > across[1]) continue;
+      const h = v[this.upK] * this.upSign;
+      if (Math.abs(h - target) <= reach) hits.push([h, v]);
+    }
+    if (hits.length < 2) throw new Error(`aperture(${JSON.stringify(sel)}): fewer than two vertices in the window`);
+    hits.sort((a, b) => a[0] - b[0]);
+    let widest = 0;
+    let at = 1;
+    for (let i = 1; i < hits.length; i++) {
+      const gap = hits[i][0] - hits[i - 1][0];
+      if (gap > widest) { widest = gap; at = i; }
+    }
+    const lo = hits[at - 1][0];
+    const hi = hits[at][0];
+    const edge = 0.025 / this.cmPerUnit;
+    const rim = hits.filter(([h]) => Math.abs(h - lo) <= edge || Math.abs(h - hi) <= edge);
+    const out = [0, 0, 0];
+    out[k] = (across[0] + across[1]) / 2;
+    out[this.upK] = ((lo + hi) / 2) * this.upSign;
+    out[fk] = rim.reduce((sum, [, v]) => sum + v[fk], 0) / rim.length;
+    return out;
+  }
+
+  /**
    * The bounds of the vertices above a fraction of a selection's height: the head of a
    * collimator standing on its base, whose middle along the barrel is where its window is.
    */
@@ -1743,6 +1802,7 @@ function rewrite(id, recipe, src) {
     side: (sel, from, to) => src.side(sel, forward, from, to),
     midline: (sel, from, to) => src.midline(sel, forward, from, to),
     peak: (sel, from, to, across) => src.peak(sel, forward, from, to, across),
+    aperture: (sel, from, to, across, near, reach) => src.aperture(sel, forward, from, to, across, near, reach),
     boundsAbove: (sel, fraction) => src.boundsAbove(sel, fraction),
     // `show` and `eye` in metres, the points in source units.
     sightOver: ({ show, eye, ...points }) => sightOver({ ...points, show: show / recipe.unit, eye: eye / recipe.unit }, forward, recipe.up),

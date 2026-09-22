@@ -1156,11 +1156,40 @@ magazine turned to the eye.
 The Tavor's 0.693, and the WASP, BREACHER, LONGBOW and TALON at ADS — as playtest 5 left them.
 The P90's support glove during its reload sits beside the gun rather than on the magazine.
 
+## The last two sight sockets (2026-09-23)
+
+Both were the old kind, and both were wrong mostly **along the barrel**, which no playtest had
+measured because the ADS pose puts whatever `socket_sight` says on the axis:
+
+| weapon | the file's own sights | the socket was | now |
+|---|---|---|---|
+| BREACHER 12 | a keyhole ghost ring, its round hole centred 39.7 mm over the bore; the bead's top 38.1 mm, 43.8 cm ahead | source z = 0 — the folded stock, **41 cm behind the ring**, so the gun was held that much too far out — and 1 cm over the barrel | `socket_sight` in the ring, `socket_sight_front` on the bead: a 0.2° line |
+| LONGBOW MK3 | an aperture ring on a stem, its hole 51.3 mm over the bore; the post's tip 51.3 mm (0.03 mm apart), 54.8 cm ahead, between ears 6 mm taller | 12 cm from the receiver's rear, on the comb — **9 cm behind the aperture** — and 2 mm under it | the aperture and the post's tip: a level line |
+
+`aperture` is the new measurement: in the sight's middle column, the widest gap between the
+vertices' heights within 6 mm of the front sight's tip — the opening the aperture is cut to
+look through. Only near that height, because under the LONGBOW's ring there is open air down
+to its base, a wider gap than the hole. Neither weapon's sight line is obstructed (the SPAS's
+heat shield tops out 10 mm under it, the L1A1's receiver 3 mm), so neither needed `sightOver`;
+the line is there so the post lands in the middle of the ring rather than just near the axis.
+
+**Verified:** `npm run check` green (25 files, 27.32 MB, 150 tests). From the eye's position —
+20 cm behind each socket, on the line — the BREACHER's bead sits in the middle of the ring's
+round part and the LONGBOW's post in the middle of its aperture; in the Testbed at full ADS,
+magnified, the same, each tip within about 1.5 px of the frame's centre. Asset version
+playtest-7.
+
 ## Open
 
-- **The BREACHER's and the LONGBOW's sight sockets**, the last two of the old kind. The
-  VULCAN's `socket_sight_front` and `sightOver` are the tool if either's irons turn out not to
-  be parallel to its bore.
+- **First-person hands** (evaluated 2026-09-23, not built). *Hand With Gloves* by JUST
+  (CC-BY-4.0, "tactical glove and sleeve for free full ik rig"): two forearms, 61 bones with
+  every finger, 19.7k triangles, seven 1024 PNGs (4.7 MB), no animation, posed in a hand gesture
+  rather than a grip; renders cleanly in three. *Scar-H First-Person (FPS) Animated* by Jainesh
+  Pathak (CC-BY-4.0): the page credits its arms to another artist (EXUnum), and in three the
+  arms skin at ~40× the rifle with stretched fingers — the file's skinning is broken as
+  exported; its one 11.7 s clip is the SCAR's alone. The rifle itself (FDE, 27.5k triangles)
+  renders well and is original work (Blender, Substance). The gloves are the candidate; they
+  need grip poses for the fingers and two-bone IK to `socket_grip` / `socket_support`.
 - **The P90's reload hand**: it follows the magazine's displacement from the front loop and
   never reaches the magazine's body; a target on the magazine itself would.
 - **The list's weapon drawings** (finding 11).

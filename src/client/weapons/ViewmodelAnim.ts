@@ -375,6 +375,7 @@ export class ViewmodelAnim {
       this.model.magazine.rotation.set(0, 0, 0);
       this.model.chargingHandle.position.set(0, 0, 0);
       if (this.model.supportHand !== null) this.model.supportHand.position.set(0, 0, 0);
+      if (this.model.hands !== null) this.model.hands.magazineHold = 0;
     }
 
     // The pose the arms are solved against (stage 4): everything above — hip to ADS, sprint,
@@ -612,12 +613,21 @@ export class ViewmodelAnim {
    * following it is one vector rather than a second animation to keep in step), and returns to
    * the handguard as the weapon comes down. The blend at each end is what keeps it from
    * snapping between the two places.
+   *
+   * The arms (stage 4) take the blend and go to the magazine itself — a target on the magazine's
+   * node at `socket_mag_grip` — rather than following its displacement from the handguard,
+   * which kept the glove 10–20 cm ahead of the magazine it was meant to be holding. The box
+   * gloves keep the old way.
    */
   private poseSupportHand(f: number, times: { down: number; magOut: number; magIn: number; magSeated: number; raise: number }): void {
-    const hand = this.model.supportHand;
-    if (hand === null) return;
     // Away from the handguard over the dip, back to it over the raise.
     const held = smoothstep(0, times.down, f) * (1 - smoothstep(times.magSeated, times.raise, f));
+    if (this.model.hands !== null) {
+      this.model.hands.magazineHold = held;
+      return;
+    }
+    const hand = this.model.supportHand;
+    if (hand === null) return;
     if (held <= 0) {
       hand.position.set(0, 0, 0);
       return;

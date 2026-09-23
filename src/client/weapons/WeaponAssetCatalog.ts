@@ -14,7 +14,7 @@
  * it after a rebuild that changes a file.
  */
 
-export const WEAPON_ASSET_VERSION = '2026-09-23-m19-stage-4-hands';
+export const WEAPON_ASSET_VERSION = '2026-09-23-m19-stage-4-mag-grip';
 
 const WEAPON_ROOT = '/models/weapons';
 
@@ -105,6 +105,7 @@ export const WEAPON_SOCKET_NODES = [
   'socket_sight',
   'socket_grip',
   'socket_support',
+  'socket_mag_grip',
 ] as const;
 
 export type WeaponGroupNode = (typeof WEAPON_GROUP_NODES)[number];

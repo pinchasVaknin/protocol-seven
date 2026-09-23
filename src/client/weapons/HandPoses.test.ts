@@ -13,12 +13,14 @@ describe('handPoseSource', () => {
     const text = handPoseSource('ar_carbine', {
       grip: { position: [0.01, -0.0004, 0], rotation: [-5, 0, 12.34], curl: 1.1 },
       support: { position: [-0.02, 0.015, -0.03], rotation: [0, -0.04, 0], curl: 0.9 },
+      reload: { position: [0, 0, 0.01], rotation: [10, 0, 0], curl: 1 },
     });
     expect(text).toBe(
       [
         '  ar_carbine: {',
         '    grip: { position: [0.010, 0.000, 0.000], rotation: [-5.0, 0.0, 12.3], curl: 1.10 },',
         '    support: { position: [-0.020, 0.015, -0.030], rotation: [0.0, 0.0, 0.0], curl: 0.90 },',
+        '    reload: { position: [0.000, 0.000, 0.010], rotation: [10.0, 0.0, 0.0], curl: 1.00 },',
         '  },',
       ].join('\n'),
     );

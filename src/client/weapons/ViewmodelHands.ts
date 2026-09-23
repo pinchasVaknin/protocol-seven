@@ -11,9 +11,9 @@ import { handPoseFor, type HandPose, type HandSide } from './HandPoses';
  * a target and whose elbow falls where the upper arm's length and a bend direction put it,
  * and each hand closes into a grip from the bind pose's straight fingers. The targets are the
  * same two points the boxes stood on, so nothing about where a weapon is held changes: the
- * trigger hand on `socket_grip`, the support hand on `socket_support` — carried by the node
- * `ViewmodelAnim` already moves during a reload, so the glove still rides the magazine out and
- * back.
+ * trigger hand on `socket_grip`, the support hand on `socket_support`. On a reload the support
+ * hand goes to a third, on the magazine itself (`socket_mag_grip`, `magazineHold`), rides it out
+ * and back, and returns.
  *
  * **Where the rig lives.** Under the weapon's root, so it is hidden, swapped and disposed with
  * the weapon and nothing in `ClientMatch` learns about it. Its frame is the inverse of the
@@ -51,11 +51,17 @@ export function adjustFrom(pose: HandPose): HandAdjust {
   return { position: new THREE.Vector3(...pose.position), rotation: new THREE.Vector3(...pose.rotation), curl: pose.curl };
 }
 
-/** The two points a weapon is held by, as nodes under the weapon's root. */
+/**
+ * The points a weapon is held by, as nodes under the weapon's root: the two hands' sockets,
+ * and where the support hand takes the magazine on a reload — a node **under the magazine**,
+ * so it goes where the magazine goes and turns as it tumbles (null on a model with nothing to
+ * hang it on).
+ */
 export interface HandTargets {
   readonly grip: THREE.Object3D;
   readonly support: THREE.Object3D;
   readonly supportPose: SupportPose;
+  readonly magazine: THREE.Object3D | null;
 }
 
 type FingerName = 'thumb' | 'index' | 'middle' | 'ring' | 'pink';
@@ -76,7 +82,7 @@ interface Hold {
   readonly curl: Readonly<Record<FingerName, readonly [number, number, number]>>;
 }
 
-const HOLDS: Readonly<Record<'grip' | SupportPose, Hold>> = {
+const HOLDS: Readonly<Record<'grip' | SupportPose | 'magazine', Hold>> = {
   /**
    * The trigger hand on a pistol grip: the palm against the grip's right-hand side, the
    * knuckles forward and a little down, three fingers wrapped round the front strap and the
@@ -111,7 +117,26 @@ const HOLDS: Readonly<Record<'grip' | SupportPose, Hold>> = {
     knuckles: [-0.042, -0.006, -0.014],
     curl: { thumb: [10, 25, 20], index: [60, 70, 40], middle: [70, 80, 40], ring: [75, 80, 40], pink: [80, 80, 40] },
   },
+  /**
+   * The support hand on a magazine during a reload, in the **magazine's** space: the palm on its
+   * left face, the knuckles at its front edge and the fingers round the front, as a hand takes a
+   * magazine out of a well. `socket_mag_grip` is the magazine's middle, so the knuckles go 2.6 cm
+   * to its left and 3.5 cm ahead of it. The tuner's `reload` pose corrects it per weapon.
+   */
+  magazine: {
+    fingers: [0, -0.3, -1],
+    palm: [1, 0, 0],
+    knuckles: [-0.026, 0, -0.035],
+    curl: { thumb: [10, 20, 15], index: [50, 60, 40], middle: [55, 65, 40], ring: [55, 65, 40], pink: [60, 65, 40] },
+  },
 };
+
+/** Where a hand is put this frame, in the frame: its wrist, its turn, and each finger's bend in degrees. */
+interface Placement {
+  readonly wrist: THREE.Vector3;
+  readonly turn: THREE.Quaternion;
+  readonly curl: Readonly<Record<FingerName, readonly [number, number, number]>>;
+}
 
 /** The elbows bend outward and down, the way a shouldered weapon's do. Camera space. */
 const BEND: Readonly<Record<'R' | 'L', THREE.Vector3>> = {
@@ -176,6 +201,13 @@ export function solveArm(
   return elbow.copy(shoulder).addScaledVector(u, a).addScaledVector(side, h);
 }
 
+/** A hand part way from one placement to another: its wrist, its turn and its fingers. */
+function blend(from: Placement, to: Placement, t: number): Placement {
+  const curl = {} as Record<FingerName, [number, number, number]>;
+  for (const f of FINGERS) curl[f] = from.curl[f].map((deg, i) => THREE.MathUtils.lerp(deg, to.curl[f][i] ?? deg, t)) as [number, number, number];
+  return { wrist: from.wrist.clone().lerp(to.wrist, t), turn: from.turn.clone().slerp(to.turn, t), curl };
+}
+
 /** Turn `q` by the least rotation that points its local +Y along `dir`. */
 function aim(q: THREE.Quaternion, dir: THREE.Vector3, out: THREE.Quaternion): THREE.Quaternion {
   const axis = Y.clone().applyQuaternion(q);
@@ -226,7 +258,11 @@ export class ViewmodelHands {
     private readonly targets: HandTargets,
     weaponId: string,
   ) {
-    this.adjust = { grip: adjustFrom(handPoseFor(weaponId, 'grip')), support: adjustFrom(handPoseFor(weaponId, 'support')) };
+    this.adjust = {
+      grip: adjustFrom(handPoseFor(weaponId, 'grip')),
+      support: adjustFrom(handPoseFor(weaponId, 'support')),
+      reload: adjustFrom(handPoseFor(weaponId, 'reload')),
+    };
     this.rig = cloneSkinned(template);
     this.rig.name = 'viewmodel:hands';
     this.frame.name = 'viewmodel:hands-frame';
@@ -258,14 +294,30 @@ export class ViewmodelHands {
     const root = this.weaponRoot;
     this.frame.matrix.copy(base).invert();
     root.updateMatrixWorld(true);
+    this.rootInverse.copy(root.matrixWorld).invert();
     base.decompose(this.basePosition, this.baseTurn, this.baseScale);
-    this.poseArm(this.arms.R, this.targets.grip, HOLDS.grip, this.adjust.grip, base);
-    this.poseArm(this.arms.L, this.targets.support, HOLDS[this.targets.supportPose], this.adjust.support, base);
+    this.poseArm(this.arms.R, this.place(this.arms.R, this.targets.grip, HOLDS.grip, this.adjust.grip, base));
+    let support = this.place(this.arms.L, this.targets.support, HOLDS[this.targets.supportPose], this.adjust.support, base);
+    const onMagazine = this.magazineHold;
+    if (onMagazine > 0 && this.targets.magazine !== null) {
+      support = blend(support, this.place(this.arms.L, this.targets.magazine, HOLDS.magazine, this.adjust.reload, base), onMagazine);
+    }
+    this.poseArm(this.arms.L, support);
   }
+
+  /**
+   * How far the support hand has gone from its grip to the magazine, 0..1 — `ViewmodelAnim`
+   * sets it through a reload, leaving over the dip and returning over the raise. The hand's
+   * place, turn and fingers are blended between the two holds by it, so the glove travels from
+   * the handguard to the magazine, rides it out and back on the magazine's own node, and
+   * returns, and neither hold's pose disturbs the other's.
+   */
+  magazineHold = 0;
 
   private readonly basePosition = new THREE.Vector3();
   private readonly baseTurn = new THREE.Quaternion();
   private readonly baseScale = new THREE.Vector3();
+  private readonly rootInverse = new THREE.Matrix4();
 
   dispose(): void {
     this.frame.removeFromParent();
@@ -364,26 +416,38 @@ export class ViewmodelHands {
     };
   }
 
-  private poseArm(arm: Arm, target: THREE.Object3D, hold: Hold, adjust: HandAdjust, base: THREE.Matrix4): void {
-    // The target and the hold's turn in the frame: the socket moved by this weapon's
-    // correction, then placed where the base pose puts it; the hold turned by the correction
-    // in weapon space, then by the base pose.
-    const at = this.weaponRoot.worldToLocal(target.getWorldPosition(new THREE.Vector3())).add(adjust.position).applyMatrix4(base);
+  /**
+   * Where a hold puts a hand on a target, in the frame. The target's own place and turn under
+   * the weapon's root come first — the sockets' turn is none, the magazine's is whatever the
+   * reload gives it — then this weapon's correction in the target's space, then the base pose.
+   */
+  private place(arm: Arm, target: THREE.Object3D, hold: Hold, adjust: HandAdjust, base: THREE.Matrix4): Placement {
+    const inRoot = this.rootInverse.clone().multiply(target.matrixWorld);
+    const socket = new THREE.Vector3();
+    const socketTurn = new THREE.Quaternion();
+    inRoot.decompose(socket, socketTurn, new THREE.Vector3());
+    const at = socket.add(adjust.position.clone().applyQuaternion(socketTurn)).applyMatrix4(base);
     const r = adjust.rotation;
     const correction = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(THREE.MathUtils.degToRad(r.x), THREE.MathUtils.degToRad(r.y), THREE.MathUtils.degToRad(r.z), 'XYZ'),
     );
-    const turn = this.baseTurn.clone().multiply(correction);
+    const turn = this.baseTurn.clone().multiply(socketTurn).multiply(correction);
     const knuckles = new THREE.Vector3(...hold.fingers).normalize().applyQuaternion(turn);
     const palm = new THREE.Vector3(...hold.palm).applyQuaternion(turn);
     palm.addScaledVector(knuckles, -palm.dot(knuckles)).normalize();
     const wanted = new THREE.Matrix4().makeBasis(knuckles, palm, knuckles.clone().cross(palm));
     const handTurn = new THREE.Quaternion().setFromRotationMatrix(wanted.multiply(arm.handBasis.clone().transpose()));
-
     const wrist = at
       .clone()
       .add(new THREE.Vector3(...hold.knuckles).applyQuaternion(turn))
       .addScaledVector(knuckles, -arm.handLength);
+    const curl = {} as Record<FingerName, [number, number, number]>;
+    for (const f of FINGERS) curl[f] = hold.curl[f].map((deg) => deg * adjust.curl) as [number, number, number];
+    return { wrist, turn: handTurn, curl };
+  }
+
+  private poseArm(arm: Arm, placement: Placement): void {
+    const { wrist, turn: handTurn } = placement;
     const shoulder = SHOULDERS[arm.side].clone();
     const elbow = solveArm(shoulder, wrist, BEND[arm.side], arm.upperLength, arm.lowerLength, new THREE.Vector3());
 
@@ -401,9 +465,9 @@ export class ViewmodelHands {
 
     const curl = new THREE.Quaternion();
     for (const [name, bones] of arm.fingers) {
-      const angles = hold.curl[name];
+      const angles = placement.curl[name];
       bones.forEach((f, i) => {
-        const deg = (angles[i] ?? 0) * adjust.curl;
+        const deg = angles[i] ?? 0;
         f.bone.quaternion.copy(f.straight).multiply(curl.setFromAxisAngle(f.curlAxis, THREE.MathUtils.degToRad(deg)));
       });
     }

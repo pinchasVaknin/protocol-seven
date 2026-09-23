@@ -1265,14 +1265,37 @@ undocumented list.
 
 ## Open
 
-- **The reload grab.** The human posed hip and ADS for the ten file weapons in the tuner and those
-  are in `HAND_POSES`; the two LMGs stay on the defaults until their models are replaced. The
-  support hand never reaches the magazine on a reload — it leaves `socket_support` and follows
-  only the magazine's *displacement*, 10–20 cm ahead of it, with the base pose's correction still
-  applied — so no base pose fits both. Approved: a `socket_mag_grip` measured from each magazine
-  in the build, the hand's target riding the magazine itself during the reload, and a separate
-  `reload` pose per weapon in the tuner. Then the knife's fist and the Create-a-Class stage on the
-  same rig (the human's next sprint).
+- **The arms: the next sprint.** All ten file weapons are posed — hip, ADS and the reload hand on
+  the magazine, the human's final numbers in `HAND_POSES` (2026-09-23). Next: a playtest in the
+  match, then the knife's fist and the Create-a-Class stage on the same rig. The two LMGs stay on
+  the defaults until their models are replaced.
+
+### The reload grab (2026-09-23)
+
+The human posed hip and ADS for the ten file weapons in the tuner, and those are in
+`HAND_POSES`. The reload could not be posed the same way: the support hand left `socket_support`
+and followed only the magazine's *displacement*, so it stayed 10–20 cm ahead of the magazine it
+was meant to be holding, and the base pose's correction still applied — posing it onto the
+magazine broke hip and ADS, and the reverse. The approved fix, both halves:
+
+- **`socket_mag_grip`**, a ninth socket in every weapon file, measured in the build from the
+  magazine's own vertices (the middle of every magazine part together, `magazineMiddle`). The
+  BREACHER feeds from a tube and the KESTREL's magazine is modelled into the rifle, so those two
+  place it themselves — the loading port under the receiver, and the magazine's bottom under the
+  scope. `check:weapons` requires it; the primitives measure the same point from their magazine
+  boxes.
+- **The hand rides the magazine.** `WeaponMesh` hangs the target on the magazine node, so it goes
+  where the magazine goes and turns as it tumbles; `ViewmodelAnim` hands the rig the reload's
+  blend (`magazineHold`) instead of moving a carrier; `ViewmodelHands` blends the support hand's
+  place, turn and fingers from its base hold to a magazine hold (palm on the magazine's left
+  face, knuckles at its front edge). A third per-weapon pose, `reload`, corrects that hold **in
+  the magazine's own space**, and nothing else reads it — so the base grips cannot move. Measured
+  on seven weapons: through the grab and with the magazine out, the middle knuckle is exactly the
+  hold's 4.4 cm from the magazine's grip point on every one; at the hip it is back on the
+  handguard.
+- **The tuner** has a third section, *LEFT HAND ON THE MAGAZINE — reload*; touching it jumps to a
+  moment of the reload when the hand is on the magazine, and a cyan marker shows the socket in the
+  orbit views. Entries now print `grip`, `support` and `reload`.
 - **The P90's reload hand**: it follows the magazine's displacement from the front loop and
   never reaches the magazine's body; a target on the magazine itself would.
 - **The list's weapon drawings** (finding 11).

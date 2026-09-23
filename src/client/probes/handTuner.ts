@@ -34,8 +34,20 @@ type Pose = 'hip' | 'ads' | 'reload';
 type View = 'eye' | 'right' | 'left' | 'above' | 'below' | 'front';
 
 const STORE_KEY = 'protocolSeven.handTuner.v1';
-const SIDES: readonly HandSide[] = ['grip', 'support'];
-const SIDE_LABEL: Readonly<Record<HandSide, string>> = { grip: 'RIGHT HAND — socket_grip', support: 'LEFT HAND — socket_support' };
+const SIDES: readonly HandSide[] = ['grip', 'support', 'reload'];
+const SIDE_LABEL: Readonly<Record<HandSide, string>> = {
+  grip: 'RIGHT HAND — socket_grip',
+  support: 'LEFT HAND — socket_support',
+  reload: 'LEFT HAND ON THE MAGAZINE — reload',
+};
+/** The node each pose's hand is put on, under the weapon's root (`WeaponMesh.handTarget`). */
+const TARGET: Readonly<Record<HandSide, string>> = {
+  grip: 'viewmodel:hand-target:grip',
+  support: 'viewmodel:hand-target:support',
+  reload: 'viewmodel:hand-target:magazine',
+};
+/** A moment of a tactical reload when the support hand is wholly on the magazine. */
+const ON_MAGAZINE_T = 0.42;
 
 /** Orbit presets: azimuth and elevation, radians, around the weapon; the eye is the viewmodel camera. */
 const VIEWS: Readonly<Record<Exclude<View, 'eye'>, { theta: number; phi: number }>> = {
@@ -64,7 +76,7 @@ const SLIDERS: readonly Slider[] = [
   { key: 'curl', label: 'Curl ×', min: 0.2, max: 1.8, step: 0.01 },
 ];
 
-type Edits = Record<string, Record<HandSide, HandPose>>;
+type Edits = Record<string, Partial<Record<HandSide, HandPose>> & Record<'grip' | 'support', HandPose>>;
 
 function loadEdits(): Edits {
   try {
@@ -108,11 +120,12 @@ const layer = new ViewmodelLayer(DEFAULT_CAMERA_CONFIG);
 const orbitCamera = new THREE.PerspectiveCamera(32, 1, 0.005, 20);
 layer.camera.add(orbitCamera);
 
-/** Where the sockets are, drawn in the orbit views: green the grip, orange the support. */
+/** Where the sockets are, drawn in the orbit views: green the grip, orange the support, cyan the magazine's grip. */
 const markerGeometry = new THREE.SphereGeometry(0.006, 12, 8);
 const markers: Record<HandSide, THREE.Mesh> = {
   grip: new THREE.Mesh(markerGeometry, new THREE.MeshBasicMaterial({ color: 0x4dff88, depthTest: false })),
   support: new THREE.Mesh(markerGeometry, new THREE.MeshBasicMaterial({ color: 0xffa640, depthTest: false })),
+  reload: new THREE.Mesh(markerGeometry, new THREE.MeshBasicMaterial({ color: 0x40e0ff, depthTest: false })),
 };
 for (const m of Object.values(markers)) {
   m.renderOrder = 10;
@@ -159,7 +172,7 @@ socketsLabel.append(socketsBox, 'show sockets (orbit views)');
 optionsBar.append(opticLabel, socketsLabel);
 panel.append(weaponBar, optionsBar);
 
-function buttonGroup<T extends string>(title: string, options: readonly T[], get: () => T, set: (v: T) => void): HTMLElement {
+function buttonGroup<T extends string>(title: string, options: readonly T[], get: () => T, set: (v: T) => void): HTMLElement & { refresh(): void } {
   const box = element('div');
   box.append(element('h2', {}, title));
   const bar = element('div', { className: 'bar' });
@@ -177,12 +190,11 @@ function buttonGroup<T extends string>(title: string, options: readonly T[], get
   };
   refresh();
   box.append(bar);
-  return box;
+  return Object.assign(box, { refresh });
 }
 
-panel.append(
-  buttonGroup<Pose>('POSE', ['hip', 'ads', 'reload'], () => state.pose, (v) => (state.pose = v)),
-);
+const poseButtons = buttonGroup<Pose>('POSE', ['hip', 'ads', 'reload'], () => state.pose, (v) => (state.pose = v));
+panel.append(poseButtons);
 const reloadRow = element('div', { className: 'row' });
 const reloadRange = element('input', { type: 'range', min: '0', max: '1', step: '0.01', value: String(state.reload) });
 const reloadValue = element('span', { className: 'small' }, state.reload.toFixed(2));
@@ -192,6 +204,16 @@ reloadRange.addEventListener('input', () => {
 });
 reloadRow.append(element('span', { className: 'small' }, 'reload t'), reloadRange, reloadValue);
 panel.append(reloadRow);
+
+/** Show the reload with the hand on the magazine: what the magazine sliders pose. */
+function showMagazineGrip(): void {
+  if (state.pose === 'reload' && state.reload >= 0.2 && state.reload <= 0.64) return;
+  state.pose = 'reload';
+  state.reload = ON_MAGAZINE_T;
+  reloadRange.value = String(ON_MAGAZINE_T);
+  reloadValue.textContent = ON_MAGAZINE_T.toFixed(2);
+  poseButtons.refresh();
+}
 panel.append(
   buttonGroup<View>('VIEW', ['eye', 'right', 'left', 'above', 'below', 'front'], () => state.view, (v) => {
     state.view = v;
@@ -252,17 +274,28 @@ for (const side of SIDES) {
   });
   title.append(reset);
   panel.append(title);
+  if (side === 'reload') {
+    panel.append(
+      element(
+        'div',
+        { className: 'small' },
+        "In the magazine's own space; the hand is on it from about t 0.2 to 0.64 of a reload. Touching these jumps to that moment.",
+      ),
+    );
+  }
   for (const s of SLIDERS) {
     const row = element('div', { className: 'row' });
     const range = element('input', { type: 'range', min: String(s.min), max: String(s.max), step: String(s.step) });
     const number = element('input', { type: 'number', step: String(s.step) });
     range.addEventListener('input', () => {
+      if (side === 'reload') showMagazineGrip();
       number.value = range.value;
       write(side, s.key, Number(range.value));
     });
     number.addEventListener('input', () => {
       const v = Number(number.value);
       if (!Number.isFinite(v)) return;
+      if (side === 'reload') showMagazineGrip();
       range.value = String(v);
       write(side, s.key, v);
     });
@@ -297,14 +330,18 @@ outBar.append(copyOne, copyAll, resetWeapon, clearAll);
 panel.append(outBar);
 panel.append(element('div', { className: 'small' }, 'Edits are kept in this browser per weapon. Right-drag or drag in an orbit view turns it; the wheel zooms.'));
 
+function currentPoses(): Record<HandSide, HandPose> {
+  return { grip: poseOf('grip'), support: poseOf('support'), reload: poseOf('reload') };
+}
+
 function entryFor(weaponId: string): string {
   const e = edits[weaponId];
   if (e === undefined) return '';
-  return handPoseSource(weaponId, e);
+  return handPoseSource(weaponId, { grip: e.grip, support: e.support, reload: e.reload ?? handPoseFor(weaponId, 'reload') });
 }
 
 function writeOutput(): void {
-  const mine = handPoseSource(state.weaponId, { grip: poseOf('grip'), support: poseOf('support') });
+  const mine = handPoseSource(state.weaponId, currentPoses());
   const others = Object.keys(edits)
     .filter((id) => id !== state.weaponId)
     .sort()
@@ -314,7 +351,7 @@ function writeOutput(): void {
 
 let logTimer = 0;
 function remember(): void {
-  edits[state.weaponId] = { grip: poseOf('grip'), support: poseOf('support') };
+  edits[state.weaponId] = currentPoses();
   saveEdits(edits);
   writeOutput();
   window.clearTimeout(logTimer);
@@ -329,7 +366,7 @@ async function copy(text: string): Promise<void> {
   }
   console.log(`[hand tuner] copied:\n${text}`);
 }
-copyOne.addEventListener('click', () => void copy(handPoseSource(state.weaponId, { grip: poseOf('grip'), support: poseOf('support') })));
+copyOne.addEventListener('click', () => void copy(handPoseSource(state.weaponId, currentPoses())));
 copyAll.addEventListener('click', () => {
   remember();
   void copy(Object.keys(edits).sort().map(entryFor).join('\n'));
@@ -365,7 +402,8 @@ async function load(weaponId: string): Promise<void> {
   layer.add(model.root);
   anim = new ViewmodelAnim(model);
   const saved = edits[weaponId];
-  if (saved !== undefined) for (const side of SIDES) setHand(side, saved[side]);
+  // Edits kept before the reload pose existed have no `reload`: the table's stands.
+  if (saved !== undefined) for (const side of SIDES) setHand(side, saved[side] ?? handPoseFor(weaponId, side));
   syncControls();
   const url = new URL(window.location.href);
   url.searchParams.set('weapon', weaponId);
@@ -430,7 +468,7 @@ function frame(now: number): void {
 
     const outside = state.view !== 'eye';
     for (const side of SIDES) {
-      const target = model.root.getObjectByName(`viewmodel:hand-target:${side}`);
+      const target = model.root.getObjectByName(TARGET[side]);
       const m = markers[side];
       m.visible = outside && state.sockets && target !== undefined;
       if (target !== undefined) m.position.copy(layer.camera.worldToLocal(target.getWorldPosition(socketAt)));

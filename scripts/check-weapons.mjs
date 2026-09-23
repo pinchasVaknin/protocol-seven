@@ -21,8 +21,8 @@
  *      the usual way a 4 MB file becomes a 20 MB one.
  *   5. **The contract's nodes.** A weapon carries a root named for it, `body`, `magazine`,
  *      (the knife only a root and a `body`),
- *      `charge` and the seven sockets (the muzzle, the three rails, the sight line, the two
- *      hands); its LOD the root and `socket_muzzle`; a pack part `part`, and the optic its
+ *      `charge` and the eight sockets (the muzzle, the three rails, the sight line, the two
+ *      hands, where the support hand takes the magazine); its LOD the root and `socket_muzzle`; a pack part `part`, and the optic its
  *      own `socket_sight` (the sight line the ADS pose cancels once it is mounted), the
  *      suppressor its own `socket_muzzle` (where the flash moves to); the arms' rig (stage 4)
  *      its skin and the six arm bones `ViewmodelHands` poses, within 1 MB and 10k triangles.
@@ -59,7 +59,7 @@ const MAX_LOD_SIDE = 256;
 const FORMATS = new Set(['image/webp', 'image/jpeg']);
 const FIX = 'edit the recipe in scripts/weapon-build.mjs and run `node scripts/weapon-build.mjs`';
 
-const WEAPON_NODES = ['body', 'magazine', 'charge', 'socket_muzzle', 'socket_rail_top', 'socket_rail_bottom', 'socket_rail_front', 'socket_sight', 'socket_grip', 'socket_support'];
+const WEAPON_NODES = ['body', 'magazine', 'charge', 'socket_muzzle', 'socket_rail_top', 'socket_rail_bottom', 'socket_rail_front', 'socket_sight', 'socket_grip', 'socket_support', 'socket_mag_grip'];
 const LOD_NODES = ['socket_muzzle'];
 const PART_NODES = { att_optic: ['part', 'socket_sight'], att_suppressor: ['part', 'socket_muzzle'] };
 /** The bones `ViewmodelHands` poses (stage 4); the rig must keep its skin to be posed at all. */

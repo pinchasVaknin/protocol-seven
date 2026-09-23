@@ -21,8 +21,9 @@
  * optic sits (`socket_rail_top`), the handguard's top rail where the laser sits
  * (`socket_rail_front`), the rail under the handguard (`socket_rail_bottom`), the iron
  * sight line (`socket_sight`, whose Y is `WeaponModel.sightHeight`), and the two hands
- * (`socket_grip`, `socket_support`, where the first-person gloves and a body's palms go). Two
- * are optional: `socket_sight_front`, a front post whose line from `socket_sight` is not
+ * (`socket_grip`, `socket_support`, where the first-person gloves and a body's palms go), and
+ * where the support hand takes the magazine on a reload (`socket_mag_grip`, the middle of the
+ * magazine unless a recipe places it). Two are optional: `socket_sight_front`, a front post whose line from `socket_sight` is not
  * parallel to the bore (the ADS pose turns the weapon onto it), and `socket_reticle`, an empty
  * collimator window the runtime puts its dot in. A pack part is the same recipe with its
  * origin on the mating face, so mounting is `socket.add(part)`.
@@ -665,6 +666,12 @@ export const RECIPES = {
          */
         socket_sight: ring,
         socket_sight_front: bead,
+        /**
+         * A tube feed has no magazine to take: the reload hand goes to the loading port, where
+         * the tube meets the receiver's underside — 1.5 cm over the lowest point of the barrel
+         * and tube, 3 cm behind the receiver's front face.
+         */
+        socket_mag_grip: [x, barrel.min[1] + 0.015 / 0.52, receiver.max[2] - 0.03 / 0.52],
         socket_grip: [x, receiver.min[1] + (receiver.max[1] - receiver.min[1]) * 0.28, receiver.min[2] + rz * 0.22],
         socket_support: [x, pump.min[1] - 0.012 / 0.52, (pump.min[2] + pump.max[2]) / 2],
       };
@@ -905,6 +912,12 @@ export const RECIPES = {
         // The scope's ocular: the eye goes behind *this*, at eye relief, and a socket on the
         // tube's middle would have put the eyepiece behind the camera (playtest 3).
         socket_sight: [x, (scope.min[1] + scope.max[1]) / 2, scope.max[2] - 0.12],
+        /**
+         * The L115A3's magazine is modelled into the rifle, so there is no part to measure: the
+         * reload hand goes to its bottom, under the scope's middle — 3.5 cm above the lowest
+         * point of the rifle there.
+         */
+        socket_mag_grip: [x, m.bottom({ name: 'Cube.001' }, (body.max[2] - zScope) / length - 0.03, (body.max[2] - zScope) / length + 0.03) + 0.035 / 0.25, zScope],
         // The thumbhole grip hangs behind the receiver; the support hand under the forend.
         socket_grip: [x, bore[1] - 0.45, zScope + length * 0.17],
         socket_support: [x, m.bottom({ name: 'Cube.001' }, 0.6, 0.72) - 0.1, zForend],
@@ -1829,6 +1842,29 @@ function applySplits(json, bin, src, recipe, nodes, fix, written) {
   return out;
 }
 
+/**
+ * Where the support hand takes the magazine on a reload (stage 4): the middle of the magazine
+ * the recipe keeps, from its own vertices — every magazine part's bounds, together. The runtime
+ * hangs the hand's target on the magazine node there, so the glove rides the magazine out and
+ * back wherever the base grip was posed; the tuner's `reload` pose corrects it per weapon. A
+ * weapon with no magazine part — a tube feed, a magazine modelled into the rifle — places its
+ * own `socket_mag_grip`, and one that does not is refused here.
+ */
+function magazineMiddle(id, recipe, src) {
+  const selectors = recipe.parts.magazine ?? [];
+  if (selectors.length === 0) throw new Error(`${id}: no magazine part to measure socket_mag_grip from; the recipe must place it`);
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (const sel of selectors) {
+    const b = src.bounds(sel);
+    for (let k = 0; k < 3; k++) {
+      min[k] = Math.min(min[k], b.min[k]);
+      max[k] = Math.max(max[k], b.max[k]);
+    }
+  }
+  return [0, 1, 2].map((k) => (min[k] + max[k]) / 2);
+}
+
 function rewrite(id, recipe, src) {
   const forward = recipe.forward;
   src.setMoves(recipe.moves);
@@ -1850,6 +1886,9 @@ function rewrite(id, recipe, src) {
   const origin = recipe.origin(measure);
   const fix = fixMatrix(recipe, origin);
   const sockets = recipe.sockets(measure);
+  if (recipe.kind === 'weapon' && sockets.socket_mag_grip === undefined) {
+    sockets.socket_mag_grip = magazineMiddle(id, recipe, src);
+  }
 
   const nodes = [];
   const root = { name: id, children: [] };

@@ -22,7 +22,7 @@ import {
 import { modelSpecFor } from './WeaponModelSpecs';
 import { groupNodes, type WeaponAssetService, type WeaponAssetTemplate } from './WeaponAssetService';
 import { ATTACHMENT_PARTS, ATTACHMENT_PART_SOCKETS, MAGAZINE_EXTENDED_STRETCH } from './WeaponAssetCatalog';
-import { ViewmodelHands, type SupportPose } from './ViewmodelHands';
+import { ViewmodelHands, type HandTargets, type SupportPose } from './ViewmodelHands';
 import type { AttachmentId } from '../../shared/weapons/Attachments';
 
 /**
@@ -121,8 +121,9 @@ export interface WeaponModel {
    */
   readonly magazineExit: THREE.Vector3;
   /**
-   * The support hand and its forearm, as one node, or null when the model has no hands
-   * (the loadout preview, the bodies' LOD) or is the primitives'.
+   * The support glove's boxes and forearm, as one node, or null when the model has no hands
+   * (the loadout preview, the bodies' LOD), is the primitives', or wears the arms' rig — whose
+   * support hand goes to the magazine through `hands.magazineHold` instead.
    *
    * Its own group rather than part of the body because it is the hand that **changes the
    * magazine** (M19, playtest 5): the trigger hand stays on the grip and this one travels to
@@ -195,17 +196,23 @@ export function buildWeaponModel(
   const rig = options.hands ? (options.assets?.hands() ?? null) : null;
   const boxes = options.hands && rig === null ? [...bodyBoxes(spec), ...handBoxes(spec)] : bodyBoxes(spec);
   addMerged(root, boxes, bodyTubes(spec), surfaces, disposables, 'body');
-  let hands: ViewmodelHands | null = null;
-  if (rig !== null) {
-    const grip = handTarget(root, 'grip', triggerHandAnchor(spec));
-    const support = handTarget(root, 'support', supportHandAnchor(spec));
-    hands = attachHands(rig, root, grip, support, supportPoseFor(spec), weaponId, disposables);
-  }
 
   const magazine = new THREE.Group();
   magazine.name = 'viewmodel:magazine';
   addMerged(magazine, magazineBoxes(spec), magazineTubes(spec), surfaces, disposables, 'mag');
+  // The magazine's middle, from its own boxes, measured before it has a parent: the reload
+  // hand's place, as a file's `socket_mag_grip` is.
+  magazine.updateMatrixWorld(true);
+  const magazineMiddle = new THREE.Box3().setFromObject(magazine).getCenter(new THREE.Vector3());
   root.add(magazine);
+
+  let hands: ViewmodelHands | null = null;
+  if (rig !== null) {
+    const grip = handTarget(root, 'grip', triggerHandAnchor(spec));
+    const support = handTarget(root, 'support', supportHandAnchor(spec));
+    const onMagazine = handTarget(magazine, 'magazine', magazineMiddle);
+    hands = attachHands(rig, root, { grip, support, supportPose: supportPoseFor(spec), magazine: onMagazine }, weaponId, disposables);
+  }
 
   const chargingHandle = new THREE.Group();
   chargingHandle.name = 'viewmodel:charging';
@@ -308,15 +315,12 @@ function buildFromTemplate(
   let hands: ViewmodelHands | null = null;
   const rig = options.hands ? (options.assets?.hands() ?? null) : null;
   if (rig !== null) {
-    // The arms (stage 4). The support target sits under its own carrier at the origin, which
-    // is the node the reload moves — as it moved the support glove's boxes.
+    // The arms (stage 4): the two sockets, and the magazine's grip on the magazine itself, so
+    // the reload hand goes where the magazine goes (`ViewmodelHands.magazineHold`).
     const grip = handTarget(root, 'grip', template.sockets.socket_grip);
-    const carrier = new THREE.Group();
-    carrier.name = 'viewmodel:hand:support';
-    root.add(carrier);
-    const support = handTarget(carrier, 'support', template.sockets.socket_support);
-    hands = attachHands(rig, root, grip, support, supportPoseFor(spec), template.weaponId, disposables);
-    supportHand = carrier;
+    const support = handTarget(root, 'support', template.sockets.socket_support);
+    const onMagazine = handTarget(groups.magazine, 'magazine', template.sockets.socket_mag_grip);
+    hands = attachHands(rig, root, { grip, support, supportPose: supportPoseFor(spec), magazine: onMagazine }, template.weaponId, disposables);
   } else if (options.hands) {
     const boxes = handBoxesAt(spec, template.sockets.socket_grip, template.sockets.socket_support);
     // `handBoxes` lists the trigger pair first and the support pair second (its own comment
@@ -444,7 +448,7 @@ export function camoMaterial(material: THREE.MeshStandardMaterial, camo: CamoId,
 }
 
 /** An empty node a hand is put on, `at` in its parent's space. */
-function handTarget(parent: THREE.Object3D, which: 'grip' | 'support', at: { x: number; y: number; z: number }): THREE.Object3D {
+function handTarget(parent: THREE.Object3D, which: 'grip' | 'support' | 'magazine', at: { x: number; y: number; z: number }): THREE.Object3D {
   const node = new THREE.Object3D();
   node.name = `viewmodel:hand-target:${which}`;
   node.position.set(at.x, at.y, at.z);
@@ -464,13 +468,11 @@ function supportPoseFor(spec: { readonly handguardLength: number }): SupportPose
 function attachHands(
   template: THREE.Object3D,
   root: THREE.Object3D,
-  grip: THREE.Object3D,
-  support: THREE.Object3D,
-  supportPose: SupportPose,
+  targets: HandTargets,
   weaponId: string,
   disposables: Array<{ dispose(): void }>,
 ): ViewmodelHands {
-  const hands = new ViewmodelHands(template, root, { grip, support, supportPose }, weaponId);
+  const hands = new ViewmodelHands(template, root, targets, weaponId);
   root.add(hands.frame);
   disposables.push(hands);
   return hands;

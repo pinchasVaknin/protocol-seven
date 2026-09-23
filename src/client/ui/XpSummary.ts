@@ -3,7 +3,7 @@ import { challengeDef } from '../../shared/meta/Challenges';
 import { levelProgress, prestigeLabel, stepLevelBar } from '../../shared/meta/Levels';
 import { unlocksAtLevel } from '../../shared/meta/Unlocks';
 import type { XpReport } from '../../shared/meta/XpRules';
-import { requireWeapon } from '../../shared/weapons/WeaponDefs';
+import { requireWeapon, WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
 
 /**
@@ -463,9 +463,11 @@ export class XpSummary {
       if (def === undefined) continue;
       this.tailEl.appendChild(tag('CHALLENGE', `${def.name} — ${def.description}`));
     }
-    for (const id of report.camosUnlocked) {
-      if (!isCamoId(id)) continue;
-      this.tailEl.appendChild(tag('CAMO', camoDef(id).name));
+    for (const grant of report.camosUnlocked) {
+      if (!isCamoId(grant.camo)) continue;
+      const weapon = WEAPON_DEFS[grant.weaponId];
+      const on = weapon === undefined ? '' : ` — ${weapon.name}`;
+      this.tailEl.appendChild(tag('CAMO', `${camoDef(grant.camo).name}${on}`));
     }
     for (const id of report.weaponLevelUps) {
       this.tailEl.appendChild(tag('WEAPON', `${requireWeapon(id).name} levelled up`));

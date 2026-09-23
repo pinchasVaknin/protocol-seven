@@ -207,8 +207,12 @@ const FRAG: EquipmentDef = {
   cookable: true,
   cookLimit: 3.4,
   effectRadius: 6,
-  /** 120 at the centre falling off over 6 m, exactly as S6.3 states. */
-  damageProfile: blast('eq_frag', 'FRAG', 120, 6, 6),
+  /**
+   * 240 at the centre falling off over 6 m — S6.3's 120, doubled with the health pool
+   * (2026-09-23, `Health.ts`). A lethal that no longer kills is not a lethal; the radius,
+   * the falloff and the fuse are untouched, so what it asks of the thrower is unchanged.
+   */
+  damageProfile: blast('eq_frag', 'FRAG', 240, 12, 6),
   minBotTier: 1,
 };
 
@@ -227,7 +231,8 @@ const SEMTEX: EquipmentDef = {
   throwSpeed: 19,
   throwLoftDeg: 4,
   effectRadius: 5.2,
-  damageProfile: blast('eq_semtex', 'SEMTEX', 130, 8, 5.2),
+  // Doubled with the health pool (2026-09-23); see FRAG above.
+  damageProfile: blast('eq_semtex', 'SEMTEX', 260, 16, 5.2),
   minBotTier: 2,
 };
 
@@ -275,7 +280,8 @@ const CLAYMORE: EquipmentDef = {
   throwLoftDeg: -6,
   radius: 0.11,
   effectRadius: 4.5,
-  damageProfile: blast('eq_claymore', 'CLAYMORE', 150, 20, 4.5),
+  // Doubled with the health pool (2026-09-23); see FRAG above.
+  damageProfile: blast('eq_claymore', 'CLAYMORE', 300, 40, 4.5),
   triggerArcDeg: 90,
   triggerRadius: 3.6,
   armSeconds: 1.1,

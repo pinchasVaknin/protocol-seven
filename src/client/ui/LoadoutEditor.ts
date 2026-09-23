@@ -1015,8 +1015,8 @@ export class LoadoutEditor {
               camo.name,
               () => camo.requirement,
               () => this.slot[which].camo === id,
-              () => !this.deps.profile.camoOwned(id),
-              () => unlocks.camoRequirement(id),
+              () => !free && !this.deps.profile.camoOwned(this.slot[which].weaponId, id),
+              () => unlocks.camoRequirement(this.slot[which].weaponId, id),
               () =>
                 this.edit((s) => {
                   s[which].camo = id;

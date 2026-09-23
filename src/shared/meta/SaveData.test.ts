@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { installLogSink } from '../core/Log';
-import { levelForXp } from './Levels';
+import { camosEarnedBy } from './Challenges';
+import { levelForXp, xpAtLevelStart } from './Levels';
 import { DEFAULT_SKIN_ID } from './Skins';
 import {
   defaultSettings,
@@ -20,9 +21,15 @@ import {
  * is the shape an *older* build wrote — the fields that did not exist yet are the migration.
  */
 
-/** 42 000 XP is level 15 on the shipped table; the pair is consistent so nothing gets repaired. */
-const XP = 42_000;
+/**
+ * A level and an XP total that agree on the shipped table, so nothing gets repaired.
+ *
+ * Read off `Levels.ts` rather than written down here: the pair was `42_000` and `15`, which
+ * agreed until the curve was re-priced (2026-09-23) and then described level 9 — three
+ * migration tests failing on a number that was never what they were about.
+ */
 const LEVEL = 15;
+const XP = xpAtLevelStart(LEVEL) + 1_000;
 
 function fallback(): SettingsV1 {
   return defaultSettings('TDM', 'mp_foundry', 90);
@@ -172,5 +179,96 @@ describe('normaliseSave', () => {
     expect(save.version).toBe(SAVE_VERSION);
     expect(save.profile.level).toBe(1);
     expect(losses).toEqual(['save was not an object; started a fresh profile']);
+  });
+});
+
+/**
+ * v4 to v5: camos stop being an account-wide block and become the earning weapon's.
+ *
+ * The migration is the rule itself run over what the save already knows, so these are the
+ * cases that make "recomputed, not spread" a sentence with a test behind it.
+ */
+describe('migrateSave, v4 to v5 camos', () => {
+  const saveV4 = (weapons: Record<string, unknown>, camos: Record<string, boolean>): Record<string, unknown> => ({
+    ...saveV2(),
+    version: 4,
+    weapons,
+    camos,
+  });
+
+  it('gives a weapon the camos its own counters earned, and no others', () => {
+    const out = migrateSave(
+      saveV4({ ar_carbine: { kills: 30, headshots: 2, longshots: 0, multikills: 0 } }, {}),
+      4,
+      fallback(),
+    );
+    expect(out?.weapons['ar_carbine']?.camos['digital']).toBe(true);
+    expect(out?.weapons['ar_carbine']?.camos['gold']).toBeUndefined();
+    expect(out?.weapons['ar_carbine']?.camos['splinter']).toBeUndefined();
+  });
+
+  it('does not spread a camo the account owned onto a weapon that never earned it', () => {
+    const out = migrateSave(
+      saveV4(
+        { ar_carbine: { kills: 120, headshots: 20, longshots: 12, multikills: 6 }, smg_wasp: { kills: 3 } },
+        { digital: true, gold: true, tiger: true },
+      ),
+      4,
+      fallback(),
+    );
+    expect(out?.weapons['ar_carbine']?.camos['gold']).toBe(true);
+    expect(out?.weapons['smg_wasp']?.camos['digital']).toBeUndefined();
+    expect(out?.weapons['smg_wasp']?.camos['gold']).toBeUndefined();
+  });
+
+  it('earns OBSIDIAN on the weapon that earned the five under it, and nowhere else', () => {
+    const out = migrateSave(
+      saveV4(
+        {
+          ar_carbine: { kills: 100, headshots: 15, longshots: 10, multikills: 5 },
+          smg_wasp: { kills: 100, headshots: 15, longshots: 10, multikills: 4 },
+        },
+        {},
+      ),
+      4,
+      fallback(),
+    );
+    expect(out?.weapons['ar_carbine']?.camos['obsidian']).toBe(true);
+    expect(out?.weapons['smg_wasp']?.camos['obsidian']).toBeUndefined();
+    expect(out?.weapons['smg_wasp']?.camos['gold']).toBe(true);
+  });
+
+  it('leaves no account-wide camo block behind', () => {
+    const out = migrateSave(saveV4({ ar_carbine: { kills: 30 } }, { digital: true }), 4, fallback());
+    expect((out as unknown as Record<string, unknown>)['camos']).toBeUndefined();
+  });
+});
+
+describe('camosEarnedBy', () => {
+  const stats = (over: Partial<Record<'kills' | 'headshots' | 'longshots' | 'multikills', number>>) => ({
+    kills: 0,
+    headshots: 0,
+    longshots: 0,
+    multikills: 0,
+    ...over,
+  });
+
+  it('is empty for a weapon nobody has used', () => {
+    expect(camosEarnedBy(stats({}))).toEqual([]);
+  });
+
+  it('reads each counter against its own bar', () => {
+    expect(camosEarnedBy(stats({ kills: 25 }))).toEqual(['digital']);
+    expect(camosEarnedBy(stats({ kills: 100 }))).toEqual(['digital', 'gold']);
+    expect(camosEarnedBy(stats({ headshots: 15 }))).toEqual(['splinter']);
+    expect(camosEarnedBy(stats({ longshots: 10 }))).toEqual(['tiger']);
+    expect(camosEarnedBy(stats({ multikills: 5 }))).toEqual(['fractal']);
+  });
+
+  it('adds OBSIDIAN only once the five under it are all on the same weapon', () => {
+    const four = camosEarnedBy(stats({ kills: 100, headshots: 15, longshots: 10, multikills: 4 }));
+    expect(four).not.toContain('obsidian');
+    const five = camosEarnedBy(stats({ kills: 100, headshots: 15, longshots: 10, multikills: 5 }));
+    expect(five).toContain('obsidian');
   });
 });

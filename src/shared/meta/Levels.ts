@@ -6,20 +6,26 @@
  * the row for level 12 and change it. `LEVEL_XP[n]` is the XP required to go from level
  * `n + 1` to level `n + 2`, so the array has 54 entries for 55 levels.
  *
- * The shape is deliberately front-loaded. The first ten levels cost 18,600 XP between
- * them — five matches of `AVERAGE_MATCH`, which is worth 3,870 XP — because every weapon
- * near the bottom of the ladder needs to arrive while the player is still deciding whether
- * to keep playing. From level 11 the steps settle into a steady climb, and the last stretch
- * to 55 is the wall prestige exists to make meaningful.
+ * The shape is deliberately front-loaded. The first ten levels cost 55,800 XP between
+ * them — about fifteen matches of `AVERAGE_MATCH`, which is worth 3,870 XP — because every
+ * weapon near the bottom of the ladder needs to arrive while the player is still deciding
+ * whether to keep playing. From level 11 the steps settle into a steady climb, and the last
+ * stretch to 55 is the wall prestige exists to make meaningful.
+ *
+ * **Every row was tripled on 2026-09-23** (playtest). The report was that a single strong
+ * round carried a player to level 14 — roughly 33,000 XP on the old table, eight average
+ * matches' worth of curve crossed on one summary screen — and the ladder above it with them.
+ * The re-pricing is here rather than in `XpRules.ts` on purpose: the award table is the
+ * brief's (100 a kill, 500 a match) and a dedicated server pays those same numbers, so
+ * cutting them would have made the client and the server disagree about what a kill is worth.
+ * The curve is the pacing dial; the awards are the contract. Same round now lands near 9.
  *
  * **How front-loaded, exactly, is the thing to know before re-spacing anything against it**
- * (playtest round 5, F10). The first four rows total 3,300 XP and a match pays 3,870, so
- * levels 2, 3, 4 and 5 are all crossed on the first summary screen a player ever sees. A
- * level is therefore not a unit of pacing down here; it is four flourishes in a row. Gates
- * placed at 2 and at 5 are the same gate as far as anybody playing is concerned, which is
- * why the weapon ladder is spaced — and asserted — in matches. The table was left alone
- * rather than re-priced: the burst is the reward for finishing a first match, and every
- * other gated category is already authored against these numbers.
+ * (playtest round 5, F10). The first four rows total 9,900 XP and a match pays 3,870, so the
+ * first summary screen a player ever sees still crosses two or three levels at once. A level
+ * is therefore not a unit of pacing down here, which is why the weapon ladder is spaced — and
+ * asserted — in matches: `npm run progression` prints the match each rung arrives in, and
+ * that report is the one to read after any change to this table.
  *
  * Every number here is reachable from the XP simulator (`__p7.simulateXp(n)` in the
  * F1 panel, `xpPerMatch` in `npm run progression`), which fast-forwards N matches of a
@@ -32,24 +38,27 @@ export const MAX_LEVEL = 55;
 /**
  * XP from level n+1 to level n+2, in order. 54 rows.
  *
- * Rows 1-10 are hand-authored for the opening. Rows 11 onward step by a constant 500,
+ * Rows 1-10 are hand-authored for the opening. Rows 11 onward step by a constant 1,500,
  * which is a deliberate choice rather than an accident of generation: a curve that
  * accelerates all the way to 55 makes the last ten levels take longer than the first
- * forty-five, and the simulator made that obvious the first time it was run.
+ * forty-five, and the simulator made that obvious the first time it was run. The whole
+ * table is the 2026-09-23 re-pricing of the original, every row multiplied by three, so the
+ * shape the paragraph above describes is exactly the shape it always had.
  */
 export const LEVEL_XP: readonly number[] = [
-  // 1 -> 11: the opening. Four matches to level 10, five to level 11; measured, not estimated.
-  500, 700, 900, 1200, 1500, 1900, 2300, 2700, 3200, 3700,
+  // 1 -> 11: the opening. Twelve matches to level 10, fifteen to level 11; measured by
+  // `npm run progression`, not estimated.
+  1500, 2100, 2700, 3600, 4500, 5700, 6900, 8100, 9600, 11100,
   // 11 -> 21
-  4200, 4700, 5200, 5700, 6200, 6700, 7200, 7700, 8200, 8700,
+  12600, 14100, 15600, 17100, 18600, 20100, 21600, 23100, 24600, 26100,
   // 21 -> 31
-  9200, 9700, 10200, 10700, 11200, 11700, 12200, 12700, 13200, 13700,
+  27600, 29100, 30600, 32100, 33600, 35100, 36600, 38100, 39600, 41100,
   // 31 -> 41
-  14200, 14700, 15200, 15700, 16200, 16700, 17200, 17700, 18200, 18700,
+  42600, 44100, 45600, 47100, 48600, 50100, 51600, 53100, 54600, 56100,
   // 41 -> 51
-  19200, 19700, 20200, 20700, 21200, 21700, 22200, 22700, 23200, 23700,
+  57600, 59100, 60600, 62100, 63600, 65100, 66600, 68100, 69600, 71100,
   // 51 -> 55
-  24200, 24700, 25200, 25700,
+  72600, 74100, 75600, 77100,
 ];
 
 /** Cumulative XP at the start of each level. `LEVEL_START[0]` is level 1, always 0. */
@@ -65,7 +74,7 @@ function buildCumulative(): number[] {
   return out;
 }
 
-/** Total XP needed to reach `MAX_LEVEL`. 676,400 on the shipped table. */
+/** Total XP needed to reach `MAX_LEVEL`. 2,029,200 on the shipped table. */
 export const XP_TO_MAX = LEVEL_START[LEVEL_START.length - 1] ?? 0;
 
 /** XP required to advance out of `level`. Zero at the cap. */

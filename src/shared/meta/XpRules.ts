@@ -203,8 +203,13 @@ export interface XpReport {
   readonly weaponLevelUps: readonly string[];
   /** Challenge ids completed this match. */
   readonly challengesCompleted: readonly string[];
-  /** Camo ids unlocked this match. */
-  readonly camosUnlocked: readonly CamoId[];
+  /**
+   * Camos earned this match, with the weapon that earned each one (2026-09-23).
+   *
+   * A camo belongs to a weapon now, so the line the player reads has to name it: "DIGITAL on
+   * the VULCAN" is the truth, and "DIGITAL" alone was the old, account-wide claim.
+   */
+  readonly camosUnlocked: readonly { readonly weaponId: string; readonly camo: CamoId }[];
 }
 
 /*

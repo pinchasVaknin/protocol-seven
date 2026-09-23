@@ -283,22 +283,23 @@ export class Profile implements ProgressionStore {
     return fresh;
   }
 
-  camoOwned(id: CamoId): boolean {
-    return this.save.camos[id] === true;
+  camoOwned(weaponId: string, id: CamoId): boolean {
+    return this.weapon(weaponId).camos[id] === true;
   }
 
-  grantCamo(id: CamoId): void {
-    if (this.save.camos[id] === true) return;
-    this.save.camos[id] = true;
+  grantCamo(weaponId: string, id: CamoId): void {
+    const weapon = this.weapon(weaponId);
+    if (weapon.camos[id] === true) return;
+    weapon.camos[id] = true;
     this.refreshUnlocks();
     this.store.touch();
   }
 
-  /** How many of the five OBSIDIAN needs are already owned. */
-  camoPrerequisiteCount(): number {
+  /** How many of the five OBSIDIAN needs this weapon has already earned. */
+  camoPrerequisiteCount(weaponId: string): number {
     let count = 0;
     for (const id of CAMO_PREREQUISITES) {
-      if (this.camoOwned(id)) count++;
+      if (this.camoOwned(weaponId, id)) count++;
     }
     return count;
   }

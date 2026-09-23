@@ -33,11 +33,11 @@ export interface ProgressionStore {
   /** Progress on one challenge. Creates the record on first use. */
   challenge(id: ChallengeId): ChallengeSaveData;
 
-  /** Whether a camo has been earned on any weapon. */
-  camoOwned(id: CamoId): boolean;
+  /** Whether this weapon has earned this camo (per weapon since 2026-09-23). */
+  camoOwned(weaponId: string, id: CamoId): boolean;
 
-  /** Award a camo. Idempotent. */
-  grantCamo(id: CamoId): void;
+  /** Award a camo to one weapon. Idempotent. */
+  grantCamo(weaponId: string, id: CamoId): void;
 
   /** Bank a match's XP and report the level either side of it, for the summary screen. */
   bankMatch(xpEarned: number, won: boolean): { levelBefore: number; levelAfter: number };

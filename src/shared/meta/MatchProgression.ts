@@ -4,7 +4,6 @@ import { EV, type GameBus } from '../core/Events';
 import type { PlayerSim } from '../player/PlayerState';
 import { WEAPON_DEFS } from '../weapons/WeaponDefs';
 import type { WeaponSystem } from '../weapons/WeaponSystem';
-import type { CamoId } from './Camos';
 import { ChallengeTracker } from './ChallengeTracker';
 import type { MatchFact } from './Challenges';
 import { levelForXp } from './Levels';
@@ -39,7 +38,7 @@ export interface MatchProgressionDeps {
 const evXp = { total: 0, xpBefore: 0, xpAfter: 0 };
 const evLevel = { level: 1, prestige: 0, unlockCount: 0 };
 const evChallenge = { id: '', name: '', xp: 0, camo: null as string | null };
-const evCamo = { camoId: '', name: '' };
+const evCamo = { camoId: '', name: '', weaponId: '' };
 
 export class MatchProgression {
   private readonly ledger: MatchLedger;
@@ -144,9 +143,7 @@ export class MatchProgression {
       levelAfter: banked.levelAfter,
       weaponLevelUps,
       challengesCompleted: this.deps.tracker.awardsThisMatch.map((a) => a.id),
-      camosUnlocked: this.deps.tracker.awardsThisMatch
-        .map((a) => a.camo)
-        .filter((c): c is CamoId => c !== null),
+      camosUnlocked: this.deps.tracker.camoGrantsThisMatch.map((g) => ({ weaponId: g.weaponId, camo: g.camo })),
     };
     return this.report;
   }
@@ -202,9 +199,15 @@ export class MatchProgression {
       evChallenge.xp = award.xp;
       evChallenge.camo = award.camo;
       bus.emit(EV.MetaChallengeCompleted, evChallenge);
-      if (award.camo === null) continue;
-      evCamo.camoId = award.camo;
-      evCamo.name = award.camo.toUpperCase();
+    }
+
+    // Camos are their own announcement now: one per weapon that earned one, which is not the
+    // same list as the challenges that completed — the second gun to reach 25 kills is on this
+    // list and not on that one.
+    for (const grant of this.deps.tracker.camoGrantsThisMatch) {
+      evCamo.camoId = grant.camo;
+      evCamo.name = grant.camo.toUpperCase();
+      evCamo.weaponId = grant.weaponId;
       bus.emit(EV.MetaCamoUnlocked, evCamo);
     }
 

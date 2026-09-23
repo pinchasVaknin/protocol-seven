@@ -115,12 +115,12 @@ class ScratchStore implements ProgressionStore {
     return fresh;
   }
 
-  camoOwned(id: CamoId): boolean {
-    return this.save.camos[id] === true;
+  camoOwned(weaponId: string, id: CamoId): boolean {
+    return this.weapon(weaponId).camos[id] === true;
   }
 
-  grantCamo(id: CamoId): void {
-    this.save.camos[id] = true;
+  grantCamo(weaponId: string, id: CamoId): void {
+    this.weapon(weaponId).camos[id] = true;
   }
 
   /** The same arithmetic `Profile.bankMatch` does, minus the storage write. */

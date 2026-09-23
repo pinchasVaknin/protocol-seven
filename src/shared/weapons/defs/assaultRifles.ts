@@ -433,8 +433,12 @@ export const AR_LONGBOW: WeaponDef = {
       { x: -0.34, y: 0.19 },
       { x: 0.33, y: 0.19 },
     ],
-    verticalScale: 1.0,
-    horizontalScale: 1.0,
+    // Both scales cut 30% from 1.0 (playtest, 2026-09-23): the human asked for less recoil
+    // on this rifle, and a scale is the way to give it without redrawing the zig-zag, which
+    // is the weapon's whole character. The picture's kick (`visualScale`) is deliberately
+    // left at 1.2 — the gun still looks like it is fighting back, it just climbs less.
+    verticalScale: 0.85,
+    horizontalScale: 0.85,
     firstShotScale: 1.15,
     recoverFraction: 0.72,
     recoverRate: 7.4,

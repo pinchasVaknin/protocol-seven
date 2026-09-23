@@ -136,9 +136,12 @@ interface Case {
  */
 const CASES: readonly Case[] = [
   { name: 'level 1, no XP earned', xpBefore: 0, total: 0, expectLevelUps: 0 },
-  { name: 'level 1, half a level', xpBefore: 0, total: 200, expectLevelUps: 0 },
+  // Read off the table rather than written down beside it: both of these were literals that
+  // happened to equal the first rows of `LEVEL_XP`, so re-pricing the curve (2026-09-23, x3)
+  // turned "three levels" into one and failed a case about the *step*, not about the table.
+  { name: 'level 1, half a level', xpBefore: 0, total: (LEVEL_XP[0] ?? 500) / 2, expectLevelUps: 0 },
   { name: 'level 1 -> 2, exactly one level', xpBefore: 0, total: LEVEL_XP[0] ?? 500, expectLevelUps: 1 },
-  { name: 'level 1 -> 4, three levels', xpBefore: 0, total: 2100, expectLevelUps: 3 },
+  { name: 'level 1 -> 4, three levels', xpBefore: 0, total: xpAtLevelStart(4), expectLevelUps: 3 },
   { name: 'mid-curve, level 30 -> 31', xpBefore: xpAtLevelStart(30), total: xpForLevel(30), expectLevelUps: 1 },
   {
     name: 'the whole curve, level 1 -> 55',

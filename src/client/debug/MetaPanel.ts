@@ -259,8 +259,13 @@ export class MetaPanel extends Disposable {
       rows.push([row.def.name, `${row.state.progress} / ${row.def.target} (${pct}%)`]);
     }
     rows.push(['Completed', `${done.length} / ${all.length}`]);
-    const camos = Object.entries(this.profile.save.camos).filter(([, owned]) => owned === true);
-    rows.push(['Camos owned', camos.length === 0 ? 'none' : camos.map(([id]) => id).join(', ')]);
+    // Per weapon since 2026-09-23, so the line names the gun as well as the finish.
+    const owned: string[] = [];
+    for (const [weaponId, weapon] of Object.entries(this.profile.save.weapons)) {
+      const mine = Object.keys(weapon.camos).filter((id) => weapon.camos[id] === true);
+      if (mine.length > 0) owned.push(`${weaponId}: ${mine.join(', ')}`);
+    }
+    rows.push(['Camos owned', owned.length === 0 ? 'none' : owned.join(' | ')]);
     paintTable(this.challengeBody, rows);
   }
 

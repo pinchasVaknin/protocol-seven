@@ -231,7 +231,9 @@ export const DEFAULT_STREAK_CONFIG: StreakConfig = {
   mortarInterval: 0.55,
   mortarDelay: 2.4,
   mortarScatter: 7.5,
-  mortarDamage: 130,
+  // The three damage numbers doubled with the health pool (2026-09-23, `Health.ts`): a
+  // streak that killed in one shell, one burst or one pass still does.
+  mortarDamage: 260,
   mortarRadius: 5.2,
 
   sentryHealth: 260,
@@ -239,14 +241,14 @@ export const DEFAULT_STREAK_CONFIG: StreakConfig = {
   sentryTurnRateDeg: 105,
   sentryArcDeg: 80,
   sentryRpm: 420,
-  sentryDamage: 18,
+  sentryDamage: 36,
   sentryReactionSeconds: 0.42,
 
   chopperHeight: 34,
   chopperOrbitRadius: 42,
   chopperOrbitSpeed: 0.12,
   chopperRpm: 900,
-  chopperDamage: 26,
+  chopperDamage: 52,
   chopperSpinUpSeconds: 0.85,
   chopperMagSize: 50,
   chopperReloadSeconds: 2.4,

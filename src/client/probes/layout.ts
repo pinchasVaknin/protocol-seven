@@ -462,7 +462,10 @@ function fullestReport(): XpReport {
     levelAfter: 9,
     weaponLevelUps: ['ar_m4', 'smg_mp5'].filter((id) => ALL_WEAPONS.some((w) => w.id === id)),
     challengesCompleted: ['first_blood', 'double_kill'],
-    camosUnlocked: ['digital', 'tiger'],
+    camosUnlocked: [
+      { weaponId: 'ar_carbine', camo: 'digital' },
+      { weaponId: 'sniper_kestrel', camo: 'tiger' },
+    ],
   };
 }
 

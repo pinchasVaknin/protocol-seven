@@ -1340,3 +1340,41 @@ credit was made a thing the build maintains rather than a file somebody remember
   never the 44 px rows), the credit list is set at line-height 1.4, and the link's hover mark is
   a text decoration rather than a border, which was clipping each ellipsised title by a pixel.
   `npm run layout` passes at all six viewports.
+
+### The playtest's three fixes (2026-09-23)
+
+**Balance, as asked.** `DEFAULT_HEALTH_CONFIG.max` 100 to 200, which doubles every time-to-kill
+in the game from one number and leaves every weapon table where it was tuned. The lethals and
+the killstreak weapons doubled with it (FRAG 240, SEMTEX 260, CLAYMORE 300, mortar 260, sentry
+36, chopper 52) because a lethal that no longer kills is not a lethal; regeneration was left
+alone, so a full heal is 5 s rather than 2.5. The LONGBOW's recoil scales are 0.7 — the human
+asked for 30% less, and a scale gives it without redrawing the zig-zag the weapon is built on.
+
+**The XP curve, x3.** A strong round reached level 14; it reaches about 9 now, and the ladder
+moved with it — level 10 at twelve matches instead of four, the KESTREL at fifteen, the VANTAGE
+at 239. The re-pricing is in `LEVEL_XP` rather than in `XP_SOURCES` on purpose: the awards are
+the brief's and a dedicated server pays the same numbers, so cutting them would have made the
+two runtimes disagree about what a kill is worth. Two literals that had quietly copied the old
+table — a progression case and a save-test fixture — read it now.
+
+**The ADS sight desync, measured.** Through the sights, sustained fire, the hits and the reticle
+disagreed. Cause: the kick rotates the viewmodel about the root's origin, which sits on the bore
+near the eye, while the player's mark sits 20 cm in front of it — so the sight left the camera
+axis the rounds go down. Measured in the running game, mid-burst on the carbine at full ADS:
+**1.54° high, 0.49° right — 56 cm at 20 m.** The fix splits the kick in two. The translation is
+scaled by a new `kickAdsScale` (0 at full ADS, a tunable beside `swayAdsScale` and `bobAdsScale`)
+because it has nowhere to go but off the aim line; the rotation is kept whole and taken **about
+the sight point** (`sightPivotShift`, with `ViewmodelAnim.test.ts` as its invariant), so the
+muzzle still rises and the reticle stays put. After: 0.47 cm at 20 m mid-burst, 0.92 cm on a
+heavy kick, with the gun still pitching 0.73° and 2.03°. Hip fire is byte-identical.
+
+**Camos belong to the weapon that earned them.** They were account-wide booleans, so 25 kills
+with the carbine painted DIGITAL on every gun in the game — the reward for *using a weapon* was
+a one-time tax. Ownership is `WeaponSaveData.camos` now; `camosEarnedBy` (`Challenges.ts`) is the
+one rule that turns a weapon's own counters into camos, and the tracker grants from it on every
+refresh, so the tenth gun to reach the bar earns the finish as surely as the first. The challenge
+and its XP stay the account's, once. **Save v5**: the migration recomputes ownership per weapon
+from the counters the save has kept since M6 and drops the account block, which does take a camo
+off a weapon that never earned it — that is the bug, stated as a consequence. `UnlockState`,
+`sanitiseLoadout` (it clears a camo the weapon has not earned, by name), the editor's picker, the
+summary line ("DIGITAL — M4 CARBINE") and `MetaCamoUnlocked` all carry the weapon now.

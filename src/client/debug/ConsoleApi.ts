@@ -226,7 +226,7 @@ export function installConsoleApi(game: Game, harness: Harness, matchHarness: Ma
     perkStateOf: (ids: readonly PerkId[]) => resolvePerkState(ids),
     /** Force a loadout legal at a given level, and report what had to change. */
     sanitise: (slot: LoadoutSlot, level: number, losses: string[]) =>
-      sanitiseLoadout(slot, new UnlockState(level, game.profile.save.weapons, [], game.profile.save.camos), losses),
+      sanitiseLoadout(slot, new UnlockState(level, game.profile.save.weapons, []), losses),
     /** The event bus, so a script can drive a real event rather than poking a field. */
     bus: game.bus,
     challenges: CHALLENGES,

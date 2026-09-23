@@ -18,10 +18,18 @@ import { CAMO_PREREQUISITES, type CamoId } from './Camos';
  * fact once and testing thirty cheap predicates against it is both faster and far easier
  * to read than thirty subscriptions each reaching for their own context.
  *
- * Camo challenges are the exception and are absolute rather than incremental: their
- * progress is the *best* any single weapon has reached, because S6.6's save schema stores
- * camos as account-wide booleans. "25 kills with a single weapon" is therefore the honest
- * phrasing, and it is what the editor prints.
+ * Camo challenges are the exception and are absolute rather than incremental: their progress
+ * is the *best* any single weapon has reached, and the challenge — with its XP — is a career
+ * milestone that lands once. "25 kills with a single weapon" is therefore the honest phrasing,
+ * and it is what the challenge list prints.
+ *
+ * **The camo it pays out, though, belongs to the weapon that earned it** (playtest,
+ * 2026-09-23). Until then a camo was an account-wide boolean, so 25 kills with the carbine
+ * put DIGITAL on every gun in the game — which makes the reward a one-time tax rather than
+ * something you do *with a weapon*. `camosEarnedBy` below is the whole rule, read off the same
+ * rows the challenges are: it takes one weapon's own counters and answers which camos that
+ * weapon has earned. The tracker grants from it, the save migration recomputes from it, and
+ * nothing else decides what a camo costs.
  */
 
 export type ChallengeId = string;
@@ -404,6 +412,36 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     rule: { kind: 'camoSet', camos: CAMO_PREREQUISITES },
   },
 ];
+
+/** The per-weapon counters a camo rule reads. `WeaponSaveData` satisfies it. */
+export type WeaponCamoStats = Readonly<Record<WeaponStatKey, number>>;
+
+const CAMO_RULES = CHALLENGES.filter((c) => c.camo !== undefined);
+
+/**
+ * Which camos one weapon's own record has earned, in the order the camos are declared.
+ *
+ * Two passes, because OBSIDIAN counts the other five — on *this* weapon, so a gun with a
+ * hundred kills and no headshots does not inherit an obsidian finish from the one that has
+ * them. Pure: same counters in, same camos out, which is what lets the save migration run it
+ * over a stored profile and get the answer the tracker would have given.
+ */
+export function camosEarnedBy(stats: WeaponCamoStats): CamoId[] {
+  const earned = new Set<CamoId>();
+  for (const def of CAMO_RULES) {
+    if (def.rule.kind !== 'weaponBest' || def.camo === undefined) continue;
+    if (stats[def.rule.stat] >= def.target) earned.add(def.camo);
+  }
+  for (const def of CAMO_RULES) {
+    if (def.rule.kind !== 'camoSet' || def.camo === undefined) continue;
+    let count = 0;
+    for (const id of def.rule.camos) {
+      if (earned.has(id)) count++;
+    }
+    if (count >= def.target) earned.add(def.camo);
+  }
+  return [...earned];
+}
 
 const BY_ID = new Map<ChallengeId, ChallengeDef>(CHALLENGES.map((c) => [c.id, c]));
 

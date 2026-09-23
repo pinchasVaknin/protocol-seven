@@ -81,6 +81,22 @@ export interface ViewmodelConfig {
   kickPitch: number;
   kickRoll: number;
   kickLateral: number;
+  /**
+   * What is left of the kick's **translation** while fully aimed (playtest, 2026-09-23).
+   *
+   * Sighted, the crosshair is on the weapon rather than on the screen, so anything that moves
+   * the weapon relative to the camera moves the player's aiming mark away from the line the
+   * rounds actually leave along — and the kick moved it 1.5°, 56 cm at 20 m, mid-burst on the
+   * carbine. Measured in the running game against the real viewmodel rather than guessed; the
+   * geometry that answers it is `sightPivotShift`, and `ViewmodelAnim.test.ts` is its invariant.
+   *
+   * The kick's *rotation* is kept at full strength and taken about the sight point instead
+   * (`ViewmodelAnim`), so the muzzle still rises; it is the translation that has nowhere to go
+   * but off the aim line, and this is how much of it survives. Zero is "the sight does not
+   * move while you are looking through it"; the sibling scales for sway (0.28) and bob (0.22)
+   * are the same idea for the two motions that were already suppressed here.
+   */
+  kickAdsScale: number;
 
   // -- reload ------------------------------------------------------------
   reloadDropY: number;
@@ -146,6 +162,7 @@ export const DEFAULT_VIEWMODEL_CONFIG: ViewmodelConfig = {
   kickPitch: 1.35,
   kickRoll: 0.5,
   kickLateral: 0.012,
+  kickAdsScale: 0,
 
   reloadDropY: -0.115,
   reloadDropZ: 0.045,
@@ -194,6 +211,7 @@ export const VIEWMODEL_TUNABLES: Readonly<Record<keyof ViewmodelConfig, TunableM
   swayMax: { label: 'Sway cap', group: 'Sway', min: 0.005, max: 0.2, step: 0.002, unit: 'm' },
   swayRate: { label: 'Sway rate', group: 'Sway', min: 1, max: 30, step: 0.5, unit: '/s' },
   swayAdsScale: { label: 'Sway ADS x', group: 'Sway', min: 0, max: 1, step: 0.01, unit: 'x' },
+  kickAdsScale: { label: 'Kick ADS x', group: 'Kick', min: 0, max: 1, step: 0.01, unit: 'x' },
 
   bobAmount: { label: 'Bob vertical', group: 'Bob', min: 0, max: 0.06, step: 0.001, unit: 'm' },
   bobLateral: { label: 'Bob lateral', group: 'Bob', min: 0, max: 0.08, step: 0.001, unit: 'm' },

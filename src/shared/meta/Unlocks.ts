@@ -153,7 +153,6 @@ export class UnlockState {
     readonly level: number,
     private readonly weapons: Readonly<Record<string, WeaponSaveData>>,
     permanentUnlocks: readonly string[],
-    private readonly camos: Readonly<Record<string, boolean>>,
     /** Set by the Shooting Range, where S9's testbed rules apply. See `Range.ts`. */
     readonly unrestricted = false,
   ) {
@@ -162,13 +161,7 @@ export class UnlockState {
 
   /** Built from a save. The one constructor anything outside this file should use. */
   static fromSave(save: SaveV2, unrestricted = false): UnlockState {
-    return new UnlockState(
-      save.profile.level,
-      save.weapons,
-      save.profile.permanentUnlocks,
-      save.camos,
-      unrestricted,
-    );
+    return new UnlockState(save.profile.level, save.weapons, save.profile.permanentUnlocks, unrestricted);
   }
 
   /** A token spent on this id overrides every other gate, at any prestige. */
@@ -212,8 +205,15 @@ export class UnlockState {
     return this.level >= fieldUpgradeDef(id).unlockLevel;
   }
 
-  camoUnlocked(id: CamoId): boolean {
-    return this.camos[id] === true;
+  /**
+   * A camo belongs to the weapon that earned it (2026-09-23), so this takes one.
+   *
+   * The Shooting Range is the exception it is everywhere else on this class: `unrestricted`
+   * opens every finish, because the range exists to look at weapons.
+   */
+  camoUnlocked(weaponId: string, id: CamoId): boolean {
+    if (this.unrestricted) return true;
+    return this.weapons[weaponId]?.camos[id] === true;
   }
 
   /**
@@ -265,8 +265,8 @@ export class UnlockState {
    * is what actually awards it. This reads the def so the picker and the challenge list quote
    * the same sentence.
    */
-  camoRequirement(id: CamoId): string {
-    if (this.camoUnlocked(id)) return '';
+  camoRequirement(weaponId: string, id: CamoId): string {
+    if (this.camoUnlocked(weaponId, id)) return '';
     return camoDef(id).requirement.toUpperCase();
   }
 
@@ -365,8 +365,8 @@ export function sanitiseLoadout(slot: LoadoutSlot, unlocks: UnlockState, losses:
       bySlot.add(key);
       return true;
     });
-    if (entry.camo !== null && !unlocks.camoUnlocked(entry.camo)) {
-      losses.push(`${label} ${which}: camo "${entry.camo}" not earned; cleared`);
+    if (entry.camo !== null && !unlocks.camoUnlocked(entry.weaponId, entry.camo)) {
+      losses.push(`${label} ${which}: camo "${entry.camo}" not earned on ${entry.weaponId}; cleared`);
       entry.camo = null;
       changed = true;
     }

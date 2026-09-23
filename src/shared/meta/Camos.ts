@@ -20,8 +20,14 @@
  * | GOLD     | Vertical brushed metal with a specular sweep and an edge burn  |
  * | OBSIDIAN | Voronoi facets lit from one direction, over an ink base        |
  *
- * OBSIDIAN is S6.5's "one that requires the others" — its challenge is completing the
- * five camo challenges below it, so it cannot be reached any other way.
+ * OBSIDIAN is S6.5's "one that requires the others" — it is earned by earning the five above
+ * it, so it cannot be reached any other way.
+ *
+ * **A camo belongs to the weapon that earned it** (playtest, 2026-09-23). The requirements
+ * below always said "with the weapon"; until that date the save did not, and 25 kills with the
+ * carbine put DIGITAL on every gun in the game. Ownership is a field on each weapon's own
+ * record now (`WeaponSaveData.camos`), the rule that fills it is `camosEarnedBy`, and OBSIDIAN
+ * is counted on the weapon holding the other five rather than across the account.
  */
 
 export type CamoId = 'digital' | 'splinter' | 'tiger' | 'fractal' | 'gold' | 'obsidian';

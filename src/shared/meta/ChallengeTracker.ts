@@ -1,5 +1,6 @@
 import type { CamoId } from './Camos';
 import {
+  camosEarnedBy,
   CHALLENGES,
   type ChallengeDef,
   type ChallengeId,
@@ -21,10 +22,17 @@ import type { ProgressionStore } from './ProgressionStore';
  * be answered differently.
  *
  * Two rule kinds are *absolute* rather than incremental. `weaponBest` reads the highest
- * value any single weapon has reached and `camoSet` counts owned camos, so both are
- * recomputed from the save rather than counted up. That is what makes them survive a
+ * value any single weapon has reached and `camoSet` counts the best weapon's owned camos, so
+ * both are recomputed from the save rather than counted up. That is what makes them survive a
  * reload with no bookkeeping: the answer is a function of the stats, not a tally that
  * could drift from them.
+ *
+ * **A challenge and a camo are two different awards** (playtest, 2026-09-23). The challenge is
+ * a career milestone — "25 kills with a single weapon" — and it pays its XP once, to the
+ * account. The camo is earned *by a weapon*, from that weapon's own counters, and every weapon
+ * that reaches the bar gets it: `grantCamos` walks the save each refresh and `camosEarnedBy` is
+ * the rule. So the second gun to reach 25 kills earns DIGITAL for itself and no XP, which is
+ * the right answer to both questions.
  *
  * Nothing here writes to storage. Progress lands in the live save document and `Profile`
  * banks it once, at the end of the match (S6.6: "write on match end… never every frame").
@@ -37,9 +45,18 @@ export interface ChallengeAward {
   readonly camo: CamoId | null;
 }
 
+/** A camo a weapon earned this match. One per (weapon, camo), never repeated. */
+export interface CamoGrant {
+  readonly weaponId: string;
+  readonly camo: CamoId;
+}
+
 export class ChallengeTracker {
   /** Completions since the last `reset`. Drives the summary's challenge lines. */
   readonly awardsThisMatch: ChallengeAward[] = [];
+
+  /** Camos earned, by the weapons that earned them, since the last `reset`. */
+  readonly camoGrantsThisMatch: CamoGrant[] = [];
 
   private readonly killRules: ChallengeDef[] = [];
   private readonly flashRules: ChallengeDef[] = [];
@@ -68,6 +85,7 @@ export class ChallengeTracker {
 
   reset(): void {
     this.awardsThisMatch.length = 0;
+    this.camoGrantsThisMatch.length = 0;
   }
 
   /** XP earned from completions since the last `reset`. */
@@ -107,6 +125,7 @@ export class ChallengeTracker {
    * anything, because OBSIDIAN is the only camo no challenge depends on.
    */
   refreshAbsolute(): void {
+    this.grantCamos();
     for (let pass = 0; pass < 2; pass++) {
       let granted = false;
       for (const def of this.absoluteRules) {
@@ -114,6 +133,24 @@ export class ChallengeTracker {
         if (this.setProgress(def, value)) granted = true;
       }
       if (!granted) return;
+    }
+  }
+
+  /**
+   * Every weapon gets the camos its own counters have earned.
+   *
+   * Runs before the challenge rules rather than out of `checkComplete`, because the two are no
+   * longer the same event: a challenge completes once, for the account, and a camo is earned
+   * once per weapon — by the tenth gun as surely as by the first. Idempotent, so calling it
+   * on every refresh only ever adds what is newly true.
+   */
+  private grantCamos(): void {
+    for (const [weaponId, stats] of Object.entries(this.profile.save.weapons)) {
+      for (const camo of camosEarnedBy(stats)) {
+        if (this.profile.camoOwned(weaponId, camo)) continue;
+        this.profile.grantCamo(weaponId, camo);
+        this.camoGrantsThisMatch.push({ weaponId, camo });
+      }
     }
   }
 
@@ -129,11 +166,17 @@ export class ChallengeTracker {
 
   private absoluteValue(def: ChallengeDef): number {
     if (def.rule.kind === 'camoSet') {
-      let count = 0;
-      for (const id of def.rule.camos) {
-        if (this.profile.camoOwned(id)) count++;
+      // The best weapon's count, for the same reason `weaponBest` reads the best weapon: the
+      // challenge is "earn every other camouflage", and it is earned on one gun or not at all.
+      let best = 0;
+      for (const weaponId of Object.keys(this.profile.save.weapons)) {
+        let count = 0;
+        for (const id of def.rule.camos) {
+          if (this.profile.camoOwned(weaponId, id)) count++;
+        }
+        if (count > best) best = count;
       }
-      return count;
+      return best;
     }
     if (def.rule.kind !== 'weaponBest') return 0;
     const stat: WeaponStatKey = def.rule.stat;
@@ -171,7 +214,8 @@ export class ChallengeTracker {
     if (state.completed) return false;
     state.completed = true;
     state.progress = def.target;
-    if (def.camo !== undefined) this.profile.grantCamo(def.camo);
+    // The camo itself is `grantCamos`': this is the account's milestone and its XP. The award
+    // still names the camo, because the line the player reads is "DIGITAL — 500 XP".
     this.awardsThisMatch.push({
       id: def.id,
       name: def.name,

@@ -6,8 +6,8 @@ import { isPerkId, perkDef, type PerkId } from '../perks/PerkDefs';
 import { isStreakId, type StreakId } from '../streaks/StreakDefs';
 import { ATTACHMENT_IDS, type AttachmentId } from '../weapons/Attachments';
 import { ALL_WEAPONS, WEAPON_DEFS } from '../weapons/WeaponDefs';
-import { CAMO_IDS, isCamoId, type CamoId } from './Camos';
-import { CHALLENGES, type ChallengeId } from './Challenges';
+import { isCamoId, type CamoId } from './Camos';
+import { camosEarnedBy, CHALLENGES, type ChallengeId } from './Challenges';
 import { DEFAULT_SKIN_ID } from './Skins';
 import { isFieldUpgradeId, type FieldUpgradeId } from './FieldUpgrades';
 import { levelForXp, MAX_LEVEL, PRESTIGE_MAX } from './Levels';
@@ -155,6 +155,14 @@ export interface WeaponSaveData {
   longshots: number;
   /** One-magazine multikills, for the FRACTAL camo. */
   multikills: number;
+  /**
+   * The camos **this weapon** has earned (v5, 2026-09-23).
+   *
+   * They were one account-wide block, so the first weapon to reach 25 kills painted DIGITAL
+   * on every gun in the game. A camo is something you earn *with a weapon*, so it is stored
+   * with that weapon's own counters — the ones `camosEarnedBy` reads to decide it.
+   */
+  camos: Record<string, boolean>;
 }
 
 export interface ChallengeSaveData {
@@ -174,7 +182,7 @@ export interface Versioned {
 }
 
 export interface SaveV2 extends Versioned {
-  version: 4;
+  version: 5;
   profile: ProfileData;
   weapons: Record<string, WeaponSaveData>;
   loadouts: LoadoutSlot[];
@@ -183,7 +191,6 @@ export interface SaveV2 extends Versioned {
   /** Which of the five slots is equipped. */
   equippedLoadout: number;
   challenges: Record<ChallengeId, ChallengeSaveData>;
-  camos: Record<string, boolean>;
   settings: SettingsV1;
 }
 
@@ -206,8 +213,15 @@ export interface SaveV2 extends Versioned {
  * The v4 bump (M15, B5) is the M8 kind: `normaliseSave` would default `settings.skin` without
  * it, and it is a migration anyway so that "a v3 save loads wearing the skin it was always
  * shown" is a tested sentence rather than a side effect of a default.
+ *
+ * The v5 bump (playtest, 2026-09-23) is the required kind: camos moved from one account-wide
+ * block into each weapon's own record, and the old block cannot be read as the new one. The
+ * upgrade recomputes ownership per weapon from the counters the save already holds, so the
+ * answer is the one the rules would have given — which does mean a profile that was shown a
+ * camo on a weapon that never earned it loses it there. That is the bug being fixed, stated
+ * as a consequence.
  */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 export const SAVE_KEY = 'operator.save';
 
 /** The key M1-M5 wrote settings to. Read once, by the migration, then left alone. */
@@ -298,6 +312,7 @@ export function makeWeaponSave(): WeaponSaveData {
     timeUsed: 0,
     longshots: 0,
     multikills: 0,
+    camos: {},
   };
 }
 
@@ -307,9 +322,6 @@ export function defaultSave(settings: SettingsV1): SaveV2 {
 
   const challenges: Record<ChallengeId, ChallengeSaveData> = {};
   for (const c of CHALLENGES) challenges[c.id] = { progress: 0, completed: false };
-
-  const camos: Record<string, boolean> = {};
-  for (const id of CAMO_IDS) camos[id] = false;
 
   return {
     version: SAVE_VERSION,
@@ -326,7 +338,6 @@ export function defaultSave(settings: SettingsV1): SaveV2 {
     loadouts: defaultLoadouts(),
     equippedLoadout: 0,
     challenges,
-    camos,
     settings: { ...settings },
   };
 }
@@ -436,6 +447,16 @@ export function normaliseSave(raw: unknown, fallbackSettings: SettingsV1): SaveR
       target.timeUsed = nonNegative(value['timeUsed'], 0);
       target.longshots = Math.round(nonNegative(value['longshots'], 0));
       target.multikills = Math.round(nonNegative(value['multikills'], 0));
+      const camos = value['camos'];
+      if (isRecord(camos)) {
+        for (const [camoId, owned] of Object.entries(camos)) {
+          if (!isCamoId(camoId)) {
+            losses.push(`dropped unknown camo "${camoId}" on ${id}`);
+            continue;
+          }
+          if (owned === true) target.camos[camoId] = true;
+        }
+      }
       const list = value['unlockedAttachments'];
       if (Array.isArray(list)) {
         const kept: AttachmentId[] = [];
@@ -448,18 +469,6 @@ export function normaliseSave(raw: unknown, fallbackSettings: SettingsV1): SaveR
     }
   } else {
     losses.push('weapons block missing or malformed; weapon progress reset');
-  }
-
-  // ---- camos ---------------------------------------------------------------
-  const camos = raw['camos'];
-  if (isRecord(camos)) {
-    for (const [id, value] of Object.entries(camos)) {
-      if (!isCamoId(id)) {
-        losses.push(`dropped unknown camo "${id}"`);
-        continue;
-      }
-      out.camos[id] = value === true;
-    }
   }
 
   // ---- challenges ----------------------------------------------------------
@@ -672,11 +681,12 @@ function normaliseWeaponLoadout(
 export function migrateSave(raw: unknown, fromVersion: number, fallbackSettings: SettingsV1): SaveV2 | null {
   if (!isRecord(raw)) return null;
 
-  // The edges are walked in order, so a v0 payload passes through all four upgrades.
+  // The edges are walked in order, so a v0 payload passes through all five upgrades.
   const afterV0 = fromVersion < 1 ? upgradeV0(raw) : raw;
   const afterV1 = fromVersion < 2 ? upgradeV1(afterV0) : afterV0;
   const afterV2 = fromVersion < 3 ? upgradeV2(afterV1) : afterV1;
-  const upgraded = fromVersion < 4 ? upgradeV3(afterV2) : afterV2;
+  const afterV3 = fromVersion < 4 ? upgradeV3(afterV2) : afterV2;
+  const upgraded = fromVersion < 5 ? upgradeV4(afterV3) : afterV3;
   const { save, losses } = normaliseSave(upgraded, fallbackSettings);
   save.version = SAVE_VERSION;
 
@@ -687,6 +697,46 @@ export function migrateSave(raw: unknown, fromVersion: number, fallbackSettings:
   );
   for (const line of losses) log.info(`  ${line}`);
   return save;
+}
+
+/**
+ * v4 to v5 (playtest, 2026-09-23): camos move from the account onto the weapons that earned them.
+ *
+ * The old block said which camos the *player* owned; every weapon in the game then wore any of
+ * them. The new one is per weapon, and the honest way to fill it is the rule itself:
+ * `camosEarnedBy` over the counters this save has been keeping all along — kills, headshots,
+ * longshots and one-magazine multikills, per weapon, since M6. So a profile comes out of this
+ * owning exactly what it would own if the rule had always been per weapon.
+ *
+ * It is not lossless, and it cannot be: a camo earned on the carbine and worn on the sniper was
+ * never earned on the sniper, and there is nothing in the save that says otherwise. The account
+ * block is dropped rather than spread over every weapon, because spreading it would keep the
+ * bug and call it a migration. Loadouts naming a camo their weapon has not earned are cleared
+ * by `sanitiseLoadout` on the next load, which is where that rule already lived.
+ */
+function upgradeV4(raw: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...raw };
+  delete out['camos'];
+  const weapons = raw['weapons'];
+  if (!isRecord(weapons)) return out;
+  const next: Record<string, unknown> = {};
+  for (const [id, value] of Object.entries(weapons)) {
+    if (!isRecord(value)) {
+      next[id] = value;
+      continue;
+    }
+    const camos: Record<string, boolean> = {};
+    const stats = {
+      kills: Math.round(nonNegative(value['kills'], 0)),
+      headshots: Math.round(nonNegative(value['headshots'], 0)),
+      longshots: Math.round(nonNegative(value['longshots'], 0)),
+      multikills: Math.round(nonNegative(value['multikills'], 0)),
+    };
+    for (const camo of camosEarnedBy(stats)) camos[camo] = true;
+    next[id] = { ...value, camos };
+  }
+  out['weapons'] = next;
+  return out;
 }
 
 /**
@@ -829,7 +879,6 @@ function upgradeV0(raw: Record<string, unknown>): Record<string, unknown> {
     loadouts,
     equippedLoadout: 0,
     challenges: {},
-    camos: {},
     settings: v0.settings ?? {},
   };
 }

@@ -407,7 +407,8 @@ export type GameEvents = {
   [EV.MetaXpAwarded]: { total: number; xpBefore: number; xpAfter: number };
   [EV.MetaLevelUp]: { level: number; prestige: number; unlockCount: number };
   [EV.MetaChallengeCompleted]: { id: string; name: string; xp: number; camo: string | null };
-  [EV.MetaCamoUnlocked]: { camoId: string; name: string };
+  /** `weaponId` since 2026-09-23: a camo is earned by a weapon, not by the account. */
+  [EV.MetaCamoUnlocked]: { camoId: string; name: string; weaponId: string };
   [EV.MetaLoadoutChanged]: { slotIndex: number; name: string };
   /** Scavenger picked a magazine off a body. Carries where, so the audio is positional. */
   [EV.PerkScavenged]: { entityId: number; x: number; y: number; z: number; rounds: number };

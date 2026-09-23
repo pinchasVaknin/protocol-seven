@@ -19,8 +19,24 @@ export interface HealthConfig {
   regenRate: number;
 }
 
+/**
+ * 200, not 100 (playtest, 2026-09-23).
+ *
+ * The one number every combatant in the game is built from — the player, every bot, every
+ * target dummy and the dedicated server's players all take their config from here — so
+ * doubling it doubles every time-to-kill in the game at once and no weapon table moved.
+ * The playtest asked for longer fights and this is the honest way to buy them: the weapons
+ * keep the damage numbers, falloffs and shot counts they were tuned and asserted against,
+ * and what changes is how many of those shots a fight takes.
+ *
+ * Two consequences, both deliberate. Regeneration is unchanged, so topping up from nothing
+ * takes 5 s rather than 2.5 — the human's call, and it is the same 4.2 s of quiet before it
+ * starts. And everything that killed in one blast at 100 would not at 200, which is why the
+ * lethal equipment and the killstreak weapons were doubled with it; see `EquipmentDefs.ts`
+ * and `StreakDefs.ts`, which name this decision.
+ */
 export const DEFAULT_HEALTH_CONFIG: HealthConfig = {
-  max: 100,
+  max: 200,
   regenDelay: 4.2,
   regenRate: 40,
 };

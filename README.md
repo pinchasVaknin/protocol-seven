@@ -12,6 +12,15 @@ The whole build is TypeScript, Three.js and Vite.
 See [the character asset pipeline](docs/CHARACTER-ASSETS.md) for the GLB export contract,
 runtime ownership model, and the current source-asset limitations.
 
+**Credits.** Every model in the game is someone else's work: the weapons, attachments, knife
+and first-person hands are Sketchfab models under CC-BY or the Sketchfab Standard licence, and
+the characters and animations are Mixamo's. [**CREDITS.md**](CREDITS.md) is the attribution, and
+for the CC-BY models it is a condition of use rather than a courtesy — reproduce it wherever
+these files go. The same record is inside each `.glb` (`asset.extras.attribution`) and on the
+game's own credits screen, under **SETTINGS → INFO**. `npm run credits` regenerates all three
+from the build's records; `npm run check:credits` is in the gate and fails on a model that has
+lost its credit.
+
 **Weapon assets (M19).** `public/models/weapons/` holds GLB weapons, their bodies' LODs, the
 knife and an attachment pack built by `scripts/weapon-build.mjs` from Sketchfab sources kept
 outside the repository (`../GLB_files/weapons/`); one recipe per file, the sockets measured

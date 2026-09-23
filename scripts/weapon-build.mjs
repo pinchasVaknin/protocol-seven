@@ -99,12 +99,22 @@ const SIGHT_EYE_DISTANCE = 0.2;
 
 // -- the sources ---------------------------------------------------------------
 
+/**
+ * The licence a source is used under, as a deed the reader can open. A licence name on its own
+ * ("CC-BY-4.0") is a label; the attribution Creative Commons asks for names the licence *and*
+ * links to it, and Sketchfab's own copy button writes exactly that sentence — see
+ * `creditSentence` below, which is the form reproduced in `CREDITS.md` and in the game.
+ */
+export const CC_BY_4 = 'http://creativecommons.org/licenses/by/4.0/';
+export const SKETCHFAB_STANDARD = 'https://sketchfab.com/licenses';
+
 const M4_KIT = {
   file: 'free_-_m4_modular_kit_gun.glb',
   title: 'Free - M4 Modular Kit Gun',
   author: 'Karnaval',
   authorUrl: 'https://sketchfab.com/amadions',
   license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/free-m4-modular-kit-gun-1665416c071747bb9c20aa652849b579',
 };
 const AK74_PACK = {
@@ -113,6 +123,7 @@ const AK74_PACK = {
   author: 'Armored Wave',
   authorUrl: 'https://sketchfab.com/armoredwave',
   license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/ak-74-pack-game-asset-29978f495f824173b44a3ba40cb8ebd8',
 };
 const P90 = {
@@ -121,6 +132,7 @@ const P90 = {
   author: 'doomsentinel',
   authorUrl: 'https://sketchfab.com/doomsentinel',
   license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/modular-p90-tactical-080897fc0366455884b1a916684313fe',
 };
 const MP5_KIT = {
@@ -129,6 +141,7 @@ const MP5_KIT = {
   author: 'Karnaval',
   authorUrl: 'https://sketchfab.com/amadions',
   license: 'SKETCHFAB Standard',
+  licenseUrl: SKETCHFAB_STANDARD,
   url: 'https://sketchfab.com/3d-models/free-modular-mp5-kit-d381a0438a8b45c2bac6f59120fbb52f',
 };
 const TAVOR = {
@@ -137,6 +150,7 @@ const TAVOR = {
   author: 'Nik Vega',
   authorUrl: 'https://sketchfab.com/Nik_Vega',
   license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/tar-21-tavor-black-and-white-40dc15941e0b456692c83a97bfcd2474',
 };
 const SPAS_12 = {
@@ -145,6 +159,7 @@ const SPAS_12 = {
   author: 'Luiz Bueno',
   authorUrl: 'https://sketchfab.com/Luiz159753',
   license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/spas-12-614140daf5e4467fa0e36b6c23d70621',
 };
 const BERETTA_M9 = {
@@ -153,6 +168,7 @@ const BERETTA_M9 = {
   author: 'eNse7en',
   authorUrl: 'https://sketchfab.com/ense7en.design',
   license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/beretta-m9-348015284eca46fe8e1822508381dfd8',
 };
 const M150 = {
@@ -161,6 +177,7 @@ const M150 = {
   author: 'Bl4ckGh0st',
   authorUrl: 'https://sketchfab.com/Bl4ckGh0st',
   license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/m150-sniper-rifle-game-ready-0f71498f1f694b30be77c9779361c6cc',
 };
 const L1A1 = {
@@ -169,6 +186,7 @@ const L1A1 = {
   author: 'Aperture Aerospace',
   authorUrl: 'https://sketchfab.com/Apeture_Aerospace',
   license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/free-modular-l1a1-slr-d63c3e0d97464bc5b2a58cadf35e52f5',
 };
 const L115A3 = {
@@ -177,6 +195,7 @@ const L115A3 = {
   author: 'Mortavex',
   authorUrl: 'https://sketchfab.com/Mortavex',
   license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/l115a3-3b732b97c72440229c17b78e565f965e',
 };
 const MTECH_KNIFE = {
@@ -185,6 +204,7 @@ const MTECH_KNIFE = {
   author: 'xivxiy',
   authorUrl: 'https://sketchfab.com/xivxiy',
   license: 'SKETCHFAB Standard',
+  licenseUrl: SKETCHFAB_STANDARD,
   url: 'https://sketchfab.com/3d-models/mtech-usa-xtreme-tactical-knife-low-poly-789da4919af740479eb8dc7c4901ae89',
 };
 const HAND_WITH_GLOVES = {
@@ -193,6 +213,7 @@ const HAND_WITH_GLOVES = {
   author: 'JUST',
   authorUrl: 'https://sketchfab.com/teenjust500',
   license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/hand-with-gloves-5a6a434b8ec943ffacc581358781eecb',
 };
 const DBAL_A2 = {
@@ -201,6 +222,7 @@ const DBAL_A2 = {
   author: 'trolosqlfod',
   authorUrl: 'https://sketchfab.com/trolosqlfod',
   license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/rifle-laser-sight-55d74d7d4f6a4071af856d2ffc2c429a',
 };
 
@@ -1962,7 +1984,7 @@ function rewrite(id, recipe, src) {
   json.asset = json.asset ?? { version: '2.0' };
   json.asset.extras = {
     ...(json.asset.extras ?? {}),
-    attribution: { title: recipe.source.title, author: recipe.source.author, authorUrl: recipe.source.authorUrl, license: recipe.source.license, url: recipe.source.url },
+    attribution: { title: recipe.source.title, author: recipe.source.author, authorUrl: recipe.source.authorUrl, license: recipe.source.license, licenseUrl: recipe.source.licenseUrl, url: recipe.source.url },
     protocolSeven: { recipe: id, kind: recipe.kind, source: recipe.source.file, sockets: placed },
   };
   return { json, bin, sockets: placed, kept, origin };
@@ -2005,7 +2027,7 @@ function rewriteRig(id, recipe, src) {
   json.asset = json.asset ?? { version: '2.0' };
   json.asset.extras = {
     ...(json.asset.extras ?? {}),
-    attribution: { title: recipe.source.title, author: recipe.source.author, authorUrl: recipe.source.authorUrl, license: recipe.source.license, url: recipe.source.url },
+    attribution: { title: recipe.source.title, author: recipe.source.author, authorUrl: recipe.source.authorUrl, license: recipe.source.license, licenseUrl: recipe.source.licenseUrl, url: recipe.source.url },
     protocolSeven: { recipe: id, kind: recipe.kind, source: recipe.source.file, sockets: {} },
   };
   return { json, bin: src.glb.bin, sockets: {}, kept, origin };
@@ -2027,7 +2049,7 @@ function verifyAttribution(id, source, extras) {
 }
 
 /** Write a GLB: the 12-byte header, the JSON chunk padded with spaces, the binary chunk padded with zeros. */
-function writeGlb(file, json, bin) {
+export function writeGlb(file, json, bin) {
   const jsonBytes = Buffer.from(JSON.stringify(json), 'utf8');
   const jsonPad = (4 - (jsonBytes.length % 4)) % 4;
   const binPad = (4 - (bin.length % 4)) % 4;
@@ -2133,17 +2155,40 @@ export function buildOne(id, work) {
   return report;
 }
 
-/** `CREDITS.md`: one row per source, regenerated so the file cannot drift from the recipes. */
-export function creditsMarkdown() {
+/**
+ * The attribution itself, in the words the licence asks for.
+ *
+ * CC-BY 4.0 §3(a) wants the title, the author, a link to the material and the licence with a
+ * link to the deed, and Sketchfab's "copy attribution" button writes that as one sentence —
+ * the form every author sees and expects back. The table above it says which of our files came
+ * out of which source; this is the part that has to be reproduced wherever the models go, so
+ * it is the part the game shows and the part a reader can copy.
+ */
+export function creditSentence(source) {
+  const licence =
+    source.license === 'CC-BY-4.0'
+      ? `Creative Commons Attribution (${source.licenseUrl})`
+      : `the Sketchfab Standard licence (${source.licenseUrl})`;
+  return `"${source.title}" (${source.url}) by ${source.author} is licensed under ${licence}.`;
+}
+
+/** Every source a recipe draws on, once each, with the files built from it. Title order. */
+export function sources() {
   const bySource = new Map();
   for (const [id, r] of Object.entries(RECIPES)) {
     const list = bySource.get(r.source.url) ?? { source: r.source, outputs: [] };
     list.outputs.push(`${id}.glb`);
     bySource.set(r.source.url, list);
   }
-  const rows = [...bySource.values()]
-    .sort((a, b) => a.source.title.localeCompare(b.source.title))
-    .map(({ source, outputs }) => `| [${source.title}](${source.url}) | [${source.author}](${source.authorUrl}) | ${source.license} | ${outputs.join(', ')} |`);
+  return [...bySource.values()].sort((a, b) => a.source.title.localeCompare(b.source.title));
+}
+
+/** `CREDITS.md`: one row per source, regenerated so the file cannot drift from the recipes. */
+export function creditsMarkdown() {
+  const list = sources();
+  const rows = list.map(
+    ({ source, outputs }) => `| [${source.title}](${source.url}) | [${source.author}](${source.authorUrl}) | [${source.license}](${source.licenseUrl}) | ${outputs.join(', ')} |`,
+  );
   return [
     '# Weapon model credits',
     '',
@@ -2151,10 +2196,18 @@ export function creditsMarkdown() {
     'outside the repository. The licences below are conditions of use: CC-BY requires this',
     'attribution wherever the models are distributed, and each `.glb` carries the same record in',
     '`asset.extras.attribution`. This file is regenerated by the build; edit the recipes, not this.',
+    'The whole project’s credits, including the hands and the characters, are in `CREDITS.md`',
+    'at the root, and the game shows them under SETTINGS → INFO.',
     '',
     '| Source | Author | Licence | Built files |',
     '|---|---|---|---|',
     ...rows,
+    '',
+    '## Attribution',
+    '',
+    'The sentence each licence asks to be reproduced, as the author wrote it:',
+    '',
+    ...list.map(({ source }) => `- ${creditSentence(source)}`),
     '',
   ].join('\n');
 }

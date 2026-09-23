@@ -18,6 +18,8 @@ public/models/weapons/<id>.glb      the weapon, in viewmodel space, with its soc
 public/models/weapons/<id>.lod1.glb the same weapon for the bodies at twenty metres
 public/models/weapons/att_*.glb     the pack: optic, suppressor, grip, laser
 public/models/weapons/CREDITS.md    regenerated from the recipes' attribution records
+              |                     (scripts/credits.mjs also writes the root CREDITS.md and
+              |                      CreditsData.ts, the credits screen in SETTINGS -> INFO)
               |
               v
 scripts/check-weapons.mjs           the gate: budgets, the contract's nodes, attribution,
@@ -82,6 +84,14 @@ hold its textures under a lower ceiling. `node scripts/weapon-build.mjs --list <
 a source's tree with each node's material, joint and bounds, which is where a recipe starts. The build refuses a recipe whose attribution
 record disagrees with the source file's own `asset.extras` (Sketchfab writes the title,
 author, licence and URL into every download), and rewrites `CREDITS.md` from the records.
+
+The credit itself is `scripts/credits.mjs`: it writes `asset.extras.attribution` — title,
+author, licence, the licence's deed and the model's page — into every `.glb` here and under
+`public/models/bots/`, regenerates both `CREDITS.md` files, and generates
+`src/client/ui/CreditsData.ts`, which is the credits screen under SETTINGS → INFO. It rewrites
+only the JSON chunk, so a stamp costs the credit's bytes and no recompression; `npm run
+check:credits` is in the gate and fails on a model whose record is missing or stale. A model
+added to a recipe without a credit therefore cannot ship.
 
 Sources are not in git. `../GLB_files/weapons/` beside the repository holds them, as
 `../FBX_files` holds the bodies'. A rebuild is byte-identical; after one that changes a file,

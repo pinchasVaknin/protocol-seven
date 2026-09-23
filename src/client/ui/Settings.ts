@@ -16,8 +16,8 @@ import {
 } from '../../shared/meta/SaveData';
 import { characterDefinition } from '../characters/CharacterCatalog';
 import type { Profile } from '../meta/Profile';
+import { CHARACTER_CREDIT, CREDITS_NOTE, MODEL_CREDITS, type CreditEntry } from './CreditsData';
 import { createScreen } from './Frame';
-import { buildKeyCard, FULLSCREEN_HINT } from './KeyCard';
 import { PlayerCard } from './PlayerCard';
 import { ProfilePanel } from './ProfilePanel';
 import { makeScreenFooter, makeScreenHeader } from './ScreenChrome';
@@ -63,9 +63,10 @@ import { makeIconSvg } from './WeaponIcons';
  *
  * Under the design frame nothing scrolls: the 22 actions stand in three columns — Movement,
  * Combat, and Equipment with Interface beneath it — and the tallest column is eight rows, so
- * the whole category fits the panel. **INFO** is the fifth: the controls card, the fullscreen
- * hint and the reset control that used to stack under the main menu's buttons. The card is
- * built from the draft's bindings, so it can never disagree with BINDINGS beside it. Reset
+ * the whole category fits the panel. **INFO** is the fifth: the credits and the reset control.
+ * It used to open on a card of the controls, which was a second, shorter copy of BINDINGS
+ * beside it — so the card went (2026-09-23) and its one piece of news, the fullscreen hint,
+ * moved to the foot of BINDINGS, where a player reading about Ctrl+W already is. Reset
  * progress keeps its two-step arm, cleared on every category change and every `show`.
  */
 
@@ -161,6 +162,54 @@ const COLORBLIND_LABELS: Readonly<Record<ColorblindMode, string>> = {
 };
 
 const PLATE_CAPTION = 'ADJUST YOUR CONTROLS FOR MAXIMUM PERFORMANCE';
+
+/**
+ * `Ctrl+W` closes a browser tab and no amount of `preventDefault` stops it; only the Keyboard
+ * Lock API can, and only while the page is fullscreen. Saying so is better than letting a
+ * player discover it mid-slide. It stands under BINDINGS, which is where a player is when the
+ * chord matters. See PLAN.md.
+ */
+const FULLSCREEN_HINT = 'F11 for fullscreen — required to capture Ctrl+W (crouch + forward)';
+
+/** The line above the credits list: why the names are there at all. */
+const CREDITS_INTRO = 'Every model in this game is an artist’s work, used under the licence they published it under.';
+
+/**
+ * One credited source: who made it, under what licence, and which of the game's things it is.
+ *
+ * The title and the licence are links because CC-BY asks for both — the material and the deed
+ * — and a credit screen in a browser is the one place where that costs nothing. `noreferrer`
+ * and a new tab, so a player reading a credit does not lose the match behind them.
+ */
+function creditRow(host: HTMLElement, entry: CreditEntry): void {
+  const link = (text: string, href: string, className: string): HTMLElement => {
+    const a = document.createElement('a');
+    a.className = className;
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noreferrer noopener';
+    a.textContent = text;
+    return a;
+  };
+
+  const source = document.createElement('span');
+  source.className = 'st-credit__source';
+  source.appendChild(link(entry.title, entry.url, 'st-credit__link'));
+  const by = document.createElement('span');
+  by.className = 'st-credit__by';
+  by.textContent = ` by ${entry.author}`;
+  source.appendChild(by);
+
+  const licence = document.createElement('span');
+  licence.className = 'st-credit__licence';
+  licence.appendChild(link(entry.license, entry.licenseUrl, 'st-credit__link'));
+
+  const used = document.createElement('span');
+  used.className = 'st-credit__used';
+  used.textContent = entry.used;
+
+  host.append(source, licence, used);
+}
 
 export class Settings {
   private readonly deps: SettingsDeps;
@@ -463,7 +512,7 @@ export class Settings {
   }
 
   private paintBindings(host: HTMLElement): void {
-    host.classList.add('st-main--bindings');
+    host.classList.add('st-main--bindings', 'st-main--tight');
     const groups = new Map<ActionDef['group'], ActionDef[]>();
     for (const a of ACTIONS) {
       const list = groups.get(a.group);
@@ -488,6 +537,8 @@ export class Settings {
 
     const foot = document.createElement('div');
     foot.className = 'st-bindings__foot';
+    const notes = document.createElement('div');
+    notes.className = 'st-bindings__notes';
     const note = document.createElement('p');
     note.className = 'st-note';
     note.textContent =
@@ -496,6 +547,10 @@ export class Settings {
         : this.capturing !== null
           ? 'Press any key or mouse button. Escape cancels.'
           : 'Click a binding to change it. A key taken from another action is removed from it.';
+    const hint = document.createElement('p');
+    hint.className = 'st-note';
+    hint.textContent = FULLSCREEN_HINT;
+    notes.append(note, hint);
     const reset = document.createElement('button');
     reset.type = 'button';
     reset.className = 'op-cta op-cta--quiet st-reset';
@@ -507,26 +562,46 @@ export class Settings {
       this.notice = 'Bindings restored to defaults — APPLY keeps them.';
       this.paint();
     });
-    foot.append(note, reset);
+    foot.append(notes, reset);
     host.appendChild(foot);
   }
 
   /**
-   * INFO (M15, A4): what the main menu used to carry under its buttons.
+   * INFO: the credits, and the reset control the main menu used to carry under its buttons.
    *
-   * The card is a reminder, built from the draft's bindings so it can never disagree with
-   * the BINDINGS category beside it. Reset progress is a two-step button rather than a
-   * `window.confirm`: the page owns pointer lock and a native modal steals focus in a way
-   * the input layer then has to recover from. The second press has to be a deliberate second
-   * click, and clicking any other category — or re-entering the screen — puts it back.
+   * **The credits are here because this is the build a player actually has.** Every model in
+   * the game is someone else's: the weapons, attachments, knife and hands are Sketchfab models
+   * under CC-BY or the Sketchfab Standard licence, the characters and animations are Mixamo's.
+   * CC-BY asks for the title, the author, the links and the licence *wherever the work is
+   * distributed* — a `CREDITS.md` in the repository is not distributed with a deployed client,
+   * and this screen is. It is short by design: one line per source with both links, and the
+   * full page, with every built file, in `CREDITS.md`. The list is generated
+   * (`scripts/credits.mjs` → `CreditsData.ts`) from the same records the `.glb` files carry,
+   * so a model added without a credit fails `npm run check:credits` rather than shipping.
+   *
+   * Reset progress is a two-step button rather than a `window.confirm`: the page owns pointer
+   * lock and a native modal steals focus in a way the input layer then has to recover from.
+   * The second press has to be a deliberate second click, and clicking any other category —
+   * or re-entering the screen — puts it back.
    */
   private paintInfo(host: HTMLElement): void {
-    const controls = this.section('CONTROLS');
-    controls.appendChild(buildKeyCard(this.draft.bindings));
-    const hint = document.createElement('p');
-    hint.className = 'st-note';
-    hint.textContent = FULLSCREEN_HINT;
-    controls.appendChild(hint);
+    host.classList.add('st-main--tight');
+    const credits = this.section('CREDITS');
+    const intro = document.createElement('p');
+    intro.className = 'st-note';
+    intro.textContent = CREDITS_INTRO;
+    credits.appendChild(intro);
+
+    const list = document.createElement('div');
+    list.className = 'st-credits';
+    for (const entry of MODEL_CREDITS) creditRow(list, entry);
+    creditRow(list, CHARACTER_CREDIT);
+    credits.appendChild(list);
+
+    const note = document.createElement('p');
+    note.className = 'st-note';
+    note.textContent = CREDITS_NOTE;
+    credits.appendChild(note);
 
     const progress = this.section('PROGRESS');
     const wrap = document.createElement('div');
@@ -558,7 +633,7 @@ export class Settings {
     }
     progress.appendChild(wrap);
 
-    host.append(controls, progress);
+    host.append(credits, progress);
   }
 
   private bindingRow(action: ActionDef, bindings: BindingMap): HTMLElement {

@@ -144,7 +144,9 @@ export interface CharacterDefinition {
 }
 
 // M15 B0: the skins were re-encoded (1024 px, JPEG) — the URLs move so a cached 28 MB Echo is not kept.
-const CHARACTER_VERSION = '2026-09-15-skins-jpeg';
+// 2026-09-23: every skin and clip now carries its Mixamo attribution in `asset.extras`
+// (`scripts/credits.mjs`), so the bytes moved again and a cached copy is the un-credited one.
+const CHARACTER_VERSION = '2026-09-23-credits';
 const ANIMATION_ROOT = '/models/bots/animations';
 
 /**

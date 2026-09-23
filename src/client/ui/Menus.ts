@@ -41,8 +41,10 @@ import { makeIconSvg } from './WeaponIcons';
  * moves.
  *
  * The controls card, the fullscreen hint and the reset control that used to stack under the
- * buttons are in Settings → INFO now (A4, `KeyCard.ts`): the menu has no room for fourteen
- * rows in this layout, and none of the three is a thing that should greet a player.
+ * buttons left the menu in M15 A4: it has no room for fourteen rows in this layout, and none
+ * of the three is a thing that should greet a player. The reset control is in Settings → INFO,
+ * the hint at the foot of BINDINGS, and the card itself was cut in 2026-09-23 as a second
+ * copy of BINDINGS — INFO holds the credits now.
  *
  * ## The buttons are cut, not boxed
  *

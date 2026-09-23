@@ -1310,3 +1310,33 @@ magazine broke hip and ADS, and the reverse. The approved fix, both halves:
 - The optic's glass carries `KHR_materials_transmission`; three loads it as a
   `MeshPhysicalMaterial` with a transmission pass. Stage 2 swaps it for the project's `lens`
   material, as the procedural red dot uses.
+
+### The credits (2026-09-23)
+
+Every model in the game is someone else's work and two of the licences are conditions, so the
+credit was made a thing the build maintains rather than a file somebody remembers.
+
+- **`scripts/credits.mjs`**, and `npm run credits` / `check:credits` (in the gate). It writes the
+  same record in three places: `asset.extras.attribution` inside every `.glb` under
+  `public/models/weapons/` and `public/models/bots/`, the two `CREDITS.md` files, and
+  `src/client/ui/CreditsData.ts`. It rewrites a file's JSON chunk only — the binary chunk is
+  copied through — so stamping 57 files cost the credit's bytes and no recompression.
+- **The licence's deed is part of the record.** CC-BY asks for the licence to be *linked*, not
+  named; every source in `weapon-build.mjs` gained a `licenseUrl`, the files carry it,
+  `check:weapons` requires it, and both `CREDITS.md` end in the sentence Sketchfab's own copy
+  button writes: `"Title" (url) by Author is licensed under Creative Commons Attribution (deed)`.
+- **Mixamo.** The seven skins and the 24 clips carried no provenance at all. Adobe's terms ask
+  for no attribution — which is why there was none to copy — but they are credited anyway, in the
+  files and on the screen, because the question later is "may we ship this?", not "must we credit
+  it?". `CHARACTER_VERSION` and `WEAPON_ASSET_VERSION` moved with the bytes.
+- **The credits are in the game**, SETTINGS → INFO, one line per source with the title and the
+  licence as links: the deployed client is what actually reaches a player, and a `CREDITS.md` in
+  the repository is not distributed with it. It replaced the controls card, which was a second,
+  shorter copy of BINDINGS beside it (`KeyCard.ts` is gone); the fullscreen hint moved to the foot
+  of BINDINGS.
+- **The two tall categories were over the panel's middle row** — BINDINGS by ~40 px with its
+  second note line, INFO by ~30 with the credit list — and both were drawn across the foot's
+  rule. `st-main--tight` gives those two a tighter rhythm (section padding and heading rules,
+  never the 44 px rows), the credit list is set at line-height 1.4, and the link's hover mark is
+  a text decoration rather than a border, which was clipping each ellipsised title by a pixel.
+  `npm run layout` passes at all six viewports.

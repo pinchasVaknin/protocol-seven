@@ -28,9 +28,11 @@
  *      its skin and the six arm bones `ViewmodelHands` poses, within 1 MB and 10k triangles.
  *   6. **Scale.** A weapon's length along Z is between 0.15 m and 1.5 m — the axis and the
  *      unit are the two things a recipe gets wrong first, and both show up here.
- *   7. **Attribution.** `asset.extras.attribution` names a title, an author, a licence and a
- *      URL, and `CREDITS.md` is what the build regenerates from the same records. CC-BY is a
- *      condition of use.
+ *   7. **Attribution.** `asset.extras.attribution` names a title, an author, a licence, the
+ *      licence's deed and a URL, and `CREDITS.md` is what the build regenerates from the same
+ *      records. CC-BY is a condition of use, and it asks for the licence to be *linked*, not
+ *      only named — which is why the deed is part of the record the file carries.
+ *      `check:credits` holds the same rule over every other model in the project.
  *   8. **The client's list and the recipes agree** (stage 1). `WeaponAssetCatalog.ts` names
  *      the weapon ids the loader will fetch; a weapon recipe missing from it is a file nothing
  *      loads, and an id in it with no recipe is a 404 at match time.
@@ -182,7 +184,8 @@ for (const file of onDisk) {
 
   // ---- 7. attribution -------------------------------------------------------------
   const a = json.asset?.extras?.attribution;
-  if (!a || !a.title || !a.author || !a.license || !a.url) problems.push(`${label} carries no asset.extras.attribution (title, author, license, url) — ${FIX}.`);
+  if (!a || !a.title || !a.author || !a.license || !a.licenseUrl || !a.url)
+    problems.push(`${label} carries no asset.extras.attribution (title, author, license, licenseUrl, url) — ${FIX}.`);
 }
 
 // ---- 8. the client's list and the recipes agree ------------------------------------

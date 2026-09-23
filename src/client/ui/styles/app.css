@@ -223,30 +223,6 @@ body.op-locked #viewport {
   color: var(--c-void);
 }
 
-.op-keys {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: var(--s-1) var(--s-5);
-  font-size: var(--t-small);
-  color: var(--c-text-dim);
-}
-
-.op-keys dt {
-  font-family: var(--font-mono);
-  color: var(--c-text);
-  text-align: right;
-}
-
-.op-keys dd {
-  margin: 0;
-  letter-spacing: var(--track-label);
-  text-transform: uppercase;
-  font-size: var(--t-micro);
-  font-weight: var(--w-heavy);
-  color: var(--c-text-faint);
-  align-self: center;
-}
-
 .op-btn--primary {
   border-color: var(--c-accent);
   background: var(--c-accent-glow);
@@ -3515,11 +3491,31 @@ body.op-locked #viewport {
 
 /* ---- the bindings ---- */
 
+/*
+ * BINDINGS and INFO are the two tall categories: BINDINGS carries two headings and eight rows
+ * in its right-hand column with two lines of note in its foot, INFO a fourteen-row credit list.
+ * At the shared rhythm both ran past the panel's middle row and were drawn across the foot's
+ * rule (2026-09-23) — which is what `st-main--tight` is for. The rows keep their 44 px; only
+ * the padding around them gives, and both categories stand inside the panel with room to spare.
+ */
 .st-bindings {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--s-3);
   align-items: start;
+}
+
+.st-main--tight {
+  gap: var(--s-3);
+}
+
+.st-main--tight .st-sec {
+  padding: var(--s-2) var(--s-4) var(--s-3);
+}
+
+.st-main--tight .st-sec__head {
+  padding-bottom: var(--s-1);
+  margin-bottom: var(--s-1);
 }
 
 .st-bindings__column {
@@ -3598,6 +3594,14 @@ body.op-locked #viewport {
   gap: var(--s-4);
 }
 
+/* The live message and the fullscreen hint, stacked so the reset button keeps its corner. */
+.st-bindings__notes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .st-note {
   margin: 0;
   font-size: var(--t-small);
@@ -3624,10 +3628,64 @@ body.op-locked #viewport {
   color: var(--c-bad);
 }
 
-/* The controls card, on INFO. */
-.st-sec .op-keys {
-  justify-content: start;
+/* ---- the credits, on INFO ---- */
+
+/*
+ * One row per source: what it is and who made it, the licence, and what the game draws from
+ * it. Three columns so the licences line up under each other and the eye can run down them;
+ * the first column takes the slack, because a Sketchfab title is the only unbounded thing here.
+ */
+.st-credits {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 2px var(--s-4);
   margin: var(--s-2) 0;
+  font-size: var(--t-micro);
+  /* Fourteen rows on a panel that does not scroll: the list is a table, not prose, so it is
+     set tighter than the body rhythm. That is the slack the fifteenth source will need. */
+  line-height: 1.4;
+  color: var(--c-text-dim);
+}
+
+.st-credit__source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.st-credit__by {
+  color: var(--c-text-faint);
+}
+
+.st-credit__licence {
+  white-space: nowrap;
+}
+
+.st-credit__used {
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  font-weight: var(--w-heavy);
+  color: var(--c-text-faint);
+  white-space: nowrap;
+}
+
+/*
+ * The links CC-BY asks for: quiet until the pointer is on them, never a blue underline. The
+ * hover mark is a text decoration rather than a border, because a border on an inline box
+ * hangs below the row's line box and the ellipsised title then clips itself by a pixel.
+ */
+.st-credit__link {
+  color: var(--c-text);
+  text-decoration: none;
+}
+
+.st-credit__link:hover,
+.st-credit__link:focus-visible {
+  color: var(--c-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* ---- the side column ---- */

@@ -333,7 +333,7 @@ export class Match {
   /** One per inventory slot; only the active one is visible. */
   readonly models: WeaponModel[];
   /** The knife viewmodel. Alongside the weapons rather than among them — see the constructor. */
-  private readonly knifeModel: KnifeModel;
+  private knifeModel: KnifeModel;
   /** The camo each slot is wearing, so a rebuild does not lose it. */
   private readonly slotCamos: Array<CamoId | null> = [];
   /** The attachments each slot shows (M19, stage 2), kept for the same reason. */
@@ -682,12 +682,21 @@ export class Match {
      * third element that is not a weapon. A knife is a thing you *do*, which is the same reason
      * `Melee` is not a `Weapon`; see the header of `weapons/Melee.ts`.
      */
-    this.knifeModel = buildKnifeModel(deps.anisotropy, deps.weaponAssets?.knife() ?? null);
+    // The arms' rig goes in with the blade (stage 5): with it the knife is held by the same
+    // gloved hand every weapon is, and the box fist and its cylinder arm are not built.
+    this.knifeModel = buildKnifeModel(
+      deps.anisotropy,
+      deps.weaponAssets?.knife() ?? null,
+      deps.weaponAssets?.hands() ?? null,
+    );
     this.knifeModel.root.visible = false;
-    this.knifeModel.arm.visible = false;
     deps.viewmodel.add(this.knifeModel.root);
-    deps.viewmodel.add(this.knifeModel.arm);
-    this.anim.setKnife(this.knifeModel.root, this.knifeModel.arm);
+    if (this.knifeModel.arm !== null) {
+      this.knifeModel.arm.visible = false;
+      deps.viewmodel.add(this.knifeModel.arm);
+    }
+    this.anim.setKnife(this.knifeModel.root, this.knifeModel.arm, this.knifeModel.hands);
+    this.upgradeKnifeWhenLoaded();
 
     this.ui = new MatchHud({
       bus: deps.bus,
@@ -1444,6 +1453,46 @@ export class Match {
     this.weapons.equip(slotIndex, def);
     if (wasVisible) this.showSlot(slotIndex);
     this.upgradeWhenLoaded(slotIndex);
+  }
+
+  /**
+   * The same in-place upgrade the weapons get, for the knife (stage 5).
+   *
+   * Two files can change what a knife looks like: its own blade and the arms' rig that holds
+   * it. Both are warmed on the menu, so this is the case where a match started before they
+   * landed — and a whole match swinging a box fist because a promise was 200 ms late is the
+   * thing stage 1 built this shape to avoid. The rebuild is unconditional about visibility:
+   * the knife is hidden except mid-swing, and `frame` puts the right one on screen next tick.
+   */
+  private upgradeKnifeWhenLoaded(): void {
+    const assets = this.deps.weaponAssets;
+    if (assets === null) return;
+    const current = this.knifeModel;
+    const wantsBlade = assets.knife() === null;
+    const wantsHands = current.hands === null;
+    if (!wantsBlade && !wantsHands) return;
+    const waits: Promise<void>[] = [];
+    if (wantsBlade) waits.push(assets.preloadKnife());
+    if (wantsHands) waits.push(assets.preloadHands());
+    void Promise.allSettled(waits).then(() => {
+      // The two ways a late promise can arrive into a world that has moved on: the match is
+      // over (`dispose` took the knife out of the viewmodel, so it has no parent) or another
+      // upgrade got there first. Both are answered by looking, not by a flag.
+      if (this.knifeModel !== current || current.root.parent === null) return;
+      if (assets.knife() === null && assets.hands() === null) return;
+      const wasVisible = this.knifeModel.root.visible;
+      this.deps.viewmodel.remove(this.knifeModel.root);
+      if (this.knifeModel.arm !== null) this.deps.viewmodel.remove(this.knifeModel.arm);
+      this.knifeModel.dispose();
+      this.knifeModel = buildKnifeModel(this.deps.anisotropy, assets.knife(), assets.hands());
+      this.knifeModel.root.visible = wasVisible;
+      this.deps.viewmodel.add(this.knifeModel.root);
+      if (this.knifeModel.arm !== null) {
+        this.knifeModel.arm.visible = wasVisible;
+        this.deps.viewmodel.add(this.knifeModel.arm);
+      }
+      this.anim.setKnife(this.knifeModel.root, this.knifeModel.arm, this.knifeModel.hands);
+    });
   }
 
   private modelOptions(slotIndex: number): { hands: true; assets: WeaponAssetService | null; attachments: readonly AttachmentId[] } {
@@ -2294,7 +2343,7 @@ export class Match {
     const knifing = !this.playerDead && this.melee.busy;
     this.model.root.visible = !this.playerDead && !scoped && !knifing;
     this.knifeModel.root.visible = knifing;
-    this.knifeModel.arm.visible = knifing;
+    if (this.knifeModel.arm !== null) this.knifeModel.arm.visible = knifing;
 
     const state = this.ui.state;
     /**
@@ -2695,9 +2744,9 @@ export class Match {
       model.dispose();
     }
     this.models.length = 0;
-    this.anim.setKnife(null, null);
+    this.anim.setKnife(null, null, null);
     this.deps.viewmodel.remove(this.knifeModel.root);
-    this.deps.viewmodel.remove(this.knifeModel.arm);
+    if (this.knifeModel.arm !== null) this.deps.viewmodel.remove(this.knifeModel.arm);
     this.knifeModel.dispose();
     this.deps.audio.setOccluder(null);
     this.deps.audio.resetMatchState();

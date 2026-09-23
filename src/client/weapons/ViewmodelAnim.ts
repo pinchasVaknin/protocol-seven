@@ -3,6 +3,7 @@ import type { ViewmodelConfig } from '../../shared/weapons/ViewmodelConfig';
 import type * as THREE from 'three';
 import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import type { WeaponModel } from './WeaponMesh';
+import type { ViewmodelHands } from './ViewmodelHands';
 
 /**
  * Procedural viewmodel animation (brief S6.6). No imported animations; eased tweens,
@@ -162,27 +163,48 @@ const CHARGE_HOME = 0.81;
  * `WINDUP` was at **positive Z — behind the camera**. Only the strike instant was ever
  * rasterised, which is exactly the "barely visible" report.
  *
- * Every pose below is checked against the frustum: the fist stays between 0.24 m and 0.46 m
- * deep, where the frame is 0.28-0.53 m wide either side of centre, so the blade is on screen
- * for the whole 0.54 s and crosses the middle of it at the strike.
+ * ## What the poses below are, measured (2026-09-24)
+ *
+ * They were re-posed in the hand tuner once the gloved hand was on the handle, and the frame
+ * they make is not the one the box fist made. At the viewmodel's 65° and 16:9:
+ *
+ * - **READY** is 0.36 m deep, and the fist sits 69% of the way to the right edge — in frame,
+ *   blade down and across, which is the pose the swing starts and ends on.
+ * - **WIND-UP** is 0.245 m deep and the fist is **off frame**, up and to the right (146% of the
+ *   half-width, 154% of the half-height). Deliberate, and the change from round 2: the blade
+ *   sweeps out of the corner and back through the middle, so the strike arrives from somewhere
+ *   rather than growing out of the centre. It lasts 70 ms.
+ * - **STRIKE** is 0.68 m deep and 3% off centre: the arm is thrown out straight down the middle
+ *   of the view. That is further than the arm is long — 1.09 m from the shoulder against a
+ *   0.60 m reach — so `solveArm` slides the shoulder forward to meet it, which is what it is
+ *   built to do and what makes the pose read as a lunge rather than a wrist flick.
  */
 const WINDUP_AT = 0.13;
 const STRIKE_AT = 0.222;
 
-interface KnifePose {
-  readonly x: number;
-  readonly y: number;
-  readonly z: number;
+export interface KnifePose {
+  x: number;
+  y: number;
+  z: number;
   /** Degrees, matching every other pose constant in `ViewmodelConfig`. */
-  readonly pitch: number;
-  readonly yaw: number;
-  readonly roll: number;
+  pitch: number;
+  yaw: number;
+  roll: number;
 }
 
-/** Lower right of frame, blade angled in across the view. Where the swing starts and ends. */
-const KNIFE_READY: KnifePose = { x: 0.26, y: -0.17, z: -0.30, pitch: 16, yaw: -34, roll: 46 };
-/** Cocked back to the right, edge turned in. The tip leaves frame; the fist does not. */
-const KNIFE_WINDUP: KnifePose = { x: 0.26, y: -0.08, z: -0.27, pitch: 4, yaw: -60, roll: 60 };
+/** The three keyframes by name, which is the shape the hand tuner edits and prints. */
+export type KnifeSwing = Record<'ready' | 'windup' | 'strike', KnifePose>;
+
+/**
+ * Lower right of frame, blade angled in across the view. Where the swing starts and ends.
+ *
+ * Re-posed by the human in the hand tuner (2026-09-24), with the gloved hand on the handle for
+ * the first time: the three keyframes were authored around a box fist, and a hand with a wrist
+ * and a forearm behind it wants the blade further out and pitched down rather than rolled over.
+ */
+const KNIFE_READY: KnifePose = { x: 0.28, y: -0.005, z: -0.36, pitch: -51, yaw: 6, roll: 8 };
+/** Cocked back and up to the right, edge turned in. The tip leaves frame; the fist does not. */
+const KNIFE_WINDUP: KnifePose = { x: 0.405, y: 0.24, z: -0.245, pitch: -40, yaw: 54, roll: 31 };
 /**
  * Driven forward through the centre of the screen: the frame the hitbox test runs on.
  *
@@ -190,7 +212,19 @@ const KNIFE_WINDUP: KnifePose = { x: 0.26, y: -0.08, z: -0.27, pitch: 4, yaw: -6
  * sees it end-on, which is a short bright line and nothing else; at 40° it sweeps across the
  * middle of the view broadside, which is the whole picture of a slash.
  */
-const KNIFE_STRIKE: KnifePose = { x: -0.05, y: -0.04, z: -0.46, pitch: -6, yaw: 40, roll: -28 };
+const KNIFE_STRIKE: KnifePose = { x: -0.02, y: -0.05, z: -0.68, pitch: -62, yaw: 11, roll: 48 };
+
+/** The shipped swing, and what a fresh `ViewmodelAnim` poses with. Copied, never handed out. */
+export const KNIFE_SWING: Readonly<KnifeSwing> = { ready: KNIFE_READY, windup: KNIFE_WINDUP, strike: KNIFE_STRIKE };
+
+/** The three keyframes as source, in the shape they are declared in — the hand tuner prints this. */
+export function knifeSwingSource(swing: KnifeSwing): string {
+  const line = (name: string, p: KnifePose): string => {
+    const n = (v: number): string => String(Math.round(v * 1e4) / 1e4);
+    return `const ${name}: KnifePose = { x: ${n(p.x)}, y: ${n(p.y)}, z: ${n(p.z)}, pitch: ${n(p.pitch)}, yaw: ${n(p.yaw)}, roll: ${n(p.roll)} };`;
+  };
+  return [line('KNIFE_READY', swing.ready), line('KNIFE_WINDUP', swing.windup), line('KNIFE_STRIKE', swing.strike)].join('\n');
+}
 
 /**
  * Where the forearm comes from. Behind the camera, low and to the right (round 4).
@@ -229,6 +263,20 @@ export class ViewmodelAnim {
    * owns where it is.
    */
   private knife: THREE.Object3D | null = null;
+  private knifeHands: ViewmodelHands | null = null;
+
+  /**
+   * The swing this animator poses, its own copy of `KNIFE_SWING`.
+   *
+   * A copy and a public field for one reason: the hand tuner (`probes/hand-tuner.html`) edits
+   * these three keyframes live, on the real pipeline, exactly as it edits the hands' holds —
+   * and the shipped table must not be what it writes into. A match never touches it.
+   */
+  readonly knifeSwing: KnifeSwing = {
+    ready: { ...KNIFE_READY },
+    windup: { ...KNIFE_WINDUP },
+    strike: { ...KNIFE_STRIKE },
+  };
   /** The forearm, aimed from a fixed shoulder at the fist every frame. See `poseKnife`. */
   private knifeArm: THREE.Object3D | null = null;
   /** Scratch for the arm's aim. Reused: this runs every frame of a swing. */
@@ -239,9 +287,10 @@ export class ViewmodelAnim {
   }
 
   /** Attach the knife viewmodel and its forearm. Called once per match; null unsets them. */
-  setKnife(knife: THREE.Object3D | null, arm: THREE.Object3D | null = null): void {
+  setKnife(knife: THREE.Object3D | null, arm: THREE.Object3D | null = null, hands: ViewmodelHands | null = null): void {
     this.knife = knife;
     this.knifeArm = arm;
+    this.knifeHands = hands;
   }
 
   /**
@@ -489,22 +538,23 @@ export class ViewmodelAnim {
      */
     const t = clamp01(drive.melee);
 
+    const swing = this.knifeSwing;
     let from: KnifePose;
     let to: KnifePose;
     let k: number;
     if (t < WINDUP_AT) {
-      from = KNIFE_READY;
-      to = KNIFE_WINDUP;
+      from = swing.ready;
+      to = swing.windup;
       k = smoothstep(0, WINDUP_AT, t);
     } else if (t < STRIKE_AT) {
-      from = KNIFE_WINDUP;
-      to = KNIFE_STRIKE;
+      from = swing.windup;
+      to = swing.strike;
       // Deliberately not smoothed on the way in: a slash accelerates into the target and the
       // 0.05 s between these two poses is the only part of the animation the player reads.
       k = (t - WINDUP_AT) / (STRIKE_AT - WINDUP_AT);
     } else {
-      from = KNIFE_STRIKE;
-      to = KNIFE_READY;
+      from = swing.strike;
+      to = swing.ready;
       k = smoothstep(STRIKE_AT, 1, t);
     }
 
@@ -542,6 +592,21 @@ export class ViewmodelAnim {
      * The shoulder is behind the camera, so the elbow end is always outside the near plane
      * and the arm reads as running off the bottom of the screen rather than as ending.
      */
+    /**
+     * With the arm rig there is no cylinder to aim: the hand is solved onto the handle and the
+     * elbow falls where the arm's own lengths put it, exactly as it does on a rifle. The pose
+     * the arm is solved against is the knife's own — position and turn as written above, and
+     * the root's scale, so the frame's inverse takes `KNIFE_SCALE` back out and the glove is
+     * life size on a knife that is not.
+     */
+    const hands = this.knifeHands;
+    if (hands !== null) {
+      hands.update(
+        this.handsBase.compose(knife.position, this.baseTurn.setFromEuler(knife.rotation), knife.scale),
+      );
+      return;
+    }
+
     const arm = this.knifeArm;
     if (arm === null) return;
     this.fistAt.copy(knife.position).sub(KNIFE_SHOULDER);

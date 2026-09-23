@@ -34,6 +34,10 @@ export const NEUTRAL_HAND_POSE: HandPose = { position: [0, 0, 0], rotation: [0, 
  * Posed by the human in the hand tuner (2026-09-23): hip and ADS on the two sockets, and the
  * support hand on the magazine through a reload. The two LMGs are not in it and hold with the
  * defaults until their models are replaced.
+ *
+ * `knife` is the odd row and the only one with a single hand (2026-09-24): a blade is held in a
+ * fist, the other arm is not drawn, and there is no magazine — so its entry is `grip` alone,
+ * a correction on the handle's middle, which is where the file's origin is.
  */
 export const HAND_POSES: Readonly<Record<string, Partial<Record<HandSide, HandPose>>>> = {
   ar_carbine: {
@@ -86,6 +90,9 @@ export const HAND_POSES: Readonly<Record<string, Partial<Record<HandSide, HandPo
     support: { position: [0.0, 0.0, -0.057], rotation: [-156.0, -180.0, -138.0], curl: 1.0 },
     reload: { position: [0.0, -0.09, 0.013], rotation: [-3.0, 27.0, 43.0], curl: 1.14 },
   },
+  knife: {
+    grip: { position: [0.007, -0.017, -0.026], rotation: [105.5, -26.0, -97.5], curl: 1.25 },
+  },
 };
 
 /** A weapon's pose for one hand: its entry, or the neutral pose. */
@@ -94,12 +101,18 @@ export function handPoseFor(weaponId: string, side: HandSide): HandPose {
 }
 
 /** One weapon's entry as source, in `HAND_POSES`' own shape: what the tuner prints. */
-export function handPoseSource(weaponId: string, poses: Readonly<Record<HandSide, HandPose>>): string {
+export function handPoseSource(
+  weaponId: string,
+  poses: Readonly<Record<HandSide, HandPose>>,
+  /** Which hands to print. The knife holds with one, and the other two would be noise. */
+  sides: readonly HandSide[] = ['grip', 'support', 'reload'],
+): string {
   const n = (v: number, digits: number): string => {
     const s = v.toFixed(digits);
     return s === `-${(0).toFixed(digits)}` ? (0).toFixed(digits) : s;
   };
   const one = (p: HandPose): string =>
     `{ position: [${p.position.map((v) => n(v, 3)).join(', ')}], rotation: [${p.rotation.map((v) => n(v, 1)).join(', ')}], curl: ${n(p.curl, 2)} }`;
-  return `  ${weaponId}: {\n    grip: ${one(poses.grip)},\n    support: ${one(poses.support)},\n    reload: ${one(poses.reload)},\n  },`;
+  const rows = sides.map((side) => `    ${side}: ${one(poses[side])},`).join('\n');
+  return `  ${weaponId}: {\n${rows}\n  },`;
 }

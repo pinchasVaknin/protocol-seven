@@ -66,8 +66,15 @@ const MELEE_RANGE = 2.0;
  * Damage. Lethal against a full-health operator with a wide margin, and it stays lethal
  * through the limb multiplier, which is what stops a connecting knife reading as a whiff
  * because it clipped an arm.
+ *
+ * **Doubled with the health pool** (2026-09-24): 190 against 100 HP was 1.9x a full operator,
+ * and at 200 it was not a kill at all — the one weapon in the game whose whole contract is
+ * that a connecting hit ends the fight. 380 restores the ratio, and the margin it buys is
+ * concrete: ARMOUR PLATE grants +50 overhealth and stacks, so this one-shots an operator
+ * carrying **three** plates. Nothing finite one-shots an unbounded stack; this is the number
+ * that means "twice a full operator", which is what the sentence above has always claimed.
  */
-const MELEE_DAMAGE = 190;
+const MELEE_DAMAGE = 380;
 
 export type MeleePhase = 'IDLE' | 'WINDUP' | 'STRIKE' | 'RECOVER';
 

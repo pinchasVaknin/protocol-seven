@@ -1378,3 +1378,35 @@ from the counters the save has kept since M6 and drops the account block, which 
 off a weapon that never earned it — that is the bug, stated as a consequence. `UnlockState`,
 `sanitiseLoadout` (it clears a camo the weapon has not earned, by name), the editor's picker, the
 summary line ("DIGITAL — M4 CARBINE") and `MetaCamoUnlocked` all carry the weapon now.
+
+## Stage 5 — the knife's hand (2026-09-24)
+
+The knife was the last thing in the viewmodel still wearing boxes: a fist of three cuboids and a
+tapered cylinder for a forearm, aimed from a fixed shoulder each frame. It holds the blade with
+the same gloved rig every weapon does now.
+
+- **`KnifeMesh` takes the rig.** With it the box fist, its cuff and the cylinder arm are not
+  built at all (`arm` is null), and `ViewmodelHands` poses one hand on the handle. No socket was
+  needed: the knife recipe already puts the file's **origin** at the middle of the handle, which
+  is the one point a hand needs. `ViewmodelAnim.poseKnife` hands the rig the knife's own pose, so
+  the frame's inverse takes `KNIFE_SCALE` back out and the glove is life size on a blade that is
+  drawn at 1.3.
+- **One arm, and hiding the other is not hiding a mesh.** The file's two skinned meshes are split
+  by *material* — `glove_hardknuckle` and `sleeve_st6_generalist` — and each spans **both** arms;
+  hiding the one the left bones dominate took away every glove and every finger and left two
+  empty sleeves (found in the tuner, 2026-09-24). A side is a bone chain: a hidden arm is one
+  whose upper bone is scaled to 1e-4 and left unposed, so it folds into its own shoulder behind
+  the camera.
+- **A knife is not held on a trigger.** The hold was `HOLDS.grip`, the rifle's trigger hand, with
+  its index lying along the frame and its thumb standing off — which is what the human saw and
+  reported. `HandTargets.gripPose` picks the hold now, and the knife asks for its own.
+- **The wrap is per instance.** `ViewmodelHands.curl` is this rig's copy of its holds' finger
+  angles, so the tuner can shape a fist round a handle without moving a finger on any weapon.
+- **Posed by the human**, hold and swing both (values in `HAND_POSES.knife`, `HOLDS.knife.curl`
+  and the three `KnifePose` constants). The swing changed shape with the hand in it: the wind-up
+  now takes the fist off frame for 70 ms and the strike is thrown 0.68 m down the middle, past
+  the arm's 0.60 m reach, so `solveArm` slides the shoulder forward and the pose reads as a lunge.
+- **The tuner** has the knife in its menu: one hand's sliders, READY / WIND-UP / STRIKE in place
+  of hip/ADS/reload with a `t` slider between them, per-finger wrap in degrees, and an output box
+  that prints all three tables. Its eye view renders into a 16:9 box, because the page is
+  portrait and a vertical FOV was cropping the pose being judged.

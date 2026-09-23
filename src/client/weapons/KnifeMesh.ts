@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sharedWeaponSurfaces } from './WeaponMesh';
 import type { SurfaceKey } from './WeaponMeshParts';
+import { ViewmodelHands } from './ViewmodelHands';
 
 /**
  * The knife viewmodel (round 2 playtest).
@@ -35,8 +36,17 @@ import type { SurfaceKey } from './WeaponMeshParts';
  */
 
 export interface KnifeModel {
-  /** Blade, guard, grip and fist. Posed as one rigid object by `ViewmodelAnim.poseKnife`. */
+  /** Blade, guard, grip and — without the arm rig — the fist. Posed as one rigid object. */
   readonly root: THREE.Group;
+  /**
+   * The gloved arm, when the rig file is there (M19, stage 5).
+   *
+   * The same rig every weapon's hands come from, posed on the knife's handle by the same
+   * solver: one hand, because a knife is held in one, and the left arm is hidden rather than
+   * left to hold air. With it the box fist, its cuff and the tapered `arm` cylinder are not
+   * built at all — `arm` is null and `hands` does the job both of them were doing.
+   */
+  readonly hands: ViewmodelHands | null;
   /**
    * The forearm, which is *not* a child of `root` (round 4).
    *
@@ -54,7 +64,7 @@ export interface KnifeModel {
    * frame at the bottom right, which is the "cutoff point hidden off-screen" the report asked
    * for.
    */
-  readonly arm: THREE.Group;
+  readonly arm: THREE.Group | null;
   dispose(): void;
 }
 
@@ -87,10 +97,18 @@ const ARM_ELBOW_RADIUS = 0.062;
 
 /**
  * `template` is the knife's file (M19, stage 3), cloned in place of the grip, guard and blade
- * boxes when it is there; the fist, the cuff and the forearm stay the boxes they were, since
- * the file is a picture of a knife and not of a hand. Null builds every box, as before.
+ * boxes when it is there; null builds every box, as before.
+ *
+ * `rig` is the arms' file (stage 5). With it the hand is the gloved rig every weapon wears,
+ * posed on the handle by `ViewmodelHands`, and the box fist, its cuff and the tapered forearm
+ * are not built — one hand on the knife reads as a hand, three boxes read as a mitten. Null
+ * keeps the boxes, which is also what a match started before the rig lands draws until it does.
  */
-export function buildKnifeModel(anisotropy: number, template: THREE.Object3D | null = null): KnifeModel {
+export function buildKnifeModel(
+  anisotropy: number,
+  template: THREE.Object3D | null = null,
+  rig: THREE.Object3D | null = null,
+): KnifeModel {
   const surfaces = sharedWeaponSurfaces(anisotropy);
   const root = new THREE.Group();
   root.name = 'viewmodel:knife';
@@ -146,9 +164,12 @@ export function buildKnifeModel(anisotropy: number, template: THREE.Object3D | n
   // little wider than the arm on purpose: the fist yaws with the blade and the arm does not,
   // so without it the seam opens at the extremes of the swing.
   // Slimmer than it was (playtest 3): 7.2 × 8.2 cm of glove hid the knife it held.
-  box('glove', 0.060, 0.066, 0.092, 0, -0.004, 0.056);
-  box('glove', 0.064, 0.026, 0.046, 0, 0.026, 0.026);
-  box('glove', 0.084, 0.084, 0.046, 0, 0.000, 0.102);
+  // Not built at all once the rig is there — it is the thing the rig replaces.
+  if (rig === null) {
+    box('glove', 0.060, 0.066, 0.092, 0, -0.004, 0.056);
+    box('glove', 0.064, 0.026, 0.046, 0, 0.026, 0.026);
+    box('glove', 0.084, 0.084, 0.046, 0, 0.000, 0.102);
+  }
 
   if (template === null) {
     // Grip, slightly nose-down so the blade sits along the natural line of a held knife.
@@ -187,31 +208,58 @@ export function buildKnifeModel(anisotropy: number, template: THREE.Object3D | n
    * by being long, and scaling its radius with the blade would produce a forearm thicker than
    * the fist on the end of it.
    */
-  const arm = new THREE.Group();
-  arm.name = 'viewmodel:knife:arm';
-  const sleeve = new THREE.CylinderGeometry(ARM_WRIST_RADIUS, ARM_ELBOW_RADIUS, 1, 10, 1);
-  sleeve.rotateX(-Math.PI / 2);
-  sleeve.translate(0, 0, -0.5);
-  const gloveMaterial = surfaces.get('glove');
-  if (gloveMaterial !== undefined) {
-    const armMesh = new THREE.Mesh(sleeve, gloveMaterial);
-    armMesh.name = 'viewmodel:knife:forearm';
-    arm.add(armMesh);
-    disposables.push(sleeve);
-  } else {
-    sleeve.dispose();
+  let arm: THREE.Group | null = null;
+  if (rig === null) {
+    arm = new THREE.Group();
+    arm.name = 'viewmodel:knife:arm';
+    const sleeve = new THREE.CylinderGeometry(ARM_WRIST_RADIUS, ARM_ELBOW_RADIUS, 1, 10, 1);
+    sleeve.rotateX(-Math.PI / 2);
+    sleeve.translate(0, 0, -0.5);
+    const gloveMaterial = surfaces.get('glove');
+    if (gloveMaterial !== undefined) {
+      const armMesh = new THREE.Mesh(sleeve, gloveMaterial);
+      armMesh.name = 'viewmodel:knife:forearm';
+      arm.add(armMesh);
+      disposables.push(sleeve);
+    } else {
+      sleeve.dispose();
+    }
+  }
+
+  /**
+   * The rig's right hand on the handle (stage 5).
+   *
+   * The knife file's origin **is** the middle of its handle — the recipe puts it there, where
+   * the box fist used to close — so the grip target is the root itself and there is no socket
+   * to measure: the one point the hand needs is the one the model is built around. The support
+   * target is the same node and never posed, because the left arm is hidden; it is passed
+   * because `ViewmodelHands` holds two arms and a knife is one.
+   *
+   * The scale is the root's (`KNIFE_SCALE`), and the frame's matrix is the inverse of the pose
+   * it is given, so the glove comes out at life size on a knife drawn at 1.3.
+   */
+  let hands: ViewmodelHands | null = null;
+  if (rig !== null) {
+    const grip = new THREE.Object3D();
+    grip.name = 'viewmodel:hand-target:grip';
+    root.add(grip);
+    hands = new ViewmodelHands(rig, root, { grip, support: grip, supportPose: 'wrap', gripPose: 'knife', magazine: null }, 'knife');
+    hands.showArm('L', false);
+    root.add(hands.frame);
+    disposables.push(hands);
   }
 
   return {
     root,
     arm,
+    hands,
     dispose(): void {
       // Geometry only. The materials and their textures are shared for the life of the
       // process, exactly as a weapon's are. Nothing releases them today; a page teardown, if one
       // is ever built, disposes `WeaponMesh`'s shared caches, not this mesh.
       for (const d of disposables) d.dispose();
       root.clear();
-      arm.clear();
+      arm?.clear();
     },
   };
 }

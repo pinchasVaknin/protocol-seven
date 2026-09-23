@@ -35,6 +35,16 @@ import { handPoseFor, type HandPose, type HandSide } from './HandPoses';
 export type SupportPose = 'handguard' | 'wrap';
 
 /**
+ * What the holding hand is holding: a weapon's grip, or a knife's handle.
+ *
+ * A trigger hand is not a fist — its index lies along the frame and its thumb stands off, which
+ * is what a trigger and a safety need and is wrong for anything without them. A knife is held
+ * in a closed fist, so it asks for a hold of its own rather than for the trigger hand with the
+ * fingers turned up.
+ */
+export type GripPose = 'grip' | 'knife';
+
+/**
  * A hand's correction on this weapon, live (`HandPoses`): metres added to the socket in weapon
  * space, degrees turning the hold about the socket (pitch x, yaw y, roll z, in that order), and a
  * multiplier on the fingers' bend. The hand tuner writes these; the next `update` shows them.
@@ -61,11 +71,15 @@ export interface HandTargets {
   readonly grip: THREE.Object3D;
   readonly support: THREE.Object3D;
   readonly supportPose: SupportPose;
+  /** Which hold the holding hand uses. Absent is a weapon's trigger hand. */
+  readonly gripPose?: GripPose;
   readonly magazine: THREE.Object3D | null;
 }
 
-type FingerName = 'thumb' | 'index' | 'middle' | 'ring' | 'pink';
-const FINGERS: readonly FingerName[] = ['thumb', 'index', 'middle', 'ring', 'pink'];
+export type FingerName = 'thumb' | 'index' | 'middle' | 'ring' | 'pink';
+export const FINGERS: readonly FingerName[] = ['thumb', 'index', 'middle', 'ring', 'pink'];
+/** One finger's three segments, knuckle first, in degrees from straight. */
+export type FingerCurl = [number, number, number];
 
 /**
  * A hand's hold, in weapon space: `fingers` the direction from the wrist to the knuckles, `palm`
@@ -82,7 +96,7 @@ interface Hold {
   readonly curl: Readonly<Record<FingerName, readonly [number, number, number]>>;
 }
 
-const HOLDS: Readonly<Record<'grip' | SupportPose | 'magazine', Hold>> = {
+const HOLDS: Readonly<Record<'grip' | SupportPose | 'magazine' | 'knife', Hold>> = {
   /**
    * The trigger hand on a pistol grip: the palm against the grip's right-hand side, the
    * knuckles forward and a little down, three fingers wrapped round the front strap and the
@@ -129,7 +143,28 @@ const HOLDS: Readonly<Record<'grip' | SupportPose | 'magazine', Hold>> = {
     knuckles: [-0.026, 0, -0.035],
     curl: { thumb: [10, 20, 15], index: [50, 60, 40], middle: [55, 65, 40], ring: [55, 65, 40], pink: [60, 65, 40] },
   },
+  /**
+   * A knife in a hammer grip, in the knife's own space: the handle runs fore-and-aft through
+   * the fist with the blade ahead of it, so the knuckles sit **on top of** the handle a little
+   * ahead of its middle, the fingers wrap down the far side and the thumb lies back along the
+   * spine. Every finger is curled hard — there is nothing here to keep clear of, unlike a
+   * trigger guard — which is what makes it read as a fist round a grip rather than a hand
+   * resting on one.
+   */
+  knife: {
+    fingers: [0, -0.25, -1],
+    palm: [0, -1, 0],
+    knuckles: [0, 0.022, -0.012],
+    // Shaped by the human in the hand tuner (2026-09-24). The tips do most of the closing and
+    // the knuckles least, which is what a fist round a 3 cm handle is: the fingers reach over
+    // it and hook, rather than folding into the palm the way an empty fist does. The thumb
+    // barely bends — it lies along the spine of the grip instead of wrapping it.
+    curl: { thumb: [20, 9, 20], index: [20, 35, 80], middle: [30, 35, 80], ring: [30, 35, 80], pink: [20, 35, 80] },
+  },
 };
+
+/** The shipped knife wrap, for the hand tuner's reset. The table above is the source. */
+export const KNIFE_HOLD_CURL: Readonly<Record<FingerName, FingerCurl>> = HOLDS.knife.curl as Record<FingerName, FingerCurl>;
 
 /** Where a hand is put this frame, in the frame: its wrist, its turn, and each finger's bend in degrees. */
 interface Placement {
@@ -137,6 +172,15 @@ interface Placement {
   readonly turn: THREE.Quaternion;
   readonly curl: Readonly<Record<FingerName, readonly [number, number, number]>>;
 }
+
+/**
+ * What a hidden arm's upper bone is scaled to: small enough to vanish, never zero.
+ *
+ * Zero would put a singular matrix through `decompose` and hand NaNs to whatever asked the
+ * skeleton a question next. A ten-thousandth folds a 26 cm forearm into 26 microns, at a
+ * shoulder that is behind the camera anyway.
+ */
+const HIDDEN_ARM_SCALE = 1e-4;
 
 /** The elbows bend outward and down, the way a shouldered weapon's do. Camera space. */
 const BEND: Readonly<Record<'R' | 'L', THREE.Vector3>> = {
@@ -249,8 +293,20 @@ export class ViewmodelHands {
   readonly frame = new THREE.Group();
   /** This weapon's corrections to each hand, from `HAND_POSES`; the hand tuner edits them live. */
   readonly adjust: Record<HandSide, HandAdjust>;
+
+  /**
+   * How far each finger closes, per hand, in degrees — this instance's copy of its holds'.
+   *
+   * The holds above are the shipped shapes; this is what is actually posed, so the hand tuner
+   * can open a finger that goes through a handle and close one that floats off it without
+   * every weapon in the game changing with it. `adjust[side].curl` still scales the lot, which
+   * is the one number a weapon's own entry in `HAND_POSES` carries.
+   */
+  readonly curl: Record<HandSide, Record<FingerName, FingerCurl>>;
   private readonly rig: THREE.Object3D;
   private readonly arms: Record<'R' | 'L', Arm>;
+  /** Sides that are not posed this frame, collapsed instead — see `showArm`. */
+  private readonly hidden = new Set<'R' | 'L'>();
 
   constructor(
     template: THREE.Object3D,
@@ -262,6 +318,16 @@ export class ViewmodelHands {
       grip: adjustFrom(handPoseFor(weaponId, 'grip')),
       support: adjustFrom(handPoseFor(weaponId, 'support')),
       reload: adjustFrom(handPoseFor(weaponId, 'reload')),
+    };
+    const copyCurl = (hold: Hold): Record<FingerName, FingerCurl> => {
+      const out = {} as Record<FingerName, FingerCurl>;
+      for (const f of FINGERS) out[f] = [...hold.curl[f]] as FingerCurl;
+      return out;
+    };
+    this.curl = {
+      grip: copyCurl(HOLDS[targets.gripPose ?? 'grip']),
+      support: copyCurl(HOLDS[targets.supportPose]),
+      reload: copyCurl(HOLDS.magazine),
     };
     this.rig = cloneSkinned(template);
     this.rig.name = 'viewmodel:hands';
@@ -296,13 +362,49 @@ export class ViewmodelHands {
     root.updateMatrixWorld(true);
     this.rootInverse.copy(root.matrixWorld).invert();
     base.decompose(this.basePosition, this.baseTurn, this.baseScale);
-    this.poseArm(this.arms.R, this.place(this.arms.R, this.targets.grip, HOLDS.grip, this.adjust.grip, base));
-    let support = this.place(this.arms.L, this.targets.support, HOLDS[this.targets.supportPose], this.adjust.support, base);
+    if (this.hidden.has('R')) this.collapse(this.arms.R);
+    else {
+      const hold = HOLDS[this.targets.gripPose ?? 'grip'];
+      this.poseArm(this.arms.R, this.place(this.arms.R, this.targets.grip, hold, this.adjust.grip, base, 'grip'));
+    }
+    if (this.hidden.has('L')) {
+      this.collapse(this.arms.L);
+      return;
+    }
+    let support = this.place(this.arms.L, this.targets.support, HOLDS[this.targets.supportPose], this.adjust.support, base, 'support');
     const onMagazine = this.magazineHold;
     if (onMagazine > 0 && this.targets.magazine !== null) {
-      support = blend(support, this.place(this.arms.L, this.targets.magazine, HOLDS.magazine, this.adjust.reload, base), onMagazine);
+      support = blend(support, this.place(this.arms.L, this.targets.magazine, HOLDS.magazine, this.adjust.reload, base, 'reload'), onMagazine);
     }
     this.poseArm(this.arms.L, support);
+  }
+
+  /**
+   * Draw one arm or not (the knife, 2026-09-23).
+   *
+   * A knife is held in one hand and the rifle is off screen while it swings, so the other arm
+   * has nothing to hold and nowhere to be: drawn, it stands in frame holding air.
+   *
+   * **Not by hiding a mesh**, which is what this did first and is the shape of the file's trap:
+   * its two skinned meshes are split by *material* — `glove_hardknuckle` and
+   * `sleeve_st6_generalist` — and each one spans **both** arms. Hiding the one the left bones
+   * dominate took away every glove and every finger and left two empty sleeves, which is what
+   * the tuner showed. A side is a bone chain, not a mesh, so a hidden side is one whose upper
+   * arm is collapsed to nothing and left unposed: its vertices land on its own shoulder, which
+   * is behind the camera, and the other arm is untouched.
+   */
+  showArm(side: 'R' | 'L', visible: boolean): void {
+    if (visible) this.hidden.delete(side);
+    else {
+      this.hidden.add(side);
+      this.collapse(this.arms[side]);
+    }
+  }
+
+  /** A hidden arm, folded into its own shoulder. `poseArm` would write the scale back. */
+  private collapse(arm: Arm): void {
+    arm.upper.scale.setScalar(HIDDEN_ARM_SCALE);
+    arm.upper.updateMatrixWorld(true);
   }
 
   /**
@@ -421,7 +523,7 @@ export class ViewmodelHands {
    * the weapon's root come first — the sockets' turn is none, the magazine's is whatever the
    * reload gives it — then this weapon's correction in the target's space, then the base pose.
    */
-  private place(arm: Arm, target: THREE.Object3D, hold: Hold, adjust: HandAdjust, base: THREE.Matrix4): Placement {
+  private place(arm: Arm, target: THREE.Object3D, hold: Hold, adjust: HandAdjust, base: THREE.Matrix4, side: HandSide): Placement {
     const inRoot = this.rootInverse.clone().multiply(target.matrixWorld);
     const socket = new THREE.Vector3();
     const socketTurn = new THREE.Quaternion();
@@ -441,8 +543,9 @@ export class ViewmodelHands {
       .clone()
       .add(new THREE.Vector3(...hold.knuckles).applyQuaternion(turn))
       .addScaledVector(knuckles, -arm.handLength);
-    const curl = {} as Record<FingerName, [number, number, number]>;
-    for (const f of FINGERS) curl[f] = hold.curl[f].map((deg) => deg * adjust.curl) as [number, number, number];
+    const curl = {} as Record<FingerName, FingerCurl>;
+    const shape = this.curl[side];
+    for (const f of FINGERS) curl[f] = shape[f].map((deg) => deg * adjust.curl) as FingerCurl;
     return { wrist, turn: handTurn, curl };
   }
 
@@ -473,4 +576,14 @@ export class ViewmodelHands {
     }
     arm.upper.updateMatrixWorld(true);
   }
+}
+
+/**
+ * A hold's finger angles as source, in `HOLDS`' own shape — what the hand tuner prints so a
+ * wrap shaped by eye can be pasted back into the table it came from.
+ */
+export function holdCurlSource(name: string, curl: Readonly<Record<FingerName, FingerCurl>>): string {
+  const one = (f: FingerName): string => `${f}: [${curl[f].map((v) => Math.round(v)).join(', ')}]`;
+  return `    // ${name}
+    curl: { ${FINGERS.map(one).join(', ')} },`;
 }

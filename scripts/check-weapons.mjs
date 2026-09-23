@@ -24,7 +24,8 @@
  *      `charge` and the seven sockets (the muzzle, the three rails, the sight line, the two
  *      hands); its LOD the root and `socket_muzzle`; a pack part `part`, and the optic its
  *      own `socket_sight` (the sight line the ADS pose cancels once it is mounted), the
- *      suppressor its own `socket_muzzle` (where the flash moves to).
+ *      suppressor its own `socket_muzzle` (where the flash moves to); the arms' rig (stage 4)
+ *      its skin and the six arm bones `ViewmodelHands` poses, within 1 MB and 10k triangles.
  *   6. **Scale.** A weapon's length along Z is between 0.15 m and 1.5 m — the axis and the
  *      unit are the two things a recipe gets wrong first, and both show up here.
  *   7. **Attribution.** `asset.extras.attribution` names a title, an author, a licence and a
@@ -61,6 +62,10 @@ const FIX = 'edit the recipe in scripts/weapon-build.mjs and run `node scripts/w
 const WEAPON_NODES = ['body', 'magazine', 'charge', 'socket_muzzle', 'socket_rail_top', 'socket_rail_bottom', 'socket_rail_front', 'socket_sight', 'socket_grip', 'socket_support'];
 const LOD_NODES = ['socket_muzzle'];
 const PART_NODES = { att_optic: ['part', 'socket_sight'], att_suppressor: ['part', 'socket_muzzle'] };
+/** The bones `ViewmodelHands` poses (stage 4); the rig must keep its skin to be posed at all. */
+const HANDS_NODES = ['upperarm_R', 'lowerarm_R', 'hand_R', 'upperarm_L', 'lowerarm_L', 'hand_L'];
+const MAX_HANDS_BYTES = 1024 * 1024;
+const MAX_HANDS_TRIS = 10_000;
 
 const problems = [];
 
@@ -140,15 +145,16 @@ for (const file of onDisk) {
   const glb = readGlb(full);
   const { json } = glb;
   const isWeapon = spec.recipe.kind === 'weapon';
+  const isHands = spec.recipe.kind === 'hands';
   const label = `${DIR}/${file}`;
 
   // ---- 2 and 3. size and triangles ---------------------------------------------
-  const maxBytes = spec.lod ? MAX_LOD_BYTES : isWeapon ? MAX_WEAPON_BYTES : MAX_PART_BYTES;
+  const maxBytes = spec.lod ? MAX_LOD_BYTES : isWeapon ? MAX_WEAPON_BYTES : isHands ? MAX_HANDS_BYTES : MAX_PART_BYTES;
   if (glb.bytes > maxBytes) {
     problems.push(`${label} is ${(glb.bytes / 1048576).toFixed(2)} MB; the limit is ${(maxBytes / 1048576).toFixed(0)} MB — ${FIX}.`);
   }
   const tris = triangles(json);
-  const maxTris = spec.lod ? MAX_LOD_TRIS : isWeapon ? MAX_WEAPON_TRIS : MAX_PART_TRIS;
+  const maxTris = spec.lod ? MAX_LOD_TRIS : isWeapon ? MAX_WEAPON_TRIS : isHands ? MAX_HANDS_TRIS : MAX_PART_TRIS;
   if (tris > maxTris) problems.push(`${label} has ${tris.toLocaleString('en-US')} triangles; the limit is ${maxTris.toLocaleString('en-US')} — ${FIX}.`);
 
   // ---- 4. textures --------------------------------------------------------------
@@ -162,7 +168,8 @@ for (const file of onDisk) {
   const names = new Set((json.nodes ?? []).map((n) => n.name));
   const rootNames = json.scenes[json.scene ?? 0].nodes.map((i) => json.nodes[i].name);
   if (!rootNames.includes(spec.id)) problems.push(`${label} has no root node named "${spec.id}" (roots: ${rootNames.join(', ') || 'none'}).`);
-  const required = spec.lod ? LOD_NODES : isWeapon ? WEAPON_NODES : spec.recipe.kind === 'knife' ? ['body'] : (PART_NODES[spec.id] ?? ['part']);
+  const required = spec.lod ? LOD_NODES : isWeapon ? WEAPON_NODES : isHands ? HANDS_NODES : spec.recipe.kind === 'knife' ? ['body'] : (PART_NODES[spec.id] ?? ['part']);
+  if (isHands && !(json.skins?.length > 0)) problems.push(`${label} has no skin; the arms are posed at runtime and a rigid rig cannot be — ${FIX}.`);
   for (const name of required) {
     if (!names.has(name)) problems.push(`${label} has no node "${name}"; the contract needs it — ${FIX}.`);
   }

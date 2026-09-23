@@ -12,6 +12,7 @@ attribution wherever the models are distributed, and each `.glb` carries the sam
 | [Beretta M9](https://sketchfab.com/3d-models/beretta-m9-348015284eca46fe8e1822508381dfd8) | [eNse7en](https://sketchfab.com/ense7en.design) | CC-BY-4.0 | pistol_talon.glb |
 | [Free - M4 Modular Kit Gun](https://sketchfab.com/3d-models/free-m4-modular-kit-gun-1665416c071747bb9c20aa652849b579) | [Karnaval](https://sketchfab.com/amadions) | CC-BY-4.0 | ar_carbine.glb, att_suppressor.glb, att_grip.glb |
 | [Free Modular MP5 Kit](https://sketchfab.com/3d-models/free-modular-mp5-kit-d381a0438a8b45c2bac6f59120fbb52f) | [Karnaval](https://sketchfab.com/amadions) | SKETCHFAB Standard | smg_wasp.glb |
+| [Hand With Gloves](https://sketchfab.com/3d-models/hand-with-gloves-5a6a434b8ec943ffacc581358781eecb) | [JUST](https://sketchfab.com/teenjust500) | CC-BY-4.0 | hands.glb |
 | [L115A3](https://sketchfab.com/3d-models/l115a3-3b732b97c72440229c17b78e565f965e) | [Mortavex](https://sketchfab.com/Mortavex) | CC-BY-4.0 | sniper_kestrel.glb |
 | [M150 Sniper Rifle (Game Ready)](https://sketchfab.com/3d-models/m150-sniper-rifle-game-ready-0f71498f1f694b30be77c9779361c6cc) | [Bl4ckGh0st](https://sketchfab.com/Bl4ckGh0st) | CC-BY-4.0 | sniper_vantage.glb |
 | [Modular P90 Tactical](https://sketchfab.com/3d-models/modular-p90-tactical-080897fc0366455884b1a916684313fe) | [doomsentinel](https://sketchfab.com/doomsentinel) | CC-BY-4.0 | smg_meridian.glb |

@@ -5,6 +5,7 @@ import {
   ATTACHMENT_PART_IDS,
   ATTACHMENT_PART_OWN_SOCKETS,
   hasWeaponAsset,
+  HANDS_ASSET_ID,
   KNIFE_ASSET_ID,
   weaponLodUrl,
   weaponAssetUrl,
@@ -17,6 +18,9 @@ import {
 } from './WeaponAssetCatalog';
 
 const log = logger('WeaponAssets');
+
+/** The bones `ViewmodelHands` poses, as the build names them. */
+const HANDS_BONES = ['upperarm_R', 'lowerarm_R', 'hand_R', 'upperarm_L', 'lowerarm_L', 'hand_L'] as const;
 
 /**
  * A parsed weapon file, validated against the contract, shared by every instance built from it.
@@ -81,6 +85,8 @@ export class WeaponAssetService {
   private packTask: Promise<void> | null = null;
   private knifeScene: THREE.Object3D | null = null;
   private knifeTask: Promise<void> | null = null;
+  private handsScene: THREE.Object3D | null = null;
+  private handsTask: Promise<void> | null = null;
   private readonly lods = new Map<string, WeaponLodTemplate>();
   private readonly lodTasks = new Map<string, Promise<void>>();
   private readonly loading = new Map<string, Promise<void>>();
@@ -132,6 +138,47 @@ export class WeaponAssetService {
       (error: unknown) => {
         if (this.lodTasks.get(weaponId) === task) this.lodTasks.delete(weaponId);
         log.warn(`GLB LOD unavailable for "${weaponId}"; the bodies keep the primitives. ${errorMessage(error)}`);
+      },
+    );
+    return task;
+  }
+
+  /** The arms' template (stage 4), or null while it has not arrived: the viewmodel wears the boxes. */
+  hands(): THREE.Object3D | null {
+    return this.disposed ? null : this.handsScene;
+  }
+
+  /**
+   * Fetch the arms' file; it rides with the weapons' warm-up, and a failure leaves the boxes. The
+   * rig's bones are named in its contract (`ViewmodelHands` reads them), so a file without them
+   * is refused here rather than half-posed.
+   */
+  preloadHands(): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error('Weapon asset service has been disposed.'));
+    if (this.handsScene !== null) return Promise.resolve();
+    if (this.handsTask !== null) return this.handsTask;
+    const task = this.loader.loadAsync(weaponAssetUrl(HANDS_ASSET_ID)).then((gltf) => {
+      if (this.disposed) {
+        disposeTemplate(gltf.scene);
+        throw new Error('Weapon asset service was disposed while the hands were loading.');
+      }
+      const root = gltf.scene.getObjectByName(HANDS_ASSET_ID);
+      const missing = HANDS_BONES.filter((name) => root?.getObjectByName(name) === undefined);
+      if (root === undefined || missing.length > 0) {
+        disposeTemplate(gltf.scene);
+        throw new Error(`Hands file has no root named "${HANDS_ASSET_ID}" with the bones ${missing.join(', ')}.`);
+      }
+      this.handsScene = root;
+      log.info(`GLB hands are ready (${WEAPON_ASSET_VERSION}).`);
+    });
+    this.handsTask = task;
+    void task.then(
+      () => {
+        if (this.handsTask === task) this.handsTask = null;
+      },
+      (error: unknown) => {
+        if (this.handsTask === task) this.handsTask = null;
+        log.warn(`GLB hands unavailable; the viewmodel keeps the boxes. ${errorMessage(error)}`);
       },
     );
     return task;
@@ -278,6 +325,8 @@ export class WeaponAssetService {
     for (const part of this.parts.values()) disposeTemplate(part.scene);
     if (this.knifeScene !== null) disposeTemplate(this.knifeScene);
     this.knifeScene = null;
+    if (this.handsScene !== null) disposeTemplate(this.handsScene);
+    this.handsScene = null;
     for (const lod of this.lods.values()) disposeTemplate(lod.scene);
     this.lods.clear();
     this.lodTasks.clear();

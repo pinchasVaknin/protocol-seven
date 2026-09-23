@@ -22,6 +22,7 @@ import {
 import { modelSpecFor } from './WeaponModelSpecs';
 import { groupNodes, type WeaponAssetService, type WeaponAssetTemplate } from './WeaponAssetService';
 import { ATTACHMENT_PARTS, ATTACHMENT_PART_SOCKETS, MAGAZINE_EXTENDED_STRETCH } from './WeaponAssetCatalog';
+import { ViewmodelHands, type SupportPose } from './ViewmodelHands';
 import type { AttachmentId } from '../../shared/weapons/Attachments';
 
 /**
@@ -130,6 +131,13 @@ export interface WeaponModel {
    * thing the raised pose made visible — so something had to arrive at it.
    */
   readonly supportHand: THREE.Object3D | null;
+  /**
+   * The first-person arms (M19, stage 4), or null when the model wears the grey boxes — no
+   * hands asked for, or the arms' file has not arrived. `ViewmodelAnim` calls its `update`
+   * once the root has its pose for the frame; the rig puts the gloves on the model's two hand
+   * targets, one of which is under `supportHand`.
+   */
+  readonly hands: ViewmodelHands | null;
   dispose(): void;
 }
 
@@ -182,9 +190,17 @@ export function buildWeaponModel(
   const disposables: Array<{ dispose(): void }> = [];
 
   // The hands are their own part group (see `handBoxes`), so a model without them is built
-  // from fewer groups rather than from a filtered one.
-  const boxes = options.hands ? [...bodyBoxes(spec), ...handBoxes(spec)] : bodyBoxes(spec);
+  // from fewer groups rather than from a filtered one. The arms' rig replaces the boxes once
+  // its file has arrived (stage 4), on the same two anchors the boxes stand on.
+  const rig = options.hands ? (options.assets?.hands() ?? null) : null;
+  const boxes = options.hands && rig === null ? [...bodyBoxes(spec), ...handBoxes(spec)] : bodyBoxes(spec);
   addMerged(root, boxes, bodyTubes(spec), surfaces, disposables, 'body');
+  let hands: ViewmodelHands | null = null;
+  if (rig !== null) {
+    const grip = handTarget(root, 'grip', triggerHandAnchor(spec));
+    const support = handTarget(root, 'support', supportHandAnchor(spec));
+    hands = attachHands(rig, root, grip, support, supportPoseFor(spec), weaponId, disposables);
+  }
 
   const magazine = new THREE.Group();
   magazine.name = 'viewmodel:magazine';
@@ -214,9 +230,10 @@ export function buildWeaponModel(
     weaponId,
     source: 'procedural',
     magazineExit: MAGAZINE_EXIT_DOWN.clone(),
-    // The primitives keep their hands in the body: their reload is the old dip, and nothing
-    // down there is worth watching (only the two LMGs are built this way now).
+    // The primitives' reload is the old dip, and nothing down there is worth watching (only the
+    // two LMGs are built this way now): the support hand stays where it holds the weapon.
     supportHand: null,
+    hands,
     dispose(): void {
       // Only the geometry is per model. The three materials and their textures are shared
       // for the life of the process in `cachedSurfaces` and `baseTextures` here and the camo cache in
@@ -288,7 +305,19 @@ function buildFromTemplate(
   dressOwnOptic(root, surfaces, disposables);
 
   let supportHand: THREE.Object3D | null = null;
-  if (options.hands) {
+  let hands: ViewmodelHands | null = null;
+  const rig = options.hands ? (options.assets?.hands() ?? null) : null;
+  if (rig !== null) {
+    // The arms (stage 4). The support target sits under its own carrier at the origin, which
+    // is the node the reload moves — as it moved the support glove's boxes.
+    const grip = handTarget(root, 'grip', template.sockets.socket_grip);
+    const carrier = new THREE.Group();
+    carrier.name = 'viewmodel:hand:support';
+    root.add(carrier);
+    const support = handTarget(carrier, 'support', template.sockets.socket_support);
+    hands = attachHands(rig, root, grip, support, supportPoseFor(spec), template.weaponId, disposables);
+    supportHand = carrier;
+  } else if (options.hands) {
     const boxes = handBoxesAt(spec, template.sockets.socket_grip, template.sockets.socket_support);
     // `handBoxes` lists the trigger pair first and the support pair second (its own comment
     // says so); the split is by that order, as `handBoxesAt` already relies on it.
@@ -318,13 +347,14 @@ function buildFromTemplate(
     sightPoint,
     // A scope is held at eye relief; irons and a red dot at a shouldered rifle's sight
     // distance. `mountAttachments` leaves a scoped weapon its scope, so the two cannot disagree.
-    adsSightDistance: spec.optic === 'scope' ? SCOPE_EYE_RELIEF : SIGHT_DISTANCE,
+    adsSightDistance: spec.optic === 'scope' ? SCOPE_EYE_RELIEF : spec.handguardLength > 0 ? SIGHT_DISTANCE : PISTOL_SIGHT_DISTANCE,
     adsPitch: front === undefined ? 0 : ironsPitch(sightPoint, front.position),
     adsOffsetZ: spec.adsOffsetZ,
     weaponId: template.weaponId,
     source: 'glb',
     magazineExit: magazineExitOf(root),
     supportHand,
+    hands,
     dispose(): void {
       for (const d of disposables) d.dispose();
       root.clear();
@@ -413,10 +443,49 @@ export function camoMaterial(material: THREE.MeshStandardMaterial, camo: CamoId,
   return variant;
 }
 
+/** An empty node a hand is put on, `at` in its parent's space. */
+function handTarget(parent: THREE.Object3D, which: 'grip' | 'support', at: { x: number; y: number; z: number }): THREE.Object3D {
+  const node = new THREE.Object3D();
+  node.name = `viewmodel:hand-target:${which}`;
+  node.position.set(at.x, at.y, at.z);
+  parent.add(node);
+  return node;
+}
+
+/**
+ * A weapon with no handguard is held in two hands on the grip (`handBoxes` says why), so its
+ * support hand wraps the trigger hand rather than cupping furniture that is not there.
+ */
+function supportPoseFor(spec: { readonly handguardLength: number }): SupportPose {
+  return spec.handguardLength > 0 ? 'handguard' : 'wrap';
+}
+
+/** The arms' rig on a model: its frame under the root, released with the model. */
+function attachHands(
+  template: THREE.Object3D,
+  root: THREE.Object3D,
+  grip: THREE.Object3D,
+  support: THREE.Object3D,
+  supportPose: SupportPose,
+  weaponId: string,
+  disposables: Array<{ dispose(): void }>,
+): ViewmodelHands {
+  const hands = new ViewmodelHands(template, root, { grip, support, supportPose }, weaponId);
+  root.add(hands.frame);
+  disposables.push(hands);
+  return hands;
+}
+
 /** Where a file's rear sight or red dot is held at ADS, metres from the eye. */
 const SIGHT_DISTANCE = 0.2;
 /** Where a file's scope ocular is held: eye relief, so the tube fills the view. */
 const SCOPE_EYE_RELIEF = 0.1;
+/**
+ * Where a pistol's rear sight is held at ADS: out at arm's length, as a pistol is aimed (stage
+ * 4). At a rifle's 20 cm the box gloves fitted under it; the arms do not — two forearms from
+ * hands 20 cm from the eye come back under the lens and filled the lower half of the picture.
+ */
+const PISTOL_SIGHT_DISTANCE = 0.42;
 
 const MAGAZINE_EXIT_DOWN = new THREE.Vector3(0, -1, 0);
 

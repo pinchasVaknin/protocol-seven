@@ -1179,17 +1179,100 @@ round part and the LONGBOW's post in the middle of its aperture; in the Testbed 
 magnified, the same, each tip within about 1.5 px of the frame's centre. Asset version
 playtest-7.
 
+## Stage 4 — the first-person arms (2026-09-23)
+
+The grey box gloves are gone from the viewmodel. The human chose *Hand With Gloves* (JUST,
+CC-BY-4.0) over the SCAR-H file's arms (credited to another artist, and broken in three),
+first-person viewmodel only — the knife's fist and the Create-a-Class stage are a later
+sprint — and the model's own colours.
+
+**The build keeps a skin for the first time.** `hands` is a recipe of a new kind: the
+source's whole tree under one root carrying the fix (`rewriteRig`), so the skeleton the runtime
+poses is the artist's; only the two arm meshes keep their mesh (the framing crosshair and the
+pose card go to `prune`); the bones are named plainly (`upperarm_L.R_56` → `upperarm_R`; the
+source spells the side twice); the origin is the rig's own camera bone, so the output's origin
+is the eye. 19.7k → 8.9k triangles, seven PNGs → four WebP, 4.7 → 0.76 MB. `check:weapons`
+holds it to its skin, the six arm bones and 1 MB / 10k triangles. Credit row:
+`| [Hand With Gloves](https://sketchfab.com/3d-models/hand-with-gloves-5a6a434b8ec943ffacc581358781eecb) | [JUST](https://sketchfab.com/teenjust500) | CC-BY-4.0 | hands.glb |`.
+
+**The arms are posed, not animated** (`ViewmodelHands`). Each arm is a two-bone chain: the
+hand is put on its target with a hold's orientation, the elbow falls where the upper arm's
+length and a bend direction put it (`solveArm`, tested), and the fingers curl from the bind
+pose's straight fingers. The targets are the boxes' two points: the trigger hand on
+`socket_grip`, the support hand on `socket_support` — under the node `ViewmodelAnim` already
+moves on a reload, so the glove still takes the magazine out and brings the fresh one back.
+The rig hangs under the weapon's root (hidden, swapped and disposed with it) but its frame is
+counter-transformed every frame, so it stands in camera space: the shoulders stay put while the
+gun sways, aims and reloads. The two LMGs, still primitives, wear it on their spec anchors.
+
+**What the tuning found.**
+
+- *The knuckles are the datum.* With the palm's centre on the target the knuckles stood 3–5 cm
+  past the edge they should wrap and the fingers curled up out of the air; each hold now says
+  where the middle knuckle goes.
+- *The support hand is thumb-over-bore.* The glove's fingers are 11 cm from the knuckle and a
+  handguard 4–5 cm on a side, so they wrap more than half way round whichever way the hand
+  goes. Cupped from below they came over the top beside the front post, in the sight picture;
+  with the palm on the guard's left face and the fingers under it they end at its right-hand
+  top edge, low and to the right of the post.
+- *Low shoulders.* The artist's shoulders (15 cm under the eye) laid the nearly straight support
+  arm across the bottom of the frame a hand's width from the lens. The upper arm is never
+  drawn, so the shoulders are free: low, and the left elbow bending down and back, bring each
+  forearm up into the picture from below.
+- *A pistol is aimed at arm's length.* At a rifle's 20 cm two real forearms came back under the
+  lens and filled the lower half of the picture; the TALON's sight is now held at 42 cm
+  (`PISTOL_SIGHT_DISTANCE`) and the arms make a V to it.
+
+**Verified:** `npm run check` green (26 files, 28.07 MB, 155 tests). In a probe running the real
+pipeline (`WeaponAssetService` → `buildWeaponModel` → `ViewmodelAnim` → the viewmodel layer),
+every file weapon and the procedural BASTION at hip, at ADS and from both sides: the trigger
+hand on the grip, the support hand on the handguard, pump, front loop or wrapped round the
+pistol's grip; a VULCAN reload with the magazine in the support glove out and back. In the
+Testbed, the M4 at hip and ADS the same.
+
+**Not verified here:** the feel in motion at the human's resolution and FOV, the arms under
+recoil and sprint, and the sniper scopes' ADS with the arms (the scope fills the view, so
+nothing should show). Per-weapon holds are one table for all; a weapon whose furniture is
+unusual (the SPAS's pump, the L1A1's wood) may want its own numbers after a playtest.
+
+### After the arms' first playtest (2026-09-23)
+
+Two findings and a request.
+
+**The sleeves left the gun when the view moved.** Measured in the probe with the real
+`ViewmodelAnim`: while the view turned, pitched or the player walked, the hand bones did not
+move at all in the weapon's own space (0 mm) — but the elbows moved **90–155 mm**. The arms were
+solved every frame against the *final* pose, sway and bob included, from shoulders fixed to the
+camera, so every sway swung the forearms about the shoulders and the sleeves through the gun.
+The arms are now solved against the weapon's **base pose** — hip to ADS, sprint, swap, reload —
+which `ViewmodelAnim` hands `ViewmodelHands.update`, and the rig's frame is that pose's inverse,
+so bob, idle drift, sway and recoil carry gun and arms as one unit. Measured again: hands 0 mm,
+elbows **0 mm**.
+
+**One hold does not fit ten weapons.** `HandPoses.ts` is a per-weapon table of corrections on
+top of the holds — per hand, a position in weapon space, a pitch/yaw/roll turning the whole hold
+about its socket, and a finger-curl multiplier — read into `ViewmodelHands.adjust` when a model
+is built. It is empty until the human's numbers arrive.
+
+**The hand tuner** (`probes/hand-tuner.html`, `src/client/probes/handTuner.ts`; dev only, never
+built): the real viewmodel pipeline with a weapon menu (all twelve), hip / ADS / any moment of a
+reload, the eye or an orbit camera with the sockets marked, and a slider for every value of
+`HandPoses` on both hands. It prints each weapon's entry in the table's own shape, logs it to the
+console, copies one weapon or all of them, and keeps edits per weapon in the browser. A page of
+its own rather than a panel in the Testbed: the Testbed has a free cursor only on the pause
+screen, behind the pause menu, and holds two weapons a match. `?weapon=` is on the flag audit's
+undocumented list.
+
 ## Open
 
-- **First-person hands** (evaluated 2026-09-23, not built). *Hand With Gloves* by JUST
-  (CC-BY-4.0, "tactical glove and sleeve for free full ik rig"): two forearms, 61 bones with
-  every finger, 19.7k triangles, seven 1024 PNGs (4.7 MB), no animation, posed in a hand gesture
-  rather than a grip; renders cleanly in three. *Scar-H First-Person (FPS) Animated* by Jainesh
-  Pathak (CC-BY-4.0): the page credits its arms to another artist (EXUnum), and in three the
-  arms skin at ~40× the rifle with stretched fingers — the file's skinning is broken as
-  exported; its one 11.7 s clip is the SCAR's alone. The rifle itself (FDE, 27.5k triangles)
-  renders well and is original work (Blender, Substance). The gloves are the candidate; they
-  need grip poses for the fingers and two-bone IK to `socket_grip` / `socket_support`.
+- **The reload grab.** The human posed hip and ADS for the ten file weapons in the tuner and those
+  are in `HAND_POSES`; the two LMGs stay on the defaults until their models are replaced. The
+  support hand never reaches the magazine on a reload — it leaves `socket_support` and follows
+  only the magazine's *displacement*, 10–20 cm ahead of it, with the base pose's correction still
+  applied — so no base pose fits both. Approved: a `socket_mag_grip` measured from each magazine
+  in the build, the hand's target riding the magazine itself during the reload, and a separate
+  `reload` pose per weapon in the tuner. Then the knife's fist and the Create-a-Class stage on the
+  same rig (the human's next sprint).
 - **The P90's reload hand**: it follows the magazine's displacement from the front loop and
   never reaches the magazine's body; a target on the magazine itself would.
 - **The list's weapon drawings** (finding 11).

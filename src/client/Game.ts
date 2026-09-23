@@ -1615,6 +1615,7 @@ export class Game {
       void this.weaponAssets.preload(weaponId).catch(() => undefined);
     }
     void this.weaponAssets.preloadKnife().catch(() => undefined);
+    void this.weaponAssets.preloadHands().catch(() => undefined);
   }
 
   // -- world ---------------------------------------------------------------

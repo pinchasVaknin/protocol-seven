@@ -1462,24 +1462,31 @@ export class Match {
   private upgradeWhenLoaded(slotIndex: number): void {
     const assets = this.deps.weaponAssets;
     const model = this.models[slotIndex];
-    if (assets === null || model === undefined || model.source === 'glb') return;
-    if (assets.statusFor(model.weaponId) === 'none') return;
+    if (assets === null || model === undefined) return;
     const weaponId = model.weaponId;
-    void assets.preload(weaponId).then(
-      () => {
-        const current = this.models[slotIndex];
-        if (current === undefined || current !== model || current.weaponId !== weaponId) return;
-        const wasVisible = current.root.visible;
-        this.deps.viewmodel.remove(current.root);
-        current.dispose();
-        const next = buildWeaponModel(weaponId, this.deps.anisotropy, this.slotCamos[slotIndex] ?? null, this.modelOptions(slotIndex));
-        this.models[slotIndex] = next;
-        this.deps.viewmodel.add(next.root);
-        next.root.visible = wasVisible;
-        if (wasVisible) this.showSlot(slotIndex);
-      },
-      () => undefined,
-    );
+    // Two files can upgrade a slot: the weapon's own, and the arms' (stage 4), which every
+    // slot wears — the two LMGs, built from primitives, included.
+    const wantsFile = model.source !== 'glb' && assets.statusFor(weaponId) !== 'none';
+    const wantsHands = model.hands === null;
+    if (!wantsFile && !wantsHands) return;
+    const waits: Promise<void>[] = [];
+    if (wantsFile) waits.push(assets.preload(weaponId));
+    if (wantsHands) waits.push(assets.preloadHands());
+    void Promise.allSettled(waits).then(() => {
+      const current = this.models[slotIndex];
+      if (current === undefined || current !== model || current.weaponId !== weaponId) return;
+      const fileArrived = wantsFile && assets.template(weaponId) !== null;
+      const handsArrived = wantsHands && assets.hands() !== null;
+      if (!fileArrived && !handsArrived) return;
+      const wasVisible = current.root.visible;
+      this.deps.viewmodel.remove(current.root);
+      current.dispose();
+      const next = buildWeaponModel(weaponId, this.deps.anisotropy, this.slotCamos[slotIndex] ?? null, this.modelOptions(slotIndex));
+      this.models[slotIndex] = next;
+      this.deps.viewmodel.add(next.root);
+      next.root.visible = wasVisible;
+      if (wasVisible) this.showSlot(slotIndex);
+    });
   }
 
   /**

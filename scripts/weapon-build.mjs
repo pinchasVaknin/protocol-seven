@@ -186,6 +186,14 @@ const MTECH_KNIFE = {
   license: 'SKETCHFAB Standard',
   url: 'https://sketchfab.com/3d-models/mtech-usa-xtreme-tactical-knife-low-poly-789da4919af740479eb8dc7c4901ae89',
 };
+const HAND_WITH_GLOVES = {
+  file: 'hand_with_gloves.glb',
+  title: 'Hand With Gloves',
+  author: 'JUST',
+  authorUrl: 'https://sketchfab.com/teenjust500',
+  license: 'CC-BY-4.0',
+  url: 'https://sketchfab.com/3d-models/hand-with-gloves-5a6a434b8ec943ffacc581358781eecb',
+};
 const DBAL_A2 = {
   file: 'rifle_laser_sight.glb',
   title: 'Rifle Laser Sight',
@@ -925,6 +933,38 @@ export const RECIPES = {
       return [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2 + 0.004, b.max[2] - 0.062];
     },
     sockets: () => ({}),
+  },
+
+  /**
+   * The first-person arms (M19, stage 4): *Hand With Gloves*, a Blender FPS rig — two forearms
+   * in rolled sleeves and hard-knuckle gloves, cut at the elbow, on a 61-bone skeleton with every
+   * finger, a camera bone where the artist put the eye, and IK controllers the runtime does not
+   * use. Unlike every other recipe this one keeps its **skin**: the arms are posed at runtime
+   * (`ViewmodelHands`), so the build only takes the arms (not the framing crosshair or the
+   * pose-shape card), names the bones plainly, puts the eye at the origin in the viewmodel's
+   * axes, and halves the triangles. Its space: +Z forward from the camera bone, +Y up; 0.03 m
+   * a unit — the forearm is 8.57 units for a 26 cm forearm, the hand 3.43 for 10.3 cm.
+   */
+  hands: {
+    kind: 'hands',
+    source: HAND_WITH_GLOVES,
+    unit: 0.03,
+    forward: 'z+',
+    up: 'y+',
+    keepMaterials: ['glove_hardknuckle', 'sleeve_st6_generalist'],
+    eye: 'camera_2',
+    simplify: 0.45,
+    /**
+     * `upperarm_L.R_56` → `upperarm_R`, `index_L.003.R_37` → `index_003_R`: the source spells
+     * the side twice and numbers every node. `body` would shadow a weapon's `body` group once
+     * the rig hangs under a weapon's root, so it is the torso; the camera bone is the eye.
+     */
+    rename: (name) => {
+      const limb = /^(.+?)_L(?:\.(\d+))?\.([LR])_\d+$/.exec(name);
+      if (limb !== null) return `${limb[1]}${limb[2] !== undefined ? `_${limb[2]}` : ''}_${limb[3]}`;
+      const plain = name.replace(/_\d+$/, '');
+      return { body: 'torso', camera: 'eye', camera_target: 'eye_target', pose_controller: 'pose', hardknuckle: 'glove' }[plain] ?? plain;
+    },
   },
 
   att_suppressor: {
@@ -1894,6 +1934,44 @@ function rewrite(id, recipe, src) {
  * URL)", `license` as "CC-BY-4.0 (deed URL)", `source` as the model page and `title` as
  * shown; a recipe that says otherwise is a typo in a legal record, and the build stops on it.
  */
+/**
+ * The rig's pass 1 (stage 4): the source's tree kept whole — skin, joints and inverse bind
+ * matrices — under one new root carrying the fix, so the skeleton the runtime poses is the
+ * artist's. Only the meshes on `keepMaterials` keep their mesh; `prune` drops the rest with
+ * what they alone referenced. The origin is the rig's own camera bone: the eye the arms were
+ * framed for, which the runtime's shoulders and elbows are placed against.
+ */
+function rewriteRig(id, recipe, src) {
+  const json = structuredClone(src.json);
+  const eye = src.json.nodes.findIndex((n) => n.name === recipe.eye);
+  if (eye < 0) throw new Error(`${id}: the source has no node "${recipe.eye}" to put the eye at`);
+  const w = src.world(eye);
+  const origin = [w[12], w[13], w[14]];
+  const fix = fixMatrix(recipe, origin);
+  const kept = [];
+  json.nodes.forEach((n, i) => {
+    if (n.mesh === undefined) return;
+    if (recipe.keepMaterials.includes(src.materialName(src.json.nodes[i]))) kept.push(i);
+    else delete n.mesh;
+  });
+  if (kept.length !== recipe.keepMaterials.length) throw new Error(`${id}: expected ${recipe.keepMaterials.length} meshes on ${recipe.keepMaterials.join(', ')}, found ${kept.length}`);
+  for (const n of json.nodes) if (n.name !== undefined) n.name = recipe.rename(n.name);
+  const roots = json.scenes[json.scene ?? 0].nodes;
+  const root = json.nodes.push({ name: id, matrix: fix.map((v) => Math.round(v * 1e9) / 1e9), children: [...roots] }) - 1;
+  json.scenes = [{ name: `${id}.scene`, nodes: [root] }];
+  json.scene = 0;
+  delete json.animations;
+  delete json.cameras;
+  stripTransmission(json);
+  json.asset = json.asset ?? { version: '2.0' };
+  json.asset.extras = {
+    ...(json.asset.extras ?? {}),
+    attribution: { title: recipe.source.title, author: recipe.source.author, authorUrl: recipe.source.authorUrl, license: recipe.source.license, url: recipe.source.url },
+    protocolSeven: { recipe: id, kind: recipe.kind, source: recipe.source.file, sockets: {} },
+  };
+  return { json, bin: src.glb.bin, sockets: {}, kept, origin };
+}
+
 function verifyAttribution(id, source, extras) {
   const problems = [];
   if (!extras) {
@@ -1970,7 +2048,7 @@ export function buildOne(id, work) {
   const glb = readGlb(sourceFile);
   verifyAttribution(id, recipe.source, glb.json.asset?.extras);
   const src = new Source(glb, recipe.unit, recipe.up);
-  const { json, bin, sockets, kept, origin } = rewrite(id, recipe, src);
+  const { json, bin, sockets, kept, origin } = recipe.kind === 'hands' ? rewriteRig(id, recipe, src) : rewrite(id, recipe, src);
 
   const staged = path.join(work, `${id}.staged.glb`);
   writeGlb(staged, json, bin);

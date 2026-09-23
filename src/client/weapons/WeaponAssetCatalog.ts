@@ -14,7 +14,7 @@
  * it after a rebuild that changes a file.
  */
 
-export const WEAPON_ASSET_VERSION = '2026-09-23-m19-playtest-7';
+export const WEAPON_ASSET_VERSION = '2026-09-23-m19-stage-4-hands';
 
 const WEAPON_ROOT = '/models/weapons';
 
@@ -43,6 +43,12 @@ export function weaponLodUrl(weaponId: string): string {
 
 /** The knife's file (stage 3): a root and a `body`, no sockets, loaded beside the weapons. */
 export const KNIFE_ASSET_ID = 'knife';
+
+/**
+ * The first-person arms' file (stage 4): a rig — two gloved forearms on a skeleton — under a
+ * root of this name, posed on each weapon's hand sockets by `ViewmodelHands`.
+ */
+export const HANDS_ASSET_ID = 'hands';
 
 export function weaponAssetUrl(weaponId: string): string {
   return `${WEAPON_ROOT}/${weaponId}.glb?v=${encodeURIComponent(WEAPON_ASSET_VERSION)}`;

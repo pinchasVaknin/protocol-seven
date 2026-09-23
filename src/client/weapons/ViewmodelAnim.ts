@@ -1,7 +1,7 @@
 import { angleDelta, clamp, clamp01, damp, DEG2RAD, lerp, smoothstep } from '../../shared/core/MathUtil';
 import type { ViewmodelConfig } from '../../shared/weapons/ViewmodelConfig';
 import type * as THREE from 'three';
-import { Vector3 } from 'three';
+import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import type { WeaponModel } from './WeaponMesh';
 
 /**
@@ -377,6 +377,17 @@ export class ViewmodelAnim {
       if (this.model.supportHand !== null) this.model.supportHand.position.set(0, 0, 0);
     }
 
+    // The pose the arms are solved against (stage 4): everything above — hip to ADS, sprint,
+    // swap, reload — and nothing below. Bob, idle drift, sway and recoil are small motions of
+    // the whole gun-and-arms, and carrying the arms through them rigidly is what keeps a glove
+    // on its grip and a sleeve out of the receiver; re-solving them against camera-fixed
+    // shoulders swung the elbows 9–15 cm across the gun whenever the view turned.
+    const base = this.handsBase.compose(
+      this.basePosition.set(px, py, pz),
+      this.baseTurn.setFromEuler(this.baseEuler.set(rx * DEG2RAD, ry * DEG2RAD, rz * DEG2RAD)),
+      this.model.root.scale,
+    );
+
     // ---- bob ----------------------------------------------------------------
     const bobScale = lerp(1, cfg.bobAdsScale, aimed);
     const speedRatio = drive.grounded ? clamp01(drive.speed / Math.max(drive.speedRef, 0.1)) : 0;
@@ -410,6 +421,8 @@ export class ViewmodelAnim {
     const root = this.model.root;
     root.position.set(px, py, pz);
     root.rotation.set(rx * DEG2RAD, ry * DEG2RAD, rz * DEG2RAD);
+    // The arms: solved against the base pose, carried through the rest with the gun.
+    this.model.hands?.update(base);
 
     this.poseKnife(drive, cfg);
   }
@@ -618,6 +631,10 @@ export class ViewmodelAnim {
   }
 
   private readonly handTarget = new Vector3();
+  private readonly handsBase = new Matrix4();
+  private readonly basePosition = new Vector3();
+  private readonly baseTurn = new Quaternion();
+  private readonly baseEuler = new Euler();
 
   /**
    * Which way a file's reload rolls the weapon, as the sign of `rz` (playtest 6): whichever

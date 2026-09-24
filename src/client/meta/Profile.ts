@@ -4,7 +4,7 @@ import type { AttachmentId } from '../../shared/weapons/Attachments';
 import { CAMO_PREREQUISITES, type CamoId } from '../../shared/meta/Camos';
 import { CHALLENGES, challengeDef, type ChallengeId } from '../../shared/meta/Challenges';
 import { isSkinId } from '../../shared/meta/Skins';
-import { canPrestige, levelForXp, levelProgress, TOKENS_PER_PRESTIGE } from '../../shared/meta/Levels';
+import { canPrestige, levelForXp, levelProgress, TOKENS_PER_PRESTIGE, XP_TO_MAX } from '../../shared/meta/Levels';
 import {
   defaultLoadouts,
   LOADOUT_SLOT_COUNT,
@@ -390,6 +390,25 @@ export class Profile implements ProgressionStore {
     const profile = this.save.profile;
     if (profile.permanentUnlocks.includes(id)) return;
     profile.permanentUnlocks.push(id);
+    this.refreshUnlocks();
+    this.store.touch();
+  }
+
+  /**
+   * Put the account at `MAX_LEVEL`. `ATT7777`'s, and nothing else's (the human, 2026-09-24).
+   *
+   * Through the XP, not around it: `profile.level` is a cache of `levelForXp(profile.xp)` and
+   * `normaliseSave` repairs a level that disagrees with its total, so writing the level alone
+   * would be undone by the next load. Writing the XP is the only way to say this that the
+   * save believes.
+   *
+   * `Math.max`, like `masterWeapon`: a prestiged player past the cap is not taken back.
+   */
+  maxAccountLevel(): void {
+    const profile = this.save.profile;
+    if (profile.xp >= XP_TO_MAX) return;
+    profile.xp = XP_TO_MAX;
+    profile.level = levelForXp(profile.xp);
     this.refreshUnlocks();
     this.store.touch();
   }

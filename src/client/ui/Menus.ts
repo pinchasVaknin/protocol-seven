@@ -304,6 +304,18 @@ export class Menus {
     this.codeResult.textContent = text;
   }
 
+  /**
+   * Re-read the player card in the header, without rebuilding the page.
+   *
+   * The card is otherwise read on a page change (`header()`), which is the right moment for
+   * everything that moves the level *between* screens. `ATT7777` moves it while the player is
+   * looking at the header — the level goes to the cap on a keypress — and a card that still
+   * says LEVEL 1 under a caption reading *"max level"* is the screen contradicting itself.
+   */
+  refreshCard(): void {
+    this.card.refresh();
+  }
+
   private paint(): void {
     this.ungate();
     this.frame.classList.remove('op-boot');

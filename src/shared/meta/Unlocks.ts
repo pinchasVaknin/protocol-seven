@@ -2,7 +2,7 @@ import { ALL_EQUIPMENT, type EquipmentId } from '../equipment/EquipmentDefs';
 import { PERK_IDS, perkDef, type PerkId } from '../perks/PerkDefs';
 import { ATTACHMENT_IDS, attachmentDef, fitsWeapon, type AttachmentId } from '../weapons/Attachments';
 import { requireWeapon, WEAPON_DEFS, type WeaponDef } from '../weapons/WeaponDefs';
-import { CAMO_PREREQUISITES, type CamoId } from './Camos';
+import { CAMO_IDS, CAMO_PREREQUISITES, type CamoId } from './Camos';
 import { camoRequirementOf } from './Challenges';
 import { fieldUpgradeDef, FIELD_UPGRADE_IDS, type FieldUpgradeId } from './FieldUpgrades';
 import type { LoadoutSlot } from './Loadouts';
@@ -474,6 +474,68 @@ export function sanitiseLoadout(slot: LoadoutSlot, unlocks: UnlockState, losses:
 /** What a locked slot falls back to. Both are `unlockLevel` 1 and cannot themselves fail. */
 const FALLBACK_PRIMARY = 'ar_carbine';
 const FALLBACK_SECONDARY = 'pistol_talon';
+
+/**
+ * The writes `grantEverything` needs. `Profile` satisfies it structurally.
+ *
+ * An interface rather than the class, for the reason `ProgressionStore` is one: this file is
+ * the rules and `client/meta/Profile` is a `localStorage` document, and the rule about what
+ * "everything" means should not have to know which.
+ */
+export interface UnlockGrants {
+  maxAccountLevel(): void;
+  unlockPermanently(id: string): void;
+  masterWeapon(weaponId: string): void;
+  unlockAttachment(weaponId: string, attachment: AttachmentId): void;
+  grantCamo(weaponId: string, camo: CamoId): void;
+}
+
+/**
+ * Everything this game gates, opened. `ATT7777`'s whole effect (the human, 2026-09-24).
+ *
+ * ## Why it is here and not in the cheat's handler
+ *
+ * The first version of this lived in `Game.requestCheat` as a loop over the weapons, and it
+ * shipped granting attachments and nothing else — then grew weapons, levels and camos, and
+ * was reported still missing the equipment and the perks. That is the shape of a list that
+ * lives away from the thing it is a list *of*: this file is the one that knows what a gate
+ * is, and every table `grantEverything` walks is a table the gates above already walk. A
+ * category added to `UnlockState` and forgotten here is now one file's worth of distance
+ * rather than two, and `Unlocks.test.ts` closes it properly — it applies this to a save and
+ * asserts that **nothing in the game is locked afterwards**, which is a claim about the
+ * gates rather than about this function's line count.
+ *
+ * ## The account level, which this deliberately forges
+ *
+ * An earlier version refused to, and said so in a comment: the XP economy is what the
+ * summary screen, the level flourish and the whole ladder are read off, and a cheat that
+ * moves it makes all three describe a career nobody had. The human overruled it — *"if that
+ * means bumping the player to the maximum level, do it; when I run the code I need full
+ * access to everything in the game"* — and they are right about the priority. A test code
+ * whose job is to reach content is worth less than nothing if it reaches most of it, and the
+ * permanent unlocks below cannot cover a category that gains a gate tomorrow.
+ *
+ * So both are written, and the redundancy is the point: the level opens everything that is
+ * gated on a level *today*, and `permanentUnlocks` keeps it open across a prestige — which
+ * resets the level to 1 and would otherwise take the whole arsenal back.
+ *
+ * The consequence, stated rather than discovered: the account reads level `MAX_LEVEL`
+ * afterwards, `canPrestige()` becomes true, and the next summary screen's bar is at its cap.
+ */
+export function grantEverything(to: UnlockGrants): void {
+  to.maxAccountLevel();
+  for (const def of Object.values(WEAPON_DEFS)) {
+    to.unlockPermanently(def.id);
+    to.masterWeapon(def.id);
+    for (const id of ATTACHMENT_IDS) {
+      if (fitsWeapon(def, id)) to.unlockAttachment(def.id, id);
+    }
+    for (const camo of CAMO_IDS) to.grantCamo(def.id, camo);
+  }
+  for (const id of PERK_IDS) to.unlockPermanently(id);
+  for (const eq of ALL_EQUIPMENT) to.unlockPermanently(eq.id);
+  for (const id of FIELD_UPGRADE_IDS) to.unlockPermanently(id);
+}
 
 /** Everything unlocked exactly at this level, for the level-up flourish's caption. */
 export function unlocksAtLevel(level: number): string[] {

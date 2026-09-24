@@ -1681,3 +1681,45 @@ In the browser pane, on a live single-player match on FOUNDRY:
 The networked half of the intro's fast-forward — that `shortenWarmup` refuses and the local
 offset carries the whole gain — is argued from `MatchFlow.shortenWarmup`'s own authority guard
 and from the solo measurement above, not watched against a dedicated server.
+
+### The same day, twice more (the human)
+
+**The code field on the main menu ate everything it was given.** Only `DEBUG666` and `ATT7777`
+wrote their answer through `setCodeResult`, which writes both fields; the other five outcomes —
+unknown code, no seat, granted, revoked, the wallet's receipt — went to `pauseMenu` alone, which
+is not the screen a player standing at the menu is looking at. Nothing was ever *granted* there
+(`requestCheat` returns before every writer when there is no match, so a god mode typed at the
+menu could never have followed anybody into one) but a refusal nobody can see is indistinguishable
+from a broken field, and that is how it was reported. Every answer goes to both fields now, and
+`RefusedNoSeat` says **"Code available only during gameplay."** rather than "Not in a match." —
+the human's wording, and the better one: it names the screen the code belongs on instead of
+reading as a failure that invites a second attempt at the same box.
+
+**`ATT7777` was still not everything.** It opened the weapons and it did not open the equipment,
+the perks or the field upgrades, and the reason is the one this file keeps re-learning: the list
+lived in `Game.requestCheat`, away from `UnlockState`, which is the thing that knows what a gate
+*is*. It is `grantEverything` in `shared/meta/Unlocks.ts` now, beside the six requirement
+accessors, walking the same tables they do — and the test is the human's sentence rather than the
+function's body: apply it to a level-one save and ask the **gates** whether anything is still
+shut. `tokenCandidates()` must be empty, every attachment and camo requirement must be blank, and
+— the assertion that actually bites — the same question asked again at **level 1** with only
+`permanentUnlocks` standing there, which is where a prestige puts the player. Dropping the perks
+line from the function turns that one red; without it the test passes on the level alone, which
+is the reported bug wearing a different disguise.
+
+The account level goes to `MAX_LEVEL` with it. The previous section argued against exactly that
+and the human overruled it — *"if that means bumping the player to the maximum level, do it; when
+I run the code I need full access to everything in the game"* — and they are right about the
+priority: a code whose job is to reach the content is worth nothing if it reaches most of it, and
+`permanentUnlocks` alone cannot cover a category that gains a gate tomorrow. Both are written, and
+the redundancy is load-bearing in one direction: the level opens what is level-gated today, the
+permanent unlocks survive the prestige that resets it. Stated rather than discovered:
+`canPrestige()` is true afterwards and the next summary screen's bar is at its cap. The card in
+the menu header is re-read on the spot (`Menus.refreshCard`), because LEVEL 1 under a caption
+reading *"max level"* is the screen contradicting itself.
+
+Verified from a cleared save in the pane: `SPEC[]1` at the menu → the caption, `cheatMask` and
+`offlineCheats` both **0**; a nonsense code → "UNKNOWN CODE."; `ATT7777` → level **55 (MAX)** in
+the header the same frame, **33** permanent unlocks (12 weapons, 12 perks, 5 equipment, 4 field
+upgrades), every weapon at level 10 with all six camos, SEMTEX and the CLAYMORE selectable, and
+`tokenCandidates()` empty.

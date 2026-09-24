@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { WEAPON_DEFS } from '../weapons/WeaponDefs';
 import { camoRequirementOf } from './Challenges';
 import { CAMO_IDS, CAMO_PREREQUISITES } from './Camos';
-import { makeWeaponSave, type WeaponSaveData } from './SaveData';
-import { UnlockState, WEAPON_MASTERY_XP, WEAPON_MAX_LEVEL, weaponLevelForXp } from './Unlocks';
+import { levelForXp, MAX_LEVEL, XP_TO_MAX } from './Levels';
+import { defaultSave, defaultSettings, makeWeaponSave, type SaveV2, type WeaponSaveData } from './SaveData';
+import {
+  attachmentsForWeapon,
+  grantEverything,
+  UnlockState,
+  WEAPON_MASTERY_XP,
+  WEAPON_MAX_LEVEL,
+  weaponLevelForXp,
+} from './Unlocks';
 
 /**
  * What a locked chip says (the human's brief §6, 2026-09-24), and the ceiling `ATT7777`
@@ -116,5 +125,98 @@ describe('the weapon ladder', () => {
     expect(weaponLevelForXp(WEAPON_MASTERY_XP - 1)).toBe(WEAPON_MAX_LEVEL - 1);
     // And it does not overshoot: the maximum is the maximum.
     expect(weaponLevelForXp(WEAPON_MASTERY_XP * 2)).toBe(WEAPON_MAX_LEVEL);
+  });
+});
+
+/**
+ * `ATT7777` (the human, 2026-09-24): *"when I run the code I need full access to everything
+ * in the game."*
+ *
+ * The test is the sentence, not the implementation: apply the grant to a level-one save and
+ * then ask **the gates** whether anything is still shut. That is what makes it survive a
+ * category being added — a sixth gated thing with no line in `grantEverything` fails here
+ * without anybody remembering to come back, which is the failure the first two versions of
+ * this cheat shipped with (attachments only, then everything but the equipment and the perks).
+ */
+describe('grantEverything', () => {
+  /** A level-one save. The callsign is generated, so two of these are never byte-identical. */
+  function freshSave(): SaveV2 {
+    const save = defaultSave(defaultSettings('TDM', 'mp_foundry', 90));
+    save.profile.level = 1;
+    save.profile.xp = 0;
+    return save;
+  }
+
+  /** The five writes `grantEverything` makes, applied to one save document. */
+  function applyTo(save: SaveV2): SaveV2 {
+    const weapon = (id: string): WeaponSaveData => (save.weapons[id] ??= makeWeaponSave());
+    grantEverything({
+      maxAccountLevel: () => {
+        save.profile.xp = XP_TO_MAX;
+        save.profile.level = levelForXp(save.profile.xp);
+      },
+      unlockPermanently: (id) => {
+        if (!save.profile.permanentUnlocks.includes(id)) save.profile.permanentUnlocks.push(id);
+      },
+      masterWeapon: (id) => {
+        weapon(id).xp = Math.max(weapon(id).xp, WEAPON_MASTERY_XP);
+      },
+      unlockAttachment: (id, attachment) => {
+        const held = weapon(id).unlockedAttachments;
+        if (!held.includes(attachment)) held.push(attachment);
+      },
+      grantCamo: (id, camo) => {
+        weapon(id).camos[camo] = true;
+      },
+    });
+    return save;
+  }
+
+  const applyToFreshSave = (): SaveV2 => applyTo(freshSave());
+
+  it('leaves nothing in the game locked', () => {
+    const state = UnlockState.fromSave(applyToFreshSave());
+    // `tokenCandidates` is the game's own list of what a prestige token could still be spent
+    // on: every weapon, perk, equipment and field upgrade that is not open. Empty is the claim.
+    expect(state.tokenCandidates()).toEqual([]);
+    for (const def of Object.values(WEAPON_DEFS)) {
+      expect(state.weaponRequirement(def.id)).toBe('');
+      for (const attachment of attachmentsForWeapon(def)) {
+        expect(state.attachmentRequirement(def.id, attachment)).toBe('');
+      }
+      for (const camo of CAMO_IDS) expect(state.camoRequirement(def.id, camo)).toBe('');
+    }
+  });
+
+  it('names every gated category permanently, so a prestige does not take it back', () => {
+    /**
+     * The same question asked at **level 1**, which is where a prestige puts the player, with
+     * only `permanentUnlocks` standing between them and a locked game.
+     *
+     * This is the assertion that actually catches a missing category. At `MAX_LEVEL` the level
+     * alone opens every level-gated thing, so the test above would pass with `grantEverything`
+     * granting nothing but the level — which is exactly the version the human reported as
+     * *"it does not open the grenades and the equipment"* wearing a different disguise.
+     */
+    const save = applyToFreshSave();
+    const afterPrestige = new UnlockState(1, save.weapons, save.profile.permanentUnlocks);
+    expect(afterPrestige.tokenCandidates()).toEqual([]);
+  });
+
+  it('takes the account to the cap and every weapon to its own', () => {
+    const save = applyToFreshSave();
+    expect(save.profile.level).toBe(MAX_LEVEL);
+    for (const def of Object.values(WEAPON_DEFS)) {
+      expect(weaponLevelForXp(save.weapons[def.id]?.xp ?? 0)).toBe(WEAPON_MAX_LEVEL);
+    }
+  });
+
+  it('is idempotent, and does not invent kills', () => {
+    const save = applyToFreshSave();
+    const once = JSON.stringify(save);
+    expect(save.weapons[WEAPON]?.kills).toBe(0);
+    // Again over the *same* document — a second save would differ on its generated callsign
+    // alone, which is a fact about `defaultSave` and not about this function.
+    expect(JSON.stringify(applyTo(save))).toBe(once);
   });
 });

@@ -75,9 +75,7 @@ import {
   toggleCheat,
   type CheatCode,
 } from '../shared/cheats/Cheats';
-import { CAMO_IDS } from '../shared/meta/Camos';
-import { ATTACHMENT_IDS, fitsWeapon } from '../shared/weapons/Attachments';
-import { ALL_WEAPONS } from '../shared/weapons/WeaponDefs';
+import { grantEverything } from '../shared/meta/Unlocks';
 import type { Match } from './ClientMatch';
 import { isHostile } from '../shared/combat/Hostility';
 import type { MatchResult } from '../shared/modes/GameMode';
@@ -1298,7 +1296,7 @@ export class Game {
   private requestCheat(code: string): void {
     const entry = parseCheatCode(code);
     if (entry === null) {
-      this.screens.pauseMenu.setCodeResult(cheatOutcomeText(CheatOutcome.RefusedUnknown));
+      this.setCodeResult(cheatOutcomeText(CheatOutcome.RefusedUnknown));
       return;
     }
 
@@ -1326,40 +1324,22 @@ export class Game {
       /**
        * A grant against this client's own save, which is the one store it is the authority for.
        *
-       * Every write goes through `Profile` — the same four writers progression itself uses —
-       * so the unlock state, the editor's chips and the loadout sanitiser see the result as
-       * earned rather than as a second rule about what is available. That is the whole reason
-       * this loop is four calls and not a flag somewhere saying *cheating*.
+       * *What* everything means is `grantEverything`, in `shared/meta/Unlocks.ts` beside the
+       * gates it defeats — this handler's business is that the grant goes through `Profile`,
+       * the same writers progression itself uses, so the unlock state, the editor's chips and
+       * the loadout sanitiser see the result as earned rather than as a second rule about
+       * what is available. The list lived here once, and shipped twice missing a category.
        *
-       * The four, and what each of them answers (the human's brief §3, 2026-09-24, which
-       * widened this code from attachments alone to the whole arsenal):
-       *
-       *  - `unlockPermanently` — **may I equip it**. A weapon is gated on the account level,
-       *    and the account level is not raised: the XP economy is the one thing a cheat
-       *    should not forge, because the summary screen, the level flourish and the ladder
-       *    all read it. `permanentUnlocks` is the override the prestige token already uses
-       *    and it survives a prestige, which is the right lifetime for a test class.
-       *  - `masterWeapon` — **the maximum level**, which is XP on the weapon's own ladder.
-       *  - `unlockAttachment` — every attachment that fits, the same door a kill threshold
-       *    opens.
-       *  - `grantCamo` — every finish, on **every** weapon. Since 2026-09-23 a camo belongs
-       *    to the weapon that earned it, so "all the skins for all the weapons" is a grid
-       *    and not a row: granting them account-wide is exactly the bug that change fixed.
-       *
-       * The per-weapon counters are deliberately left alone. Kills and headshots are what
-       * the camo *challenges* read, and inventing them would pay out the account's XP awards
-       * for work nobody did — the camo is the reward asked for here, not the career.
+       * The per-weapon counters are deliberately left alone. Kills and headshots are what the
+       * camo *challenges* read, and inventing them would pay out the account's XP awards for
+       * work nobody did — the finish is the reward asked for, not the career that earned it.
        */
-      for (const def of ALL_WEAPONS) {
-        this.profile.unlockPermanently(def.id);
-        this.profile.masterWeapon(def.id);
-        for (const id of ATTACHMENT_IDS) {
-          if (fitsWeapon(def, id)) this.profile.unlockAttachment(def.id, id);
-        }
-        for (const camo of CAMO_IDS) this.profile.grantCamo(def.id, camo);
-      }
+      grantEverything(this.profile);
       this.setCodeResult(cheatOutcomeText(CheatOutcome.UnlockApplied));
       this.screens.loadoutEditor.repaint();
+      // The level is on the header's card, and this is the one grant that moves it while the
+      // player is looking at that header.
+      this.screens.menus.refreshCard();
       return;
     }
 
@@ -1377,7 +1357,18 @@ export class Game {
 
     const match = this.world?.match;
     if (match === undefined) {
-      this.screens.pauseMenu.setCodeResult(cheatOutcomeText(CheatOutcome.RefusedNoSeat));
+      /**
+       * Typed on the main menu, where there is no match to apply it to (the human,
+       * 2026-09-24).
+       *
+       * Two things had to be true and only one of them was. Nothing *is* granted here —
+       * this returns before every writer, so a god mode typed at the menu was never going
+       * to follow anybody into a match — but the answer went to the pause screen's caption
+       * line, which is not the screen the player is looking at, so the field simply ate the
+       * code and said nothing. Both screens now, and `RefusedNoSeat`'s wording says which
+       * screen the code belongs on rather than merely that this is not it.
+       */
+      this.setCodeResult(cheatOutcomeText(CheatOutcome.RefusedNoSeat));
       return;
     }
     if (entry.effect.kind === 'instant') {
@@ -1386,16 +1377,14 @@ export class Game {
       // without ever appearing in the match results.
       match.streaks.creditKills(match.localId, entry.effect.kills);
       this.raiseInstantCheat(entry);
-      this.screens.pauseMenu.setCodeResult(cheatOutcomeText(CheatOutcome.InstantApplied));
+      this.setCodeResult(cheatOutcomeText(CheatOutcome.InstantApplied));
       return;
     }
     if (entry.effect.kind !== 'toggle') return;
     const after = toggleCheat(this.offlineCheats, entry.effect.bits);
     this.offlineCheats = after;
     const granted = (after & entry.effect.bits) !== 0;
-    this.screens.pauseMenu.setCodeResult(
-      cheatOutcomeText(granted ? CheatOutcome.Granted : CheatOutcome.Revoked),
-    );
+    this.setCodeResult(cheatOutcomeText(granted ? CheatOutcome.Granted : CheatOutcome.Revoked));
   }
 
   /**
@@ -2072,13 +2061,15 @@ export class Game {
        * state, applied before this fires — so there is nothing here to write and nothing that
        * could disagree with what the simulation is doing.
        *
-       * It goes to the pause screen's own line rather than through `voteOverlay.notice`, and
+       * It goes to a code field's own line rather than through `voteOverlay.notice`, and
        * that is not a preference: the vote overlay lives under `.op-screen`'s backdrop, so a
        * notice raised while the player is looking at the field they typed into would be painted
-       * over by the screen it is answering.
+       * over by the screen it is answering. `setCodeResult` writes both fields, which is the
+       * one rule this feature has about captions now — an answer goes where the question could
+       * have been asked, not where the code happens to think the player is standing.
        */
       onCheats: (outcome) => {
-        this.screens.pauseMenu.setCodeResult(cheatOutcomeText(outcome));
+        this.setCodeResult(cheatOutcomeText(outcome));
         // An instant cheat is announced on the reply and never before it: the payment is the
         // server's, and a caption raised on the send would be claiming one that may be refused.
         const pending = this.pendingInstant;

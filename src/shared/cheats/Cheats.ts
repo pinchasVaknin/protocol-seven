@@ -119,14 +119,15 @@ export const CHEAT_FULL_SPECTATOR = Cheat.God | Cheat.Unseen | Cheat.NoClip;
  *   progression grant and it does not expire, which is what makes it useful for a test class
  *   that has to survive a reload.
  *
- *   What it grants widened on 2026-09-24 (the human's brief §3), from every attachment to
- *   the whole arsenal: every weapon permanently unlocked, every weapon at the top of its own
- *   level ladder, every attachment that fits it, and every camo on every weapon. One thing
- *   it deliberately does **not** touch is the account level — see `Game.requestCheat`, where
- *   the grant lives. The XP economy is what the summary screen, the level flourish and the
- *   whole unlock ladder are read off, and a cheat that forges it makes every one of them
- *   lie; `permanentUnlocks` is the override that already exists for saying *this player may
- *   have this* without claiming they earned the level for it.
+ *   What it grants widened twice on 2026-09-24 - the human's brief, then their report that
+ *   it had missed the equipment and the perks - and it is now **everything the game gates**:
+ *   `grantEverything` in `shared/meta/Unlocks.ts`, which is the file that knows what a gate
+ *   is. The account level goes to the cap with it. An earlier version refused on the grounds
+ *   that the XP economy is what the summary screen, the level flourish and the whole ladder
+ *   are read off; the human overruled it, correctly, because a code whose job is to reach
+ *   the content is worth nothing if it reaches most of it. See that function for what the
+ *   redundancy with `permanentUnlocks` buys - a prestige resets the level and would
+ *   otherwise take the arsenal back.
  *
  * F14 carried a `local` boolean as well, which meant the same thing as `'surface'` does and could
  * disagree with the bits; `check-cheats.mjs` now enforces the invariant that made that flag
@@ -328,7 +329,19 @@ export const CheatOutcome = {
   RefusedUnknown: 4,
   /** An `'instant'` cheat was applied. Its caption is the client's to raise; nothing latches. */
   InstantApplied: 5,
-  /** Recognised, but there is no seat to apply it to. */
+  /**
+   * Recognised, but there is no seat to apply it to - the main menu, in practice.
+   *
+   * The wording is *"only during gameplay"* rather than *"not in a match"* (the human,
+   * 2026-09-24), because the two say different things to somebody standing at the menu with
+   * a code in their hand. The first names the screen the code belongs on; the second reads
+   * as a failure and invites a second attempt at the same field.
+   *
+   * Nothing is granted on this path - `Game.requestCheat` returns before every writer - so a
+   * god mode typed at the menu cannot follow the player into the match that comes after it.
+   * That was always true and was always silent, which is a refusal nobody can tell from a
+   * field that is broken.
+   */
   RefusedNoSeat: 6,
   /** An `'unlock'` cheat wrote the save. Nothing latches; the grant is the progression itself. */
   UnlockApplied: 7,
@@ -346,9 +359,9 @@ export function cheatOutcomeText(outcome: number): string {
     case CheatOutcome.InstantApplied:
       return `${CHEAT_WALLET_KILLS} kills added to your killstreak balance.`;
     case CheatOutcome.RefusedNoSeat:
-      return 'Not in a match.';
+      return 'Code available only during gameplay.';
     case CheatOutcome.UnlockApplied:
-      return 'Every weapon unlocked and maxed: levels, attachments and camos.';
+      return 'Everything unlocked: max level, every weapon, item, attachment and camo.';
     default:
       return 'Unknown code.';
   }

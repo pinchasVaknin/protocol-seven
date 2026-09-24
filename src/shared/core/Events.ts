@@ -326,6 +326,12 @@ export type GameEvents = {
     /** Damage lost to wall penetration, HP. */
     penetrationLoss: number;
     lethal: boolean;
+    /**
+     * The shot came from something `sourceId` deployed rather than from their own aim — a
+     * sentry burst (2026-09-24). The kill is still theirs; only the hitmarker's colour reads
+     * this. See `DamageRequest.autonomous`.
+     */
+    autonomous: boolean;
   };
   /**
    * `killerHealth` is what the killer had **left at the instant of the kill** (round 5, F9).

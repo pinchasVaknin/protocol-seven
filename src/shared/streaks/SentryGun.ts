@@ -142,7 +142,25 @@ export class SentryGun extends Killstreak implements Damageable {
     this.health = new Health({ max: ctx.cfg.sentryHealth, regenDelay: Infinity, regenRate: 0 });
     this.tier = sentryTier(ctx);
     this.request = makeDamageRequest(sentryWeapon(ctx.cfg.sentryDamage));
-    this.request.sourceId = this.entityId;
+    /**
+     * The kill belongs to whoever put the turret there (the human, 2026-09-24).
+     *
+     * It used to be `this.entityId` — the sentry crediting itself — and the mortar and the
+     * chopper have both credited their owner since M7, so the sentry was the odd one out and
+     * it was odd in every direction at once. A sentry's entity is not on the roster and has no
+     * score row, so `ScoreSystem.recordKill` found no killer and returned: the kill counted for
+     * the player (no), for their team (no — in TDM, which is a race to 75 kills, a turret could
+     * not advance it by one), and in the killfeed it read as the victim dying to `WORLD`.
+     * `MatchFeedback` keys the hitmarker off the source as well, which is the report that
+     * started this: shooting somebody with your own sentry felt like shooting at nothing.
+     *
+     * One line fixes all four, because all four ask the same question of the same field.
+     *
+     * `autonomous` is the half that must *not* collapse into it: the kill is the player's, and
+     * the shot was not aimed by them. Only the hitmarker's colour reads it — see `DamageRequest`.
+     */
+    this.request.sourceId = ownerId;
+    this.request.autonomous = true;
     // The same trace everything else in the project shoots with: rigs, world, penetration,
     // falloff and the damage door, in one call (S4.3/S4.4).
     this.ballistics = new Ballistics(ctx.world, ctx.damage, ctx.bus);

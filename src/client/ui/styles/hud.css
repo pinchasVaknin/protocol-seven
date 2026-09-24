@@ -152,6 +152,19 @@
   transform: translate(-50%, -50%) translate(9px, 9px) rotate(45deg);
 }
 
+/*
+ * A hit one of the player's killstreaks landed (2026-09-24). Same mark, different colour, so
+ * a turret's work never reads as your own aim.
+ *
+ * Declared *before* `--kill` on purpose: the two classes can be on the element at the same
+ * time — a sentry's shot that kills is both — and the human asked for the ordinary red the
+ * moment it finishes somebody. Same specificity, so the later rule wins, and the ordering is
+ * the whole of the rule rather than a branch in `Hud.updateMarkers`.
+ */
+.hud-hit--auto i {
+  background: var(--c-hit-auto, #e8b53c);
+}
+
 .hud-hit--kill i {
   background: var(--c-hit-kill, var(--c-bad));
   width: 3px;
@@ -657,6 +670,27 @@
 
 .hud-feed__name--bright {
   color: var(--c-text);
+}
+
+/*
+ * `[SENTRY]` between the killer's name and the weapon (2026-09-24).
+ *
+ * Dim and small: it qualifies the name rather than competing with it, and the line it sits on
+ * is read in about a second. `hidden` on the element collapses it for every ordinary kill, so
+ * a feed with no killstreaks in it is spaced exactly as it was.
+ */
+.hud-feed__tag {
+  display: flex;
+  align-items: center;
+  font-size: var(--t-micro);
+  font-weight: var(--w-heavy);
+  letter-spacing: var(--track-label);
+  color: var(--c-text-dim);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.hud-feed__tag[hidden] {
+  display: none;
 }
 
 .hud-feed__icon {

@@ -125,6 +125,7 @@ function auditReplica(problems: string[]): ReplicaRow[] {
     bus.emit(EV.DamageDealt, {
       sourceId: 1, targetId: 101, amount: 100, zone: 'torso', lethal: true, weaponId: 'm4',
       x: 0, y: 0, z: 0, distance: 12, falloffLoss: 0, penetrationLoss: 0,
+      autonomous: false,
     });
     bus.emit(EV.WeaponFired, {
       weaponId: 'm4', sourceId: 1, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: -1, endX: 0, endY: 0, endZ: 0,
@@ -221,6 +222,7 @@ function auditOne(flow: MatchFlow, bus: ReturnType<typeof createGameBus>): void 
       distance: 12,
       falloffLoss: 0,
       penetrationLoss: 0,
+      autonomous: false,
     });
     bus.emit(EV.EntityKilled, {
       targetId: victim,

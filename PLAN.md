@@ -1723,3 +1723,96 @@ Verified from a cleared save in the pane: `SPEC[]1` at the menu → the caption,
 the header the same frame, **33** permanent unlocks (12 weapons, 12 perks, 5 equipment, 4 field
 upgrades), every weapon at level 10 with all six camos, SEMTEX and the CLAYMORE selectable, and
 `tokenCandidates()` empty.
+
+## §10 — the sentry's kills, and whose they are (2026-09-24, the human)
+
+The report was *"the turret gives me no hitmarker"*, and the hitmarker was the only visible
+symptom of one line.
+
+**`SentryGun` credited itself.** `request.sourceId = this.entityId` — the mortar and the
+Chopper Gunner have both credited their owner since M7, so the sentry was the odd one out, and
+it was odd in four directions at once. A sentry's entity is not on the roster and has no score
+row, so every consumer of `sourceId` answered *nobody*:
+
+| what asked | what it got |
+|---|---|
+| `ScoreSystem.recordKill` | no killer row, so **no personal kill** |
+| `Tdm.onKill` | `killerTeam === null`, so **no team point** — a turret could not move a race to 75 |
+| `Killfeed.push` | no name for the id, so the line read **`WORLD`** and was marked a suicide |
+| `MatchFeedback` | `identity.is(sourceId)` false, so **no hitmarker** — the report |
+
+The human's first brief asked for the kills *not* to count; they reversed it after reading the
+analysis — *"the kills must be registered to the player who placed it, exactly like a normal
+kill"* — which makes `sourceId = ownerId` the whole fix, and the four rows above are one edit.
+
+### What did not collapse into it
+
+**The hitmarker is a different colour, because the shot was not aimed by the player.** That is
+a second fact and it needed a second field: `DamageRequest.autonomous`, set by the sentry, false
+for everything a player points — including the Chopper Gunner, which *is* the player's own aim
+through somebody else's gun. It has exactly one consumer, `Hud.showHitmarker`, and it is
+deliberately not an attribution. `hitmarkerAuto` joins the palette in all four variants (amber
+in the default; the red-green pair reuse their blue, because amber there *is* the kill colour;
+the blue-yellow one its teal), and `hud-hit--auto` is declared **before** `hud-hit--kill` at the
+same specificity, so a sentry's killing shot is red — the human's rule, expressed as cascade
+order rather than as a branch.
+
+**A turret kill is not a kill with the rifle in your hands.** `MatchLedger.buildKillFact`
+resolved anything that was not `eq_*` to `heldWeaponId`, so crediting the owner would have made
+ninety seconds of sentry fire level whatever gun the player was holding and move its camo
+challenges. `streak_` is now the second prefix beside `eq_`: the kill is attributed to the
+killstreak, its class is `LAUNCHER` (which no mastery challenge tests), `equipment` stays false
+so DEMOLITION does not pay out either, and the magazine counter does not advance.
+`MatchProgression.applyWeaponTallies` already dropped ids with no `WeaponDef`, so nothing
+reaches the save. **The mortar and the Chopper Gunner were already doing this**, silently, since
+M7; the four cases in `MatchLedger.test.ts` name all three.
+
+### Protocol v19, and it costs no bytes
+
+Two changes, both so the client can tell a turret's work from the player's own over the wire as
+well as in single-player.
+
+`DamageEvent`'s zone byte gains **bit 6**, `autonomous`. `HIT_ZONES` has four members and the
+byte already carried `lethal` in bit 7, so the low six bits were five times the room the zone
+will ever need — the message is the same twelve bytes it was, which `Messages.test.ts` asserts
+along with all sixteen combinations of zone, lethal and autonomous.
+
+The wire's weapon table (`weaponIndexOf`/`weaponIdAt`) now runs `ALL_WEAPONS` **then the three
+streak weapons**. `KilledEvent.weaponIndex` used to send 255 — *no weapon* — for a sentry kill,
+so the `[SENTRY]` tag would have worked in single-player and quietly vanished online. Appended,
+never interleaved, so every existing index is where it was; the version is bumped anyway,
+because a client reading `streak_sentry` at an index its server thinks is nothing is the skew
+the handshake exists to refuse.
+
+### The feed
+
+`hud-feed__tag` between the killer's name and the weapon icon, hidden for every ordinary kill
+so the spacing of a feed with no killstreaks in it is unchanged. The word is read off the
+weapon id the line already carries (`streakWeaponTag`), so nothing new crosses any boundary to
+produce it.
+
+### Verified
+
+`npm run check` green: 221 tests (11 new), every audit. `npm run layout` green.
+
+In a live single-player match on FOUNDRY, with a sentry placed through `__p7.useStreak`:
+
+| claim | measured |
+|---|---|
+| the sentry's hit is the player's, and marked autonomous | every `damage.dealt` with `sourceId === localId` in the window carried `autonomous: true` |
+| the mark is the killstreak's colour | the element was visible only ever as `hud-hit hud-hit--auto` |
+| and red when it kills | `hud-hit hud-hit--auto hud-hit--kill` on the killing shot |
+| the three colours are live | `--c-hit` `#e8eaee`, `--c-hit-auto` `#e8b53c`, `--c-hit-kill` `#e8604c` |
+| the kill is the player's | the score row went **4 → 5** on a kill whose weapon was `streak_sentry` |
+| it is not a suicide any more | the feed entry read `suicide=false`, which is the branch that gates the team point |
+| the feed names both | the entry `OPERATOR-605 [streak_sentry] -> MARLOW`, and the painted row `OPERATOR-605 [SENTRY] MARLOW` |
+
+### Not verified here
+
+The painted row was read after replaying that entry — captured from the real kill minutes
+earlier — through the same `killfeed.entry` subscription the HUD uses, because the sentry was
+on its 117 s cooldown and the match ended before another one landed. The kill itself, the
+counter, the colours and the flag are all from the live match.
+
+The networked half is argued rather than watched: the wire carries the flag and the weapon
+index, and `Messages.test.ts` proves both round-trip, but no dedicated server was run.

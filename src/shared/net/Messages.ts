@@ -157,6 +157,15 @@ export interface DamageEvent {
   amount: number;
   zone: HitZone;
   lethal: boolean;
+  /**
+   * The shot came from something the source deployed — a sentry (protocol v19, 2026-09-24).
+   *
+   * A **spare bit of the zone byte** rather than a field of its own: `HIT_ZONES` has four
+   * members, so the low six bits are five times the room the zone will ever need, and the
+   * alternative — sending the weapon so the client could work it out — is a byte per damage
+   * event for a question with one bit of answer in it.
+   */
+  autonomous: boolean;
   x: number;
   y: number;
   z: number;
@@ -1055,7 +1064,8 @@ export function writeDamage(w: ByteWriter, e: DamageEvent): void {
   w.u8v(e.sourceId);
   w.u8v(e.targetId);
   w.u16(Math.round(Math.min(65535, Math.max(0, e.amount * 100))));
-  w.u8v(zoneIndex(e.zone) | (e.lethal ? 0x80 : 0));
+  // Bit 7 lethal, bit 6 autonomous, bits 0-5 the zone. See `DamageEvent.autonomous`.
+  w.u8v(zoneIndex(e.zone) | (e.lethal ? 0x80 : 0) | (e.autonomous ? 0x40 : 0));
   w.i16(quantPos(e.x));
   w.i16(quantPos(e.y));
   w.i16(quantPos(e.z));
@@ -1791,8 +1801,9 @@ export function readEvents(r: ByteReader, count: number, sink: EventSink): boole
         e.targetId = r.u8v();
         e.amount = r.u16() / 100;
         const z = r.u8v();
-        e.zone = zoneAt(z & 0x7f);
+        e.zone = zoneAt(z & 0x3f);
         e.lethal = (z & 0x80) !== 0;
+        e.autonomous = (z & 0x40) !== 0;
         e.x = dequantPos(r.i16());
         e.y = dequantPos(r.i16());
         e.z = dequantPos(r.i16());
@@ -1867,6 +1878,7 @@ const damageScratch: DamageEvent = {
   amount: 0,
   zone: 'torso',
   lethal: false,
+  autonomous: false,
   x: 0,
   y: 0,
   z: 0,

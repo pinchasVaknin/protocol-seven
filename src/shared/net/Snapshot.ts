@@ -3,6 +3,7 @@ import { STANCES } from '../player/Stance';
 import type { PlayerSimState } from '../player/PlayerState';
 import { ALL_WEAPONS } from '../weapons/WeaponDefs';
 import { NO_SKIN_INDEX } from '../meta/Skins';
+import { STREAK_WEAPON_IDS } from '../streaks/StreakWeapons';
 import type { ByteReader, ByteWriter } from './Wire';
 import {
   dequantAngle,
@@ -176,16 +177,33 @@ export function copyEntitySnapshot(src: EntitySnapshot, dst: EntitySnapshot): vo
   dst.flinchAngle = src.flinchAngle;
 }
 
-/** Weapon id to wire index. `ALL_WEAPONS` order is the shared table; -1 becomes 255. */
+/**
+ * The wire's weapon table: every loadout weapon, then the three killstreak weapons (v19).
+ *
+ * `EntitySnapshot.weaponIndex` only ever names something a body is holding, so for that field
+ * the tail is unreachable. `KilledEvent.weaponIndex` is the one that needed it: a sentry kill
+ * used to send 255 — *no weapon* — and the killfeed had nothing to put beside the name, so the
+ * `[SENTRY]` tag would have worked in single-player and quietly vanished over the network.
+ *
+ * **Appended, never interleaved.** Every existing index is where it was, which is what makes
+ * this a tail and not a renumbering; the version is bumped anyway, because a client that reads
+ * `streak_sentry` where a server means nothing is the skew the handshake exists to refuse.
+ */
+const WIRE_WEAPON_IDS: readonly string[] = [
+  ...ALL_WEAPONS.map((def) => def.id),
+  ...STREAK_WEAPON_IDS,
+];
+
+/** Weapon id to wire index. The table above is the order; anything else becomes 255. */
 export function weaponIndexOf(weaponId: string): number {
-  for (let i = 0; i < ALL_WEAPONS.length; i++) {
-    if (ALL_WEAPONS[i]?.id === weaponId) return i;
+  for (let i = 0; i < WIRE_WEAPON_IDS.length; i++) {
+    if (WIRE_WEAPON_IDS[i] === weaponId) return i;
   }
   return 255;
 }
 
 export function weaponIdAt(index: number): string | null {
-  return ALL_WEAPONS[index]?.id ?? null;
+  return WIRE_WEAPON_IDS[index] ?? null;
 }
 
 function stanceIndex(stance: StanceId): number {

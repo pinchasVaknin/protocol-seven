@@ -7,6 +7,7 @@ import type { PlayerSim } from '../player/PlayerState';
 import type { WeaponClass } from '../weapons/WeaponDefs';
 import { WEAPON_DEFS } from '../weapons/WeaponDefs';
 import type { WeaponSystem } from '../weapons/WeaponSystem';
+import { isStreakWeapon } from '../streaks/StreakWeapons';
 import { MULTIKILL_WINDOW, SLIDE_KILL_GRACE, type KillFact } from './Challenges';
 import {
   matchFloorLine,
@@ -325,11 +326,33 @@ export class MatchLedger extends Disposable {
 
   private buildKillFact(targetId: number, weaponId: string, zone: HitZone): KillFact {
     const equipment = weaponId.startsWith(EQUIPMENT_WEAPON_PREFIX);
-    // A grenade kill is attributed to the grenade, not to whatever was in your hands.
-    const resolvedId = equipment ? weaponId : this.heldWeaponId || weaponId;
+    /**
+     * Which of the player's weapons this kill belongs to — and the two kinds that belong to
+     * none of them.
+     *
+     * A grenade kill is attributed to the grenade, not to whatever was in your hands, and a
+     * **killstreak** kill is the same statement about a different machine (2026-09-24). The
+     * streak half was not here until the sentry began crediting its owner, and without it the
+     * fall-through resolved every turret kill to `heldWeaponId`: ninety seconds of sentry fire
+     * would have levelled whatever rifle happened to be in the player's hands and moved its
+     * camo challenges, for shots they did not take. The mortar and the Chopper Gunner have
+     * credited their owner since M7 and were doing exactly that, quietly.
+     *
+     * `'LAUNCHER'` for both, and that is what makes it safe: the six mastery challenges each
+     * test one of AR, SMG, LMG, SNIPER, SHOTGUN and PISTOL, so a class that is none of them
+     * counts towards none of them. `equipment` stays false for a streak, so DEMOLITION —
+     * *"15 kills with lethal equipment"* — does not quietly pay out for a turret either.
+     *
+     * The per-weapon tally that follows in `onKilled` is keyed on this id, and
+     * `MatchProgression.applyWeaponTallies` already drops any id with no `WeaponDef`, so
+     * `streak_sentry` produces no weapon record in the save the way `eq_frag` produces none.
+     */
+    const fromStreak = isStreakWeapon(weaponId);
+    const own = !equipment && !fromStreak;
+    const resolvedId = own ? this.heldWeaponId || weaponId : weaponId;
     const def = WEAPON_DEFS[resolvedId];
 
-    if (!equipment) this.killsThisMag++;
+    if (own) this.killsThisMag++;
     this.killTicks[this.killRingHead] = this.tick;
     this.killRingHead = (this.killRingHead + 1) % KILL_RING;
 
@@ -344,7 +367,7 @@ export class MatchLedger extends Disposable {
 
     return {
       weaponId: resolvedId,
-      weaponClass: equipment ? 'LAUNCHER' : (def?.class ?? this.heldWeaponClass),
+      weaponClass: own ? (def?.class ?? this.heldWeaponClass) : 'LAUNCHER',
       zone,
       headshot: zone === 'head',
       distance,
@@ -354,7 +377,7 @@ export class MatchLedger extends Disposable {
       sliding: this.sliding || this.sinceSlide <= SLIDE_KILL_GRACE,
       airborne: this.airborne,
       equipment,
-      killsThisMag: equipment ? 0 : this.killsThisMag,
+      killsThisMag: own ? this.killsThisMag : 0,
       killsInWindow,
       streak,
       revenge: targetId === this.lastKilledBy,

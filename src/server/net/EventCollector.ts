@@ -102,6 +102,7 @@ export class EventCollector {
         damage.amount = p.amount;
         damage.zone = p.zone;
         damage.lethal = p.lethal;
+        damage.autonomous = p.autonomous;
         damage.x = p.x;
         damage.y = p.y;
         damage.z = p.z;
@@ -227,6 +228,7 @@ const damage: DamageEvent = {
   amount: 0,
   zone: 'torso',
   lethal: false,
+  autonomous: false,
   x: 0,
   y: 0,
   z: 0,

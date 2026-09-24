@@ -266,6 +266,8 @@ export class Hud {
   private hitDuration = HITMARKER_SECONDS;
   private pendingHitAtMs = -1;
   private pendingKill = false;
+  /** The pending mark came from a killstreak the player deployed, not from their own aim. */
+  private pendingAuto = false;
   private markerVisible = false;
 
   private lastMagText = '';
@@ -583,11 +585,12 @@ export class Hud {
    * visible in the next `update`, which is this frame's render, and the delta between
    * the two is what gets reported.
    */
-  showHitmarker(kill: boolean, atMs: number): void {
+  showHitmarker(kill: boolean, atMs: number, autonomous = false): void {
     // A kill outranks a pending hit on the same frame: red wins.
     if (this.pendingHitAtMs >= 0 && this.pendingKill && !kill) return;
     this.pendingHitAtMs = atMs;
     this.pendingKill = kill;
+    this.pendingAuto = autonomous;
   }
 
   showDamageNumber(screenX: number, screenY: number, amount: number, zone: HitZone): void {
@@ -802,11 +805,16 @@ export class Hud {
       this.hitDuration = kill ? KILLMARKER_SECONDS : HITMARKER_SECONDS;
       this.hitTimer = this.hitDuration;
       this.hitmarker.classList.toggle('hud-hit--kill', kill);
+      // The killstreak's colour, and the kill's outranks it: the human asked for the ordinary
+      // red the moment the turret finishes somebody, so `--kill` is written last in the
+      // stylesheet and wins the cascade rather than being branched on here.
+      this.hitmarker.classList.toggle('hud-hit--auto', this.pendingAuto);
       this.hitmarker.style.opacity = '1';
       this.markerVisible = true;
       this.lastHitLatencyMs = performance.now() - this.pendingHitAtMs;
       this.pendingHitAtMs = -1;
       this.pendingKill = false;
+      this.pendingAuto = false;
       return;
     }
 

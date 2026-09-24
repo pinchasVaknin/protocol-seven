@@ -16,6 +16,36 @@ import { AR_DEFAULT, cloneWeaponDef, type WeaponDef } from '../weapons/WeaponDef
  * attachments against them — so sharing one object across every sentry on the map is safe.
  */
 
+/**
+ * The prefix every streak weapon id carries, and the reason it is a constant.
+ *
+ * `MatchLedger` already keys the same kind of decision off `'eq_'` — a grenade kill is not a
+ * kill with whatever was in your hands — and a sentry burst is the same statement about a
+ * different machine. Two readers spelling `'streak_'` themselves is two places for a rename
+ * to go half-done, so the prefix lives here, next to the three ids that use it.
+ */
+export const STREAK_WEAPON_PREFIX = 'streak_';
+
+/** Whether a weapon id belongs to a killstreak rather than to anybody's loadout. */
+export function isStreakWeapon(weaponId: string): boolean {
+  return weaponId.startsWith(STREAK_WEAPON_PREFIX);
+}
+
+/**
+ * The short word the killfeed puts beside the killer's name — `SENTRY`, `MORTAR`, `CHOPPER`.
+ *
+ * Derived from the id rather than from the def, because the defs are built with a damage
+ * number the feed has no business asking for, and `sentryWeapon(0)` to read a name would
+ * rewrite the shared singleton's damage on the way past.
+ */
+export function streakWeaponTag(weaponId: string): string {
+  if (!isStreakWeapon(weaponId)) return '';
+  return weaponId.slice(STREAK_WEAPON_PREFIX.length).toUpperCase();
+}
+
+/** Every streak weapon id, in a fixed order. The wire's weapon table appends these. */
+export const STREAK_WEAPON_IDS: readonly string[] = ['streak_mortar', 'streak_sentry', 'streak_chopper'];
+
 function synthetic(id: string, name: string, damage: number, headshotMult: number): WeaponDef {
   const def = cloneWeaponDef(AR_DEFAULT);
   def.id = id;

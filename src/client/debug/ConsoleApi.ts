@@ -304,5 +304,6 @@ function paletteSnapshot(): Record<string, string> {
     neutral: cssHex(p.neutral),
     hitmarker: cssHex(p.hitmarker),
     hitmarkerKill: cssHex(p.hitmarkerKill),
+    hitmarkerAuto: cssHex(p.hitmarkerAuto),
   };
 }

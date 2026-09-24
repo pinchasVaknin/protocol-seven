@@ -1,6 +1,7 @@
 import type { ScoreTeam } from '../../shared/combat/ScoreSystem';
 import { relationClass, relationTo, type ViewerContext } from '../../shared/ui/TeamColour';
 import type { GameEvents } from '../../shared/core/Events';
+import { streakWeaponTag } from '../../shared/streaks/StreakWeapons';
 import { HEADSHOT_PATH, HEADSHOT_VIEWBOX, ICON_VIEWBOX, iconFor, makeIconSvg } from './WeaponIcons';
 
 /**
@@ -26,6 +27,8 @@ type Entry = GameEvents['killfeed.entry'];
 interface Row {
   readonly el: HTMLElement;
   readonly killer: HTMLElement;
+  /** `[SENTRY]` beside the killer's name when one of their killstreaks did it. Empty otherwise. */
+  readonly tag: HTMLElement;
   readonly victim: HTMLElement;
   readonly iconSlot: HTMLElement;
   readonly headshotSlot: HTMLElement;
@@ -67,6 +70,16 @@ export class KillfeedView {
 
       const killer = document.createElement('span');
       killer.className = 'hud-feed__name';
+      /**
+       * The machine, next to the person (the human, 2026-09-24).
+       *
+       * A sentry kill is the owner's — it moves their counter and their team's score — and the
+       * feed said only their name, so the same line meant *they shot him* and *their turret
+       * shot him*. The tag is the difference, and it is read off the weapon the kill already
+       * carries rather than from anything new: a killstreak weapon's id is the tag.
+       */
+      const tag = document.createElement('span');
+      tag.className = 'hud-feed__tag';
       const iconSlot = document.createElement('span');
       iconSlot.className = 'hud-feed__icon';
       const headshotSlot = document.createElement('span');
@@ -74,11 +87,12 @@ export class KillfeedView {
       const victim = document.createElement('span');
       victim.className = 'hud-feed__name';
 
-      el.append(killer, iconSlot, headshotSlot, victim);
+      el.append(killer, tag, iconSlot, headshotSlot, victim);
       this.element.appendChild(el);
       this.rows.push({
         el,
         killer,
+        tag,
         victim,
         iconSlot,
         headshotSlot,
@@ -127,6 +141,9 @@ export class KillfeedView {
     if (entry.weaponId !== head.lastWeapon) {
       head.lastWeapon = entry.weaponId;
       this.paintIcon(head, entry.weaponId);
+      const tag = streakWeaponTag(entry.weaponId);
+      head.tag.textContent = tag === '' ? '' : `[${tag}]`;
+      head.tag.hidden = tag === '';
     }
     if (entry.headshot !== head.lastHeadshot) {
       head.lastHeadshot = entry.headshot;
@@ -189,6 +206,9 @@ export class KillfeedView {
     if (from.lastWeapon !== to.lastWeapon) {
       to.lastWeapon = from.lastWeapon;
       this.paintIcon(to, from.lastWeapon);
+      // The tag travels with the weapon, because it *is* the weapon: same key, same guard.
+      to.tag.textContent = from.tag.textContent;
+      to.tag.hidden = from.tag.hidden;
     }
     if (from.lastHeadshot !== to.lastHeadshot) {
       to.lastHeadshot = from.lastHeadshot;

@@ -55,6 +55,17 @@ export interface GameplayPalette {
   readonly hitmarker: number;
   /** A hit that killed. */
   readonly hitmarkerKill: number;
+  /**
+   * A hit one of your killstreaks landed — a sentry (2026-09-24).
+   *
+   * Three states the mark has to tell apart, and only from each other: *you hit*, *your
+   * machine hit*, *it died*. So the choice per palette is a hue that is neither the plain
+   * mark's near-white nor the kill's, and it does not have to avoid the team colours — nobody
+   * confuses a mark at the centre of the screen with a nameplate. The red-green palettes reuse
+   * their own blue and the blue-yellow one its teal, both already proved against the kill hue
+   * they sit beside.
+   */
+  readonly hitmarkerAuto: number;
   /** Damage taken: the vignette and the directional indicators. */
   readonly damage: number;
   /** Something going well that is not a team: a capture completing, XP. */
@@ -73,6 +84,9 @@ const BASE: GameplayPalette = {
   neutral: 0xc89953,
   hitmarker: 0xe8eaee,
   hitmarkerKill: 0xe8604c,
+  // Amber: the human's "grey or yellow", and yellow of the two — a grey mark against a
+  // near-white one is a difference you have to look for, and this one appears for 0.2 s.
+  hitmarkerAuto: 0xe8b53c,
   damage: 0xe8604c,
   positive: 0x6fd08c,
 };
@@ -95,6 +109,8 @@ const RED_GREEN_SAFE: GameplayPalette = {
   neutral: 0xc9d6e2,
   hitmarker: 0xf2f5f8,
   hitmarkerKill: 0xff9e2c,
+  // Not amber here: amber *is* the kill colour in this palette. The friendly blue instead.
+  hitmarkerAuto: 0x4cc3ff,
   damage: 0xff7a1f,
   positive: 0x4cc3ff,
 };
@@ -107,6 +123,7 @@ const BLUE_YELLOW_SAFE: GameplayPalette = {
   neutral: 0xd8d2c4,
   hitmarker: 0xf4f4f4,
   hitmarkerKill: 0xff5c8a,
+  hitmarkerAuto: 0x2fd6b0,
   damage: 0xff3d73,
   positive: 0x2fd6b0,
 };
@@ -200,6 +217,7 @@ class PaletteState {
     root.setProperty('--c-neutral', cssHex(p.neutral));
     root.setProperty('--c-hit', cssHex(p.hitmarker));
     root.setProperty('--c-hit-kill', cssHex(p.hitmarkerKill));
+    root.setProperty('--c-hit-auto', cssHex(p.hitmarkerAuto));
     root.setProperty('--c-damage', cssHex(p.damage));
     root.setProperty('--c-positive', cssHex(p.positive));
     // Alpha variants the HUD needs, generated rather than hand-maintained alongside them.

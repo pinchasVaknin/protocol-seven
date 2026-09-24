@@ -373,6 +373,7 @@ export class NetSession {
           evDamage.falloffLoss = 0;
           evDamage.penetrationLoss = 0;
           evDamage.lethal = e.lethal;
+          evDamage.autonomous = e.autonomous;
           this.deps.bus.emit(EV.DamageDealt, evDamage);
         },
 
@@ -698,6 +699,7 @@ const evDamage = {
   falloffLoss: 0,
   penetrationLoss: 0,
   lethal: false,
+  autonomous: false,
 };
 
 const evKilled = { targetId: 0, sourceId: 0, weaponId: '', zone: 'torso' as HitZone, killerHealth: 0 };

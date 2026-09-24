@@ -66,6 +66,19 @@ export interface DamageRequest {
    */
   upperTorso: boolean;
   weapon: WeaponDef;
+  /**
+   * The shot was taken by a machine the source **deployed**, not aimed by their own hands.
+   *
+   * True for a sentry burst, false for everything a player points — including the Chopper
+   * Gunner, which is the player's own aim through somebody else's gun. It exists for exactly
+   * one consumer: the hitmarker's colour, so a player can tell their turret's hit from their
+   * own at a glance (the human, 2026-09-24). It is deliberately **not** an attribution: the
+   * kill, the team point, the streak and the XP are all the source's, and `sourceId` says so.
+   *
+   * On the wire it is one spare bit of the damage message's zone byte, which is why it is a
+   * boolean here rather than the weapon id the client would otherwise have to be sent.
+   */
+  autonomous: boolean;
   /** Metres from muzzle to impact, along the whole traced path. */
   distance: number;
   /** Surviving fraction after wall penetration, 0..1. 1 = clean line of sight. */
@@ -105,6 +118,7 @@ export function makeDamageRequest(weapon: WeaponDef): DamageRequest {
     zone: 'torso',
     upperTorso: false,
     weapon,
+    autonomous: false,
     distance: 0,
     penetrationRetain: 1,
     x: 0,
@@ -126,6 +140,7 @@ const evDamage = {
   falloffLoss: 0,
   penetrationLoss: 0,
   lethal: false,
+  autonomous: false,
 };
 
 const evKilled = { targetId: 0, sourceId: 0, weaponId: '', zone: 'torso' as HitZone, killerHealth: 0 };
@@ -329,6 +344,7 @@ export class DamageSystem {
     evDamage.falloffLoss = report.falloffLoss;
     evDamage.penetrationLoss = report.penetrationLoss;
     evDamage.lethal = lethal;
+    evDamage.autonomous = req.autonomous;
     this.bus.emit(EV.DamageDealt, evDamage);
 
     if (lethal) {

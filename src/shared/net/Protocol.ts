@@ -17,6 +17,18 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v19 (2026-09-24, the human): **whose machine fired it.** Two changes, both in service of
+ * the sentry crediting its owner. `DamageEvent`'s zone byte gains bit 6, `autonomous` — the
+ * shot came from something the source deployed rather than from their own aim, which is the
+ * one bit the hitmarker needs to be a different colour for a turret's hit. No byte is added:
+ * `HIT_ZONES` has four members and the byte already carried `lethal` in bit 7. And the wire's
+ * weapon table (`weaponIndexOf`/`weaponIdAt`) now runs `ALL_WEAPONS` **then the three streak
+ * weapons**, so `KilledEvent.weaponIndex` can say `streak_sentry` instead of 255 and the
+ * killfeed can print the tag over the network as well as in single-player. The streak ids are
+ * appended, so every existing index is where it was — but the table is a shared table and a
+ * client reading `streak_sentry` at index 12 against a server that thinks 12 is nothing is
+ * exactly the skew this number exists to refuse.
+ *
  * v18 (M16, B6): **the body other players see.** `EntitySnapshot` gains `characterIndex` — a
  * position in `SKIN_IDS`, or 255 for "declared none" — under its own delta bit, on every full
  * write; `Hello` gains the same byte after the name, sent by every connection with no presence
@@ -143,7 +155,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 18;
+export const PROTOCOL_VERSION = 19;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

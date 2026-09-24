@@ -211,7 +211,8 @@ function fight(bus: GameBus, me: number): void {
   const damage = (sourceId: number, targetId: number, distance: number, zone: 'head' | 'torso', lethal: boolean) =>
     bus.emit(EV.DamageDealt, {
       sourceId, targetId, weaponId: 'ar_carbine', zone, amount: lethal ? 100 : 40,
-      x: 0, y: 0, z: 0, distance, falloffLoss: 0, penetrationLoss: 0, lethal,
+      x: 0, y: 0, z: 0, distance, falloffLoss: 0, penetrationLoss: 0,
+      autonomous: false, lethal,
     });
   const kill = (sourceId: number, targetId: number, zone: 'head' | 'torso') =>
     bus.emit(EV.EntityKilled, { targetId, sourceId, weaponId: 'ar_carbine', zone, killerHealth: 100 });

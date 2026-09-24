@@ -209,7 +209,10 @@ export class MatchFeedback extends Disposable {
 
         // Timestamped here, at the moment the damage was applied, so the hitmarker latency
         // reported in the overlay is hit-to-visual and not visual-to-visual.
-        hud.showHitmarker(p.lethal, performance.now());
+        // `autonomous`: the player's own sentry landed it. The mark is theirs — the kill is
+        // credited to them — but it is a different colour, so nobody reads a turret's work as
+        // their own aim (the human, 2026-09-24).
+        hud.showHitmarker(p.lethal, performance.now(), p.autonomous);
         weaponAudio.playHitmarker(p.lethal);
         // Debris comes back along the shot, so the puff faces the shooter.
         const sim = this.deps.player.sim;

@@ -84,9 +84,26 @@ def main():
             labels[cid] = current.get(cid) or f"Community {cid}"
             left.append((cid, labels[cid], len(mem)))
 
+    # A name can be claimed twice: the map may hold more than one hub id for it,
+    # and a re-cluster can make both of them hubs of their own community. The
+    # better claim is whichever community still holds more of the name's
+    # signature; the other keeps its generated name and is reported, because two
+    # communities sharing a name is worse than one of them going unnamed.
+    for name, count in Counter(labels.values()).items():
+        if count < 2:
+            continue
+        claimants = [cid for cid, n in labels.items() if n == name]
+        signature = members.get(name, set())
+        winner = max(claimants, key=lambda cid: (
+            len(set(communities[cid]) & signature) / max(1, len(signature)), len(communities[cid])))
+        for cid in claimants:
+            if cid != winner:
+                labels[cid] = current.get(cid) or f"Community {cid}"
+                left.append((cid, labels[cid], len(communities[cid])))
+
     clashes = [n for n, c in Counter(labels.values()).items() if c > 1]
     if clashes:
-        sys.exit(f"two communities would share a name, refusing to write: {clashes}")
+        sys.exit(f"could not resolve shared names, refusing to write: {clashes}")
 
     (OUT / ".graphify_labels.json").write_text(
         json.dumps({str(c): n for c, n in labels.items()}, ensure_ascii=False), encoding="utf-8")

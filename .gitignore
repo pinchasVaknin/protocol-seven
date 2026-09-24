@@ -7,7 +7,10 @@ dist/
 .DS_Store
 
 # Local editor/agent tooling. launch.json holds a machine-specific node path.
-.claude/
+# settings.json is the exception: it only points the agent at the knowledge
+# graph, and does so through `python -m`, so it carries nothing machine-specific.
+.claude/*
+!.claude/settings.json
 
 # M9: server bundle and harness run artifacts
 dist-server/

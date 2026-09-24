@@ -1,0 +1,14 @@
+# Corpus scope for the graphify knowledge graph (graphify-out/).
+# .gitignore is read first and already drops node_modules/, dist/, dist-server/
+# and Claude outputs/; this file only ever excludes more.
+
+# The milestone archive: 35 plan and playtest documents, ~1.1 MB. The graph maps
+# the code as it stands, and every one of these describes a state it has left.
+# PLAN.md, DEBUG.md, README.md and docs/*.md are the live ones and stay in.
+docs/archive/
+
+# Art. Each image is its own vision call and none of them says anything about
+# where the code touches: brand marks, map top-downs, bot skin thumbnails.
+public/brand/
+public/maps/
+public/models/bots/skins/thumbs/

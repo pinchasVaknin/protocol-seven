@@ -2,7 +2,8 @@ import { ALL_EQUIPMENT, type EquipmentId } from '../equipment/EquipmentDefs';
 import { PERK_IDS, perkDef, type PerkId } from '../perks/PerkDefs';
 import { ATTACHMENT_IDS, attachmentDef, fitsWeapon, type AttachmentId } from '../weapons/Attachments';
 import { requireWeapon, WEAPON_DEFS, type WeaponDef } from '../weapons/WeaponDefs';
-import { camoDef, type CamoId } from './Camos';
+import { CAMO_PREREQUISITES, type CamoId } from './Camos';
+import { camoRequirementOf } from './Challenges';
 import { fieldUpgradeDef, FIELD_UPGRADE_IDS, type FieldUpgradeId } from './FieldUpgrades';
 import type { LoadoutSlot } from './Loadouts';
 import type { SaveV2, WeaponSaveData } from './SaveData';
@@ -115,6 +116,18 @@ const WEAPON_LEVEL_XP: readonly number[] = [
   400, 700, 1100, 1600, 2200, 2900, 3700, 4600, 5600,
 ];
 
+/** The top of a weapon's own ladder: one level, then one step per row above. Ten. */
+export const WEAPON_MAX_LEVEL = WEAPON_LEVEL_XP.length + 1;
+
+/**
+ * Per-weapon XP that buys `WEAPON_MAX_LEVEL`. 22,800 on the table above.
+ *
+ * Derived rather than written down, so a row added to the ladder moves the ceiling with it.
+ * `ATT7777` is the only thing that writes it — a cheat that "brings every weapon to the
+ * maximum level" has to name a number, and the honest number is the one the ladder implies.
+ */
+export const WEAPON_MASTERY_XP = WEAPON_LEVEL_XP.reduce((sum, step) => sum + step, 0);
+
 /** The weapon level a per-weapon XP total buys. */
 export function weaponLevelForXp(xp: number): number {
   let remaining = Math.max(0, xp);
@@ -219,6 +232,19 @@ export class UnlockState {
   /**
    * What a locked item says on its chip. Empty when the item is available.
    *
+   * ## Every one of them prints where the player *is* (the human's brief §6, 2026-09-24)
+   *
+   * They used to print the bar and nothing else — `LEVEL 16`, `12 MORE KILLS`, `25 KILLS
+   * WITH THE WEAPON` — and the report was that a locked chip tells you what it costs and
+   * never what you have paid. Two of those three are worse than they look: `12 MORE KILLS`
+   * is a *distance*, so the same chip reads the same at 0 kills of 12 and at 88 of 100, and
+   * the camo line is authored prose with no number in it at all.
+   *
+   * So every requirement below is now `have / need`, in the same shape the challenge list
+   * has always used, and `scripts/check-unlocks.mjs` refuses one that is not — a category
+   * that grows a gate and prints only its target is the round-four defect (B7) told the
+   * other way round: the number reaches the screen, and it is the wrong number.
+   *
    * **One of these per gated category, and the editor asks for all of them** (playtest round
    * 4, B7). The report was *"the gas grenade shows no unlock level"* — SMOKE, whose row in
    * `EQUIPMENT_UNLOCK_LEVEL` has said 3 since M6. The table was never the problem: there was
@@ -233,41 +259,52 @@ export class UnlockState {
    */
   weaponRequirement(weaponId: string): string {
     if (this.weaponUnlocked(weaponId)) return '';
-    return `LEVEL ${requireWeapon(weaponId).unlockLevel}`;
+    return levelProgressLabel(this.level, requireWeapon(weaponId).unlockLevel);
   }
 
   attachmentRequirement(weaponId: string, attachment: AttachmentId): string {
-    const remaining = this.attachmentKillsRemaining(weaponId, attachment);
-    if (remaining === 0) return '';
-    return `${remaining} MORE KILLS`;
+    if (this.attachmentKillsRemaining(weaponId, attachment) === 0) return '';
+    const kills = this.weapons[weaponId]?.kills ?? 0;
+    return progressLabel(kills, ATTACHMENT_KILL_THRESHOLDS[attachment], 'KILLS');
   }
 
   equipmentRequirement(id: EquipmentId): string {
     if (this.equipmentUnlocked(id)) return '';
-    return `LEVEL ${equipmentUnlockLevel(id)}`;
+    return levelProgressLabel(this.level, equipmentUnlockLevel(id));
   }
 
   perkRequirement(id: PerkId): string {
     if (this.perkUnlocked(id)) return '';
-    return `LEVEL ${perkDef(id).unlockLevel}`;
+    return levelProgressLabel(this.level, perkDef(id).unlockLevel);
   }
 
   fieldUpgradeRequirement(id: FieldUpgradeId): string {
     if (this.fieldUpgradeUnlocked(id)) return '';
-    return `LEVEL ${fieldUpgradeDef(id).unlockLevel}`;
+    return levelProgressLabel(this.level, fieldUpgradeDef(id).unlockLevel);
   }
 
   /**
    * Camos are earned by a challenge rather than by a level, so the chip is the challenge.
    *
-   * The one requirement here that is not a number, which is why it is worth being explicit:
-   * `CamoDef.requirement` is authored prose ("25 kills with the weapon") and `Challenges.ts`
-   * is what actually awards it. This reads the def so the picker and the challenge list quote
-   * the same sentence.
+   * This used to quote `CamoDef.requirement` — the authored prose the picker's blurb already
+   * carries — which meant the chip repeated the line under it and neither of them said how
+   * far along the player was. It reads the **rule** now (`camoRequirementOf`), so the number
+   * on the chip is the number the tracker is counting towards and cannot drift from it.
+   *
+   * OBSIDIAN is the one that counts camos instead of kills, and it counts the ones **this
+   * weapon** owns: since 2026-09-23 a camo belongs to the weapon that earned it, so a rifle
+   * with four finishes and a pistol with one are 4 / 5 and 1 / 5, which is the whole point
+   * of that change said on a chip.
    */
   camoRequirement(weaponId: string, id: CamoId): string {
     if (this.camoUnlocked(weaponId, id)) return '';
-    return camoDef(id).requirement.toUpperCase();
+    const need = camoRequirementOf(id);
+    const stats = this.weapons[weaponId];
+    const have =
+      need.stat === null
+        ? CAMO_PREREQUISITES.filter((pre) => stats?.camos[pre] === true).length
+        : (stats?.[need.stat] ?? 0);
+    return progressLabel(have, need.target, need.unit);
   }
 
   /** Everything a token could still be spent on, for the prestige screen. */
@@ -308,6 +345,27 @@ export class UnlockState {
 /** Attachments are unlocked per weapon, so a token has to name the pair. */
 function attachmentKey(weaponId: string, attachment: AttachmentId): string {
   return `${weaponId}:${attachment}`;
+}
+
+/**
+ * `have / need UNIT`, the one shape every locked chip prints (§6, 2026-09-24).
+ *
+ * Clamped at the top, because a counter can pass a bar that another condition is still
+ * holding shut — a permanent unlock spent elsewhere, an attachment granted explicitly — and
+ * `31 / 25 KILLS` on a locked chip reads as a bug in the gate rather than as the gate being
+ * about something else.
+ *
+ * One function so the spacing is one decision: `18 / 25 KILLS` and `LEVEL 9 / 16` are the
+ * same sentence with the noun in different places, and the challenge list's `18 / 25` is
+ * where both of them get their rhythm.
+ */
+function progressLabel(have: number, need: number, unit: string): string {
+  return `${Math.max(0, Math.min(have, need))} / ${need} ${unit}`;
+}
+
+/** The same, for the four gates that are an account level. */
+function levelProgressLabel(level: number, need: number): string {
+  return `LEVEL ${Math.max(0, Math.min(level, need))} / ${need}`;
 }
 
 /**

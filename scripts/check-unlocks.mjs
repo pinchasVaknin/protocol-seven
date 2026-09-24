@@ -180,6 +180,47 @@ for (const accessor of ACCESSORS) {
   }
 }
 
+// -- 3. and every requirement says where the player *is*, not only where the bar is -------
+
+/**
+ * The human's §6 (2026-09-24), as a rule rather than as a habit.
+ *
+ * B7 was a chip that printed nothing; this is the other half of the same mistake — a chip
+ * that prints the target alone. `LEVEL 16` and `12 MORE KILLS` are both answers to *what
+ * does it cost*, and neither is an answer to *how far am I*, which is the question somebody
+ * looking at a locked row is actually asking. `12 MORE KILLS` is the worse of the two,
+ * because a distance reads identically at 0 of 12 and at 88 of 100.
+ *
+ * So every accessor has to route its line through one of the two formatters, which are the
+ * only two things in the file that know the `have / need` shape. A regex over a body, like
+ * the rest of this script: it knows that the accessor *names* the formatter, not that the
+ * string reaches a DOM node — that half is `npm run layout` and a pair of eyes.
+ */
+const PROGRESS_FORMATTERS = ['progressLabel', 'levelProgressLabel'];
+
+for (const formatter of PROGRESS_FORMATTERS) {
+  const def = new RegExp(`function ${formatter}\\([^)]*\\): string \\{[^}]*\\$\\{[^}]*\\} / \\$`);
+  if (!def.test(unlocksSrc)) {
+    problems.push(
+      `${UNLOCKS}'s ${formatter} no longer prints "have / need". It is the shape every ` +
+        'locked chip is held to, and the challenge list already uses it.',
+    );
+  }
+}
+
+for (const accessor of ACCESSORS) {
+  const at = unlocksSrc.indexOf(`\n  ${accessor}(`);
+  if (at < 0) continue; // Already reported above as missing.
+  const end = unlocksSrc.indexOf('\n  }\n', at);
+  const body = end < 0 ? unlocksSrc.slice(at) : unlocksSrc.slice(at, end);
+  if (PROGRESS_FORMATTERS.some((formatter) => body.includes(`${formatter}(`))) continue;
+  problems.push(
+    `UnlockState.${accessor} builds its own line instead of calling ${PROGRESS_FORMATTERS.join(' or ')}. ` +
+      'A locked chip names the target and the progress towards it — "18 / 25 KILLS", ' +
+      '"LEVEL 9 / 16" — so the player can see the gate moving.',
+  );
+}
+
 // A literal requirement in the editor is the exact shape B7 shipped as.
 for (const match of editorSrc.matchAll(/^\s*\(\) => '([A-Z][A-Z ]+)',$/gm)) {
   if (match[1] === 'ON ANOTHER KEY') continue; // Not a gate: a streak already on another key.
@@ -193,5 +234,5 @@ if (problems.length > 0) fail(problems);
 
 console.log(
   `unlock audit ok — ${counted.join(', ')}, every one with an unlock record, and all ` +
-    `${ACCESSORS.length} requirement accessors reach the picker.`,
+    `${ACCESSORS.length} requirement accessors reach the picker, each printing progress.`,
 );

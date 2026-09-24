@@ -119,6 +119,15 @@ export const CHEAT_FULL_SPECTATOR = Cheat.God | Cheat.Unseen | Cheat.NoClip;
  *   progression grant and it does not expire, which is what makes it useful for a test class
  *   that has to survive a reload.
  *
+ *   What it grants widened on 2026-09-24 (the human's brief §3), from every attachment to
+ *   the whole arsenal: every weapon permanently unlocked, every weapon at the top of its own
+ *   level ladder, every attachment that fits it, and every camo on every weapon. One thing
+ *   it deliberately does **not** touch is the account level — see `Game.requestCheat`, where
+ *   the grant lives. The XP economy is what the summary screen, the level flourish and the
+ *   whole unlock ladder are read off, and a cheat that forges it makes every one of them
+ *   lie; `permanentUnlocks` is the override that already exists for saying *this player may
+ *   have this* without claiming they earned the level for it.
+ *
  * F14 carried a `local` boolean as well, which meant the same thing as `'surface'` does and could
  * disagree with the bits; `check-cheats.mjs` now enforces the invariant that made that flag
  * redundant — a `'surface'` code carries no entitlement bits, so a client can never author one.
@@ -339,7 +348,7 @@ export function cheatOutcomeText(outcome: number): string {
     case CheatOutcome.RefusedNoSeat:
       return 'Not in a match.';
     case CheatOutcome.UnlockApplied:
-      return 'Every attachment unlocked on every weapon.';
+      return 'Every weapon unlocked and maxed: levels, attachments and camos.';
     default:
       return 'Unknown code.';
   }

@@ -27,7 +27,7 @@ import {
   type WeaponSaveData,
 } from '../../shared/meta/SaveData';
 import type { ProgressionStore } from '../../shared/meta/ProgressionStore';
-import { sanitiseLoadout, UnlockState, weaponLevelForXp } from '../../shared/meta/Unlocks';
+import { sanitiseLoadout, UnlockState, WEAPON_MASTERY_XP, weaponLevelForXp } from '../../shared/meta/Unlocks';
 
 /**
  * Read the M1-M5 settings blob (M9).
@@ -370,10 +370,44 @@ export class Profile implements ProgressionStore {
     if (profile.unlockTokens <= 0) return false;
     if (profile.permanentUnlocks.includes(id)) return false;
     profile.unlockTokens--;
+    this.unlockPermanently(id);
+    this.store.touch();
+    return true;
+  }
+
+  /**
+   * Unlock an item permanently without paying for it. `ATT7777`'s door (2026-09-24).
+   *
+   * The token is the *price* of a permanent unlock and `permanentUnlocks` is the unlock
+   * itself, so a grant that is free is not a second kind of unlock — it is the same write
+   * with nothing debited. Keeping one writer of that array is the point: `spendToken` now
+   * charges and then calls this, which is why a cheat cannot produce a permanent unlock the
+   * prestige screen would not recognise.
+   *
+   * Idempotent, like every other grant here.
+   */
+  unlockPermanently(id: string): void {
+    const profile = this.save.profile;
+    if (profile.permanentUnlocks.includes(id)) return;
     profile.permanentUnlocks.push(id);
     this.refreshUnlocks();
     this.store.touch();
-    return true;
+  }
+
+  /**
+   * Put a weapon at the top of its own ladder, keeping whatever it had earned.
+   *
+   * `Math.max`, not an assignment: a weapon already past the ceiling — which nothing
+   * produces today and a future ladder cut could — must not be taken *down* by a cheat
+   * whose whole promise is upward. The counters (kills, headshots, accuracy) are untouched:
+   * a level is what XP buys, and inventing kills would be inventing the camos with them.
+   */
+  masterWeapon(weaponId: string): void {
+    const stats = this.weapon(weaponId);
+    if (stats.xp >= WEAPON_MASTERY_XP) return;
+    stats.xp = WEAPON_MASTERY_XP;
+    this.refreshUnlocks();
+    this.store.touch();
   }
 
   /** Mark an attachment permanently available on a weapon, ahead of its kill threshold. */

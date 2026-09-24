@@ -75,6 +75,7 @@ import {
   toggleCheat,
   type CheatCode,
 } from '../shared/cheats/Cheats';
+import { CAMO_IDS } from '../shared/meta/Camos';
 import { ATTACHMENT_IDS, fitsWeapon } from '../shared/weapons/Attachments';
 import { ALL_WEAPONS } from '../shared/weapons/WeaponDefs';
 import type { Match } from './ClientMatch';
@@ -1324,14 +1325,38 @@ export class Game {
     if (isUnlockCheat(entry)) {
       /**
        * A grant against this client's own save, which is the one store it is the authority for.
-       * It goes through `Profile.unlockAttachment` — the same writer a kill threshold uses — so
-       * the unlock state, the editor's chips and the loadout sanitiser all see it as progression
-       * rather than as a second rule about what is available.
+       *
+       * Every write goes through `Profile` — the same four writers progression itself uses —
+       * so the unlock state, the editor's chips and the loadout sanitiser see the result as
+       * earned rather than as a second rule about what is available. That is the whole reason
+       * this loop is four calls and not a flag somewhere saying *cheating*.
+       *
+       * The four, and what each of them answers (the human's brief §3, 2026-09-24, which
+       * widened this code from attachments alone to the whole arsenal):
+       *
+       *  - `unlockPermanently` — **may I equip it**. A weapon is gated on the account level,
+       *    and the account level is not raised: the XP economy is the one thing a cheat
+       *    should not forge, because the summary screen, the level flourish and the ladder
+       *    all read it. `permanentUnlocks` is the override the prestige token already uses
+       *    and it survives a prestige, which is the right lifetime for a test class.
+       *  - `masterWeapon` — **the maximum level**, which is XP on the weapon's own ladder.
+       *  - `unlockAttachment` — every attachment that fits, the same door a kill threshold
+       *    opens.
+       *  - `grantCamo` — every finish, on **every** weapon. Since 2026-09-23 a camo belongs
+       *    to the weapon that earned it, so "all the skins for all the weapons" is a grid
+       *    and not a row: granting them account-wide is exactly the bug that change fixed.
+       *
+       * The per-weapon counters are deliberately left alone. Kills and headshots are what
+       * the camo *challenges* read, and inventing them would pay out the account's XP awards
+       * for work nobody did — the camo is the reward asked for here, not the career.
        */
       for (const def of ALL_WEAPONS) {
+        this.profile.unlockPermanently(def.id);
+        this.profile.masterWeapon(def.id);
         for (const id of ATTACHMENT_IDS) {
           if (fitsWeapon(def, id)) this.profile.unlockAttachment(def.id, id);
         }
+        for (const camo of CAMO_IDS) this.profile.grantCamo(def.id, camo);
       }
       this.setCodeResult(cheatOutcomeText(CheatOutcome.UnlockApplied));
       this.screens.loadoutEditor.repaint();
@@ -2796,7 +2821,7 @@ export class Game {
      * and the HUD's instruments come down. It is client-only presentation over a world the
      * server already froze; nothing about it is on the wire.
      */
-    const intro = this.introCamera.cameraFor(world, cam, this.renderer.aspect);
+    const intro = this.introCamera.cameraFor(world, cam, this.renderer.aspect, dt);
     match.ui.hud.setIntro(intro !== null);
     if (intro !== null) {
       this.renderer.render(this.scene, intro, null);

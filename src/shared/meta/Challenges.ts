@@ -443,6 +443,46 @@ export function camosEarnedBy(stats: WeaponCamoStats): CamoId[] {
   return [...earned];
 }
 
+/**
+ * What one camo costs on one weapon: which of that weapon's counters, and how much of it.
+ *
+ * The picker needs to print *"18 / 25 KILLS"* under a locked finish (the human's brief §6,
+ * 2026-09-24), and until this function the only thing it could ask for was `CamoDef.requirement`
+ * — authored prose, *"25 kills with the weapon"*, with no way to get the 25 out of it or to
+ * know which counter it meant. Two numbers written twice is two numbers that disagree, and
+ * the sentence and the rule had already drifted once (the TIGER line says "longshot kills",
+ * the rule counts `longshots`, and only one of those is a field).
+ *
+ * So the chip reads the **rule that actually awards the camo** and nothing else. A camo with
+ * no challenge behind it is a camo nothing can award, which is why the throw is a throw.
+ */
+export interface CamoRequirement {
+  /** The counter to read, or null for OBSIDIAN — which counts camos, not kills. */
+  readonly stat: WeaponStatKey | null;
+  readonly target: number;
+  /** What the number is, for the chip. */
+  readonly unit: string;
+}
+
+/** The chip's word for each counter. Plural, because every target is more than one. */
+const STAT_UNITS: Readonly<Record<WeaponStatKey, string>> = {
+  kills: 'KILLS',
+  headshots: 'HEADSHOTS',
+  longshots: 'LONGSHOTS',
+  multikills: 'MULTIKILLS',
+};
+
+export function camoRequirementOf(id: CamoId): CamoRequirement {
+  for (const def of CAMO_RULES) {
+    if (def.camo !== id) continue;
+    if (def.rule.kind === 'weaponBest') {
+      return { stat: def.rule.stat, target: def.target, unit: STAT_UNITS[def.rule.stat] };
+    }
+    if (def.rule.kind === 'camoSet') return { stat: null, target: def.target, unit: 'CAMOS' };
+  }
+  throw new Error(`Camo "${id}" has no challenge that awards it.`);
+}
+
 const BY_ID = new Map<ChallengeId, ChallengeDef>(CHALLENGES.map((c) => [c.id, c]));
 
 export function challengeDef(id: ChallengeId): ChallengeDef | undefined {

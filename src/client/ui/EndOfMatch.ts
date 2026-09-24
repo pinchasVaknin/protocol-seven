@@ -14,6 +14,8 @@ import { podiumOf, podiumSlots } from './Lineup';
 import { PlayerCard } from './PlayerCard';
 import { Scoreboard } from './Scoreboard';
 import { makeScreenFooter, makeScreenHeader, type ScreenPlace } from './ScreenChrome';
+import { SpaceSkip } from './SpaceSkip';
+import { SKIP_TAPS_TO_LEAVE } from '../../shared/ui/SkipGesture';
 import { makeIconSvg } from './WeaponIcons';
 
 /**
@@ -55,13 +57,26 @@ import { makeIconSvg } from './WeaponIcons';
  * Ten seconds was the human's budget for this, against a summary hold the server now keeps
  * for thirty; the rest lands at eight, and the cadence plays into the twenty that remain.
  *
- * ## Skipping, and the keys
+ * ## The keys, and the fast-forward that replaced the skip (2026-09-24, §9)
  *
- * A second after the screen is up the keys arm: **Space** is PLAY AGAIN, **Escape** is MAIN
- * MENU, **Tab** turns the board over, and any other key or a click on nothing settles the
- * choreography to its rest at once (`settle`) — a player who has seen it fifty times has a
- * way past it. The second of grace is for the hand that was still holding jump when the
- * match ended, and for the Escape that was aimed at the pause menu.
+ * A second after the screen is up the keys arm: **Escape** is MAIN MENU, **Tab** turns the
+ * board over, and **Space** is the whole of the rest of it — *held*, the choreography runs
+ * at `SKIP_FAST_FORWARD`× up to its rest; *tapped three times quickly*, it is the next
+ * match. The second of grace is for the hand that was still holding jump when the match
+ * ended, and for the Escape that was aimed at the pause menu.
+ *
+ * What was here before: Space left on the first press, any other key cut to the rest at
+ * once, and a click on nothing did the same. Three ways past one screen, two of which the
+ * player found by accident — and the loudest of them, a single Space, put them in the next
+ * match while they were still reading the result. So the cut is gone and the scrub is what
+ * replaced it: the ceremony still plays, at six times the speed, for as long as the key is
+ * down. `SKIP_TAPS_TO_LEAVE` taps is the deliberate gesture that leaves, and three rather
+ * than two because two is a double-click and a double-click is something hands do.
+ *
+ * **The rest is where the fast-forward stops**, at `REST_AT`: the podium, the medals, the
+ * MVP's plate and the stat cards are ceremony and a player may want them at speed, and the
+ * XP cadence after them is the thing they came for. It has its own way past — the Continue
+ * button finishes it — and running it at six times would be reading out the reward.
  *
  * ## Two buttons that mean two things
  *
@@ -192,6 +207,20 @@ export class EndOfMatch {
   private outcomeKind: PersonalOutcome['kind'] = 'WIN';
   private listening = false;
 
+  /**
+   * Space: held it scrubs, tapped three times it leaves.
+   *
+   * `enabled` is the same second of grace the other keys wait out, asked per event rather
+   * than latched — a press during the grace is not recorded at all, so it cannot become the
+   * first tap of a run the player did not start.
+   */
+  private readonly skipper = new SpaceSkip({
+    enabled: () => !this.element.hidden && this.armed,
+    onLeave: () => this.deps.onContinue(),
+  });
+  /** True on the frames the timeline is being scrubbed; the transitions shorten with it. */
+  private fastForwarding = false;
+
   constructor(deps: SummaryDeps) {
     this.deps = deps;
     const { layer, viewport, frame } = createScreen('op-screen dbf');
@@ -299,14 +328,15 @@ export class EndOfMatch {
     this.continueButton.appendChild(this.continueLabel);
     const key = document.createElement('span');
     key.className = 'dbf-continue__key op-label';
-    key.textContent = 'SPACE';
+    // The gesture, not the key: a hint that says SPACE on a button a single Space no longer
+    // presses is the same lie the button itself would be telling.
+    key.textContent = `SPACE ×${SKIP_TAPS_TO_LEAVE}`;
     this.continueButton.appendChild(key);
     this.continueButton.addEventListener('click', () => deps.onContinue());
     actions.append(exit, this.continueButton);
     band.append(this.xpSlot, actions);
 
     frame.append(head, this.body, band);
-    this.element.addEventListener('pointerdown', this.onPointer);
     this.paintButton();
   }
 
@@ -507,7 +537,18 @@ export class EndOfMatch {
    */
   tick(dt: number): void {
     if (this.element.hidden || this.clock < 0) return;
-    this.clock += dt;
+    /**
+     * The scrub, and the two things it does not touch.
+     *
+     * It stops at `REST_AT` — past it the screen is not moving any more and the only thing
+     * left running is the XP cadence, which is not the ceremony's to hurry. And it is
+     * clamped to land *on* the rest rather than past it, so a hold that arrives on one long
+     * frame cannot overshoot into a phase the player never saw enter.
+     */
+    const boost = this.clock < REST_AT ? Math.min(this.skipper.boost(dt), REST_AT - this.clock) : 0;
+    const step = dt + Math.max(0, boost);
+    this.setFastForwarding(boost > 0);
+    this.clock += step;
     const t = this.clock;
     if (this.phase < 2 && t >= DOCK_AT) this.enter(2);
     if (this.phase < 3 && t >= DOCKED_AT) this.enter(3);
@@ -523,7 +564,24 @@ export class EndOfMatch {
     }
     if (this.phase < 6 && t >= STATS_AT) this.enter(6);
     if (this.phase < 7 && t >= REST_AT) this.enter(7);
-    if (!this.stageBox.hidden) this.stage.tick(dt);
+    // The bodies walk on the same clock: a podium at one times speed under a timeline at six
+    // would have the plates land before the operators reached them.
+    if (!this.stageBox.hidden) this.stage.tick(step);
+  }
+
+  /**
+   * Dress the frame for the scrub, or undress it.
+   *
+   * A phase is a class and every entrance is a CSS transition with a `transition-delay`
+   * stagger, so six times the clock against transitions still running at their own speed
+   * would pile four entrances on top of each other and read as a flicker. `dbf--fast`
+   * shortens them and drops the staggers — the same lever `dbf--instant` is, one notch
+   * short of off — and it is written only when it changes, because this is a render frame.
+   */
+  private setFastForwarding(on: boolean): void {
+    if (on === this.fastForwarding) return;
+    this.fastForwarding = on;
+    this.frame.classList.toggle('dbf--fast', on);
   }
 
   /**
@@ -561,7 +619,6 @@ export class EndOfMatch {
 
   dispose(): void {
     this.unlisten();
-    this.element.removeEventListener('pointerdown', this.onPointer);
     this.stage.dispose();
     this.board.dispose();
     this.element.remove();
@@ -829,12 +886,15 @@ export class EndOfMatch {
     if (this.listening) return;
     this.listening = true;
     window.addEventListener('keydown', this.onKey, true);
+    this.skipper.listen();
   }
 
   private unlisten(): void {
     if (!this.listening) return;
     this.listening = false;
     window.removeEventListener('keydown', this.onKey, true);
+    this.skipper.unlisten();
+    this.setFastForwarding(false);
   }
 
   private get armed(): boolean {
@@ -845,13 +905,8 @@ export class EndOfMatch {
     if (this.element.hidden || e.repeat) return;
     if (!this.armed) return;
     // By `key` as well as `code`: a synthetic press (the browser pane's, a test's) may carry one and not the other.
-    const key = e.code === 'Space' || e.key === ' ' ? 'Space' : e.code === 'Tab' || e.key === 'Tab' ? 'Tab' : e.code === 'Escape' || e.key === 'Escape' ? 'Escape' : e.key;
+    const key = e.code === 'Tab' || e.key === 'Tab' ? 'Tab' : e.code === 'Escape' || e.key === 'Escape' ? 'Escape' : e.key;
     switch (key) {
-      case 'Space':
-        e.preventDefault();
-        e.stopPropagation();
-        this.deps.onContinue();
-        return;
       case 'Escape':
         e.stopPropagation();
         this.deps.onExit();
@@ -861,24 +916,16 @@ export class EndOfMatch {
         e.stopPropagation();
         this.showBoard(!this.boardShowing);
         return;
-      case 'Shift':
-      case 'Control':
-      case 'Alt':
-      case 'Meta':
-        // A modifier alone is not a key press.
-        return;
       default:
-        // Any other key: past the choreography.
-        this.settle();
+        /**
+         * Nothing. Two keys leave this screen and one scrubs it, and every other key is a
+         * key the player pressed for some other reason — the *any key cuts to the end* rule
+         * that used to live here is what made the choreography something that happened to
+         * people rather than something they watched. Space never reaches this handler:
+         * `SpaceSkip` takes it in the capture phase.
+         */
+        return;
     }
-  };
-
-  /** A click on nothing in particular settles the choreography; a button or the strip is its own thing. */
-  private readonly onPointer = (e: PointerEvent): void => {
-    if (!this.armed) return;
-    const target = e.target as HTMLElement | null;
-    if (target?.closest('button, a, input') !== null) return;
-    this.settle();
   };
 }
 

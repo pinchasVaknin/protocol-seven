@@ -1575,3 +1575,109 @@ glove, with the rifle away.
   and the whole throw was driven end to end in the tuner, but the browser pane will not hold
   pointer lock, so a thrown grenade was never watched in flight. The claymore's ground contact
   and its arc direction are measured off the built file rather than seen planted.
+
+## The quality-of-life brief (2026-09-24, the human): §8 and §9, §3, §6
+
+Three items off the human's requirements document, and the first of them is the only one with
+a shape worth arguing about.
+
+### §8 and §9 — one key, held or tapped, on both cinematics
+
+**What was there.** Two screens play a timeline and each had invented its own way past it. The
+match intro skipped on *any key or any mouse button*, with a list of keys that did **not** skip
+(the class digits, Escape) to stop it eating the two things a player does during a freeze. The
+debrief left on a single **Space**, cut to its rest on any other key, and cut to its rest again
+on a click on nothing. Five rules across two screens, three of which a player finds by accident
+— and the loudest, one Space, put them in the next match while they were still reading the
+result.
+
+**What replaced it.** `shared/ui/SkipGesture.ts`: one key, two intentions, and a duration to
+tell them apart. Held past `SKIP_HOLD_SECONDS` (0.18 s) it is a **fast-forward** at
+`SKIP_FAST_FORWARD` (6×) for as long as the key is down; tapped `SKIP_TAPS_TO_LEAVE` (3) times
+inside `SKIP_TAP_WINDOW_SECONDS` it is **leave**, which on the debrief is the next match. Three
+taps rather than two because two is a double-click and a double-click is something hands do,
+and a release that was a *hold* clears the tap run behind it — hold, tap, tap is not three
+presses. The gesture is pure and takes the time it should use, so the whole of the timing is in
+`SkipGesture.test.ts` (eight cases) rather than in a playtest note; `client/ui/SpaceSkip.ts` is
+the adapter that binds keydown, keyup and **blur** — a keyup delivered to another window never
+arrives, and a gesture left holding would scrub the next screen with nobody touching the
+keyboard.
+
+**Where the gained time goes, and why that is two answers.** The intro's timeline runs on the
+freeze's own clock (`phaseSecondsTotal - phaseSecondsRemaining`), so *faster* has to say faster
+than what. In single-player this client is the flow's authority, so the gain is handed to the
+freeze itself and the camera, the HUD's countdown and the round move together — M17 C2's *the
+freeze is sized to the intro*, applied continuously instead of once. Over the network
+`shortenWarmup` is a no-op, so the gain is kept as a local offset and only the camera runs
+fast, which is the only thing a client may do to a clock it does not own. There is no branch on
+which world it is in: `IntroCamera` offers the gain to the flow and **measures what it took**,
+and what it did not take is what the offset carries. The shorten is clamped at
+`COUNTDOWN_SECONDS` — five seconds to read the objective is the human's number and it is not
+the cinematic's to spend.
+
+On the debrief the scrub stops at `REST_AT` (8.2 s). The podium, the medals, the MVP's plate
+and the stat cards are ceremony and may be had at speed; the XP cadence after them is the thing
+the player came for, it has its own way past (the Continue button finishes it), and running it
+at six times would be reading out the reward. `dbf--fast` shortens the CSS transitions and
+drops their staggers while the key is down — one notch short of `dbf--instant`, because at six
+times the clock a 600 ms entrance would put four phases in flight at once. The button's hint
+reads `SPACE ×3`, since a hint that says SPACE on a button a single Space no longer presses is
+the same lie the button would be.
+
+### §3 — `ATT7777` is the whole arsenal now
+
+It unlocked every attachment. It now also unlocks **every weapon permanently**, puts each at
+`WEAPON_MAX_LEVEL` (10, `WEAPON_MASTERY_XP` = 22,800 XP derived from the ladder rather than
+written down), and grants **every camo on every weapon** — a grid and not a row, because since
+2026-09-23 a camo belongs to the weapon that earned it and granting them account-wide is
+exactly the bug that change fixed. Four `Profile` writers, the same four progression uses, so
+the editor's chips and the loadout sanitiser see the result as earned.
+
+Two things it deliberately does not touch. **The account level**: the XP economy is what the
+summary screen, the level flourish and the whole unlock ladder are read off, and a cheat that
+forges it makes every one of them lie — `permanentUnlocks` is the override that already exists
+for *this player may have this*, it survives a prestige, and `spendToken` now charges and then
+calls the same writer so the array has one author. **The per-weapon counters**: kills and
+headshots are what the camo challenges read, and inventing them would pay out the account's XP
+for work nobody did.
+
+### §6 — a locked chip says where the player is
+
+Every requirement was the bar and nothing else: `LEVEL 16`, `12 MORE KILLS`, and for a camo the
+authored prose the blurb beside it already carried. The middle one is the worst of the three —
+a *distance* reads identically at 0 of 12 and at 88 of 100. All six accessors now print
+`have / need`, the shape the challenge list has always used: `LEVEL 9 / 16`, `18 / 25 KILLS`,
+`7 / 15 HEADSHOTS`, and `3 / 5 CAMOS` for OBSIDIAN counted over **this weapon's** finishes.
+The camo line reads the rule that actually awards it (`camoRequirementOf`) rather than the
+prose, so the number on the chip is the number the tracker is counting towards; the two had
+already drifted once (TIGER's sentence says "longshot kills", its rule counts `longshots`).
+Clamped at the top, because a counter can pass a bar the save has not paid out yet — the
+tracker grants a camo at the end of a match, not at the kill — and `400 / 100 KILLS` on a
+locked chip reads as a broken gate. `check-unlocks.mjs` gained the matching rule: an accessor
+that builds its own line instead of calling one of the two formatters fails the gate, which is
+round four's B7 caught from the other side.
+
+### Verified
+
+`npm run check` green: 206 tests (20 new, in `SkipGesture.test.ts` and `Unlocks.test.ts`),
+every audit. `npm run layout` green at all six viewports — the chips are longer now.
+
+In the browser pane, on a live single-player match on FOUNDRY:
+
+| claim | measured |
+|---|---|
+| the flyover fast-forwards at 6× | 11.48 s of timeline in **1.93 s** of held key |
+| the countdown is not eaten | the freeze landed on **5.07 s** remaining, the countdown whole |
+| single-player hands the gain to the freeze | `IntroCamera.boost` kept **0.085 s** — the sub-tick rounding only |
+| the debrief fast-forwards to its rest | clock 1.5 → 7.78 in 1.37 s of held key, `dbf--fast` on and off with it |
+| and no further | past the rest, 1.2 s held bought 1.2 s: the XP cadence runs at one times |
+| a stray key no longer cuts the choreography | `k` at clock 1.25, phase 1 → clock 1.50, **still phase 1** |
+| three quick taps leave | one tap SUMMARY, two taps SUMMARY, three taps **MATCH** |
+| `ATT7777` | 12 weapons permanent, every one at level 10 with all 6 camos, account level **still 1**, 18 kills on the carbine untouched |
+| the chips | `LEVEL 1 / 2`, `LEVEL 1 / 21`, `0 / 5 KILLS`, `18 / 25 KILLS`, `3 / 10 LONGSHOTS` |
+
+### Not verified here
+
+The networked half of the intro's fast-forward — that `shortenWarmup` refuses and the local
+offset carries the whole gain — is argued from `MatchFlow.shortenWarmup`'s own authority guard
+and from the solo measurement above, not watched against a dedicated server.

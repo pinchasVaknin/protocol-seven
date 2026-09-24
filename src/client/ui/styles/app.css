@@ -3030,6 +3030,20 @@ body.op-locked #viewport {
   transition: none !important;
 }
 
+/*
+ * The fast-forward (2026-09-24, §9): held Space runs the timeline at six times, and a
+ * transition that still takes its own 600 ms under a clock that fast would have four phases
+ * in flight at once. So the entrances keep their shape and lose their length, and the
+ * staggers go entirely — a `transition-delay` is a beat between two things, and at this
+ * speed there is no beat to keep. One notch short of `--instant`, and removed the frame the
+ * key comes up, so anything still moving finishes at its own pace.
+ */
+.dbf--fast,
+.dbf--fast * {
+  transition-duration: 90ms !important;
+  transition-delay: 0ms !important;
+}
+
 /* M1's placeholder reticle dot lived here. M2 replaced it with the real dynamic
  * crosshair in ui/Hud.ts and ui/styles/hud.css. */
 

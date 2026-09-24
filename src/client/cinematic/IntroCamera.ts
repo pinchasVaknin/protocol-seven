@@ -8,6 +8,7 @@ import {
 } from '../../shared/cinematic/IntroPlan';
 import type { MovementConfig } from '../../shared/player/MovementConfig';
 import type { MatchWorld } from '../MatchWorld';
+import { SpaceSkip } from '../ui/SpaceSkip';
 
 /**
  * The match intro's camera (M15, Phase C): the plan, played over the round-one freeze.
@@ -37,15 +38,33 @@ import type { MatchWorld } from '../MatchWorld';
  * back, and the lens goes with it — the player's own field of view to `FOV_DEG` and back —
  * because a 90° eye cut to a 60° lens is a jolt the timeline does not need.
  *
- * ## Skipping
+ * ## Fast-forward, and the skip that was here before it (2026-09-24, §8)
  *
- * Any key or mouse button skips to the return blend, except the digits that pick a class:
- * the quick selector lives in the freeze, and a class pick must not cost the player the
- * overview. `Escape` is left alone too — it is the pause key. In single-player the skip also
- * cuts the freeze itself down to the return and the countdown (`MatchFlow.shortenWarmup`,
- * M17 C2): the freeze is sized to the intro, and a player who has skipped the intro should
- * not sit through the time it would have taken. Over the network the freeze is the server's
- * and the skip ends the camera alone.
+ * **Hold Space.** The flyover runs at `SKIP_FAST_FORWARD`× for as long as the key is down
+ * and at one times speed the moment it is let go, so a player who has seen this map forty
+ * times spends a second and a half on it and one who has not is never cut off mid-sentence.
+ * Nothing else skips: the old rule was *any key or any mouse button*, which meant the hand
+ * still resting on jump at the whistle took the overview away, and which needed a list of
+ * keys that did **not** skip (the class digits, Escape) to stop it eating the two things a
+ * player does during a freeze. One key that means one thing needs no such list.
+ *
+ * ## Where the gained time goes, and why that is two answers
+ *
+ * The timeline runs on the freeze's own clock — `phaseSecondsTotal - phaseSecondsRemaining`
+ * — so "run it faster" has to say faster *than what*, and the honest answer differs by who
+ * owns the clock:
+ *
+ * - **Single-player**, where this client is the authority, the gain is handed to the freeze
+ *   itself (`MatchFlow.shortenWarmup`). The camera, the HUD's countdown and the round all
+ *   move together, and the round starts as soon as the flyover is done — which is M17 C2's
+ *   rule, *the freeze is sized to the intro*, applied continuously instead of once.
+ * - **Over the network** the freeze is the server's and `shortenWarmup` is a no-op, so the
+ *   gain is kept as a local offset and only the camera runs fast. The player lands on their
+ *   own eyes early and waits out the rest of the freeze, which is exactly what the old skip
+ *   did and is the only thing a client may do to a clock it does not own.
+ *
+ * `absorbed` below is the bookkeeping that keeps those two from being two code paths: the
+ * flow is asked to take the gain, and whatever it did not take is what the offset carries.
  */
 
 export interface IntroCameraDeps {
@@ -55,8 +74,6 @@ export interface IntroCameraDeps {
 /** The intro's lens, vertical degrees; what the overview is fitted to. */
 export const FOV_DEG = 60;
 const BLEND_IN_SECONDS = 0.35;
-/** Keys that do not skip: the quick class selector's, and pause. */
-const KEEP_KEYS = new Set(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Escape']);
 
 function ease(u: number): number {
   const c = u < 0 ? 0 : u > 1 ? 1 : u;
@@ -81,9 +98,14 @@ export class IntroCamera {
   private plannedFor: MatchWorld | null = null;
   /** True once this match's intro has ended, by time or by a key. Cleared with the world. */
   private done = false;
-  /** Set by a key; the timeline jumps to the return blend from where it was. */
-  private skippedAt = -1;
-  private listening = false;
+  /**
+   * Seconds of fast-forward the **flow** would not take, added to the freeze's clock.
+   *
+   * Zero for the whole of a single-player intro, where `shortenWarmup` takes every gain; it
+   * is the networked case's whole mechanism, and the leftover tick of rounding in the other.
+   */
+  private boost = 0;
+  private readonly skipper = new SpaceSkip({ enabled: () => true, onLeave: null });
 
   constructor(deps: IntroCameraDeps) {
     this.deps = deps;
@@ -109,7 +131,13 @@ export class IntroCamera {
    * `rig` is the rig's camera after its own update this frame: where the player's eyes are,
    * and the lens they look through — both ends of the blends.
    */
-  cameraFor(world: MatchWorld, rig: THREE.PerspectiveCamera, aspect: number): THREE.PerspectiveCamera | null {
+  cameraFor(
+    world: MatchWorld,
+    rig: THREE.PerspectiveCamera,
+    aspect: number,
+    /** The render frame's own delta, seconds. What a held key multiplies. */
+    dt: number,
+  ): THREE.PerspectiveCamera | null {
     const match = world.match;
     const flow = match.flow;
 
@@ -118,7 +146,7 @@ export class IntroCamera {
       this.plan = null;
       this.plannedFor = world;
       this.done = false;
-      this.skippedAt = -1;
+      this.boost = 0;
     }
     if (this.done) return null;
 
@@ -132,7 +160,6 @@ export class IntroCamera {
     }
 
     const total = flow.phaseSecondsTotal;
-    const t = total - flow.phaseSecondsRemaining;
     if (this.plan === null) {
       const sim = world.player.sim;
       this.plan = planIntro({
@@ -150,9 +177,29 @@ export class IntroCamera {
     }
     const plan = this.plan;
 
-    // The timeline: the plan, then the return; a skip jumps to the return from wherever it was.
-    const skipped = this.skippedAt >= 0;
-    const planEnd = skipped ? this.skippedAt : plan.seconds;
+    /**
+     * The fast-forward, offered to the freeze first.
+     *
+     * `shortenWarmup` moves the phase forward when this client is the flow's authority and
+     * does nothing at all when it is not, so asking it and then **measuring what it took**
+     * is one line that is correct in both worlds — no branch here on whether there is a
+     * server, which is the sort of question a camera should not be asking. What it took is
+     * already in `phaseSecondsRemaining`; what it left is carried locally.
+     */
+    const gained = this.skipper.boost(dt);
+    if (gained > 0) {
+      const before = flow.phaseSecondsRemaining;
+      // Never into the countdown: `COUNTDOWN_SECONDS` is the human's number for reading the
+      // objective before the round starts (IntroPlan), and it is not the cinematic's to spend.
+      flow.shortenWarmup(Math.max(COUNTDOWN_SECONDS, before - gained));
+      const absorbed = before - flow.phaseSecondsRemaining;
+      this.boost += Math.max(0, gained - absorbed);
+    }
+    const t = total - flow.phaseSecondsRemaining + this.boost;
+
+    // The timeline: the plan, then the return blend. Both run on `t`, so a held key speeds
+    // the return up as well — the blend is part of the cinematic, not an epilogue to it.
+    const planEnd = plan.seconds;
     const returnEnd = planEnd + RETURN_SECONDS;
     if (t >= returnEnd) {
       this.finish();
@@ -194,7 +241,7 @@ export class IntroCamera {
     this.plan = null;
     this.plannedFor = null;
     this.done = false;
-    this.skippedAt = -1;
+    this.boost = 0;
     this.unlisten();
   }
 
@@ -211,38 +258,11 @@ export class IntroCamera {
   }
 
   private listen(): void {
-    if (this.listening) return;
-    this.listening = true;
-    window.addEventListener('keydown', this.onKey, true);
-    window.addEventListener('pointerdown', this.onPointer, true);
+    this.skipper.listen();
   }
 
   private unlisten(): void {
-    if (!this.listening) return;
-    this.listening = false;
-    window.removeEventListener('keydown', this.onKey, true);
-    window.removeEventListener('pointerdown', this.onPointer, true);
-  }
-
-  private readonly onKey = (e: KeyboardEvent): void => {
-    if (KEEP_KEYS.has(e.code)) return;
-    this.skip();
-  };
-
-  private readonly onPointer = (): void => {
-    this.skip();
-  };
-
-  private skip(): void {
-    const plan = this.plan;
-    if (plan === null || this.done || this.skippedAt >= 0 || this.plannedFor === null) return;
-    const flow = this.plannedFor.match.flow;
-    const t = flow.phaseSecondsTotal - flow.phaseSecondsRemaining;
-    // The return has already begun on its own; a skip changes nothing.
-    if (t >= plan.seconds) return;
-    this.skippedAt = t;
-    // Solo: the freeze follows the camera. A no-op on a replicated flow.
-    flow.shortenWarmup(RETURN_SECONDS + COUNTDOWN_SECONDS);
+    this.skipper.unlisten();
   }
 }
 

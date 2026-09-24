@@ -38,6 +38,13 @@ export const NEUTRAL_HAND_POSE: HandPose = { position: [0, 0, 0], rotation: [0, 
  * `knife` is the odd row and the only one with a single hand (2026-09-24): a blade is held in a
  * fist, the other arm is not drawn, and there is no magazine — so its entry is `grip` alone,
  * a correction on the handle's middle, which is where the file's origin is.
+ *
+ * The **equipment** rows (`eq_frag`, `eq_flashbang`, `eq_smoke`, `eq_claymore`) key on the id
+ * the build gives each file, like every other row, and use two of the three sides: `grip` is
+ * the throwing hand on `socket_grip` and `support` is the other hand on `socket_pin`, the ring
+ * of the pin — a target that rides the pin itself, so the correction is in the pin's space and
+ * the hand travels with the ring once the pull starts. There is no `reload`, and the claymore
+ * has no `support`: it has no pin to pull.
  */
 export const HAND_POSES: Readonly<Record<string, Partial<Record<HandSide, HandPose>>>> = {
   ar_carbine: {
@@ -59,6 +66,33 @@ export const HAND_POSES: Readonly<Record<string, Partial<Record<HandSide, HandPo
     grip: { position: [-0.003, 0.007, 0.025], rotation: [0.0, -12.0, -21.0], curl: 0.9 },
     support: { position: [0.006, 0.0, -0.021], rotation: [-158.0, -180.0, -138.0], curl: 1.0 },
     reload: { position: [-0.02, -0.049, 0.005], rotation: [32.5, 22.0, 18.0], curl: 0.89 },
+  },
+  /**
+   * The four pieces of equipment, posed by the human in the tuner (2026-09-24).
+   *
+   * Two hands each, doing different jobs, which is what makes these rows unlike every other
+   * one in this table: `grip` is the hand the grenade sits in and `support` is the hand hooked
+   * through the ring, corrected **in the pin's own space** so it travels with the ring.
+   */
+  eq_frag: {
+    grip: { position: [0.003, -0.003, -0.034], rotation: [87.5, -6.5, -78.0], curl: 1.0 },
+    support: { position: [-0.083, 0.003, -0.003], rotation: [50.0, -65.5, 62.5], curl: 1.0 },
+  },
+  /** One hand: a charge is armed by being thrown and there is no ring. */
+  eq_semtex: {
+    grip: { position: [-0.036, 0.024, 0.043], rotation: [6.0, -62.0, 80.5], curl: 1.0 },
+  },
+  eq_flashbang: {
+    grip: { position: [-0.02, 0.003, -0.035], rotation: [-28.0, -180.0, -3.0], curl: 0.2 },
+    support: { position: [0.035, 0.011, -0.007], rotation: [98.0, 52.0, -159.5], curl: 1.0 },
+  },
+  eq_smoke: {
+    grip: { position: [-0.027, -0.02, -0.02], rotation: [-28.0, -180.0, -3.0], curl: 0.2 },
+    support: { position: [0.035, 0.011, -0.007], rotation: [98.0, 52.0, -159.5], curl: 1.0 },
+  },
+  /** One hand: a mine is carried, not thrown, and there is no ring. */
+  eq_claymore: {
+    grip: { position: [0.116, -0.004, -0.026], rotation: [23.5, -10.0, -12.0], curl: 1.0 },
   },
   pistol_talon: {
     grip: { position: [-0.009, -0.039, 0.03], rotation: [18.0, -6.5, 0.0], curl: 0.2 },
@@ -98,6 +132,68 @@ export const HAND_POSES: Readonly<Record<string, Partial<Record<HandSide, HandPo
 /** A weapon's pose for one hand: its entry, or the neutral pose. */
 export function handPoseFor(weaponId: string, side: HandSide): HandPose {
   return HAND_POSES[weaponId]?.[side] ?? NEUTRAL_HAND_POSE;
+}
+
+/**
+ * One finger's three segments from straight, knuckle first, in degrees — the same shape
+ * `ViewmodelHands.FingerCurl` is, declared here so the wrap table below needs no import from
+ * the module that reads it.
+ */
+export type FingerWrap = readonly [number, number, number];
+export type HandWrap = Readonly<Record<'thumb' | 'index' | 'middle' | 'ring' | 'pink', FingerWrap>>;
+
+/**
+ * How far each finger closes, per hand, **per thing held** (2026-09-24).
+ *
+ * `HAND_POSES` above moves and turns a whole hold; this is the shape of the hand inside it.
+ * The two are separate because they answer different questions — *where is the hand* and *what
+ * is it doing* — and because `curl` in `HAND_POSES` is one multiplier over the lot, which is
+ * the right dial for "this weapon wants a looser fist" and the wrong one for "the index goes
+ * through the ring and the thumb floats".
+ *
+ * It exists because the equipment needed it. A weapon's two holds are a trigger hand and a hand
+ * under a handguard, and one shape of each fits every weapon in the game; four grenades are
+ * four different objects — a 6 cm lemon, a 4 cm can, a 6 cm can and a flat mine — and the human
+ * shaped a fist for each. A weapon or a hold with no row here uses its hold's own `curl` in
+ * `ViewmodelHands`, which is still where the shipped shapes live.
+ *
+ * Keyed by the file's id and the hand, like `HAND_POSES`. Written by the hand tuner.
+ */
+export const HAND_WRAPS: Readonly<Record<string, Partial<Record<'grip' | 'support', HandWrap>>>> = {
+  eq_frag: {
+    grip: { thumb: [20, 15, 0], index: [14, 11, 23], middle: [25, 20, 25], ring: [40, 25, 25], pink: [60, 25, 25] },
+    support: { thumb: [0, 0, 0], index: [21, 41, 110], middle: [35, 60, 78], ring: [45, 66, 60], pink: [51, 59, 48] },
+  },
+  eq_semtex: {
+    grip: { thumb: [0, 50, 0], index: [0, 10, 11], middle: [0, 20, 11], ring: [0, 20, 11], pink: [0, 20, 20] },
+  },
+  eq_flashbang: {
+    grip: { thumb: [150, 0, 0], index: [-15, 130, 90], middle: [27, 150, 90], ring: [32, 140, 140], pink: [-20, 118, 140] },
+    support: { thumb: [22, 0, 0], index: [40, 40, 100], middle: [50, 40, 81], ring: [54, 40, 67], pink: [75, 5, 64] },
+  },
+  eq_smoke: {
+    grip: { thumb: [150, 0, 150], index: [16, 140, 132], middle: [150, 90, 27], ring: [140, 140, 32], pink: [16, 140, 100] },
+    support: { thumb: [0, 0, 22], index: [40, 100, 40], middle: [40, 81, 50], ring: [40, 67, 54], pink: [5, 64, 75] },
+  },
+  eq_claymore: {
+    grip: { thumb: [60, 0, 0], index: [9, 31, 35], middle: [9, 31, 49], ring: [9, 31, 47], pink: [9, 1, 53] },
+  },
+};
+
+/** This thing's wrap for one hand, or null: the hold's own shape stands. */
+export function handWrapFor(weaponId: string, side: 'grip' | 'support'): HandWrap | null {
+  return HAND_WRAPS[weaponId]?.[side] ?? null;
+}
+
+/** A wrap as source, in `HAND_WRAPS`' own shape: what the tuner prints. */
+export function handWrapSource(weaponId: string, wraps: Partial<Record<'grip' | 'support', HandWrap>>): string {
+  const fingers = ['thumb', 'index', 'middle', 'ring', 'pink'] as const;
+  const one = (w: HandWrap): string => `{ ${fingers.map((f) => `${f}: [${w[f].map((v) => Math.round(v)).join(', ')}]`).join(', ')} }`;
+  const rows = (['grip', 'support'] as const)
+    .filter((side) => wraps[side] !== undefined)
+    .map((side) => `    ${side}: ${one(wraps[side]!)},`)
+    .join('\n');
+  return `  ${weaponId}: {\n${rows}\n  },`;
 }
 
 /** One weapon's entry as source, in `HAND_POSES`' own shape: what the tuner prints. */

@@ -301,7 +301,8 @@ the wheel. The defaults:
 | `R` | Reload |
 | `Q`, wheel | Swap weapon |
 | `1` / `2` | Primary / secondary |
-| `G` / `F` | Lethal / tactical — hold to cook, release to throw |
+| `G` / `F` | Lethal / tactical — takes one out; the same key again puts it back |
+| fire, with a grenade out | Hold to pull the pin and cook, release to throw |
 | `X` | Field upgrade |
 | `3` / `4` / `5` | Killstreaks one, two and three |
 | `E` / `P` | Use — pick up the bomb, plant, defuse, take a care package |

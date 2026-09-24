@@ -20,22 +20,27 @@
  *   4. **Textures ≤ 1024 on a side (the LOD 256), WebP or JPEG.** A 2048 PNG normal map is
  *      the usual way a 4 MB file becomes a 20 MB one.
  *   5. **The contract's nodes.** A weapon carries a root named for it, `body`, `magazine`,
- *      (the knife only a root and a `body`),
+ *      (the knife only a root and a `body`; a piece of equipment a `body` and `socket_grip`,
+ *      and one with a pin also the `pin` and `lever` that come off it and the `socket_pin` the
+ *      other hand takes the ring at),
  *      `charge` and the eight sockets (the muzzle, the three rails, the sight line, the two
  *      hands, where the support hand takes the magazine); its LOD the root and `socket_muzzle`; a pack part `part`, and the optic its
  *      own `socket_sight` (the sight line the ADS pose cancels once it is mounted), the
  *      suppressor its own `socket_muzzle` (where the flash moves to); the arms' rig (stage 4)
  *      its skin and the six arm bones `ViewmodelHands` poses, within 1 MB and 10k triangles.
- *   6. **Scale.** A weapon's length along Z is between 0.15 m and 1.5 m — the axis and the
- *      unit are the two things a recipe gets wrong first, and both show up here.
+ *   6. **Scale.** A weapon's length along Z is between 0.15 m and 1.5 m, and a piece of
+ *      equipment is 0.04–0.30 m on its longest axis — the axis and the unit are the two things
+ *      a recipe gets wrong first, and both show up here.
  *   7. **Attribution.** `asset.extras.attribution` names a title, an author, a licence, the
  *      licence's deed and a URL, and `CREDITS.md` is what the build regenerates from the same
  *      records. CC-BY is a condition of use, and it asks for the licence to be *linked*, not
  *      only named — which is why the deed is part of the record the file carries.
  *      `check:credits` holds the same rule over every other model in the project.
- *   8. **The client's list and the recipes agree** (stage 1). `WeaponAssetCatalog.ts` names
+ *   8. **The client's lists and the recipes agree** (stage 1). `WeaponAssetCatalog.ts` names
  *      the weapon ids the loader will fetch; a weapon recipe missing from it is a file nothing
- *      loads, and an id in it with no recipe is a 404 at match time.
+ *      loads, and an id in it with no recipe is a 404 at match time. `EQUIPMENT_ASSET_IDS` is
+ *      held the same way, from the other side: it maps an `EquipmentId` onto a file, so the
+ *      check is that every equipment recipe is named there and every name is a recipe.
  *
  * Nothing here decodes a pixel or a vertex; the JSON chunk and the image headers are enough,
  * as they are for the skins. Exit code 1 on any violation.
@@ -53,6 +58,9 @@ const CATALOG = 'src/client/weapons/WeaponAssetCatalog.ts';
 const MAX_WEAPON_BYTES = 4 * 1024 * 1024;
 const MAX_LOD_BYTES = 1024 * 1024;
 const MAX_PART_BYTES = 1024 * 1024;
+/** Equipment: held at arm's length in the viewmodel and drawn at ankle height in the world. */
+const MAX_EQUIPMENT_BYTES = 1024 * 1024;
+const MAX_EQUIPMENT_TRIS = 10_000;
 const MAX_WEAPON_TRIS = 30_000;
 const MAX_LOD_TRIS = 10_000;
 const MAX_PART_TRIS = 8_000;
@@ -66,6 +74,11 @@ const LOD_NODES = ['socket_muzzle'];
 const PART_NODES = { att_optic: ['part', 'socket_sight'], att_suppressor: ['part', 'socket_muzzle'] };
 /** The bones `ViewmodelHands` poses (stage 4); the rig must keep its skin to be posed at all. */
 const HANDS_NODES = ['upperarm_R', 'lowerarm_R', 'hand_R', 'upperarm_L', 'lowerarm_L', 'hand_L'];
+/** What every piece of equipment has, and what one with a pin has on top of it. */
+const EQUIPMENT_NODES = ['body', 'socket_grip'];
+const PINNED_NODES = ['pin', 'lever', 'socket_pin'];
+const MIN_EQUIPMENT_M = 0.04;
+const MAX_EQUIPMENT_M = 0.3;
 const MAX_HANDS_BYTES = 1024 * 1024;
 const MAX_HANDS_TRIS = 10_000;
 
@@ -97,7 +110,7 @@ function triangles(json) {
 }
 
 /** The scene's extent along one axis, from the accessors' bounds through the baked node matrices. */
-function extentZ(json) {
+function extent(json, k) {
   let min = Infinity;
   let max = -Infinity;
   const visit = (index, parentMatrix) => {
@@ -109,9 +122,9 @@ function extentZ(json) {
         if (!acc.min || !acc.max) continue;
         for (let c = 0; c < 8; c++) {
           const v = [c & 1 ? acc.max[0] : acc.min[0], c & 2 ? acc.max[1] : acc.min[1], c & 4 ? acc.max[2] : acc.min[2]];
-          const z = m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14];
-          if (z < min) min = z;
-          if (z > max) max = z;
+          const a = m[k] * v[0] + m[4 + k] * v[1] + m[8 + k] * v[2] + m[12 + k];
+          if (a < min) min = a;
+          if (a > max) max = a;
         }
       }
     }
@@ -148,15 +161,16 @@ for (const file of onDisk) {
   const { json } = glb;
   const isWeapon = spec.recipe.kind === 'weapon';
   const isHands = spec.recipe.kind === 'hands';
+  const isEquipment = spec.recipe.kind === 'equipment';
   const label = `${DIR}/${file}`;
 
   // ---- 2 and 3. size and triangles ---------------------------------------------
-  const maxBytes = spec.lod ? MAX_LOD_BYTES : isWeapon ? MAX_WEAPON_BYTES : isHands ? MAX_HANDS_BYTES : MAX_PART_BYTES;
+  const maxBytes = spec.lod ? MAX_LOD_BYTES : isWeapon ? MAX_WEAPON_BYTES : isHands ? MAX_HANDS_BYTES : isEquipment ? MAX_EQUIPMENT_BYTES : MAX_PART_BYTES;
   if (glb.bytes > maxBytes) {
     problems.push(`${label} is ${(glb.bytes / 1048576).toFixed(2)} MB; the limit is ${(maxBytes / 1048576).toFixed(0)} MB — ${FIX}.`);
   }
   const tris = triangles(json);
-  const maxTris = spec.lod ? MAX_LOD_TRIS : isWeapon ? MAX_WEAPON_TRIS : isHands ? MAX_HANDS_TRIS : MAX_PART_TRIS;
+  const maxTris = spec.lod ? MAX_LOD_TRIS : isWeapon ? MAX_WEAPON_TRIS : isHands ? MAX_HANDS_TRIS : isEquipment ? MAX_EQUIPMENT_TRIS : MAX_PART_TRIS;
   if (tris > maxTris) problems.push(`${label} has ${tris.toLocaleString('en-US')} triangles; the limit is ${maxTris.toLocaleString('en-US')} — ${FIX}.`);
 
   // ---- 4. textures --------------------------------------------------------------
@@ -170,7 +184,17 @@ for (const file of onDisk) {
   const names = new Set((json.nodes ?? []).map((n) => n.name));
   const rootNames = json.scenes[json.scene ?? 0].nodes.map((i) => json.nodes[i].name);
   if (!rootNames.includes(spec.id)) problems.push(`${label} has no root node named "${spec.id}" (roots: ${rootNames.join(', ') || 'none'}).`);
-  const required = spec.lod ? LOD_NODES : isWeapon ? WEAPON_NODES : isHands ? HANDS_NODES : spec.recipe.kind === 'knife' ? ['body'] : (PART_NODES[spec.id] ?? ['part']);
+  const required = spec.lod
+    ? LOD_NODES
+    : isWeapon
+      ? WEAPON_NODES
+      : isHands
+        ? HANDS_NODES
+        : isEquipment
+          ? [...EQUIPMENT_NODES, ...(spec.recipe.pinned ? PINNED_NODES : [])]
+          : spec.recipe.kind === 'knife'
+            ? ['body']
+            : (PART_NODES[spec.id] ?? ['part']);
   if (isHands && !(json.skins?.length > 0)) problems.push(`${label} has no skin; the arms are posed at runtime and a rigid rig cannot be — ${FIX}.`);
   for (const name of required) {
     if (!names.has(name)) problems.push(`${label} has no node "${name}"; the contract needs it — ${FIX}.`);
@@ -178,8 +202,17 @@ for (const file of onDisk) {
 
   // ---- 6. scale -------------------------------------------------------------------
   if (isWeapon) {
-    const z = extentZ(json);
+    const z = extent(json, 2);
     if (!(z >= 0.15 && z <= 1.5)) problems.push(`${label} is ${z.toFixed(3)} m long along Z; a weapon is 0.15–1.5 m — the recipe's unit or forward axis is wrong.`);
+  }
+  if (isEquipment) {
+    // Equipment is life size and stands upright, so no one axis is its length: the longest is.
+    const longest = Math.max(extent(json, 0), extent(json, 1), extent(json, 2));
+    if (!(longest >= MIN_EQUIPMENT_M && longest <= MAX_EQUIPMENT_M)) {
+      problems.push(
+        `${label} is ${longest.toFixed(3)} m on its longest axis; equipment is ${MIN_EQUIPMENT_M}–${MAX_EQUIPMENT_M} m — the recipe's unit is wrong.`,
+      );
+    }
   }
 
   // ---- 7. attribution -------------------------------------------------------------
@@ -201,6 +234,20 @@ if (listed === null) {
   }
   for (const id of ids) {
     if (!weaponRecipes.has(id)) problems.push(`${CATALOG} lists "${id}" but no weapon recipe builds it; the loader would fetch a file that is not there.`);
+  }
+}
+
+const equipment = /EQUIPMENT_ASSET_IDS[^=]*=\s*\{([^}]*)\}/.exec(catalogSource);
+if (equipment === null) {
+  problems.push(`${CATALOG} has no EQUIPMENT_ASSET_IDS = { ... } the audit can read.`);
+} else {
+  const named = new Set([...equipment[1].matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]));
+  const equipmentRecipes = new Set(Object.entries(RECIPES).filter(([, r]) => r.kind === 'equipment').map(([id]) => id));
+  for (const id of equipmentRecipes) {
+    if (!named.has(id)) problems.push(`recipe "${id}" builds an equipment file that ${CATALOG} does not name; add it to EQUIPMENT_ASSET_IDS.`);
+  }
+  for (const id of named) {
+    if (!equipmentRecipes.has(id)) problems.push(`${CATALOG} names "${id}" but no equipment recipe builds it; the loader would fetch a file that is not there.`);
   }
 }
 

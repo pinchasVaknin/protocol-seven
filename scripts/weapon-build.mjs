@@ -216,6 +216,51 @@ const HAND_WITH_GLOVES = {
   licenseUrl: CC_BY_4,
   url: 'https://sketchfab.com/3d-models/hand-with-gloves-5a6a434b8ec943ffacc581358781eecb',
 };
+const M26_GRENADE = {
+  file: 'm26_grenade.glb',
+  title: 'M26 Grenade',
+  author: 'mapleaber',
+  authorUrl: 'https://sketchfab.com/mapleaber',
+  license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
+  url: 'https://sketchfab.com/3d-models/m26-grenade-a623558f347f4e1197f7a5552f199e68',
+};
+const FLASHBANG = {
+  file: 'flashbang_grenade.glb',
+  title: 'Flashbang grenade',
+  author: 'Nikolay Kudrin',
+  authorUrl: 'https://sketchfab.com/knik211',
+  license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
+  url: 'https://sketchfab.com/3d-models/flashbang-grenade-2799b0b859c74db6ae8752fdc6bb4c04',
+};
+const M18_SMOKE = {
+  file: 'm18_smoke_grenade.glb',
+  title: 'M18 Smoke Grenade',
+  author: 'Vanillatography',
+  authorUrl: 'https://sketchfab.com/vanillatography',
+  license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
+  url: 'https://sketchfab.com/3d-models/m18-smoke-grenade-46343925ad0e47cf927e66da7953c372',
+};
+const C4_STICKY = {
+  file: 'c4_-_sticky_bomb.glb',
+  title: 'C4 - Sticky Bomb',
+  author: 'Astate',
+  authorUrl: 'https://sketchfab.com/astate',
+  license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
+  url: 'https://sketchfab.com/3d-models/c4-sticky-bomb-33ca0341ff334d1f89f9f5ff4213297c',
+};
+const CLAYMORE_MINE = {
+  file: 'claymore_mine.glb',
+  title: 'Claymore Mine',
+  author: 'MustafaYerebasmaz',
+  authorUrl: 'https://sketchfab.com/Mustafa97',
+  license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
+  url: 'https://sketchfab.com/3d-models/claymore-mine-486238027ee340f68fb4c4c973734458',
+};
 const DBAL_A2 = {
   file: 'rifle_laser_sight.glb',
   title: 'Rifle Laser Sight',
@@ -1002,6 +1047,192 @@ export const RECIPES = {
     },
   },
 
+  /**
+   * The equipment (2026-09-24). Five things are thrown or planted in this game and four of
+   * them are now files; the semtex has no legitimate source and keeps its procedural slab.
+   *
+   * An equipment recipe is a weapon recipe with a different contract, because the parts that
+   * matter are different ones: a grenade has no magazine, no charging handle and no rails, and
+   * it has two things a weapon does not — a **`pin`** (the ring, its wire and the split pin)
+   * and a **`lever`** (the spoon). Both are separate nodes so the runtime can take them off:
+   * the hand pulls the ring, the spoon flies at the release, and what leaves the hand has
+   * neither. `socket_grip` is where the holding palm goes and `socket_pin` where the other
+   * hand's fingers take the ring; `ViewmodelHands` poses both from there and the hand tuner
+   * corrects them.
+   *
+   * Life size, in metres, like every other file here: the arms are life size, so a grenade
+   * drawn bigger than a fist would make the hand look like a child's. The world body is drawn
+   * at the same scale, which is smaller than the primitive it replaces — the def's `radius` is
+   * the collision size and always was larger than the object.
+   *
+   * Axes: **+Y is the fuze**, so a grenade stands upright, and the recipe's `forward` is
+   * chosen to put the spoon on **-Z**, the side the camera is on when it is held. A claymore's
+   * forward is the face its arc points out of.
+   *
+   * `pinned` is what tells the gate which contract to hold a file to: a grenade with a pin
+   * carries `pin`, `lever` and `socket_pin`; a mine that is planted and a charge that is simply
+   * thrown carry none of them and are not missing anything. It is `pinned` rather than `thrown`
+   * because the semtex is thrown and has no pin — the pin is the thing the contract is about.
+   */
+  eq_frag: {
+    kind: 'equipment',
+    pinned: true,
+    source: M26_GRENADE,
+    // The body is 0.190 units across for an M26's 57 mm: 0.3 m a unit. The whole grenade is
+    // then 96 mm tall, which is the real one to the millimetre.
+    unit: 0.057 / 0.19,
+    // The spoon lies on the +X side and its ring stands off +Z.
+    forward: 'x+',
+    up: 'y+',
+    // 45,474 triangles for a thing the size of a fist, 20,832 of them on the pin's wire.
+    // A fifth of that is 9.1k, which is what the equipment budget allows and what a grenade
+    // held at arm's length wants: 0.15 was chosen against the 4 MB weapon budget and cost the
+    // ring its roundness for nothing.
+    simplify: 0.2,
+    parts: {
+      body: [{ name: 'm61_grenade:Grenade_Body' }, { name: 'm61_grenade:Grenade_Head' }],
+      lever: [{ name: 'm61_grenade:Grenade_Handle' }],
+      pin: [{ name: 'm61_grenade:Grenade_Pin' }, { name: 'm61_grenade:Grenade_Wire' }, { name: 'm61_grenade:Grenade_SafetyWire' }],
+    },
+    // The body's middle: a thrown grenade tumbles about its own centre of mass, not its fuze.
+    origin: (m) => m.centre({ name: 'm61_grenade:Grenade_Body' }),
+    sockets: (m) => {
+      const body = m.bounds({ name: 'm61_grenade:Grenade_Body' });
+      const ring = m.bounds({ name: 'm61_grenade:Grenade_Pin' });
+      return {
+        // The palm wraps the body over the spoon, a little below its widest point.
+        socket_grip: [(body.min[0] + body.max[0]) / 2, body.min[1] + (body.max[1] - body.min[1]) * 0.45, (body.min[2] + body.max[2]) / 2],
+        // The ring's own middle: where the other hand's fingers hook it.
+        socket_pin: [(ring.min[0] + ring.max[0]) / 2, (ring.min[1] + ring.max[1]) / 2, (ring.min[2] + ring.max[2]) / 2],
+      };
+    },
+  },
+
+  eq_flashbang: {
+    kind: 'equipment',
+    pinned: true,
+    source: FLASHBANG,
+    // The body is 0.198 units tall for an M84's 133 mm.
+    unit: 0.133 / 0.198,
+    // The spoon runs down the +Z side; the ring stands off -X.
+    forward: 'z+',
+    up: 'y+',
+    parts: {
+      // The shell, the charge inside it and the fuze head.
+      body: [{ name: 'Object.001_low' }, { name: 'Object.003_low' }, { name: 'Object.004_low' }],
+      lever: [{ name: 'Object.005_low' }],
+      // The ring, the clip it hangs on, and the split pin's two legs.
+      pin: [{ name: 'Object.007_low' }, { name: 'Object.009_low' }, { name: 'Object.008_low' }, { name: 'Object.010_low' }],
+    },
+    origin: (m) => m.centre({ name: 'Object.001_low' }),
+    sockets: (m) => {
+      const body = m.bounds({ name: 'Object.001_low' });
+      const ring = m.bounds({ name: 'Object.007_low' });
+      return {
+        socket_grip: [(body.min[0] + body.max[0]) / 2, body.min[1] + (body.max[1] - body.min[1]) * 0.45, (body.min[2] + body.max[2]) / 2],
+        socket_pin: [(ring.min[0] + ring.max[0]) / 2, (ring.min[1] + ring.max[1]) / 2, (ring.min[2] + ring.max[2]) / 2],
+      };
+    },
+  },
+
+  eq_smoke: {
+    kind: 'equipment',
+    pinned: true,
+    source: M18_SMOKE,
+    // The can is 2.600 units across for an M18's 63.5 mm, and 5.826 tall for its 147 mm --
+    // the two agree within 3%, so the diameter sets the scale.
+    unit: 0.0635 / 2.6,
+    // The spoon runs down the -Z side; the ring stands off +X.
+    forward: 'z-',
+    up: 'y+',
+    /**
+     * The source is a scene of three identical grenades and each is **one welded mesh**: the
+     * pin and the spoon are not nodes here the way they are on the other two, so they are cut
+     * out of the body by box. The boxes are in output space -- metres, the can upright with
+     * its origin at its middle -- and were read off the built file's own connected components,
+     * not guessed.
+     */
+    parts: { body: [{ name: 'SM_SmokeGrenade_PainterExport' }] },
+    /**
+     * Nine components; the boxes hold their middles, so each is taken whole.
+     *
+     *  - The ring (600 triangles) hangs down the +X side with the split pin's two legs (98 and
+     *    54) through the striker just above it: one box over the three.
+     *  - The striker pin's own shaft (34) lies across the top at +Z.
+     *  - The spoon is two strips down the -Z face (159 and 98), both hung off the fuze, and
+     *    both leave with the lever. A box on their height alone catches the pair and nothing
+     *    else: every other component's middle is above 0.046 m or below 0.002.
+     */
+    splits: [
+      { part: { name: 'SM_SmokeGrenade_PainterExport' }, group: 'pin', name: 'pin_ring', by: 'component', box: { y: [0.04, 0.066], z: [-0.02, -0.006] } },
+      { part: { name: 'SM_SmokeGrenade_PainterExport' }, group: 'pin', name: 'pin_shaft', by: 'component', box: { y: [0.066, 0.074], z: [0.01, 0.02] } },
+      { part: { name: 'SM_SmokeGrenade_PainterExport' }, group: 'lever', name: 'lever_spoon', by: 'component', box: { y: [0.02, 0.03] } },
+    ],
+    origin: (m) => m.centre({ name: 'SM_SmokeGrenade_PainterExport' }),
+    sockets: (m) => {
+      const body = m.bounds({ name: 'SM_SmokeGrenade_PainterExport' });
+      const size = [body.max[0] - body.min[0], body.max[1] - body.min[1], body.max[2] - body.min[2]];
+      return {
+        socket_grip: [(body.min[0] + body.max[0]) / 2, body.min[1] + size[1] * 0.45, (body.min[2] + body.max[2]) / 2],
+        // The ring's middle. It is not a node here, so it cannot be measured by selector: the
+        // fractions are its own component's bounds, taken from the same mesh the split cuts it
+        // out of, and they move with the can if the source is ever swapped for a bigger one.
+        socket_pin: [body.min[0] + size[0] * 0.8, body.min[1] + size[1] * 0.834, body.min[2] + size[2] * 0.334],
+      };
+    },
+  },
+
+  /**
+   * The semtex: a charge, not a grenade. There is no pin and no spoon — it is armed by being
+   * thrown and it sticks where it lands — so it holds to the shorter half of the equipment
+   * contract, the one the claymore holds to.
+   *
+   * 226 triangles and one 512 texture, which is a tenth of what anything else here costs. That
+   * is what the source is; a brick of plastic with a detonator taped to it has no detail to
+   * lose, and it is drawn at arm's length rather than under a scope.
+   */
+  eq_semtex: {
+    kind: 'equipment',
+    source: C4_STICKY,
+    // The brick is 1.721 units long for a 13 cm charge, which is the box `EquipmentFx` has
+    // drawn since M5 (0.13 x 0.05 x 0.09).
+    unit: 0.13 / 1.721,
+    // It lies along the source's Z with the detonator on +Y.
+    forward: 'z+',
+    up: 'y+',
+    parts: { body: [{ match: /^Object_(4|6|8|10)$/ }] },
+    origin: (m) => m.centre({ match: /^Object_(4|6|8|10)$/ }),
+    sockets: (m) => {
+      const b = m.bounds({ match: /^Object_(4|6|8|10)$/ });
+      // The palm under the brick, a third of the way along it from the near end.
+      return { socket_grip: [(b.min[0] + b.max[0]) / 2, b.min[1], b.min[2] + (b.max[2] - b.min[2]) * 0.5] };
+    },
+  },
+
+  eq_claymore: {
+    kind: 'equipment',
+    source: CLAYMORE_MINE,
+    // The shell is 2.000 units across for an M18A1's 216 mm.
+    unit: 0.216 / 2,
+    // The convex face -- the one the sight looks over and the one that says FRONT TOWARD
+    // ENEMY -- bows toward +Z, and that is the way the blast and the trigger arc point.
+    forward: 'z+',
+    up: 'y+',
+    // The shell lies 8.4 degrees off the source's +X; see `fixMatrix`.
+    spin: -8.4,
+    // 24,146 triangles on a mine that is drawn at ankle height and never in a viewmodel.
+    simplify: 0.3,
+    parts: { body: [{ name: 'Claymore' }] },
+    // The shell's middle. A planted claymore is placed by its centre like every other
+    // projectile, and `EquipmentFx` lifts it by its own half-height onto the ground.
+    origin: (m) => m.centre({ name: 'Claymore' }),
+    sockets: (m) => {
+      const body = m.bounds({ name: 'Claymore' });
+      // Planting is a two-hand push on the back of the shell; there is no pin.
+      return { socket_grip: [(body.min[0] + body.max[0]) / 2, (body.min[1] + body.max[1]) / 2, body.min[2]] };
+    },
+  },
+
   att_suppressor: {
     kind: 'attachment',
     source: M4_KIT,
@@ -1123,10 +1354,32 @@ const AXES = { 'x+': [1, 0, 0], 'x-': [-1, 0, 0], 'y+': [0, 1, 0], 'y-': [0, -1,
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
 /**
- * The fix: source world space to the viewmodel's. Translate the origin to zero, scale to
- * metres, then rotate the source's forward onto -Z and its up onto +Y. Rotation columns are
- * the images of the source's basis vectors, which for an orthonormal frame is the transpose
- * of the frame.
+ * A rotation about an arbitrary axis, column-major: `spin`'s matrix.
+ */
+function axisAngle(axis, degrees) {
+  const len = Math.hypot(axis[0], axis[1], axis[2]);
+  const [x, y, z] = axis.map((c) => c / len);
+  const a = (degrees * Math.PI) / 180;
+  const c = Math.cos(a), s = Math.sin(a), t = 1 - c;
+  return [
+    t * x * x + c, t * x * y + s * z, t * x * z - s * y, 0,
+    t * x * y - s * z, t * y * y + c, t * y * z + s * x, 0,
+    t * x * z + s * y, t * y * z - s * x, t * z * z + c, 0,
+    0, 0, 0, 1,
+  ];
+}
+
+/**
+ * The fix: source world space to the viewmodel's. Translate the origin to zero, turn the
+ * object square to its own axes if `spin` says it is not, scale to metres, then rotate the
+ * source's forward onto -Z and its up onto +Y. Rotation columns are the images of the
+ * source's basis vectors, which for an orthonormal frame is the transpose of the frame.
+ *
+ * `spin` is degrees about the source's **up** axis, applied about the origin before
+ * everything else. `forward` and `up` can only name axes, and some sources are not square to
+ * theirs: the claymore's shell lies 8.4 degrees off +X, so a mine planted facing its trigger
+ * arc would stand visibly skewed to it. The angle is measured (the shell's ends have the same
+ * depth once it is removed), not eyeballed.
  */
 function fixMatrix(recipe, origin) {
   const f = AXES[recipe.forward];
@@ -1144,7 +1397,8 @@ function fixMatrix(recipe, origin) {
   const s = recipe.unit;
   const S = [s, 0, 0, 0, 0, s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1];
   const T = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -origin[0], -origin[1], -origin[2], 1];
-  return mul(mul(R, S), T);
+  const spun = recipe.spin === undefined ? T : mul(axisAngle(u, recipe.spin), T);
+  return mul(mul(R, S), spun);
 }
 
 // -- reading the source ----------------------------------------------------------
@@ -1787,6 +2041,67 @@ function readIndices(src, written, prim, vertexCount) {
   return [...jointIndices(src.glb, prim.indices)];
 }
 
+/**
+ * Which triangles belong to a connected component whose middle lies in the box (`by:
+ * 'component'`).
+ *
+ * A box over the triangles themselves is the right tool when the part is off on its own — the
+ * carbine's flip-up sights stand clear above the rail. It is the wrong one when the part lies
+ * *against* the thing it is attached to: the smoke grenade's pull ring hangs down the side of
+ * the can, inside the can's own silhouette, so every box tight enough to hold the ring holds a
+ * strip of the can's wall with it. A ring is a closed loop of triangles connected to nothing
+ * else, which is a fact about the mesh rather than about where it happens to hang, so the
+ * components are found first (welded by position, because a UV seam splits vertices and would
+ * otherwise split the part) and a whole component is taken when its bounds' centre is inside.
+ */
+function componentsInside(pos, indices, inside) {
+  const key = new Map();
+  const rep = new Int32Array(pos.length);
+  pos.forEach((p, i) => {
+    const k = `${p[0].toFixed(6)},${p[1].toFixed(6)},${p[2].toFixed(6)}`;
+    if (!key.has(k)) key.set(k, i);
+    rep[i] = key.get(k);
+  });
+  const parent = new Map();
+  for (const v of key.values()) parent.set(v, v);
+  const find = (x) => {
+    while (parent.get(x) !== x) {
+      parent.set(x, parent.get(parent.get(x)));
+      x = parent.get(x);
+    }
+    return x;
+  };
+  const union = (a, b) => {
+    a = find(rep[a]);
+    b = find(rep[b]);
+    if (a !== b) parent.set(a, b);
+  };
+  for (let k = 0; k + 2 < indices.length; k += 3) {
+    union(indices[k], indices[k + 1]);
+    union(indices[k + 1], indices[k + 2]);
+  }
+  const bounds = new Map();
+  for (let k = 0; k + 2 < indices.length; k += 3) {
+    const root = find(indices[k]);
+    let b = bounds.get(root);
+    if (b === undefined) {
+      b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      bounds.set(root, b);
+    }
+    for (const vi of [indices[k], indices[k + 1], indices[k + 2]]) {
+      for (let a = 0; a < 3; a++) {
+        if (pos[vi][a] < b[a]) b[a] = pos[vi][a];
+        if (pos[vi][a] > b[3 + a]) b[3 + a] = pos[vi][a];
+      }
+    }
+  }
+  const taken = new Map();
+  for (const [root, b] of bounds) taken.set(root, inside([(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2]));
+  const out = new Uint8Array(indices.length / 3);
+  for (let k = 0; k + 2 < indices.length; k += 3) out[k / 3] = taken.get(find(indices[k])) ? 1 : 0;
+  return out;
+}
+
 function applySplits(json, bin, src, recipe, nodes, fix, written) {
   const splits = recipe.splits ?? [];
   if (splits.length === 0) return bin;
@@ -1838,13 +2153,15 @@ function applySplits(json, bin, src, recipe, nodes, fix, written) {
       const world = mul(fix, src.placed(i));
       for (const prim of json.meshes[node.mesh].primitives) {
         const pos = [...positions(src.glb, prim.attributes.POSITION)].map((p) => apply(world, p));
-        const inBox = pos.map(inside);
         const indices = readIndices(src, written, prim, pos.length);
+        const takes = split.by === 'component' ? componentsInside(pos, indices, inside) : null;
+        const inBox = pos.map(inside);
         const mine = [];
         const rest = [];
         for (let k = 0; k + 2 < indices.length; k += 3) {
           const a = indices[k], b = indices[k + 1], c = indices[k + 2];
-          (inBox[a] && inBox[b] && inBox[c] ? mine : rest).push(a, b, c);
+          const take = takes === null ? inBox[a] && inBox[b] && inBox[c] : takes[k / 3] === 1;
+          (take ? mine : rest).push(a, b, c);
         }
         if (mine.length === 0) continue;
         taken += mine.length / 3;
@@ -1893,6 +2210,7 @@ function rewrite(id, recipe, src) {
   src.setCuts(recipe.cuts);
   const measure = {
     bounds: (sel) => src.bounds(sel),
+    centre: (sel) => src.centre(src.bounds(sel)),
     tip: (sel) => src.tip(sel, forward),
     top: (sel, from, to) => src.top(sel, forward, from, to),
     bottom: (sel, from, to) => src.bottom(sel, forward, from, to),

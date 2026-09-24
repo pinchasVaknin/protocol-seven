@@ -110,3 +110,38 @@ export const WEAPON_SOCKET_NODES = [
 
 export type WeaponGroupNode = (typeof WEAPON_GROUP_NODES)[number];
 export type WeaponSocketNode = (typeof WEAPON_SOCKET_NODES)[number];
+
+/**
+ * The equipment with a file (2026-09-24), by the id `EquipmentDefs` uses.
+ *
+ * The grenades and the claymore are built by the same script into the same folder as the
+ * weapons — they are not weapons, but the pipeline that turns a Sketchfab download into a
+ * budgeted, credited, contract-checked `.glb` is the same one, and a second folder would mean
+ * a second copy of `check-weapons` and `credits` for no gain. Every one of the five is here;
+ * the procedural primitives stay as the fallback for a file that has not arrived.
+ *
+ * `check:weapons` holds this map to the recipes, the way `WEAPON_ASSET_IDS` is held.
+ */
+export const EQUIPMENT_ASSET_IDS: Readonly<Record<string, string>> = {
+  frag: 'eq_frag',
+  semtex: 'eq_semtex',
+  flashbang: 'eq_flashbang',
+  smoke: 'eq_smoke',
+  claymore: 'eq_claymore',
+};
+
+export function equipmentAssetId(equipmentId: string): string | null {
+  return EQUIPMENT_ASSET_IDS[equipmentId] ?? null;
+}
+
+/**
+ * What a piece of equipment's file carries: a `body`, and on a thrown one the two parts that
+ * come off it — the `pin` the hand pulls and the `lever` that flies at the release. A file in
+ * the world draws neither, because a grenade in the air has neither.
+ */
+export const EQUIPMENT_GROUP_NODES = ['body', 'pin', 'lever'] as const;
+export type EquipmentGroupNode = (typeof EQUIPMENT_GROUP_NODES)[number];
+
+/** Where the holding palm goes, and where the other hand's fingers take the ring. */
+export const EQUIPMENT_SOCKET_NODES = ['socket_grip', 'socket_pin'] as const;
+export type EquipmentSocketNode = (typeof EQUIPMENT_SOCKET_NODES)[number];

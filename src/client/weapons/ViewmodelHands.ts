@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { handPoseFor, type HandPose, type HandSide } from './HandPoses';
+import { handPoseFor, handWrapFor, type HandPose, type HandSide } from './HandPoses';
 
 /**
  * The first-person arms (M19, stage 4): *Hand With Gloves*, posed on the weapon every frame.
@@ -31,8 +31,11 @@ import { handPoseFor, type HandPose, type HandSide } from './HandPoses';
  * glove that leaves the grip is the one thing this must not do.
  */
 
-/** How the support hand holds the weapon: under a handguard, or wrapped round the trigger hand. */
-export type SupportPose = 'handguard' | 'wrap';
+/**
+ * How the support hand holds the weapon: under a handguard, wrapped round the trigger hand, or
+ * — on a grenade — pinching the ring of its pin.
+ */
+export type SupportPose = 'handguard' | 'wrap' | 'pinch';
 
 /**
  * What the holding hand is holding: a weapon's grip, or a knife's handle.
@@ -40,9 +43,10 @@ export type SupportPose = 'handguard' | 'wrap';
  * A trigger hand is not a fist — its index lies along the frame and its thumb stands off, which
  * is what a trigger and a safety need and is wrong for anything without them. A knife is held
  * in a closed fist, so it asks for a hold of its own rather than for the trigger hand with the
- * fingers turned up.
+ * fingers turned up; a grenade is a third shape again, a hand closed round a body 6 cm across
+ * with the spoon trapped under the fingers.
  */
-export type GripPose = 'grip' | 'knife';
+export type GripPose = 'grip' | 'knife' | 'grenade';
 
 /**
  * A hand's correction on this weapon, live (`HandPoses`): metres added to the socket in weapon
@@ -96,7 +100,7 @@ interface Hold {
   readonly curl: Readonly<Record<FingerName, readonly [number, number, number]>>;
 }
 
-const HOLDS: Readonly<Record<'grip' | SupportPose | 'magazine' | 'knife', Hold>> = {
+const HOLDS: Readonly<Record<'grip' | SupportPose | 'magazine' | 'knife' | 'grenade', Hold>> = {
   /**
    * The trigger hand on a pistol grip: the palm against the grip's right-hand side, the
    * knuckles forward and a little down, three fingers wrapped round the front strap and the
@@ -161,10 +165,48 @@ const HOLDS: Readonly<Record<'grip' | SupportPose | 'magazine' | 'knife', Hold>>
     // barely bends — it lies along the spine of the grip instead of wrapping it.
     curl: { thumb: [20, 9, 20], index: [20, 35, 80], middle: [30, 35, 80], ring: [30, 35, 80], pink: [20, 35, 80] },
   },
+  /**
+   * A grenade in the throwing hand, in the grenade's own space (2026-09-24).
+   *
+   * `socket_grip` is on the body's axis a little under its widest point, so the knuckles sit
+   * on the side of it, about a radius out and slightly forward. The spoon runs down the -Z
+   * face and the fingers close over it — which is what actually holds a grenade once the pin
+   * is out, and the reason the hold is a wrap rather than the knife's hammer grip: a knife's
+   * handle passes through the fist, a grenade sits in the palm.
+   *
+   * **Rough defaults.** These are the shape, not the tuning. The human poses each grenade in
+   * the hand tuner and the numbers come back into `HAND_POSES`.
+   */
+  grenade: {
+    fingers: [0, -0.3, -0.95],
+    palm: [-1, 0, 0],
+    knuckles: [0.026, 0, -0.012],
+    curl: { thumb: [20, 25, 25], index: [55, 70, 55], middle: [60, 75, 55], ring: [60, 75, 55], pink: [60, 75, 55] },
+  },
+  /**
+   * The other hand on the pin's ring (2026-09-24): a pinch, not a grip.
+   *
+   * The index hooks through a ring 2 cm across and the thumb closes on it; the other three
+   * stay nearly straight, because a hand that made a fist round a ring would have nothing left
+   * to hook it with. The target is `socket_pin`, which rides the pin itself, so once the pull
+   * starts this hand travels with the ring rather than staying where the ring was.
+   *
+   * **Rough defaults**, as above.
+   */
+  pinch: {
+    fingers: [0, -0.5, -0.86],
+    palm: [1, 0, 0],
+    knuckles: [-0.022, 0, -0.01],
+    curl: { thumb: [30, 40, 30], index: [45, 55, 30], middle: [15, 15, 10], ring: [10, 10, 10], pink: [10, 10, 10] },
+  },
 };
 
 /** The shipped knife wrap, for the hand tuner's reset. The table above is the source. */
 export const KNIFE_HOLD_CURL: Readonly<Record<FingerName, FingerCurl>> = HOLDS.knife.curl as Record<FingerName, FingerCurl>;
+
+/** The shipped grenade wraps, for the hand tuner's reset; the table above is the source. */
+export const GRENADE_HOLD_CURL: Readonly<Record<FingerName, FingerCurl>> = HOLDS.grenade.curl as Record<FingerName, FingerCurl>;
+export const PINCH_HOLD_CURL: Readonly<Record<FingerName, FingerCurl>> = HOLDS.pinch.curl as Record<FingerName, FingerCurl>;
 
 /** Where a hand is put this frame, in the frame: its wrist, its turn, and each finger's bend in degrees. */
 interface Placement {
@@ -319,15 +361,24 @@ export class ViewmodelHands {
       support: adjustFrom(handPoseFor(weaponId, 'support')),
       reload: adjustFrom(handPoseFor(weaponId, 'reload')),
     };
-    const copyCurl = (hold: Hold): Record<FingerName, FingerCurl> => {
+    /**
+     * The hold's shape, or this thing's own if `HAND_WRAPS` has one (2026-09-24).
+     *
+     * Four grenades are four different objects, and one fist does not close round all of them:
+     * the wrap is per hand and per thing held, the way the position and the turn already were.
+     * A weapon has no row and gets its hold's shipped shape, which is what every weapon in the
+     * game has held with since stage 4.
+     */
+    const copyCurl = (hold: Hold, side: 'grip' | 'support' | null): Record<FingerName, FingerCurl> => {
+      const mine = side === null ? null : handWrapFor(weaponId, side);
       const out = {} as Record<FingerName, FingerCurl>;
-      for (const f of FINGERS) out[f] = [...hold.curl[f]] as FingerCurl;
+      for (const f of FINGERS) out[f] = [...(mine?.[f] ?? hold.curl[f])] as FingerCurl;
       return out;
     };
     this.curl = {
-      grip: copyCurl(HOLDS[targets.gripPose ?? 'grip']),
-      support: copyCurl(HOLDS[targets.supportPose]),
-      reload: copyCurl(HOLDS.magazine),
+      grip: copyCurl(HOLDS[targets.gripPose ?? 'grip'], 'grip'),
+      support: copyCurl(HOLDS[targets.supportPose], 'support'),
+      reload: copyCurl(HOLDS.magazine, null),
     };
     this.rig = cloneSkinned(template);
     this.rig.name = 'viewmodel:hands';

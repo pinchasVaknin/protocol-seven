@@ -70,7 +70,7 @@ function recipeOf(file) {
 
 /** `att_suppressor` → `SUPPRESSOR`: the name the game shows, from the file's own id. */
 function shortName(id) {
-  return id.replace(/^(ar|smg|lmg|sniper|shotgun|pistol|att)_/, '').replace(/_/g, ' ').toUpperCase();
+  return id.replace(/^(ar|smg|lmg|sniper|shotgun|pistol|att|eq)_/, '').replace(/_/g, ' ').toUpperCase();
 }
 
 /** Every `.glb` under a folder, recursively, repo-relative and sorted. */

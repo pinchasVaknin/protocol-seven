@@ -4,6 +4,8 @@ import { logger } from '../../shared/core/Log';
 import {
   ATTACHMENT_PART_IDS,
   ATTACHMENT_PART_OWN_SOCKETS,
+  EQUIPMENT_SOCKET_NODES,
+  equipmentAssetId,
   hasWeaponAsset,
   HANDS_ASSET_ID,
   KNIFE_ASSET_ID,
@@ -13,6 +15,7 @@ import {
   WEAPON_GROUP_NODES,
   WEAPON_SOCKET_NODES,
   type AttachmentPartId,
+  type EquipmentSocketNode,
   type WeaponGroupNode,
   type WeaponSocketNode,
 } from './WeaponAssetCatalog';
@@ -46,6 +49,19 @@ export interface AttachmentPartTemplate {
   readonly partId: AttachmentPartId;
   readonly scene: THREE.Object3D;
   readonly sockets: Readonly<Partial<Record<'socket_sight' | 'socket_muzzle', THREE.Vector3>>>;
+}
+
+/**
+ * A piece of equipment's file (2026-09-24): the root, and the two points a hand goes to.
+ *
+ * `pin` and `lever` are not listed because nothing reads them by name from here — the world
+ * hides them on a thrown body and the viewmodel takes them off as the throw runs, both by
+ * looking them up on their own clone.
+ */
+export interface EquipmentAssetTemplate {
+  readonly equipmentId: string;
+  readonly scene: THREE.Object3D;
+  readonly sockets: Readonly<Partial<Record<EquipmentSocketNode, THREE.Vector3>>>;
 }
 
 /** A weapon's file for the bodies (stage 3): the LOD's root and the two hand points it carries. */
@@ -87,6 +103,8 @@ export class WeaponAssetService {
   private knifeTask: Promise<void> | null = null;
   private handsScene: THREE.Object3D | null = null;
   private handsTask: Promise<void> | null = null;
+  private readonly equipment_ = new Map<string, EquipmentAssetTemplate>();
+  private readonly equipmentTasks = new Map<string, Promise<void>>();
   private readonly lods = new Map<string, WeaponLodTemplate>();
   private readonly lodTasks = new Map<string, Promise<void>>();
   private readonly loading = new Map<string, Promise<void>>();
@@ -220,6 +238,61 @@ export class WeaponAssetService {
     return task;
   }
 
+  /**
+   * A piece of equipment's template, or null: no file (the semtex), or not arrived, and
+   * `EquipmentFx` keeps the primitive it has drawn since M5.
+   */
+  equipment(equipmentId: string): EquipmentAssetTemplate | null {
+    if (this.disposed) return null;
+    return this.equipment_.get(equipmentId) ?? null;
+  }
+
+  /**
+   * Fetch one piece of equipment's file.
+   *
+   * Per id rather than all four at once, for the reason `preloadLod` is per weapon: a match
+   * draws the two the player carries and whatever the other side throws, and 2 MB of grenades
+   * on a menu that may never see a claymore is 2 MB the loadout's weapons wanted. The
+   * loadout's two are warmed with the weapons; the rest arrive when something in the world
+   * first asks for one, and the primitive stands in until they do.
+   */
+  preloadEquipment(equipmentId: string): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error('Weapon asset service has been disposed.'));
+    const assetId = equipmentAssetId(equipmentId);
+    if (assetId === null || this.equipment_.has(equipmentId)) return Promise.resolve();
+    const existing = this.equipmentTasks.get(equipmentId);
+    if (existing !== undefined) return existing;
+    const task = this.loader.loadAsync(weaponAssetUrl(assetId)).then((gltf) => {
+      if (this.disposed) {
+        disposeTemplate(gltf.scene);
+        throw new Error('Weapon asset service was disposed while equipment was loading.');
+      }
+      const root = gltf.scene.getObjectByName(assetId);
+      if (root === undefined || root.getObjectByName('body') === undefined) {
+        disposeTemplate(gltf.scene);
+        throw new Error(`Equipment file "${assetId}" has no root named "${assetId}" with a "body" group.`);
+      }
+      const sockets: Partial<Record<EquipmentSocketNode, THREE.Vector3>> = {};
+      for (const name of EQUIPMENT_SOCKET_NODES) {
+        const node = root.getObjectByName(name);
+        if (node !== undefined) sockets[name] = node.position.clone();
+      }
+      this.equipment_.set(equipmentId, { equipmentId, scene: root, sockets });
+      log.info(`GLB equipment "${equipmentId}" is ready (${WEAPON_ASSET_VERSION}).`);
+    });
+    this.equipmentTasks.set(equipmentId, task);
+    void task.then(
+      () => {
+        if (this.equipmentTasks.get(equipmentId) === task) this.equipmentTasks.delete(equipmentId);
+      },
+      (error: unknown) => {
+        if (this.equipmentTasks.get(equipmentId) === task) this.equipmentTasks.delete(equipmentId);
+        log.warn(`GLB equipment "${equipmentId}" unavailable; the primitive stands in. ${errorMessage(error)}`);
+      },
+    );
+    return task;
+  }
+
   /** A pack part's template. Never null once `template` has answered for any weapon. */
   part(partId: AttachmentPartId): AttachmentPartTemplate | null {
     if (this.disposed) return null;
@@ -327,6 +400,9 @@ export class WeaponAssetService {
     this.knifeScene = null;
     if (this.handsScene !== null) disposeTemplate(this.handsScene);
     this.handsScene = null;
+    for (const template of this.equipment_.values()) disposeTemplate(template.scene);
+    this.equipment_.clear();
+    this.equipmentTasks.clear();
     for (const lod of this.lods.values()) disposeTemplate(lod.scene);
     this.lods.clear();
     this.lodTasks.clear();

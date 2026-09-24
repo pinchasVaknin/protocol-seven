@@ -745,6 +745,9 @@ export class ServerMatch extends Disposable {
         player.team,
         player.alive,
       );
+      // What the snapshot needs to know: the fire button means "pull the pin" while this is
+      // true, and nobody watching should see a muzzle flash for it. See `NetPlayer.handBusy`.
+      player.handBusy = hand.thrower.busy;
     }
   }
 

@@ -1410,3 +1410,169 @@ the same gloved rig every weapon does now.
   of hip/ADS/reload with a `t` slider between them, per-finger wrap in degrees, and an output box
   that prints all three tables. Its eye view renders into a 16:9 box, because the page is
   portrait and a vertical FOV was cropping the pose being judged.
+
+## Stage 6 — the equipment, and the pin (2026-09-24)
+
+The human brought four Sketchfab models — an M26 frag, an M84 flashbang, an M18 smoke and an
+M18A1 claymore — with one requirement attached: **it must be possible to pull the pin.** All
+four are CC-BY-4.0 and all four carry their own `asset.extras`, so `verifyAttribution` can
+cross-check every recipe against its source the way it does for the weapons.
+
+- **Four recipes, `kind: 'equipment'`.** `eq_frag`, `eq_flashbang`, `eq_smoke`, `eq_claymore`
+  in `public/models/weapons/` beside the knife, the hands and the pack. Not a second folder:
+  the pipeline that turns a download into a budgeted, credited, contract-checked `.glb` is the
+  same one, and a second folder is a second `check-weapons` and a second `credits`. The semtex
+  has no legitimate source and keeps its procedural slab, which is also every other id's
+  fallback while its file is in the air.
+- **The contract is a different one.** No magazine, no charge, no rails; instead `body`, and on
+  a thrown one the two parts that come off it — `pin` (the ring, its wire and the split pin) and
+  `lever` (the spoon) — plus `socket_grip` where the holding palm goes and `socket_pin` where the
+  other hand's fingers take the ring. `thrown: true` on the recipe is what tells the gate which
+  of the two contracts to hold a file to, so the claymore is not missing anything.
+- **The smoke's pin is a *split*, and a box could not do it.** Its source is three copies of one
+  welded mesh, so the ring and the spoon are not nodes. A box over them takes the can's wall
+  with them, because the ring hangs down the side of the can, inside its own silhouette.
+  `applySplits` gained `by: 'component'`: the connected components are found first (welded by
+  position, since a UV seam splits vertices and would otherwise split the part) and a whole
+  component is taken when its **middle** is inside the box. Four components make the pin, two
+  make the spoon, and the can is untouched.
+- **`spin` in the fix.** The claymore's shell lies 8.4° off its source's +X — measured, not
+  eyeballed: at that angle the two ends of the shell have the same depth. `forward`/`up` can
+  only name axes, so a mine planted facing its trigger arc stood visibly skewed to it.
+- **The world draws them** (`EquipmentFx`). One slot per live projectile, holding the file
+  where there is one and the primitive where there is not. A clone loses its `pin` and its
+  `lever` for good: nothing in the world has either, because the pin is pulled before the throw
+  and the spoon leaves with the release. A resting body is lowered by `radius − halfHeight`,
+  measured off the clone's own bounds, because a projectile rests one collision radius above
+  the ground and a 0.143 m claymore on a 0.11 m radius floated 3.8 cm.
+- **The first-person half, which is F17's.** `GrenadeMesh` builds the held model: the file, a
+  **pin carrier** holding the `pin` group *and* the pulling hand's target, so one transform
+  moves the ring, the split pin and the glove together — the alternative is two numbers that
+  have to agree, which is the bug `socket_mag_grip` ended on the reload. `ViewmodelAnim` poses
+  four keyframes — READY / PULL / WIND-UP / RELEASE — on one 0..1 line it computes from
+  `throwCook` and `throwRelease`, two numbers straight off `ThrowController`. That is the line
+  F17 draws, kept: the controller decides when the grenade leaves the hand, the animator decides
+  what that looks like, and the animator keeps no clock.
+- **1.6 in the hand, life size in the world** (after the human's first look: *"it looks really
+  small in his hand"*). A grenade is the worst case for life size in a viewmodel and worse than
+  the knife was: an M26's body is 5.7 cm across against a 10.3 cm hand, so at 1 the whole object
+  fits *inside* the fist and the player sees a glove with a fuze poking out. `GRENADE_SCALE` 1.6
+  puts the body at 9.1 cm, about the hand's own width. The world's copy is not scaled by it, for
+  the reason the bodies carry a life-size knife while the viewmodel's is at 1.3. The frag was
+  also rebuilt at `simplify: 0.2` rather than 0.15 — 9.1k triangles against the 10k the
+  equipment budget allows, where 0.15 was costing the ring its roundness for nothing.
+- **Two new holds.** `HOLDS.grenade` is a hand closed round a 6 cm body with the spoon under the
+  fingers; `HOLDS.pinch` is an index hooked through a 2 cm ring with the thumb closed on it and
+  the other three nearly straight. Both are **rough defaults** — the shape, not the tuning.
+- **The tuner has them** (`probes/hand-tuner.html`), which is where the numbers come from: the
+  four grenades in the menu, both hands' sliders (the right on `socket_grip`, the left on
+  `socket_pin`, which rides the pin), a per-finger wrap for each hand, the four keyframes and
+  the pin's own travel, a `t` slider through the whole throw, and a box that keeps the grenade
+  drawn past the release so the last keyframe can be judged with something in the hand. The
+  claymore shows one hand and no pull. Output prints the `HAND_POSES` entry, both wraps and the
+  five `GrenadePose` constants.
+
+### Posed by the human, and what it cost (2026-09-24)
+
+The human posed all four in the tuner and sent four sets back — and four sets is what exposed the
+first shape as wrong. Two of the three tables were **global**: one `HOLDS.grenade` wrap for every
+grenade and one `GRENADE_THROW` for every throw, so three of the four answers had nowhere to go.
+
+- **`HAND_WRAPS` in `HandPoses.ts`**, per file id and per hand. `HAND_POSES` moves and turns a
+  hold; this is the shape of the hand inside it. They are separate because they answer different
+  questions, and because `HAND_POSES.curl` is one multiplier over the lot — the right dial for
+  "a looser fist", the wrong one for "the index goes through the ring". A weapon has no row and
+  keeps its hold's shipped shape, which is what every weapon has held with since stage 4.
+- **`GRENADE_THROWS` in `ViewmodelAnim.ts`**, per file id, loaded by `setGrenade` into the
+  animator's live copy. A 15 cm lemon in a fist, a 13 cm can held upright and a flat mine carried
+  edge-on are three objects at three angles; one throw for all three was a guess that only looked
+  reasonable because nothing had been posed yet.
+- **The grenade carries its `poseId`** — the file's id, `eq_frag` rather than `frag` — because
+  all three tables key on the file and only equipment has two ids to choose between.
+- **The tuner's resets and its output moved with them**: reset returns to *this* grenade's
+  shipped values, and the output prints a `HAND_WRAPS` row and a `GRENADE_THROWS` row rather
+  than a `HOLDS` fragment and five loose constants. A pasted round now lands where it came from.
+
+### The mechanic: drawn, cooked, thrown (2026-09-24, the human's brief §2)
+
+The throw was one button — press to cook, release to throw — and the projectile existed on the
+frame the button came up. It is now two, and four states, in `ThrowController`, which is shared
+sim code: the server runs the same state machine off the same bitfield, so nothing about the
+protocol moves.
+
+| phase | what the player is doing | what ends it |
+|---|---|---|
+| `IDLE` | holding a weapon | the lethal or tactical key |
+| `READY` | a grenade in the hand, pin in; free to walk and look | fire, the same key again, or 1/2 |
+| `COOKING` | the pin is out and the fuse is burning | letting fire go, or `cookLimit` |
+| `THROWING` | the arm is swinging, the grenade **still in the hand** | `THROW_RELEASE_TIME` |
+
+- **Drawing costs nothing.** A grenade taken out and put away is still in the inventory; only
+  the throw spends the slot. The same key puts it back and so does reaching for a weapon; the
+  other equipment key swaps to the other grenade.
+- **The grenade leaves the hand at the end of the animation**, not on the button — the first of
+  the three asks. `THROW_RELEASE_TIME` (0.18 s) is a state in the *simulation* rather than a
+  number in `ViewmodelAnim`, because the server and the client have to agree about when a
+  projectile exists; the animation reads how far through it the arm is and reaches its RELEASE
+  keyframe on exactly the frame the projectile appears.
+- **`THROW_FOLLOW_THROUGH` is 0.24 rather than 0.42**, so the release's 0.18 s in front of it
+  leaves the same 0.42 s of being defenceless the balance was tuned against.
+- **The fuse does not pause for the release.** It burns from the pin, through the swing, into
+  the air, and a frag cooked to the edge goes off in the hand rather than at the target.
+- **The weapon is hidden while a grenade is in hand**, the way it is for a knife swing. Lowering
+  it out of frame was enough when a throw lasted as long as a button press; it is not enough for
+  a grenade held indefinitely, and the rifle brought its own pair of gloves with it.
+- **A cooking player is no longer replicated as firing.** `EFlag.Firing` was read straight off
+  `Btn.Fire`, which is now the pin-pull button: `NetPlayer.handBusy`, written by
+  `ServerMatch.stepThrowers`, is what keeps a muzzle flash off a man holding a grenade.
+- **`ThrowController.test.ts`** holds the ten rules above that a change next door would break
+  silently — what costs a grenade, when `throwFrom` is called and with what cook.
+
+### The semtex has a model (2026-09-24)
+
+*C4 - Sticky Bomb* by Astate (CC-BY-4.0). 226 triangles and one 512 texture, a tenth of what
+anything else here costs, and right: a brick of plastic with a detonator taped to it has no
+detail to lose. It is the second piece of equipment with no pin, so the recipe's flag is
+`pinned` rather than `thrown` now — the semtex is thrown and has no pin, and the pin is what the
+contract is about. All five pieces of equipment are files.
+
+### The first grenade of a match came out empty-handed (2026-09-24)
+
+Reported: the first grenade drawn in a match shows nothing and throws the old way; every one
+after it is right. Found, and it was a warm-up in the wrong place.
+
+`Game.warmWeaponAssets` runs on every screen outside a match and fetches the equipped class's
+two weapons, the knife and the arms — but not the equipment, which was asked for in
+`ClientMatch`'s constructor instead. That request queues behind the weapons, the arms, the
+knife, the skins and the map, megabytes of it, so the file lands seconds into a match: long
+enough for the player to draw, throw and move on before it arrives, and the draw after that is
+the first one with a model. The grenades are warmed with the weapons now.
+
+Two more of the same class, closed with it:
+
+- **Nothing asked for a grenade the menu had not warmed.** `ClientMatch.grenadeFor` answered
+  null and left it there, so a class swapped between spawns would never get its model in the
+  hand however many times it was drawn — `WeaponAssetService.equipment` only ever answers with
+  what somebody has already fetched. It asks now, once per id, the way `EquipmentFx` does.
+- **A grenade built before the arms' file landed kept empty gloves for the match**, because the
+  model was cached and never looked at again. It is rebuilt once when the rig arrives, which is
+  the in-place upgrade the weapons have had since stage 1.
+
+Verified in a match from a cold page: the first draw of the first grenade is the file, in the
+glove, with the rifle away.
+
+### Open
+
+- **The WIND-UP is off frame, and that is what the human wants**: the hand taken back and out of
+  view reads as winding up to throw. Confirmed 2026-09-24, not a finding.
+- **The smoke's `support` wrap is the flashbang's, rotated.** All five fingers of
+  `HAND_WRAPS.eq_smoke.support` are `eq_flashbang.support`'s three segments moved one place left
+  (`[22,0,0]`→`[0,0,22]`, `[40,40,100]`→`[40,100,40]`, and so on for the other three). Five out
+  of five is not a hand doing it by eye. Shipped as sent, and flagged: worth a look in the tuner
+  before the next round.
+- **The flashbang's and the smoke's throws are identical**, and so are their `support` poses.
+  Plausible — two cans of the same shape held the same way — and taken at face value.
+- **Not verified in a live match.** The files load and validate in a match (the console says so)
+  and the whole throw was driven end to end in the tuner, but the browser pane will not hold
+  pointer lock, so a thrown grenade was never watched in flight. The claymore's ground contact
+  and its arc direction are measured off the built file rather than seen planted.

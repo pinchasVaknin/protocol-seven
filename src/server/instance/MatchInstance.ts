@@ -837,7 +837,7 @@ function writePlayer(e: EntitySnapshot, p: NetPlayer): void {
   e.characterIndex = p.characterIndex;
   e.flags =
     (p.alive ? EFlag.Alive : 0) |
-    (isDown(p.lastButtons, Btn.Fire) ? EFlag.Firing : 0) |
+    (isDown(p.lastButtons, Btn.Fire) && !p.handBusy ? EFlag.Firing : 0) |
     (weapon.reloading ? EFlag.Reloading : 0) |
     (weapon.adsFraction > 0.5 ? EFlag.Ads : 0) |
     (sim.sprintActive || sim.tacSprintActive ? EFlag.Sprinting : 0) |

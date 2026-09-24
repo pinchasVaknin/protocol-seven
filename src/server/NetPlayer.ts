@@ -92,6 +92,16 @@ export class NetPlayer implements Combatant {
   /** Authoritative sim state as of the last tick, for the owner block in a snapshot. */
   readonly simState: PlayerSimState = makePlayerSimState();
 
+  /**
+   * True while a grenade is in this player's hand (2026-09-24).
+   *
+   * The grenade mechanic put the pin pull and the throw on the **fire button**, and the
+   * snapshot's `EFlag.Firing` is read straight off that bit — so without this everyone else
+   * would watch a player cook a grenade and see them firing a rifle they are not holding.
+   * Written by `ServerMatch.stepThrowers` from the one authority on it, the thrower's `busy`.
+   */
+  handBusy = false;
+
   kills = 0;
   deaths = 0;
   shotsFired = 0;

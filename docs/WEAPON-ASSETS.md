@@ -57,8 +57,36 @@ A socket is an empty node whose +Y is the mount's up and -Z its forward. A pack 
 once it is on), the suppressor its own `socket_muzzle` (where the flash moves to).
 
 Budgets, held by `npm run check:weapons`: a weapon ≤ 30k triangles and 4 MB, its LOD ≤ 10k
-and 1 MB, a pack part ≤ 8k and 1 MB; textures ≤ 1024 on a side (the LOD 256), WebP or JPEG;
-a weapon between 0.15 and 1.5 m long; an `asset.extras.attribution` record on every file.
+and 1 MB, a pack part ≤ 8k and 1 MB, a piece of equipment ≤ 10k and 1 MB; textures ≤ 1024 on a
+side (the LOD 256), WebP or JPEG; a weapon between 0.15 and 1.5 m long and a piece of equipment
+between 0.04 and 0.30 m; an `asset.extras.attribution` record on every file.
+
+### Equipment (2026-09-24)
+
+The grenades and the claymore are built by the same script into the same folder, under a
+contract of their own — there is no magazine on a grenade, and there are two parts a weapon
+does not have. Their space is the file's: **metres, the fuze up +Y, the spoon on -Z** (so a
+grenade stands upright with its lever toward the camera), the origin at the body's middle, so a
+thrown one tumbles about its own centre of mass. A claymore's -Z is the face its blast and its
+trigger arc point out of.
+
+| node | what it is |
+|---|---|
+| `<equipmentId>` | the root, named for the file (`eq_frag`) |
+| `body` | the grenade, less the two parts below |
+| `pin` | the ring, its wire and the split pin. Pulled in the hand; absent from a thrown body |
+| `lever` | the spoon. Leaves with the release; absent from a thrown body |
+| `socket_grip` | where the holding palm goes |
+| `socket_pin` | where the other hand's fingers take the ring — **inside** the pin, so it rides it |
+
+`thrown: true` on the recipe says which contract applies: a thrown grenade carries `pin`,
+`lever` and `socket_pin`, a planted mine carries none of them. A source whose pin is not a node
+(the M18 smoke is one welded mesh) has it cut out by `splits` with `by: 'component'`, which
+takes whole connected components whose middle is inside a box — a box over the triangles alone
+takes the can's wall with the ring that hangs against it.
+
+`spin` on a recipe turns the source about its own up axis before the axis fix, for a source that
+is not square to its own axes: the claymore's shell lies 8.4° off its +X.
 
 ## Building
 
@@ -122,6 +150,13 @@ page is not the uploader's to give.
   primitives until it lands, and swap once: `HeldWeaponAsset.template` is the LOD's root,
   cloned per body, its `socket_grip` and `socket_support` the two anchors. `preloadLod` is
   one fetch per weapon however many bodies carry it.
+- **The equipment** (2026-09-24) is fetched per id, as the bodies' LODs are: `ClientMatch`
+  warms the loadout's lethal and tactical when a match starts, and `EquipmentFx` asks for
+  anything else the first time one appears in the world — nothing warms a claymore the player
+  does not carry until one lands at their feet. In the world a clone has its `pin` and `lever`
+  removed for good; in the hand `GrenadeMesh` keeps both and hangs the pin, and the pulling
+  hand's target, on a carrier the pull moves as one thing. `HAND_POSES` keys on the file's id
+  (`eq_frag`), and the poses come from the hand tuner's GRENADE mode.
 - **A weapon's own sights** come off when an optic is mounted: `optic_default` (a collimator
   the source models) and `irons` (the sights the build carved out with `splits`) are both
   hidden by `mountAttachments`. A weapon whose sight *is* its own collimator gets the
@@ -155,6 +190,11 @@ page is not the uploader's to give.
 | `sniper_kestrel` KESTREL .338 | `sniper_kestrel.glb` | the L115A3, its suppressor cut off |
 | `pistol_talon` TALON 9 | `pistol_talon.glb` | the Beretta M9 |
 | the knife | `knife.glb` | the MTech |
+| `frag` FRAG | `eq_frag.glb` | the M26 grenade |
+| `flashbang` FLASHBANG | `eq_flashbang.glb` | the M84 flashbang |
+| `smoke` SMOKE | `eq_smoke.glb` | the M18 smoke grenade |
+| `claymore` CLAYMORE | `eq_claymore.glb` | the M18A1 claymore |
+| `semtex` SEMTEX | the primitive slab | no legitimate source found |
 | `lmg_bastion`, `lmg_monolith` | the primitives | no legitimate source found; every LMG offered was a game rip |
 
 Each weapon has a `<id>.lod1.glb` beside it for the bodies. The attachment pack mounts on any

@@ -90,6 +90,7 @@ import { buildWeaponModel, type WeaponModel } from './weapons/WeaponMesh';
 import type { WeaponAssetService } from './weapons/WeaponAssetService';
 import type { AttachmentId } from '../shared/weapons/Attachments';
 import { buildKnifeModel, type KnifeModel } from './weapons/KnifeMesh';
+import { buildGrenadeModel, type GrenadeModel } from './weapons/GrenadeMesh';
 import { WeaponSystem, type WeaponSnapshot } from '../shared/weapons/WeaponSystem';
 
 /**
@@ -334,6 +335,20 @@ export class Match {
   readonly models: WeaponModel[];
   /** The knife viewmodel. Alongside the weapons rather than among them — see the constructor. */
   private knifeModel: KnifeModel;
+
+  /**
+   * The grenade in the hand (2026-09-24), one model per equipment id, built the first time
+   * that id is thrown and kept for the match.
+   *
+   * Not an entry in `models` for the same reason the knife is not: that array is the
+   * inventory, indexed by slot. A grenade is a thing you throw, and which one is in the hand
+   * is the slot the player is cooking rather than the weapon they are carrying — so the
+   * lethal and the tactical can both have a model and only one is ever on screen.
+   */
+  private readonly grenadeModels = new Map<string, GrenadeModel>();
+  private grenadeShown: GrenadeModel | null = null;
+  /** Equipment ids this match has already asked the service for, so it asks once. */
+  private readonly grenadesRequested = new Set<string>();
   /** The camo each slot is wearing, so a rebuild does not lose it. */
   private readonly slotCamos: Array<CamoId | null> = [];
   /** The attachments each slot shows (M19, stage 2), kept for the same reason. */
@@ -811,6 +826,9 @@ export class Match {
       tiers: deps.tiers,
       localTeam: this.localTeam,
       localId: this.identity.entityId,
+      // The equipment's own files (2026-09-24). The loadout's two are warmed below; anything
+      // else the world throws is fetched by `EquipmentFx` the first time it sees one.
+      weaponAssets: deps.weaponAssets,
       // The same fact `bots.freeForAll` carries, from the same registry flag (M13 Phase A).
       freeForAll: deps.mode.freeForAll === true,
       seed: deps.seed,
@@ -824,6 +842,9 @@ export class Match {
     this.equipment.inventory.lethal = deps.loadout.lethal;
     this.equipment.inventory.tactical = deps.loadout.tactical;
     EquipmentSystem.refill(this.equipment.inventory);
+    for (const id of [deps.loadout.lethal, deps.loadout.tactical]) {
+      void deps.weaponAssets?.preloadEquipment(id).catch(() => undefined);
+    }
 
     // M6, last: it hooks into the bots, the flash field and the player controller, all of
     // which have to exist first.
@@ -1484,6 +1505,12 @@ export class Match {
       this.deps.viewmodel.remove(this.knifeModel.root);
       if (this.knifeModel.arm !== null) this.deps.viewmodel.remove(this.knifeModel.arm);
       this.knifeModel.dispose();
+    for (const grenade of this.grenadeModels.values()) {
+      this.deps.viewmodel.remove(grenade.root);
+      grenade.dispose();
+    }
+    this.grenadeModels.clear();
+    this.grenadeShown = null;
       this.knifeModel = buildKnifeModel(this.deps.anisotropy, assets.knife(), assets.hands());
       this.knifeModel.root.visible = wasVisible;
       this.deps.viewmodel.add(this.knifeModel.root);
@@ -1493,6 +1520,64 @@ export class Match {
       }
       this.anim.setKnife(this.knifeModel.root, this.knifeModel.arm, this.knifeModel.hands);
     });
+  }
+
+  /**
+   * Put one equipment id in the hand, or nothing.
+   *
+   * Called every frame before the animator runs, because which grenade is being thrown is a
+   * per-throw fact. A file that has not arrived means no grenade in the hand for this throw
+   * and the weapon simply lowers, which is exactly what a throw looked like before this
+   * existed — the fallback is the old behaviour rather than a box.
+   */
+  private showGrenade(equipmentId: string | null): void {
+    const next = equipmentId === null ? null : this.grenadeFor(equipmentId);
+    if (next !== this.grenadeShown) {
+      if (this.grenadeShown !== null) this.grenadeShown.root.visible = false;
+      this.grenadeShown = next;
+      this.anim.setGrenade(next);
+    }
+    if (next !== null) next.root.visible = true;
+  }
+
+  private grenadeFor(equipmentId: string): GrenadeModel | null {
+    const assets = this.deps.weaponAssets;
+    const existing = this.grenadeModels.get(equipmentId);
+    /**
+     * Built already, and built with everything it needed.
+     *
+     * The second half of that test is the in-place upgrade the weapons have: a grenade built
+     * in the window before the arms' file landed has no gloves, and without this it would keep
+     * holding itself in mid-air for the rest of the match. Once the rig is there the model is
+     * thrown away and built again, once.
+     */
+    if (existing !== undefined && (existing.hands !== null || (assets?.hands() ?? null) === null)) return existing;
+    const template = assets?.equipment(equipmentId) ?? null;
+    if (template === null) {
+      /**
+       * Ask for it, once, the way `EquipmentFx` asks for a body it has not seen.
+       *
+       * The menu warms the equipped class's two and that is what makes a match start ready
+       * (`Game.warmWeaponAssets`). This is the other half: a class swapped between spawns
+       * changes which two a match needs, and without a request here that grenade would never
+       * arrive in the hand however many times it was drawn — `equipment()` only ever answers
+       * with what somebody has already fetched.
+       */
+      if (assets !== null && !this.grenadesRequested.has(equipmentId)) {
+        this.grenadesRequested.add(equipmentId);
+        void assets.preloadEquipment(equipmentId).catch(() => undefined);
+      }
+      return existing ?? null;
+    }
+    if (existing !== undefined) {
+      this.deps.viewmodel.remove(existing.root);
+      existing.dispose();
+    }
+    const model = buildGrenadeModel(template, assets?.hands() ?? null);
+    model.root.visible = false;
+    this.deps.viewmodel.add(model.root);
+    this.grenadeModels.set(equipmentId, model);
+    return model;
   }
 
   private modelOptions(slotIndex: number): { hands: true; assets: WeaponAssetService | null; attachments: readonly AttachmentId[] } {
@@ -2294,6 +2379,24 @@ export class Match {
     drive.tacSprint = sim.tacSprintActive;
     drive.slide = sim.slideActive;
     drive.throwing = this.equipment.thrower.busy;
+    /**
+     * The throw, as the animation reads it (2026-09-24).
+     *
+     * Two numbers straight off `ThrowController`, and nothing derived here: the cook the fuse
+     * is burning, and how far the release's follow-through has run. `ViewmodelAnim` turns them
+     * into a pose; it never turns a pose into a timing.
+     */
+    const thrower = this.equipment.thrower;
+    // READY is the grenade up in the hand with the pin still in, which is the throw at zero.
+    drive.throwCook = thrower.phase === 'IDLE' ? -1 : thrower.phase === 'READY' ? 0 : thrower.cook;
+    drive.throwRelease = thrower.releaseFraction;
+    this.showGrenade(
+      !this.playerDead && thrower.busy
+        ? thrower.slot === 'lethal'
+          ? this.equipment.inventory.lethal
+          : this.equipment.inventory.tactical
+        : null,
+    );
     drive.swapping = this.weapons.inventory.swapping;
     drive.melee = this.melee.fraction;
     drive.bobPhase = sim.bobPhase;
@@ -2341,7 +2444,21 @@ export class Match {
      * would show the rifle for one frame after the blade should have replaced it.
      */
     const knifing = !this.playerDead && this.melee.busy;
-    this.model.root.visible = !this.playerDead && !scoped && !knifing;
+    /**
+     * A grenade in the hand takes the weapon off screen, the way a knife swing does.
+     *
+     * Before the grenade had a model this was `drive.throwing` lowering the rifle out of frame
+     * over a fifth of a second, which was enough when a throw lasted as long as a button press.
+     * It is not enough now: a drawn grenade stays in the hand for as long as the player likes,
+     * and the rifle would still be there beside it — along with the second pair of gloves that
+     * hangs off it, since `ViewmodelHands` lives under the weapon's own root.
+     *
+     * The test is the grenade *model*, not `thrower.busy`: with no file for this equipment
+     * there is nothing to put in the hand, and hiding the rifle would leave an empty screen.
+     * That is the same fallback the throw had before any of this existed.
+     */
+    const grenadeInHand = this.grenadeShown !== null;
+    this.model.root.visible = !this.playerDead && !scoped && !knifing && !grenadeInHand;
     this.knifeModel.root.visible = knifing;
     if (this.knifeModel.arm !== null) this.knifeModel.arm.visible = knifing;
 

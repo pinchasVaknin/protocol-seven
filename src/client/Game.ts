@@ -1599,7 +1599,8 @@ export class Game {
   }
 
   /**
-   * Fetch the equipped class's weapon files while a screen is up (M19, stage 1).
+   * Fetch the equipped class's weapon and equipment files while a screen is up (M19, stage 1;
+   * the grenades added 2026-09-24).
    *
    * The same reasoning as the default skin warmed at boot: the templates are the
    * application's, a match should start with them ready, and the menu is where there is time.
@@ -1608,11 +1609,23 @@ export class Game {
    * the player passes through, which is how a class edited in the loadout editor is warm by
    * the time they press Play. A failure is logged by the service and the match falls back to
    * the primitives; nothing here waits on it.
+   *
+   * **The grenades have to be warmed here and not at the match's first tick**, which is where
+   * they were and which is the bug the human reported: the first grenade of a match came out
+   * as the old empty-handed throw and every one after it was right. `ClientMatch` asks for them
+   * in its constructor, and that request queues behind the weapons, the arms, the knife, the
+   * skins and the map — megabytes of it — so on a real machine the file lands seconds after the
+   * player has already drawn, thrown and moved on. Asked for on the menu they are there before
+   * Play is pressed. `ClientMatch` still asks, because a class edited between spawns changes
+   * which two a match needs.
    */
   private warmWeaponAssets(): void {
     const slot = this.profile.equippedLoadout();
     for (const weaponId of [slot.primary.weaponId, slot.secondary.weaponId]) {
       void this.weaponAssets.preload(weaponId).catch(() => undefined);
+    }
+    for (const equipmentId of [slot.lethal, slot.tactical]) {
+      void this.weaponAssets.preloadEquipment(equipmentId).catch(() => undefined);
     }
     void this.weaponAssets.preloadKnife().catch(() => undefined);
     void this.weaponAssets.preloadHands().catch(() => undefined);

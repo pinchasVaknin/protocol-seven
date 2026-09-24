@@ -30,6 +30,7 @@ import { EquipmentSystem, makeEquipmentInventory, type EquipmentInventory } from
 import { ThrowController } from '../shared/equipment/ThrowController';
 import type { PlayerSim } from '../shared/player/PlayerState';
 import type { Hud } from './ui/Hud';
+import type { WeaponAssetService } from './weapons/WeaponAssetService';
 import type { CollisionWorld } from '../shared/world/CollisionWorld';
 import { Disposable } from '../shared/core/Disposable';
 
@@ -75,6 +76,11 @@ export interface MatchEquipmentDeps {
    */
   readonly localId: number;
   readonly seed: number;
+  /**
+   * Where the grenades' and the claymore's files come from (2026-09-24), or null with no
+   * renderer: `EquipmentFx` keeps the primitives it has drawn since M5.
+   */
+  readonly weaponAssets?: WeaponAssetService | null;
   /** False on a networked client: predict and draw, resolve nothing. See `EquipmentDeps`. */
   readonly authoritative?: boolean;
   /** Whether this match has teams. See `EquipmentDeps.freeForAll` (M13 Phase A). */
@@ -155,7 +161,7 @@ export class MatchEquipment extends Disposable {
     });
     this.thrower = new ThrowController(this.system, deps.cfg);
     this.botThrower = new BotThrower(this.system, deps.world, deps.cfg);
-    this.fx = new EquipmentFx(PROJECTILE_MESH_POOL, SMOKE_MESH_POOL);
+    this.fx = new EquipmentFx(PROJECTILE_MESH_POOL, SMOKE_MESH_POOL, deps.weaponAssets ?? null);
     this.audio = new EquipmentAudio(deps.audio);
     deps.scene.add(this.fx.group);
 

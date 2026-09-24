@@ -5,14 +5,40 @@ import { DEFAULT_VIEWMODEL_CONFIG } from '../../shared/weapons/ViewmodelConfig';
 import { ALL_WEAPONS, WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
 import { DEFAULT_CAMERA_CONFIG } from '../player/CameraConfig';
 import { ViewmodelLayer } from '../player/Viewmodel';
-import { handPoseFor, handPoseSource, type HandPose, type HandSide } from '../weapons/HandPoses';
-import { buildKnifeModel, type KnifeModel } from '../weapons/KnifeMesh';
-import { FINGERS, holdCurlSource, KNIFE_HOLD_CURL, type FingerCurl, type FingerName } from '../weapons/ViewmodelHands';
 import {
+  handPoseFor,
+  handPoseSource,
+  handWrapFor,
+  handWrapSource,
+  type HandPose,
+  type HandSide,
+  type HandWrap,
+} from '../weapons/HandPoses';
+import { buildKnifeModel, type KnifeModel } from '../weapons/KnifeMesh';
+import { buildGrenadeModel, type GrenadeModel } from '../weapons/GrenadeMesh';
+import { EQUIPMENT_ASSET_IDS } from '../weapons/WeaponAssetCatalog';
+import { ALL_EQUIPMENT } from '../../shared/equipment/EquipmentDefs';
+import {
+  FINGERS,
+  GRENADE_HOLD_CURL,
+  holdCurlSource,
+  KNIFE_HOLD_CURL,
+  PINCH_HOLD_CURL,
+  type FingerCurl,
+  type FingerName,
+} from '../weapons/ViewmodelHands';
+import {
+  GRENADE_PULL_AT,
+  GRENADE_WINDUP_AT,
+  grenadeDriveAt,
+  grenadeThrowFor,
+  grenadeThrowSource,
   KNIFE_SWING,
   knifeSwingSource,
   makeViewmodelDrive,
   ViewmodelAnim,
+  type GrenadePose,
+  type GrenadeThrow,
   type KnifePose,
   type KnifeSwing,
 } from '../weapons/ViewmodelAnim';
@@ -41,6 +67,14 @@ import { buildWeaponModel, type WeaponModel } from '../weapons/WeaponMesh';
  * handle in `HAND_POSES`' shape, and the three keyframes in the shape of the `KnifePose`
  * constants they are, ready to paste back into `ViewmodelAnim.ts`.
  *
+ * **The grenades are in the menu too** (2026-09-24), and they are the first entry with two
+ * hands doing different things: the right holds the body, the left is hooked in the ring of
+ * the pin and pulls it out. So GRENADE mode shows both hands' sliders, a wrap for each of
+ * them, the four keyframes of the throw (READY / PULL / WIND-UP / RELEASE) with a t slider
+ * between them, and the pin's own travel — where the ring ends up once it is clear, which is
+ * what carries the left glove off the frame. The claymore is in the list as the one piece of
+ * equipment with no pin: one hand, no pull.
+ *
  * Edits persist in this browser (localStorage) per weapon until copied out; the output box
  * prints each weapon's entry in `HAND_POSES`' own shape, and every change is logged to the
  * console as well.
@@ -62,6 +96,33 @@ type View = 'eye' | 'right' | 'left' | 'above' | 'below' | 'front';
 const KNIFE_ID = 'knife';
 const isKnife = (id: string): boolean => id === KNIFE_ID;
 
+/**
+ * The equipment in the menu, by the id its **file** has (`eq_frag`), which is also the id
+ * `HAND_POSES` keys on. `EQUIPMENT_ID_OF` goes back the other way, because the asset service
+ * is asked for a piece of equipment by the id the simulation uses (`frag`).
+ */
+const GRENADE_IDS: readonly string[] = Object.values(EQUIPMENT_ASSET_IDS);
+const EQUIPMENT_ID_OF: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(EQUIPMENT_ASSET_IDS).map(([equipmentId, assetId]) => [assetId, equipmentId]),
+);
+const isGrenade = (id: string): boolean => GRENADE_IDS.includes(id);
+
+/** The four keyframes of the throw, which take the place of hip/ADS/reload when one is up. */
+type Throw = 'ready' | 'pull' | 'windup' | 'release';
+const THROWS: readonly Throw[] = ['ready', 'pull', 'windup', 'release'];
+const THROW_T: Readonly<Record<Throw, number>> = {
+  ready: 0,
+  pull: GRENADE_PULL_AT,
+  windup: GRENADE_WINDUP_AT,
+  release: 1,
+};
+const THROW_LABEL: Readonly<Record<Throw, string>> = {
+  ready: 'READY — up in frame, pin still in',
+  pull: `PULL — the ring is clear, t ${GRENADE_PULL_AT}`,
+  windup: `WIND-UP — cocked back; a cook holds here, t ${GRENADE_WINDUP_AT}`,
+  release: 'RELEASE — thrown out; the grenade has gone, t 1',
+};
+
 /** Where in the swing each keyframe is exactly — `ViewmodelAnim`'s own WINDUP_AT and STRIKE_AT. */
 const SWING_T: Readonly<Record<Swing, number>> = { ready: 0, windup: 0.13, strike: 0.222 };
 const SWING_LABEL: Readonly<Record<Swing, string>> = {
@@ -82,6 +143,12 @@ const TARGET: Readonly<Record<HandSide, string>> = {
   grip: 'viewmodel:hand-target:grip',
   support: 'viewmodel:hand-target:support',
   reload: 'viewmodel:hand-target:magazine',
+};
+/** A grenade's two: the body, and the ring — which rides the pin, so the marker travels too. */
+const GRENADE_TARGET: Readonly<Record<HandSide, string>> = {
+  grip: 'viewmodel:hand-target:grip',
+  support: 'viewmodel:hand-target:pin',
+  reload: 'viewmodel:hand-target:pin',
 };
 /** A moment of a tactical reload when the support hand is wholly on the magazine. */
 const ON_MAGAZINE_T = 0.42;
@@ -116,7 +183,14 @@ const SLIDERS: readonly Slider[] = [
 type Edits = Record<
   string,
   Partial<Record<HandSide, HandPose>> &
-    Record<'grip' | 'support', HandPose> & { swing?: KnifeSwing; wrap?: Record<FingerName, FingerCurl> }
+    Record<'grip' | 'support', HandPose> & {
+      swing?: KnifeSwing;
+      wrap?: Record<FingerName, FingerCurl>;
+      /** A grenade's four keyframes, the pin's travel, and the left hand's own wrap. */
+      throwTable?: GrenadeThrow;
+      pinOut?: GrenadePose;
+      wrapSupport?: Record<FingerName, FingerCurl>;
+    }
 >;
 
 function loadEdits(): Edits {
@@ -180,6 +254,11 @@ const state = {
   weaponId: params.get('weapon') ?? (WEAPON_DEFS['ar_carbine'] !== undefined ? 'ar_carbine' : ALL_WEAPONS[0]!.id),
   pose: 'hip' as Pose,
   swing: 'ready' as Swing,
+  throwAt: 'ready' as Throw,
+  /** Anywhere in the throw, the way `swingT` is anywhere in the swing. */
+  throwT: 0,
+  /** Keep the grenade drawn past the release, so the last keyframe can be judged with it. */
+  keepHeld: true,
   /** Anywhere in the swing, so the hold can be read between the keyframes as well as on them. */
   swingT: 0,
   reload: 0.4,
@@ -190,6 +269,7 @@ const state = {
 };
 let model: WeaponModel | null = null;
 let knife: KnifeModel | null = null;
+let grenade: GrenadeModel | null = null;
 let anim: ViewmodelAnim | null = null;
 let loading = 0;
 
@@ -198,7 +278,16 @@ function hands(): {
   adjust: Record<HandSide, { position: THREE.Vector3; rotation: THREE.Vector3; curl: number }>;
   curl: Record<HandSide, Record<FingerName, FingerCurl>>;
 } | null {
-  return isKnife(state.weaponId) ? knife?.hands ?? null : model?.hands ?? null;
+  if (isKnife(state.weaponId)) return knife?.hands ?? null;
+  if (isGrenade(state.weaponId)) return grenade?.hands ?? null;
+  return model?.hands ?? null;
+}
+
+/** Which root is being posed: the weapon, the blade or the grenade. */
+function posedRoot(): THREE.Object3D | null {
+  if (isKnife(state.weaponId)) return knife?.root ?? null;
+  if (isGrenade(state.weaponId)) return grenade?.root ?? null;
+  return model?.root ?? null;
 }
 
 // -- the panel ----------------------------------------------------------------------------
@@ -207,6 +296,10 @@ panel.append(element('h1', {}, 'HAND TUNER'));
 const weaponSelect = element('select');
 for (const def of ALL_WEAPONS) weaponSelect.append(element('option', { value: def.id }, `${def.name} — ${def.id}`));
 weaponSelect.append(element('option', { value: KNIFE_ID }, 'KNIFE — knife'));
+for (const def of ALL_EQUIPMENT) {
+  const assetId = EQUIPMENT_ASSET_IDS[def.id];
+  if (assetId !== undefined) weaponSelect.append(element('option', { value: assetId }, `${def.name} — ${assetId}`));
+}
 weaponSelect.value = state.weaponId;
 weaponSelect.addEventListener('change', () => void load(weaponSelect.value));
 const opticBox = element('input', { type: 'checkbox' });
@@ -267,6 +360,28 @@ swingRange.addEventListener('input', () => {
 });
 swingRow.append(element('span', { className: 'small' }, 'swing t'), swingRange, swingValue);
 panel.append(swingButtons, swingRow);
+
+/** The grenade's own row: the four keyframes, and a slider for anywhere between them. */
+const throwButtons = buttonGroup<Throw>('THROW', ['ready', 'pull', 'windup', 'release'], () => state.throwAt, (v) => {
+  state.throwAt = v;
+  state.throwT = THROW_T[v];
+  throwRange.value = String(state.throwT);
+  throwValue.textContent = state.throwT.toFixed(3);
+  syncThrow();
+});
+const throwRow = element('div', { className: 'row' });
+const throwRange = element('input', { type: 'range', min: '0', max: '1', step: '0.002', value: '0' });
+const throwValue = element('span', { className: 'small' }, '0.000');
+throwRange.addEventListener('input', () => {
+  state.throwT = Number(throwRange.value);
+  throwValue.textContent = state.throwT.toFixed(3);
+});
+throwRow.append(element('span', { className: 'small' }, 'throw t'), throwRange, throwValue);
+const keepHeldBox = element('input', { type: 'checkbox', checked: true });
+keepHeldBox.addEventListener('change', () => (state.keepHeld = keepHeldBox.checked));
+const keepHeldRow = element('label', { className: 'check' });
+keepHeldRow.append(keepHeldBox, 'keep the grenade in hand past the release');
+panel.append(throwButtons, throwRow, keepHeldRow);
 
 const reloadRow = element('div', { className: 'row' });
 const reloadRange = element('input', { type: 'range', min: '0', max: '1', step: '0.01', value: String(state.reload) });
@@ -457,6 +572,96 @@ for (const which of SWINGS) {
 }
 
 /**
+ * The throw's four keyframes and the pin's travel, edited live on `anim.grenadeThrow`.
+ *
+ * The keyframes are the grenade's own pose in viewmodel space, exactly as the knife's are.
+ * `PIN` is different and is the reason this block is not just four more of the same: it is in
+ * the **grenade's** space, not the camera's — where the ring ends up once it is wholly pulled,
+ * relative to the grenade it came out of. It is what carries the left glove out of frame, so
+ * its numbers are large where a hand correction's are small.
+ */
+const PIN_SLIDERS: readonly Slider[] = [
+  { key: 'x', label: 'X (m)', min: -0.5, max: 0.5, step: 0.005 },
+  { key: 'y', label: 'Y (m)', min: -0.5, max: 0.5, step: 0.005 },
+  { key: 'z', label: 'Z (m)', min: -0.5, max: 0.5, step: 0.005 },
+  { key: 'pitch', label: 'Pitch°', min: -180, max: 180, step: 1 },
+  { key: 'yaw', label: 'Yaw°', min: -180, max: 180, step: 1 },
+  { key: 'roll', label: 'Roll°', min: -180, max: 180, step: 1 },
+];
+const throwControls = new Map<string, { range: HTMLInputElement; number: HTMLInputElement }>();
+const throwBlocks: HTMLElement[] = [];
+
+function throwPose(which: Throw | 'pin'): GrenadePose | null {
+  if (anim === null) return null;
+  return which === 'pin' ? anim.grenadePinOut : anim.grenadeThrow[which];
+}
+
+function writeThrow(which: Throw | 'pin', key: Slider['key'], value: number): void {
+  const pose = throwPose(which);
+  if (pose === null || key === 'curl') return;
+  pose[key] = value;
+  // Look at what is being edited, as the swing does: the release means nothing at READY.
+  if (which !== 'pin' && state.throwAt !== which) {
+    state.throwAt = which;
+    state.throwT = THROW_T[which];
+    throwRange.value = String(state.throwT);
+    throwValue.textContent = state.throwT.toFixed(3);
+    throwButtons.refresh();
+  }
+  remember();
+}
+
+for (const which of [...THROWS, 'pin' as const]) {
+  const label = which === 'pin' ? "PIN — where the ring ends up, in the grenade's space" : THROW_LABEL[which];
+  const title = element('h2', {}, label);
+  const reset = element('button', { type: 'button' }, 'reset');
+  reset.addEventListener('click', () => {
+    const pose = throwPose(which);
+    const shipped = grenadeThrowFor(state.weaponId);
+    if (pose !== null && anim !== null) Object.assign(pose, which === 'pin' ? shipped.pinOut : shipped.table[which]);
+    remember();
+    syncThrow();
+  });
+  title.append(reset);
+  panel.append(title);
+  throwBlocks.push(title);
+  for (const sl of which === 'pin' ? PIN_SLIDERS : SWING_SLIDERS) {
+    const row = element('div', { className: 'row' });
+    const range = element('input', { type: 'range', min: String(sl.min), max: String(sl.max), step: String(sl.step) });
+    const number = element('input', { type: 'number', step: String(sl.step) });
+    range.addEventListener('input', () => {
+      number.value = range.value;
+      writeThrow(which, sl.key, Number(range.value));
+    });
+    number.addEventListener('input', () => {
+      const v = Number(number.value);
+      if (!Number.isFinite(v)) return;
+      range.value = String(v);
+      writeThrow(which, sl.key, v);
+    });
+    row.append(element('span', { className: 'small' }, sl.label), range, number);
+    panel.append(row);
+    throwBlocks.push(row);
+    throwControls.set(`${which}.${sl.key}`, { range, number });
+  }
+}
+
+function syncThrow(): void {
+  for (const which of [...THROWS, 'pin' as const]) {
+    const pose = throwPose(which);
+    if (pose === null) continue;
+    for (const sl of which === 'pin' ? PIN_SLIDERS : SWING_SLIDERS) {
+      const c = throwControls.get(`${which}.${sl.key}`);
+      if (c === undefined || sl.key === 'curl') continue;
+      const v = pose[sl.key];
+      c.range.value = String(v);
+      c.number.value = String(Number(v.toFixed(3)));
+    }
+  }
+  writeOutput();
+}
+
+/**
  * The wrap: how far each finger closes round the handle, in degrees, segment by segment.
  *
  * `Curl ×` above scales the whole hand at once, which is the right dial for "this weapon needs
@@ -467,23 +672,37 @@ for (const which of SWINGS) {
  */
 const SEGMENTS = ['knuckle', 'middle', 'tip'] as const;
 const curlControls = new Map<string, HTMLInputElement>();
-const curlBlocks: HTMLElement[] = [];
+/** One wrap block per hand: the knife shows the right one only, a grenade shows both. */
+const curlBlocks = new Map<'grip' | 'support', HTMLElement[]>();
 
-{
-  const title = element('h2', {}, 'FINGERS — the wrap, degrees');
+/**
+ * What `reset` puts back, per hand and per thing held: this thing's shipped wrap if
+ * `HAND_WRAPS` has one, otherwise its hold's own shape.
+ */
+function defaultCurl(side: 'grip' | 'support'): Readonly<Record<FingerName, FingerCurl>> {
+  const mine = handWrapFor(state.weaponId, side);
+  if (mine !== null) return mine as Readonly<Record<FingerName, FingerCurl>>;
+  if (isGrenade(state.weaponId)) return side === 'grip' ? GRENADE_HOLD_CURL : PINCH_HOLD_CURL;
+  return KNIFE_HOLD_CURL;
+}
+
+for (const side of ['grip', 'support'] as const) {
+  const owned: HTMLElement[] = [];
+  const title = element('h2', {}, side === 'grip' ? 'FINGERS — the holding hand, degrees' : 'FINGERS — the hand on the ring, degrees');
   const reset = element('button', { type: 'button' }, 'reset');
   reset.addEventListener('click', () => {
     const rig = hands();
-    if (rig !== null) for (const f of FINGERS) rig.curl.grip[f] = [...KNIFE_HOLD_CURL[f]] as FingerCurl;
+    const back = defaultCurl(side);
+    if (rig !== null) for (const f of FINGERS) rig.curl[side][f] = [...back[f]] as FingerCurl;
     remember();
     syncCurl();
   });
   title.append(reset);
   panel.append(title);
-  curlBlocks.push(title);
+  owned.push(title);
   const legend = element('div', { className: 'small' }, 'knuckle · middle · tip — 0 is straight, 90 is folded');
   panel.append(legend);
-  curlBlocks.push(legend);
+  owned.push(legend);
   for (const f of FINGERS) {
     const row = element('div', { className: 'row' });
     row.append(element('span', { className: 'small' }, f));
@@ -494,25 +713,28 @@ const curlBlocks: HTMLElement[] = [];
         if (!Number.isFinite(v)) return;
         const rig = hands();
         if (rig === null) return;
-        rig.curl.grip[f][i] = v;
+        rig.curl[side][f][i] = v;
         remember();
       });
       row.append(number);
-      curlControls.set(`${f}.${seg}`, number);
+      curlControls.set(`${side}.${f}.${seg}`, number);
     });
     panel.append(row);
-    curlBlocks.push(row);
+    owned.push(row);
   }
+  curlBlocks.set(side, owned);
 }
 
 function syncCurl(): void {
   const rig = hands();
-  for (const f of FINGERS) {
-    SEGMENTS.forEach((seg, i) => {
-      const input = curlControls.get(`${f}.${seg}`);
-      if (input === undefined) return;
-      input.value = String(Math.round(rig?.curl.grip[f][i] ?? 0));
-    });
+  for (const side of ['grip', 'support'] as const) {
+    for (const f of FINGERS) {
+      SEGMENTS.forEach((seg, i) => {
+        const input = curlControls.get(`${side}.${f}.${seg}`);
+        if (input === undefined) return;
+        input.value = String(Math.round(rig?.curl[side][f][i] ?? 0));
+      });
+    }
   }
   writeOutput();
 }
@@ -532,22 +754,48 @@ function syncSwing(): void {
   writeOutput();
 }
 
-/** Knife mode shows one hand and the swing; a weapon shows two hands, the reload and ADS. */
+/**
+ * Three modes on one panel.
+ *
+ * A **weapon** shows two hands, the reload and ADS. A **knife** shows one hand, its wrap and
+ * the swing. A **grenade** shows two hands doing different jobs — the right on the body and the
+ * left on the ring — a wrap for each, the four keyframes of the throw and the pin's travel;
+ * and the claymore, the one with no pin, shows the holding hand alone.
+ */
 function applyMode(): void {
   const isBlade = isKnife(state.weaponId);
+  const isNade = isGrenade(state.weaponId);
+  const hasPin = isNade && grenade?.root.getObjectByName('pin') !== undefined;
   for (const [side, block] of handBlocks) {
-    const show = !isBlade || side === 'grip';
+    const show = isBlade ? side === 'grip' : isNade ? side === 'grip' || (side === 'support' && hasPin) : true;
     for (const el of block) el.style.display = show ? '' : 'none';
   }
   for (const el of swingBlocks) el.style.display = isBlade ? '' : 'none';
-  for (const el of curlBlocks) el.style.display = isBlade ? '' : 'none';
+  for (const el of throwBlocks) el.style.display = isNade ? '' : 'none';
+  for (const [side, block] of curlBlocks) {
+    const show = isBlade ? side === 'grip' : isNade && (side === 'grip' || hasPin);
+    for (const el of block) el.style.display = show ? '' : 'none';
+  }
   swingButtons.style.display = isBlade ? '' : 'none';
   swingRow.style.display = isBlade ? '' : 'none';
-  poseButtons.style.display = isBlade ? 'none' : '';
-  reloadRow.style.display = isBlade ? 'none' : '';
-  optionsBar.style.display = isBlade ? 'none' : '';
+  throwButtons.style.display = isNade ? '' : 'none';
+  throwRow.style.display = isNade ? '' : 'none';
+  keepHeldRow.style.display = isNade ? '' : 'none';
+  poseButtons.style.display = isBlade || isNade ? 'none' : '';
+  reloadRow.style.display = isBlade || isNade ? 'none' : '';
+  optionsBar.style.display = isBlade || isNade ? 'none' : '';
   const grip = handBlocks.get('grip')?.[0];
-  if (grip !== undefined) grip.firstChild!.textContent = isBlade ? 'RIGHT HAND — the handle' : SIDE_LABEL.grip;
+  if (grip !== undefined) {
+    grip.firstChild!.textContent = isBlade
+      ? 'RIGHT HAND — the handle'
+      : isNade
+        ? 'RIGHT HAND — socket_grip, the body'
+        : SIDE_LABEL.grip;
+  }
+  const support = handBlocks.get('support')?.[0];
+  if (support !== undefined) {
+    support.firstChild!.textContent = isNade ? "LEFT HAND — socket_pin, the ring (it rides the pin)" : SIDE_LABEL.support;
+  }
 }
 
 function syncControls(): void {
@@ -586,6 +834,27 @@ function entryFor(weaponId: string): string {
 }
 
 function writeOutput(): void {
+  if (isGrenade(state.weaponId)) {
+    const rig = hands();
+    const hasPin = grenade?.root.getObjectByName('pin') !== undefined;
+    const sides: HandSide[] = hasPin ? ['grip', 'support'] : ['grip'];
+    const wraps: Partial<Record<'grip' | 'support', HandWrap>> = {};
+    if (rig !== null) {
+      wraps.grip = rig.curl.grip as HandWrap;
+      if (hasPin) wraps.support = rig.curl.support as HandWrap;
+    }
+    output.value = [
+      '// HandPoses.ts — HAND_POSES: where the two hands go',
+      handPoseSource(state.weaponId, currentPoses(), sides),
+      '',
+      '// HandPoses.ts — HAND_WRAPS: what shape they close into',
+      rig === null ? '// (no grenade loaded)' : handWrapSource(state.weaponId, wraps),
+      '',
+      `// ViewmodelAnim.ts — GRENADE_THROWS.${state.weaponId}`,
+      anim === null ? '// (no grenade loaded)' : grenadeThrowSource(state.weaponId, anim.grenadeThrow, anim.grenadePinOut),
+    ].join('\n');
+    return;
+  }
   if (isKnife(state.weaponId)) {
     const swing = anim?.knifeSwing;
     const rig = hands();
@@ -613,6 +882,30 @@ let logTimer = 0;
 function remember(): void {
   const swing = anim?.knifeSwing;
   const rig = hands();
+  const wrapOf = (side: 'grip' | 'support'): Record<FingerName, FingerCurl> => {
+    const out = {} as Record<FingerName, FingerCurl>;
+    for (const f of FINGERS) out[f] = [...(rig?.curl[side][f] ?? [0, 0, 0])] as FingerCurl;
+    return out;
+  };
+  if (isGrenade(state.weaponId) && anim !== null && rig !== null) {
+    edits[state.weaponId] = {
+      ...currentPoses(),
+      throwTable: {
+        ready: { ...anim.grenadeThrow.ready },
+        pull: { ...anim.grenadeThrow.pull },
+        windup: { ...anim.grenadeThrow.windup },
+        release: { ...anim.grenadeThrow.release },
+      },
+      pinOut: { ...anim.grenadePinOut },
+      wrap: wrapOf('grip'),
+      wrapSupport: wrapOf('support'),
+    };
+    saveEdits(edits);
+    writeOutput();
+    window.clearTimeout(logTimer);
+    logTimer = window.setTimeout(() => console.log(`[hand tuner]\n${output.value}`), 300);
+    return;
+  }
   if (isKnife(state.weaponId) && swing !== undefined && rig !== null) {
     const wrap = {} as Record<FingerName, FingerCurl>;
     for (const f of FINGERS) wrap[f] = [...rig.curl.grip[f]] as FingerCurl;
@@ -637,8 +930,8 @@ async function copy(text: string): Promise<void> {
   console.log(`[hand tuner] copied:\n${text}`);
 }
 copyOne.addEventListener('click', () => {
-  // The knife's answer is two blocks, the hold and the swing, and the output box is both.
-  void copy(isKnife(state.weaponId) ? output.value : handPoseSource(state.weaponId, currentPoses()));
+  // The knife's and the grenade's answers are several blocks, and the output box is all of them.
+  void copy(isKnife(state.weaponId) || isGrenade(state.weaponId) ? output.value : handPoseSource(state.weaponId, currentPoses()));
 });
 copyAll.addEventListener('click', () => {
   remember();
@@ -646,11 +939,24 @@ copyAll.addEventListener('click', () => {
 });
 resetWeapon.addEventListener('click', () => {
   for (const side of SIDES) setHand(side, handPoseFor(state.weaponId, side));
-  if (anim !== null) for (const which of SWINGS) Object.assign(anim.knifeSwing[which], KNIFE_SWING[which]);
+  if (anim !== null) {
+    for (const which of SWINGS) Object.assign(anim.knifeSwing[which], KNIFE_SWING[which]);
+    const shipped = grenadeThrowFor(state.weaponId);
+    for (const which of THROWS) Object.assign(anim.grenadeThrow[which], shipped.table[which]);
+    Object.assign(anim.grenadePinOut, shipped.pinOut);
+  }
+  const rig = hands();
+  if (rig !== null) {
+    for (const side of ['grip', 'support'] as const) {
+      const back = defaultCurl(side);
+      for (const f of FINGERS) rig.curl[side][f] = [...back[f]] as FingerCurl;
+    }
+  }
   delete edits[state.weaponId];
   saveEdits(edits);
   syncControls();
   syncSwing();
+  syncThrow();
 });
 clearAll.addEventListener('click', () => {
   if (!window.confirm('Forget every weapon\'s edits in this browser?')) return;
@@ -667,8 +973,15 @@ async function load(weaponId: string): Promise<void> {
   state.weaponId = weaponId;
   hint.textContent = `loading ${weaponId}…`;
   const blade = isKnife(weaponId);
+  const nade = isGrenade(weaponId);
+  const equipmentId = EQUIPMENT_ID_OF[weaponId];
   await Promise.all([
-    (blade ? assets.preloadKnife() : assets.preload(weaponId)).catch(() => undefined),
+    (blade
+      ? assets.preloadKnife()
+      : nade && equipmentId !== undefined
+        ? assets.preloadEquipment(equipmentId)
+        : assets.preload(weaponId)
+    ).catch(() => undefined),
     assets.preloadHands().catch(() => undefined),
   ]);
   if (ticket !== loading) return;
@@ -682,6 +995,59 @@ async function load(weaponId: string): Promise<void> {
     if (knife.arm !== null) layer.remove(knife.arm);
     knife.dispose();
     knife = null;
+  }
+  if (grenade !== null) {
+    layer.remove(grenade.root);
+    grenade.dispose();
+    grenade = null;
+  }
+  if (nade) {
+    /**
+     * Same arrangement as the knife's, and for the same reason: `ViewmodelAnim` is built
+     * around a weapon and poses one every frame, so the carbine stands in hidden while the
+     * grenade and its two gloves are what is drawn — which is exactly what a match has while
+     * a throw runs.
+     */
+    const carrier = buildWeaponModel('ar_carbine', 8, null, { hands: false, assets, attachments: [] });
+    carrier.root.visible = false;
+    layer.add(carrier.root);
+    model = carrier;
+    const template = equipmentId === undefined ? null : assets.equipment(equipmentId);
+    anim = new ViewmodelAnim(carrier);
+    if (template !== null) {
+      grenade = buildGrenadeModel(template, assets.hands());
+      layer.add(grenade.root);
+      anim.setGrenade(grenade);
+    }
+    const savedNade = edits[weaponId];
+    if (savedNade !== undefined) {
+      setHand('grip', savedNade.grip);
+      setHand('support', savedNade.support);
+      const rig = grenade?.hands ?? null;
+      if (rig !== null) {
+        if (savedNade.wrap !== undefined) for (const f of FINGERS) rig.curl.grip[f] = [...savedNade.wrap[f]] as FingerCurl;
+        if (savedNade.wrapSupport !== undefined) {
+          for (const f of FINGERS) rig.curl.support[f] = [...savedNade.wrapSupport[f]] as FingerCurl;
+        }
+      }
+      if (savedNade.throwTable !== undefined) {
+        for (const which of THROWS) Object.assign(anim.grenadeThrow[which], savedNade.throwTable[which]);
+      }
+      if (savedNade.pinOut !== undefined) Object.assign(anim.grenadePinOut, savedNade.pinOut);
+    }
+    applyMode();
+    syncControls();
+    syncThrow();
+    const nadeUrl = new URL(window.location.href);
+    nadeUrl.searchParams.set('weapon', weaponId);
+    window.history.replaceState(null, '', nadeUrl);
+    hint.textContent =
+      grenade === null
+        ? `${weaponId}.glb did not load — is it built? run npm run check:weapons`
+        : grenade.hands === null
+          ? 'the hands file did not load — is hands.glb built?'
+          : `${weaponId} · the throw is READY / PULL / WIND-UP / RELEASE, or anywhere on the t slider`;
+    return;
   }
   if (blade) {
     /**
@@ -803,30 +1169,48 @@ function frame(now: number): void {
   last = now;
   if (model !== null && anim !== null) {
     const blade = isKnife(state.weaponId) && knife !== null;
-    const ads = !blade && state.pose === 'ads' ? 1 : 0;
+    const nade = isGrenade(state.weaponId) && grenade !== null;
+    const ads = !blade && !nade && state.pose === 'ads' ? 1 : 0;
     drive.adsFraction = ads;
-    drive.reloading = !blade && state.pose === 'reload';
+    drive.reloading = !blade && !nade && state.pose === 'reload';
     drive.reloadFraction = state.reload;
     // The knife is posed by where the swing is, exactly as a match poses it from `Melee`.
     drive.melee = blade ? state.swingT : 0;
+    /**
+     * The throw goes through the same door a match's does: the slider is turned back into the
+     * cook and the follow-through `ThrowController` would be reporting at that moment, and
+     * `ViewmodelAnim` maps them to the pose. Nothing here writes a blend.
+     */
+    const throwDrive = nade ? grenadeDriveAt(state.throwT) : { cook: -1, release: 0 };
+    drive.throwCook = throwDrive.cook;
+    drive.throwRelease = throwDrive.release;
     anim.update(drive, DEFAULT_VIEWMODEL_CONFIG, dt);
+    // Past the release the grenade has gone; the tuner can keep it so the pose can be judged.
+    if (nade && state.keepHeld && grenade !== null) {
+      grenade.setHeld(true);
+      if (grenade.lever !== null) grenade.lever.visible = true;
+    }
     const def = WEAPON_DEFS[model.weaponId];
     layer.setFov(DEFAULT_CAMERA_CONFIG.viewmodelFov * lerp(1, def?.adsViewmodelFovScale ?? 1, ads));
     layer.resize(EYE_ASPECT);
     layer.scene.updateMatrixWorld(true);
 
     const outside = state.view !== 'eye';
-    const posedRoot = blade && knife !== null ? knife.root : model.root;
+    const posed = posedRoot() ?? model.root;
     for (const side of SIDES) {
-      const target = posedRoot.getObjectByName(TARGET[side]);
+      const target = posed.getObjectByName(nade ? GRENADE_TARGET[side] : TARGET[side]);
       const m = markers[side];
-      m.visible = outside && state.sockets && target !== undefined && (!blade || side === 'grip');
+      // A grenade with no pin (the claymore, the semtex) has no ring to mark: its support
+      // target falls back to the grip's point and two dots would sit on top of each other.
+      const hasPin = nade && grenade?.root.getObjectByName('pin') !== undefined;
+      const wanted = blade ? side === 'grip' : nade ? side === 'grip' || (side === 'support' && hasPin) : true;
+      m.visible = outside && state.sockets && target !== undefined && wanted;
       if (target !== undefined) m.position.copy(layer.camera.worldToLocal(target.getWorldPosition(socketAt)));
     }
     if (outside) {
       renderer.setViewport(0, 0, viewHost.clientWidth, viewHost.clientHeight);
       renderer.setScissorTest(false);
-      const pivot = posedRoot.position;
+      const pivot = posed.position;
       const { theta, phi, radius } = state.orbit;
       orbitCamera.position.set(
         pivot.x + radius * Math.cos(phi) * Math.sin(theta),

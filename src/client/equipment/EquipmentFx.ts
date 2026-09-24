@@ -4,15 +4,18 @@ import { Rng } from '../../shared/core/Rng';
 import type { EquipmentDef } from '../../shared/equipment/EquipmentDefs';
 import type { Projectile, ProjectilePool } from '../../shared/equipment/Projectile';
 import type { SmokeField, SmokeVolume } from '../../shared/equipment/SmokeField';
+import { equipmentAssetId } from '../weapons/WeaponAssetCatalog';
+import type { WeaponAssetService } from '../weapons/WeaponAssetService';
 
 /**
- * Everything equipment draws (brief S2: zero external assets).
+ * Everything equipment draws.
  *
  * Three pools, all fixed size and all built once:
  *
- *  - **Bodies.** One mesh per live projectile, shaped by its equipment id. A frag is a
- *    faceted ball, a semtex is a flat slab, a claymore is a box on legs with a visible
- *    front face so you can read which way its arc points.
+ *  - **Bodies.** One slot per live projectile, holding the equipment's file where there is
+ *    one (2026-09-24) and the primitive where there is not — a faceted ball for a frag, a
+ *    flat slab for a semtex, a box for a claymore. The primitive is not dead code: it is
+ *    what the semtex has, and what everything else draws until its file lands.
  *  - **Smoke.** Per volume, a fan of camera-facing quads with a radial-gradient texture,
  *    drifting on their own seeded offsets. Billboards rather than a volume because a
  *    volumetric cloud is a fragment cost this project's frame budget does not have, and
@@ -74,10 +77,39 @@ interface SmokeCloud {
   volume: SmokeVolume | null;
 }
 
+/**
+ * One drawn projectile: the slot that is placed and turned, and the things it can show.
+ *
+ * `models` is per slot rather than per id because a clone is bound to one parent, and a slot
+ * is what the frame hands a projectile. A clone shares its template's geometry and materials,
+ * so the pool's worst case — every slot having drawn every kind — is a few hundred empty
+ * `Object3D`s and not a byte of GPU memory.
+ */
+interface Body {
+  readonly group: THREE.Group;
+  readonly primitive: THREE.Mesh;
+  readonly models: Map<string, DrawnModel>;
+  shown: THREE.Object3D;
+}
+
+interface DrawnModel {
+  readonly object: THREE.Object3D;
+  /**
+   * How far to lower it when the projectile is at rest, metres.
+   *
+   * A projectile's position is its centre and it comes to rest one collision `radius` above
+   * the ground — 0.11 m for a claymore whose file is 0.143 m tall, so a planted mine drawn on
+   * its centre floats 3.8 cm. The difference is measured off the clone's own bounds and never
+   * goes below zero: a model taller than twice its collision radius is left where the sim put
+   * it rather than pushed through the floor.
+   */
+  readonly rest: number;
+}
+
 export class EquipmentFx {
   readonly group = new THREE.Group();
 
-  private readonly bodies: THREE.Mesh[] = [];
+  private readonly bodies: Body[] = [];
   private readonly bodyGeometries = new Map<string, THREE.BufferGeometry>();
   private readonly clouds: SmokeCloud[] = [];
   private readonly blasts: Blast[] = [];
@@ -87,7 +119,14 @@ export class EquipmentFx {
   private readonly disposables: Array<{ dispose(): void }> = [];
   private readonly rng = new Rng(0x77b1_2c04);
 
-  constructor(projectileCapacity: number, smokeCapacity: number) {
+  /** Equipment ids this instance has already asked the service for, so it asks once. */
+  private readonly requested = new Set<string>();
+
+  constructor(
+    projectileCapacity: number,
+    smokeCapacity: number,
+    private readonly assets: WeaponAssetService | null = null,
+  ) {
     this.group.name = 'equipment-fx';
 
     const metal = new THREE.MeshStandardMaterial({ color: 0x4d5a4a, roughness: 0.62, metalness: 0.35 });
@@ -105,12 +144,14 @@ export class EquipmentFx {
     const fragGeometry = this.bodyGeometries.get('frag');
     if (fragGeometry === undefined) throw new Error('frag geometry missing');
     for (let i = 0; i < projectileCapacity; i++) {
+      const group = new THREE.Group();
+      group.name = `equipment:body:${i}`;
+      group.visible = false;
       const mesh = new THREE.Mesh(fragGeometry, metal);
       mesh.castShadow = true;
-      mesh.visible = false;
-      mesh.name = `equipment:body:${i}`;
-      this.group.add(mesh);
-      this.bodies.push(mesh);
+      group.add(mesh);
+      this.group.add(group);
+      this.bodies.push({ group, primitive: mesh, models: new Map(), shown: mesh });
     }
     // Held so the swap in `update` can reach them without a second lookup table.
     this.materials = { metal, sticky, tactical };
@@ -217,14 +258,14 @@ export class EquipmentFx {
     let bodyIndex = 0;
     for (const p of projectiles.items) {
       if (!p.active) continue;
-      const mesh = this.bodies[bodyIndex];
-      if (mesh === undefined) break;
+      const body = this.bodies[bodyIndex];
+      if (body === undefined) break;
       bodyIndex++;
-      this.poseBody(mesh, p, alpha, elapsed);
+      this.poseBody(body, p, alpha, elapsed);
     }
     for (let i = bodyIndex; i < this.bodies.length; i++) {
-      const mesh = this.bodies[i];
-      if (mesh !== undefined) mesh.visible = false;
+      const body = this.bodies[i];
+      if (body !== undefined) body.group.visible = false;
     }
 
     this.updateSmoke(smoke, camera, elapsed);
@@ -239,25 +280,70 @@ export class EquipmentFx {
 
   // -- internals -------------------------------------------------------------
 
-  private poseBody(mesh: THREE.Mesh, p: Projectile, alpha: number, elapsed: number): void {
-    const geometry = this.bodyGeometries.get(p.def.id);
-    if (geometry !== undefined && mesh.geometry !== geometry) mesh.geometry = geometry;
-    mesh.material = materialFor(p.def, this.materials);
+  private poseBody(body: Body, p: Projectile, alpha: number, elapsed: number): void {
+    const drawn = this.drawnFor(body, p);
+    if (body.shown !== drawn.object) {
+      body.shown.visible = false;
+      drawn.object.visible = true;
+      body.shown = drawn.object;
+    }
+    if (drawn.object === body.primitive) {
+      const geometry = this.bodyGeometries.get(p.def.id);
+      if (geometry !== undefined && body.primitive.geometry !== geometry) body.primitive.geometry = geometry;
+      body.primitive.material = materialFor(p.def, this.materials);
+    }
 
-    mesh.position.set(
+    body.group.position.set(
       lerp(p.px, p.x, alpha),
       lerp(p.py, p.y, alpha),
       lerp(p.pz, p.z, alpha),
     );
     if (p.resting) {
-      mesh.rotation.set(p.def.impact === 'plant' ? 0 : mesh.rotation.x, p.yaw, 0);
+      body.group.rotation.set(p.def.impact === 'plant' ? 0 : body.group.rotation.x, p.yaw, 0);
+      drawn.object.position.y = -drawn.rest;
     } else {
       // Tumbling. Driven off the clock rather than integrated, because nothing depends on
       // it and a grenade's spin is the one thing in this project that may be a lie.
       const spin = elapsed * 7 + p.serial;
-      mesh.rotation.set(spin * 1.3, spin, spin * 0.7);
+      body.group.rotation.set(spin * 1.3, spin, spin * 0.7);
+      drawn.object.position.y = 0;
     }
-    mesh.visible = true;
+    body.group.visible = true;
+  }
+
+  /**
+   * What this slot draws for this projectile: the equipment's file where it has one, the
+   * primitive otherwise, and a request for the file the first time one is missed.
+   *
+   * The clone loses its `pin` and its `lever` for good. Nothing in the world has either: the
+   * pin is pulled before the throw and the spoon leaves the hand at the release, so a grenade
+   * in the air still wearing both would be the one place the picture disagreed with what the
+   * player had just done.
+   */
+  private drawnFor(body: Body, p: Projectile): DrawnModel {
+    const existing = body.models.get(p.def.id);
+    if (existing !== undefined) return existing;
+    const template = this.assets?.equipment(p.def.id) ?? null;
+    if (template === null) {
+      // Nothing warms a claymore the player does not carry until one lands at their feet.
+      if (this.assets !== null && equipmentAssetId(p.def.id) !== null && !this.requested.has(p.def.id)) {
+        this.requested.add(p.def.id);
+        void this.assets.preloadEquipment(p.def.id).catch(() => undefined);
+      }
+      return { object: body.primitive, rest: 0 };
+    }
+    const object = template.scene.clone(true);
+    object.name = `${body.group.name}:${p.def.id}`;
+    for (const part of ['pin', 'lever']) object.getObjectByName(part)?.removeFromParent();
+    object.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.castShadow = true;
+    });
+    object.visible = false;
+    body.group.add(object);
+    const size = new THREE.Box3().setFromObject(object).getSize(new THREE.Vector3());
+    const drawn: DrawnModel = { object, rest: Math.max(0, p.def.radius - size.y / 2) };
+    body.models.set(p.def.id, drawn);
+    return drawn;
   }
 
   private updateSmoke(smoke: SmokeField, camera: THREE.Camera, elapsed: number): void {

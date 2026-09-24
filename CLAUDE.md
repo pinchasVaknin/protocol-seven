@@ -17,6 +17,9 @@ Rules:
   query/path/explain do not surface enough context.
 - After modifying code, run `python -m graphify update .` to keep the graph current
   (AST-only, no API cost). The post-commit hook already does this after every commit.
+- Any rebuild re-clusters and renumbers the communities, which drops the curated names
+  for hub filenames. Run `python scripts/graph-relabel.py` to put them back — it reads
+  `graph-communities.json`, costs nothing, and is safe to run at any time.
 
 Scope: `.graphifyignore` keeps `docs/archive/` and the image directories out of the corpus.
 Re-running the full pipeline over the documents costs LLM tokens; `update` never does.

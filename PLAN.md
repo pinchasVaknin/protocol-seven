@@ -1565,11 +1565,10 @@ glove, with the rifle away.
 
 - **The WIND-UP is off frame, and that is what the human wants**: the hand taken back and out of
   view reads as winding up to throw. Confirmed 2026-09-24, not a finding.
-- **The smoke's `support` wrap is the flashbang's, rotated.** All five fingers of
-  `HAND_WRAPS.eq_smoke.support` are `eq_flashbang.support`'s three segments moved one place left
-  (`[22,0,0]`→`[0,0,22]`, `[40,40,100]`→`[40,100,40]`, and so on for the other three). Five out
-  of five is not a hand doing it by eye. Shipped as sent, and flagged: worth a look in the tuner
-  before the next round.
+- ~~The smoke's `support` wrap is the flashbang's, rotated.~~ Confirmed by the human and
+  repaired (2026-09-24): the rotation is undone, so the two cans share the left hand their
+  identical `support` pose always implied. The smoke's *right* hand is its own and untouched —
+  a fat can is not a thin one.
 - **The flashbang's and the smoke's throws are identical**, and so are their `support` poses.
   Plausible — two cans of the same shape held the same way — and taken at face value.
 - **Not verified in a live match.** The files load and validate in a match (the console says so)

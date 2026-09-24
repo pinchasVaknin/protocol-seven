@@ -171,9 +171,20 @@ export const HAND_WRAPS: Readonly<Record<string, Partial<Record<'grip' | 'suppor
     grip: { thumb: [150, 0, 0], index: [-15, 130, 90], middle: [27, 150, 90], ring: [32, 140, 140], pink: [-20, 118, 140] },
     support: { thumb: [22, 0, 0], index: [40, 40, 100], middle: [50, 40, 81], ring: [54, 40, 67], pink: [75, 5, 64] },
   },
+  /**
+   * The smoke's left hand is the flashbang's, and that is a repair rather than a copy
+   * (2026-09-24).
+   *
+   * What the tuner first produced for it was the flashbang's five triples each rotated one
+   * place left — `[22,0,0]` as `[0,0,22]`, `[40,40,100]` as `[40,100,40]`, and so for the other
+   * three. Five out of five is not a hand posed by eye, and the two grenades share the hold it
+   * belongs to: their `support` entries above are the same numbers, because the ring sits in
+   * the same place on both fuzes. The rotation is undone here; the *right* hand below is the
+   * human's own and is left alone, because a fat can is not a thin one.
+   */
   eq_smoke: {
     grip: { thumb: [150, 0, 150], index: [16, 140, 132], middle: [150, 90, 27], ring: [140, 140, 32], pink: [16, 140, 100] },
-    support: { thumb: [0, 0, 22], index: [40, 100, 40], middle: [40, 81, 50], ring: [40, 67, 54], pink: [5, 64, 75] },
+    support: { thumb: [22, 0, 0], index: [40, 40, 100], middle: [50, 40, 81], ring: [54, 40, 67], pink: [75, 5, 64] },
   },
   eq_claymore: {
     grip: { thumb: [60, 0, 0], index: [9, 31, 35], middle: [9, 31, 49], ring: [9, 31, 47], pink: [9, 1, 53] },

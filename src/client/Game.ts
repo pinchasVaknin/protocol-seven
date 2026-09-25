@@ -2743,6 +2743,9 @@ export class Game {
       this.spectatePose.x = spectated.x;
       this.spectatePose.y = spectated.y;
       this.spectatePose.z = spectated.z;
+      // The watched body's own eye, not a standing one: `makeSnapshot` leaves this at 1.65 m and
+      // a crouching teammate's eyes are at 0.95. See `ClientMatch.spectatorView`.
+      this.spectatePose.eyeHeight = spectated.eyeHeight;
       this.cameraRig.update(
         this.spectatePose,
         this.spectatePose,

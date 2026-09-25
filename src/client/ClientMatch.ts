@@ -73,6 +73,7 @@ import type { MapEntry, ModeEntry } from '../shared/modes/ModeRegistry';
 import { Health, type HealthConfig } from '../shared/player/Health';
 import type { MovementConfig } from '../shared/player/MovementConfig';
 import type { PlayerController } from '../shared/player/PlayerController';
+import { eyeHeightFor } from '../shared/player/Stance';
 import type { ViewmodelLayer } from './player/Viewmodel';
 import { LOW_HEALTH_THRESHOLD, type DeathReport } from './ui/Hud';
 import type { HitZone } from '../shared/combat/HitboxRig';
@@ -114,6 +115,22 @@ import { WeaponSystem, type WeaponSnapshot } from '../shared/weapons/WeaponSyste
  * here and the flow's respawn gate is handed to both the bot director and the player's own
  * respawn timer, so "nobody comes back once the match is over" is one rule.
  */
+
+/**
+ * Where a dead player's camera goes and what eye it looks through (M11 Gate B, 6.8).
+ *
+ * Named rather than inline because `Game` composes a `PlayerSnapshot` out of it every frame, and
+ * the eye height is the field that used to be missing: an anonymous shape made it easy to hand
+ * over three numbers and leave the fourth at whatever `makeSnapshot` had put there.
+ */
+export interface SpectatorView {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly yaw: number;
+  /** Metres above the feet, from the stance the watched body is drawn in. */
+  readonly eyeHeight: number;
+}
 
 export interface MatchDeps {
   readonly bus: GameBus;
@@ -2155,30 +2172,41 @@ export class Match {
   /**
    * Where the spectator camera should sit, or null to leave it on the local body.
    *
-   * The followed body's **feet** and its facing — `PlayerSnapshot` carries an eye height of its
-   * own, so adding one here would raise the camera twice. A first-person framing rather than a
-   * chase camera, deliberately: a third-person spectator needs collision of its own, and one
-   * that clips through a wall while the player is already waiting out a round is a worse answer
-   * than looking through a teammate's eyes.
+   * The followed body's **feet**, its facing, and the eye height the stance it is drawn in
+   * actually has. A first-person framing rather than a chase camera, deliberately: a
+   * third-person spectator needs collision of its own, and one that clips through a wall while
+   * the player is already waiting out a round is a worse answer than looking through a
+   * teammate's eyes.
+   *
+   * Two things were wrong with the first version and both arrived as one report — *"the head of
+   * the body you are watching cuts into the camera"*.
+   *
+   * **The roster it looked in.** `deps.actors` is the *networked* supplier and is undefined in
+   * single-player, so every solo Search & Destroy death landed on `?? []` and returned null: the
+   * camera stayed at the eye the dead player left behind, while `BotRenderer` — told through
+   * `setEyesOf` that the camera was inside a teammate — dutifully hid that teammate. A frozen
+   * view of the room you died in with one of your own side invisible in it, and every other body
+   * in the match free to walk through the camera. `actorsForRender` is the supplier that answers
+   * both kinds of match, and it is the one the renderer itself draws from, which is what makes
+   * the body that is hidden and the body the camera is inside provably the same body.
+   *
+   * **The eye it used.** `PlayerSnapshot`'s own default is a standing 1.65 m and a spectated body
+   * is not always standing: a teammate who crouches drops their eyes to 0.95 m and a sliding one
+   * to 0.55 m, and the camera stayed a metre above their head with the body hidden under it.
+   * `eyeHeightFor` is the rule the living player's own camera is composed with, applied here to
+   * the stance the body is *drawn* in, so the spectator's eye is where that body's eyes are.
    */
-  spectatorView(alpha: number): { x: number; y: number; z: number; yaw: number } | null {
+  spectatorView(alpha: number): SpectatorView | null {
     const id = this.spectatorTargetId;
     if (id === NO_SPECTATOR_TARGET) return null;
-    for (const actor of this.deps.actors?.() ?? []) {
-      const a = actor as {
-        entityId?: number;
-        renderX?: (t: number) => number;
-        renderY?: (t: number) => number;
-        renderZ?: (t: number) => number;
-        renderYaw?: (t: number) => number;
-      };
-      if (a.entityId !== id) continue;
-      if (a.renderX === undefined || a.renderY === undefined || a.renderZ === undefined) return null;
+    for (const actor of this.actorsForRender()) {
+      if (actor.entityId !== id) continue;
       return {
-        x: a.renderX(alpha),
-        y: a.renderY(alpha),
-        z: a.renderZ(alpha),
-        yaw: a.renderYaw?.(alpha) ?? 0,
+        x: actor.renderX(alpha),
+        y: actor.renderY(alpha),
+        z: actor.renderZ(alpha),
+        yaw: actor.renderYaw(alpha),
+        eyeHeight: eyeHeightFor(this.deps.movementConfig, actor.animation.stance),
       };
     }
     return null;

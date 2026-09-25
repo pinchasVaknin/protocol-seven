@@ -19,6 +19,29 @@ import type {
 const MAX_GLTF_AVATAR_CREATIONS_PER_FRAME = 2;
 
 /**
+ * Metres. A body whose axis comes closer than this to the *spectator's* eye is not drawn.
+ *
+ * The other half of the report `eyesOf` answers. Hiding the body the camera is inside is not
+ * enough on its own, because in Search & Destroy the bodies pile up exactly where the camera
+ * goes: a corpse dropped at the feet of the teammate you are watching, or a second teammate
+ * holding the same doorway, puts a head through the near plane — a quarter of the screen of
+ * skull interior, which is what *"the head cuts into the camera"* looks like from the inside.
+ *
+ * 0.55 m rather than the near plane's own 0.12: at half a metre a body already fills the frame
+ * and carries no information a spectator could use, so the frames this takes away are frames
+ * that showed nothing. It applies **only while spectating** — the living player's own camera
+ * must never be allowed to hide an enemy who is close, which would be a wallhack in reverse.
+ */
+const SPECTATOR_BODY_CLEARANCE = 0.55;
+/**
+ * Metres from the feet to the crown of a standing body, near enough.
+ *
+ * The clearance test is horizontal, so without this a body standing on the floor below the one
+ * the camera is on would disappear for being in the same column of air.
+ */
+const BODY_REACH = 2.1;
+
+/**
  * Draws the bots (M9).
  *
  * Until M9 every `Bot` owned a `BotMesh` and `BotDirector` owned the two scene groups the
@@ -91,8 +114,12 @@ export class BotRenderer {
    * one, and shown again the frame it is not.
    */
   private eyesOf = NO_SPECTATOR_TARGET;
-  /** The actor hidden as `eyesOf` on the last frame, so its avatar is shown again the frame it stops being. */
-  private hiddenFor = NO_SPECTATOR_TARGET;
+  /**
+   * The actors hidden on the last frame, so each avatar is shown again the frame it stops being
+   * hidden. Two sets, swapped rather than reallocated: this runs every frame for every body.
+   */
+  private hidden = new Set<number>();
+  private hiddenNext = new Set<number>();
 
   /**
    * `actors` is a supplier rather than an array so the caller can decide per frame what is
@@ -179,22 +206,58 @@ export class BotRenderer {
         dt,
         camera,
       );
-      // The body the camera is inside is not drawn — after `applyEvents`, whose respawn edge
-      // sets the avatar visible, and after the indicator's own update, so this is the last
-      // word on the frame. Only *that* body: the indicator hides itself on a death, and a
-      // first version that wrote `visible = true` to every other actor here put a nameplate
-      // and a health bar back over every corpse in the match.
-      if (actor.entityId === this.eyesOf) {
+      // The bodies in the spectator camera's lap are not drawn — after `applyEvents`, whose
+      // respawn edge sets the avatar visible, and after the indicator's own update, so this is
+      // the last word on the frame. Only *those* bodies: the indicator hides itself on a death,
+      // and a first version that wrote `visible = true` to every other actor here put a
+      // nameplate and a health bar back over every corpse in the match.
+      if (this.hiddenFromSpectator(actor, x, y, z, camera)) {
         mesh.setVisible(false);
         indicator.group.visible = false;
-      } else if (actor.entityId === this.hiddenFor) {
-        // No longer the eyes: the avatar comes back; the indicator decides for itself next frame.
+        this.hiddenNext.add(actor.entityId);
+      } else if (this.hidden.has(actor.entityId)) {
+        // Out of the camera's lap: the avatar comes back; the indicator decides for itself
+        // next frame.
         mesh.setVisible(true);
       }
     }
-    this.hiddenFor = this.eyesOf;
+    const recycled = this.hidden;
+    recycled.clear();
+    this.hidden = this.hiddenNext;
+    this.hiddenNext = recycled;
 
     if (this.avatars.size !== this.present.size) this.retireAbsent();
+  }
+
+  /**
+   * Whether this body is kept out of the frame for the spectator camera (M17 C2, and the
+   * playtest report that followed it).
+   *
+   * Three states, in order. Not spectating: nothing is ever hidden, and the living player's
+   * camera is left exactly as it was. The body the camera is *inside*: hidden, because a camera
+   * in a skull renders the inside of it. Anything else within `SPECTATOR_BODY_CLEARANCE` of the
+   * eye: hidden too, which is the corpse at the watched player's feet and the teammate sharing
+   * their doorway.
+   *
+   * `camera` is optional on `update` — the thermal optic's passes hand none — and a missing one
+   * can only mean a pass that is not the spectator's, so the distance rule sits out that frame
+   * rather than guessing where the eye is.
+   */
+  private hiddenFromSpectator(
+    actor: RenderableActor,
+    x: number,
+    y: number,
+    z: number,
+    camera?: THREE.PerspectiveCamera,
+  ): boolean {
+    if (this.eyesOf === NO_SPECTATOR_TARGET) return false;
+    if (actor.entityId === this.eyesOf) return true;
+    if (camera === undefined) return false;
+    const dx = x - camera.position.x;
+    const dz = z - camera.position.z;
+    if (dx * dx + dz * dz > SPECTATOR_BODY_CLEARANCE * SPECTATOR_BODY_CLEARANCE) return false;
+    const rise = camera.position.y - y;
+    return rise > -SPECTATOR_BODY_CLEARANCE && rise < BODY_REACH;
   }
 
   private avatarFor(bot: RenderableActor): ActorAvatar {

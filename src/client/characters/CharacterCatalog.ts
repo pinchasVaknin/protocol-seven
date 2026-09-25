@@ -33,9 +33,21 @@ export type CharacterAnimationId =
   | 'crouchRunAiming'
   | 'crouchToStand'
   | 'standToCrouch'
+  | 'jumpLaunch'
+  | 'jumpLand'
   | 'reloadStand'
   | 'reloadWalk'
   | 'reloadCrouch'
+  | 'throwStand'
+  | 'throwWalk'
+  | 'throwCrouch'
+  | 'meleeStand'
+  | 'idleWeaponReadyPistol'
+  | 'walkWeaponReadyPistol'
+  | 'runWeaponReadyPistol'
+  | 'crouchIdleAimingPistol'
+  | 'crouchToStandPistol'
+  | 'standToCrouchPistol'
   | 'deathStand'
   | 'deathCrouch';
 
@@ -146,7 +158,7 @@ export interface CharacterDefinition {
 // M15 B0: the skins were re-encoded (1024 px, JPEG) — the URLs move so a cached 28 MB Echo is not kept.
 // 2026-09-23: every skin and clip now carries its Mixamo attribution in `asset.extras`
 // (`scripts/credits.mjs`), so the bytes moved again and a cached copy is the un-credited one.
-const CHARACTER_VERSION = '2026-09-23-credits';
+const CHARACTER_VERSION = '2026-09-25-animation-library';
 const ANIMATION_ROOT = '/models/bots/animations';
 
 /**
@@ -272,17 +284,37 @@ function slot(id: CharacterAnimationId, kind: ClipKind, first: string, ...rest: 
  *
  * - `runRelaxed` has two variants, dealt per life. Both are 0.517 s relaxed sprints whose
  *   crown sits 1.52 m up, and a standing body only reaches the run threshold while sprinting.
- * - `deathStand` has two; the simulation's `deathVariant` indexes them, so the server and
- *   every client agree which one a body fell with.
+ * - `deathStand` has three and `deathCrouch` two; the simulation's `deathVariant` indexes them,
+ *   so the server and every client agree which one a body fell with. `DEATH_VARIANTS` is 6
+ *   because it has to divide evenly by both — at 4 the first standing fall would be dealt twice
+ *   as often as the other two, and `check:animations` refuses that arithmetic. `Death_Crouch_01`
+ *   starts at hips 0.420 m, which is `Crouch_Idle_Aiming`'s to the millimetre, so the kneel no
+ *   longer always falls the same way.
  * - `standToCrouch` is the authored transition into the kneel (its last frame is 4 cm under
  *   the kneel's crown, 3.4 of them the `Neck1` the skins lack). With it, `crouchToStand` is
  *   no longer played backwards.
  * - The three reloads are one-shots keyed on `ActorAnimationInput.reloading`, fitted to the
  *   weapon's reload time by `CharacterAnimator`. `Crouch_Idle_Reload` sits 5 cm under the
  *   kneel layout's head box — recorded in PLAN.md, not padded away.
- * - The seven pistol-family files stay in `incoming/`: their crouch is a half-squat 11 cm
- *   taller than the kneel layout, and a slot whose variants need different hitboxes is not a
- *   slot. PLAN.md carries the decision.
+ * - `jumpLaunch` and `jumpLand` are the two halves of one authored jump and they meet exactly:
+ *   the launch ends with the hips at 0.914 m, the landing starts there, and the landing ends at
+ *   0.890 — which is `Idle_Aiming`'s. Two clips rather than one because the time a body spends in
+ *   the air belongs to the physics and not to a clip: the launch clamps on its last frame and
+ *   *is* the air pose, for a hop and for a fall down a shaft alike. The three other jump exports
+ *   delivered alongside them stay in `incoming/` — they are drops from an authored ledge height
+ *   carrying 1.5–1.7 m of root travel, and under the root lock the body would be drawn a metre
+ *   above its own feet.
+ * - The three throws and the melee are one-shots keyed on `throwing` and `meleeing`, the two bits
+ *   protocol 20 widened `EFlag` to carry. The throw is **held** rather than fitted: a cook has no
+ *   fixed length, so the clip stops at `THROW_HOLD_FRACTION` while the hand is on the grenade and
+ *   runs out at its authored speed once the simulation says it has gone.
+ * - **The pistol family**, admitted here after two milestones in `incoming/` (M13 decision 11).
+ *   Six slots, and what makes six safe where fifteen were wanted is in `rigLayoutFor`: the poses
+ *   the family does not cover — the crouch walk and run, the reloads, the relaxed loops, the
+ *   falls — fall back to the rifle's clip *and* the rifle's hitbox layout together, so no body is
+ *   ever drawn in one pose and shot in another. `runWeaponReadyPistol` takes the run and the
+ *   sprint as variants the way `runRelaxed` does, and is a slot of its own rather than two more
+ *   variants of that one because its clips hold a weapon and `runRelaxed`'s do not.
  */
 const MIXAMO_ANIMATIONS: Readonly<Record<CharacterAnimationId, CharacterAnimationSlot>> = {
   idleRelaxed: slot('idleRelaxed', 'loop', 'locomotion/stand/Idle_Relaxed'),
@@ -295,11 +327,23 @@ const MIXAMO_ANIMATIONS: Readonly<Record<CharacterAnimationId, CharacterAnimatio
   crouchRunAiming: slot('crouchRunAiming', 'weaponReadyLoop', 'locomotion/crouch/Crouch_Run_Aiming'),
   crouchToStand: slot('crouchToStand', 'oneShot', 'transitions/Transition_Crouch_To_Stand'),
   standToCrouch: slot('standToCrouch', 'oneShot', 'transitions/Transition_Stand_To_Crouch_Aiming'),
+  jumpLaunch: slot('jumpLaunch', 'oneShot', 'transitions/Transition_Stand_To_Airborne'),
+  jumpLand: slot('jumpLand', 'oneShot', 'transitions/Transition_Airborne_To_Stand'),
   reloadStand: slot('reloadStand', 'oneShot', 'actions/Idle_Reload'),
   reloadWalk: slot('reloadWalk', 'oneShot', 'actions/Walk_Reload'),
   reloadCrouch: slot('reloadCrouch', 'oneShot', 'actions/Crouch_Idle_Reload'),
-  deathStand: slot('deathStand', 'oneShot', 'deaths/Death_Stand', 'deaths/Death_Stand_01'),
-  deathCrouch: slot('deathCrouch', 'oneShot', 'deaths/Death_Crouch'),
+  throwStand: slot('throwStand', 'oneShot', 'actions/Idle_Throw'),
+  throwWalk: slot('throwWalk', 'oneShot', 'actions/Walk_Throw'),
+  throwCrouch: slot('throwCrouch', 'oneShot', 'actions/Crouch_Idle_Throw'),
+  meleeStand: slot('meleeStand', 'oneShot', 'actions/Idle_Melee'),
+  idleWeaponReadyPistol: slot('idleWeaponReadyPistol', 'weaponReadyLoop', 'locomotion/stand/Idle_Aiming_Pistol'),
+  walkWeaponReadyPistol: slot('walkWeaponReadyPistol', 'weaponReadyLoop', 'locomotion/stand/Walk_Aiming_Pistol'),
+  runWeaponReadyPistol: slot('runWeaponReadyPistol', 'weaponReadyLoop', 'locomotion/stand/Run_Aiming_Pistol', 'locomotion/stand/Sprint_Aiming_Pistol'),
+  crouchIdleAimingPistol: slot('crouchIdleAimingPistol', 'weaponReadyLoop', 'locomotion/crouch/Crouch_Idle_Aiming_Pistol'),
+  crouchToStandPistol: slot('crouchToStandPistol', 'oneShot', 'transitions/Transition_Crouch_To_Stand_Pistol'),
+  standToCrouchPistol: slot('standToCrouchPistol', 'oneShot', 'transitions/Transition_Stand_To_Crouch_Pistol'),
+  deathStand: slot('deathStand', 'oneShot', 'deaths/Death_Stand', 'deaths/Death_Stand_01', 'deaths/Death_Stand_02'),
+  deathCrouch: slot('deathCrouch', 'oneShot', 'deaths/Death_Crouch', 'deaths/Death_Crouch_01'),
 };
 
 function character(

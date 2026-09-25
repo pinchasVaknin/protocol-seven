@@ -20,12 +20,30 @@ export interface WeaponInput {
   firePressed: boolean;
   adsHeld: boolean;
   reloadPressed: boolean;
+  /**
+   * Both hands are needed elsewhere, so no magazine change may start and one in progress is
+   * dropped (2026-09-25, the human): a sprint, a slide and a vault each take the hands.
+   *
+   * Separate from `lowering`, which has covered the sprint and the vault since M4 but
+   * deliberately **not** the slide — *"M4 playtesting called firing mid-slide missing, and it
+   * is"*, so a slide keeps the weapon up. Firing one-handed from a slide is a choice the game
+   * made; changing a magazine while sliding is not the same claim, and it was the one state
+   * where a reload ran to completion.
+   */
+  reloadBlocked: boolean;
   /** Sprint, tactical sprint, slide and mantle all lower the weapon. */
   lowering: boolean;
 }
 
 export function makeWeaponInput(): WeaponInput {
-  return { fireHeld: false, firePressed: false, adsHeld: false, reloadPressed: false, lowering: false };
+  return {
+    fireHeld: false,
+    firePressed: false,
+    adsHeld: false,
+    reloadPressed: false,
+    reloadBlocked: false,
+    lowering: false,
+  };
 }
 
 /** Keyframe positions as a fraction of the reload's duration. */
@@ -205,7 +223,7 @@ export class Weapon {
     this.reloadFinishedThisTick = false;
 
     this.stepRaise(input.lowering);
-    this.stepReload(input.lowering);
+    this.stepReload(input.lowering, input.reloadBlocked);
     this.stepAds(input);
     this.stepTrigger(input);
   }
@@ -278,12 +296,13 @@ export class Weapon {
     }
   }
 
-  private stepReload(lowering: boolean): void {
+  private stepReload(lowering: boolean, blocked: boolean): void {
     if (!this.reloading) return;
 
     // Sprinting out of a reload is legal and costs you the reload. The ammo only lands
-    // on completion, so there is no half-reload state to reason about.
-    if (lowering) {
+    // on completion, so there is no half-reload state to reason about. Sliding into one now
+    // costs it too, which `lowering` does not say because a slide keeps the weapon up.
+    if (lowering || blocked) {
       this.cancelReload();
       return;
     }
@@ -340,7 +359,12 @@ export class Weapon {
   }
 
   private stepTrigger(input: WeaponInput): void {
-    if (input.reloadPressed) this.beginReload();
+    // Checked here and not only in `stepReload` above, which runs first: without it the press
+    // started a reload that the next tick cancelled, and one tick is long enough to emit
+    // `WeaponReloadStarted` — a click of reload audio, a viewmodel twitch, and one snapshot
+    // carrying `EFlag.Reloading` to everybody else. A refused reload should look like a key
+    // nobody pressed, which is the rule `fireBlocked` already follows.
+    if (input.reloadPressed && !input.reloadBlocked) this.beginReload();
 
     this.fireTimer -= DT;
 
@@ -359,7 +383,10 @@ export class Weapon {
         evDry.weaponId = this.def.id;
         evDry.sourceId = this.sourceId;
         this.bus.emit(EV.WeaponDryFired, evDry);
-        if (this.reserve > 0) this.beginReload();
+        // The automatic reload on a dry trigger is the same magazine change and obeys the same
+        // rule. This is the path that made blocking the key alone insufficient: firing is legal
+        // mid-slide, so an empty weapon fired while sliding reloaded itself.
+        if (this.reserve > 0 && !input.reloadBlocked) this.beginReload();
       }
       if (this.fireTimer < 0) this.fireTimer = 0;
       return;

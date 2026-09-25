@@ -8,6 +8,7 @@ import type { CamoId } from '../../shared/meta/Camos';
 import { buildHeldWeapon, buildWeaponModel, heldWeaponMaterial, type WeaponModel } from '../weapons/WeaponMesh';
 import type { WeaponAssetService } from '../weapons/WeaponAssetService';
 import type { AttachmentId } from '../../shared/weapons/Attachments';
+import { WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
 import { PODIUM_STEPS, PODIUM_X } from './Lineup';
 
 /**
@@ -165,6 +166,8 @@ const STANDING_ARMED: ActorAnimationInput = {
   reloading: false,
   reloadSeconds: 0,
   firing: false,
+  throwing: false,
+  meleeing: false,
 };
 
 interface Slot {
@@ -508,6 +511,7 @@ export class CharacterStage {
     }
     const asset: HeldWeaponAsset = {
       weaponId,
+      weaponClass: WEAPON_DEFS[weaponId]?.class ?? null,
       geometry: built.geometry,
       material: heldWeaponMaterial(this.deps.anisotropy(), camo),
       template,

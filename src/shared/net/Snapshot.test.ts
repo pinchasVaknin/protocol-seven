@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { NO_SKIN_INDEX } from '../meta/Skins';
 import { decodeHeader, writeHello } from './Messages';
 import { PROTOCOL_VERSION } from './Protocol';
-import { copyEntitySnapshot, makeEntitySnapshot, readEntity, writeEntity, type EntitySnapshot } from './Snapshot';
+import { copyEntitySnapshot, EFlag, makeEntitySnapshot, readEntity, writeEntity, type EntitySnapshot } from './Snapshot';
 import { ByteReader, ByteWriter } from './Wire';
 
 /**
@@ -93,5 +93,59 @@ describe('Hello', () => {
     writeHello(w, 'A', 0, null, null);
     // magic u32 + id u8 + version u16 + name (len + 1) + skin u8 + two presence bytes.
     expect(w.bytes().length).toBe(4 + 1 + 2 + 2 + 1 + 1 + 1);
+  });
+});
+
+/**
+ * Protocol 20: the flags are sixteen bits. The byte was full at `EFlag.TeamB`, and the two clips
+ * the animation library was waiting on — a throw and a knife swing — each needed one. The tests
+ * that matter are that a bit above 8 survives the round trip at all (a `u8` write would have
+ * silently truncated it and the throw would simply never be drawn) and that the flags still cost
+ * nothing on a body whose flags did not change.
+ */
+describe('EntitySnapshot.flags, widened', () => {
+  it('carries a bit above the old byte through a full write', () => {
+    const e = standing(1);
+    e.flags = EFlag.Alive | EFlag.Throwing;
+    const out = makeEntitySnapshot();
+    roundTrip(e, null, out);
+    expect(out.flags & EFlag.Throwing).toBe(EFlag.Throwing);
+    expect(out.flags).toBe(e.flags);
+  });
+
+  it('carries every bit at once, which a u8 could not', () => {
+    const all = Object.values(EFlag).reduce((mask, bit) => mask | bit, 0);
+    expect(all).toBeGreaterThan(0xff);
+    const e = standing(2);
+    e.flags = all;
+    const out = makeEntitySnapshot();
+    roundTrip(e, null, out);
+    expect(out.flags).toBe(all);
+  });
+
+  it('spends two bytes on a delta that changed the flags and none on one that did not', () => {
+    const base = standing(3);
+    base.flags = EFlag.Alive;
+    const out = makeEntitySnapshot();
+    roundTrip(base, null, out);
+
+    const still = standing(3);
+    still.flags = EFlag.Alive;
+    // The mask alone: entity id and the field mask, with no field behind it.
+    const unchanged = roundTrip(still, base, out);
+
+    const swinging = standing(3);
+    swinging.flags = EFlag.Alive | EFlag.Melee;
+    const changed = roundTrip(swinging, base, out);
+    expect(changed - unchanged).toBe(2);
+    expect(out.flags & EFlag.Melee).toBe(EFlag.Melee);
+  });
+
+  it('copies the new bits with the rest of the struct', () => {
+    const a = standing(4);
+    a.flags = EFlag.Alive | EFlag.Throwing | EFlag.Melee;
+    const b = makeEntitySnapshot();
+    copyEntitySnapshot(a, b);
+    expect(b.flags).toBe(a.flags);
   });
 });

@@ -45,7 +45,17 @@ import {
  * different links are almost never acking the same snapshot.
  */
 
-/** Entity flags. Presentation reads these; none of them are cosmetic *state*. */
+/**
+ * Entity flags. Presentation reads these; none of them are cosmetic *state*.
+ *
+ * Sixteen bits since protocol 20, eight of them spent. The byte was full at `TeamB` and M12's F17
+ * estimate had already named the consequence — *"nothing in the snapshot says a grenade is being
+ * cooked, and `EFlag` has no bit left to say it"* — with the instruction to *"widen once,
+ * deliberately, rather than three times"*. So it is widened once, here, and two bits are spent
+ * on the two facts the animation library was waiting for. The cost is one byte per entity on the
+ * snapshots where the flags changed at all; a body standing still still costs its mask and
+ * nothing else.
+ */
 export const EFlag = {
   Alive: 1 << 0,
   Firing: 1 << 1,
@@ -57,6 +67,27 @@ export const EFlag = {
   Grounded: 1 << 6,
   /** Team B when set, team A when clear. */
   TeamB: 1 << 7,
+  /**
+   * A grenade is in this body's hand rather than a weapon (protocol 20).
+   *
+   * The server's own `NetPlayer.handBusy`, which has existed since the grenade mechanic put the
+   * pin pull on the fire button and `EFlag.Firing` started lying about it. This is that fact
+   * reaching the people who can see the arm: it selects the throw one-shot, and it is *held*
+   * while the cook runs, so a two-second cook and a snap throw are the same clip at the same
+   * authored speed rather than a second clock over a timing the simulation owns.
+   */
+  Throwing: 1 << 8,
+  /**
+   * This body is mid-knife-swing (protocol 20).
+   *
+   * Presentation only, and the one flag here whose fact the server does not already hold:
+   * `weapons/Melee.ts` runs in `ClientMatch` and resolves its damage there, so the server sees
+   * the swing as a bit in an input command and nothing more. It derives the pose from that bit
+   * (`ServerMatch.stepMelee`) on the same edge the client does, with the same shared constants,
+   * and it applies no damage and decides no hit — the swing a remote body is *drawn* taking is
+   * the swing its owner asked for, which is all a pose has ever needed to be true about.
+   */
+  Melee: 1 << 9,
 } as const;
 
 /** Which fields a delta carries. One bit per line of `writeEntity`. */
@@ -282,7 +313,7 @@ export function writeEntity(w: ByteWriter, e: EntitySnapshot, base: EntitySnapsh
   if ((mask & F.Health) !== 0) w.u8v(e.health);
   if ((mask & F.Weapon) !== 0) w.u8v(e.weaponIndex);
   if ((mask & F.Character) !== 0) w.u8v(e.characterIndex);
-  if ((mask & F.Flags) !== 0) w.u8v(e.flags);
+  if ((mask & F.Flags) !== 0) w.u16(e.flags);
   if ((mask & F.Death) !== 0) {
     w.u8v(e.deathSerial & 0xff);
     w.u16(quantAngle(e.deathAngle));
@@ -323,7 +354,7 @@ export function readEntity(r: ByteReader, out: EntitySnapshot): void {
   if ((mask & F.Health) !== 0) out.health = r.u8v();
   if ((mask & F.Weapon) !== 0) out.weaponIndex = r.u8v();
   if ((mask & F.Character) !== 0) out.characterIndex = r.u8v();
-  if ((mask & F.Flags) !== 0) out.flags = r.u8v();
+  if ((mask & F.Flags) !== 0) out.flags = r.u16();
   if ((mask & F.Death) !== 0) {
     out.deathSerial = r.u8v();
     out.deathAngle = dequantAngle(r.u16());

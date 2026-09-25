@@ -102,6 +102,25 @@ export class NetPlayer implements Combatant {
    */
   handBusy = false;
 
+  /**
+   * Seconds left of the knife swing this body is **drawn** taking (protocol 20).
+   *
+   * The one presentation fact on this class the simulation here does not own. `weapons/Melee.ts`
+   * runs in `ClientMatch` and resolves its damage there, so the server sees a swing only as
+   * `Btn.Melee` in an input command. `ServerMatch.stepMelee` edge-detects that bit and runs this
+   * down by `MELEE_SWING_SECONDS`, which is the shared constant the client's own state machine is
+   * built from — so the pose everybody else sees starts on the tick the swinger asked for it and
+   * lasts as long as their swing does.
+   *
+   * It decides nothing. No damage, no hit, no block: a body drawn mid-swing that the client
+   * never let swing is a body that pressed the knife with a grenade in its hand, and the only
+   * consequence is one animation. Kept here beside `handBusy` because both are written once a
+   * tick by the match and read once a tick by the snapshot.
+   */
+  meleeSeconds = 0;
+  /** The previous tick's buttons, for the melee's rising edge. */
+  meleePrevButtons = 0;
+
   kills = 0;
   deaths = 0;
   shotsFired = 0;
@@ -440,7 +459,7 @@ export class NetPlayer implements Combatant {
       sim.pitch += this.residual.pitch;
     }
 
-    this.rig.setLayout(rigLayoutFor(sim.stance, sim.vx, sim.vz));
+    this.rig.setLayout(rigLayoutFor(sim.stance, sim.vx, sim.vz, this.weapons.definition.class === 'PISTOL'));
     this.rig.setTransform(sim.x, sim.y, sim.z, sim.yaw);
     savePlayerSim(sim, this.simState);
   }

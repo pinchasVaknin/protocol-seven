@@ -72,6 +72,8 @@ export class RemoteActor implements RenderableActor {
     reloading: false,
     reloadSeconds: 0,
     firing: false,
+    throwing: false,
+    meleeing: false,
   };
 
   /**
@@ -127,6 +129,27 @@ export class RemoteActor implements RenderableActor {
     return (this.flags & EFlag.Sprinting) !== 0;
   }
 
+  /** Protocol 20: the server's `NetPlayer.handBusy`, which `EFlag.Firing` used to lie about. */
+  get throwing(): boolean {
+    return (this.flags & EFlag.Throwing) !== 0;
+  }
+
+  /** Protocol 20: derived on the server from this body's own melee button (`EFlag.Melee`). */
+  get meleeing(): boolean {
+    return (this.flags & EFlag.Melee) !== 0;
+  }
+
+  /**
+   * Whether this body is holding a sidearm — the one thing the weapon decides about a pose.
+   *
+   * Read by the hitbox layout here and, separately, by the avatar off `HeldWeaponAsset`. Two
+   * readers of one replicated field rather than two facts: a dead body's `weaponIndex` is 255 and
+   * resolves to null, so it is false, which is what the standing fall clips want.
+   */
+  get pistol(): boolean {
+    return this.weaponId !== null && WEAPON_DEFS[this.weaponId]?.class === 'PISTOL';
+  }
+
   get stance(): StanceId {
     return this.pose.stance;
   }
@@ -141,6 +164,8 @@ export class RemoteActor implements RenderableActor {
     this.animation_.reloadSeconds =
       this.reloading && this.weaponId !== null ? (WEAPON_DEFS[this.weaponId]?.reloadTime ?? 0) : 0;
     this.animation_.firing = this.firing;
+    this.animation_.throwing = this.throwing;
+    this.animation_.meleeing = this.meleeing;
     return this.animation_;
   }
 
@@ -214,10 +239,10 @@ export class RemoteActor implements RenderableActor {
 
     this.applyLatest(interp.latest);
 
-    // The same layout rule as the server's (`rigLayoutFor`), from the replicated stance and
-    // velocity: this rig is what the hitbox overlay draws, so it has to wear what the
-    // authority wears.
-    this.rig.setLayout(rigLayoutFor(this.pose.stance, interp.latest.vx, interp.latest.vz));
+    // The same layout rule as the server's (`rigLayoutFor`), from the replicated stance,
+    // velocity and weapon: this rig is what the hitbox overlay draws, so it has to wear what the
+    // authority wears. The weapon is `weaponIndex`, which has been on the wire since M10.
+    this.rig.setLayout(rigLayoutFor(this.pose.stance, interp.latest.vx, interp.latest.vz, this.pistol));
     this.rig.setTransform(this.pose.x, this.pose.y, this.pose.z, this.pose.yaw);
   }
 

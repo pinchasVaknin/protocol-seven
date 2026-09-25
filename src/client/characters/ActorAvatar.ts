@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
+import type { WeaponClass } from '../../shared/weapons/WeaponDefs';
 
 /**
  * Semantic landmarks used by the client-only world identification layer.
@@ -49,6 +50,17 @@ export function stockShift(weapon: THREE.Object3D, gripAnchor: THREE.Vector3): n
 
 export interface HeldWeaponAsset {
   readonly weaponId: string;
+  /**
+   * The weapon's class, for the one presentation decision that turns on it: a sidearm is drawn
+   * standing and kneeling in its own clips (M13 decision 11), and the crouched one needs its own
+   * hitbox layout because it is a half-squat 10.9 cm above the kneel.
+   *
+   * It rides on the asset rather than being looked up in the avatar because the avatar is handed
+   * a weapon and never an id — `BotRenderer.heldWeapon` is the one place that already depends on
+   * both the weapon table and the avatar contract, and joining them twice is how the two answers
+   * start to disagree. Null for an id with no definition, which is what a killstreak's weapon is.
+   */
+  readonly weaponClass: WeaponClass | null;
   readonly geometry: THREE.BufferGeometry;
   readonly material: THREE.Material;
   /**

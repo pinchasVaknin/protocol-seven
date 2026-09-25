@@ -347,6 +347,11 @@ export class WeaponSystem {
     // field comment: this is the difference between busy hands and an absent player.
     wi.adsHeld = !this.suspended && isDown(buttons, Btn.Ads);
     wi.reloadPressed = !this.suspended && justPressed(buttons, prevButtons, Btn.Reload);
+    // A magazine change needs both hands, and a sprint, a slide and a vault each have them
+    // (2026-09-25, the human). Read off the same `sim` the stance machine owns, so the weapon
+    // and the body cannot disagree about what the player is doing — and so a bot, which comes
+    // through this same call, obeys it too.
+    wi.reloadBlocked = sim.sprintActive || sim.tacSprintActive || sim.slideActive || sim.mantleActive;
     // Anything that puts the weapon out of the fight lowers it. A slide no longer does:
     // M4 playtesting called firing mid-slide missing, and it is — the cost is now a spread
     // penalty in `SpreadContext` rather than a weapon you cannot use.

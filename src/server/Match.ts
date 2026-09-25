@@ -22,6 +22,7 @@ import { equipmentDef } from '../shared/equipment/EquipmentDefs';
 import { LifeStockAudit, type LifeStockReport } from '../shared/equipment/LifeStockAudit';
 import { BotThrower, type MutableThrowIntent } from '../shared/equipment/BotThrower';
 import { ThrowController } from '../shared/equipment/ThrowController';
+import { MELEE_SWING_SECONDS } from '../shared/weapons/Melee';
 import { DEFAULT_EQUIPMENT_CONFIG, type EquipmentConfig } from '../shared/equipment/EquipmentConfig';
 import { AR_DEFAULT, PISTOL_DEFAULT } from '../shared/weapons/WeaponDefs';
 import { EventCollector } from './net/EventCollector';
@@ -699,6 +700,7 @@ export class ServerMatch extends Disposable {
      * authoritative one for ever.
      */
     this.stepThrowers();
+    this.stepMelee();
     this.equipment.simulate(0, 0, 0, PLAYER_TEAM, PLAYER_ENTITY_ID, false);
     this.stepBotThrows();
     // Streaks tick after the bots that may have just shot one down, and before the flow that
@@ -748,6 +750,45 @@ export class ServerMatch extends Disposable {
       // What the snapshot needs to know: the fire button means "pull the pin" while this is
       // true, and nobody watching should see a muzzle flash for it. See `NetPlayer.handBusy`.
       player.handBusy = hand.thrower.busy;
+    }
+  }
+
+  /**
+   * Every connected human's knife, for the pose alone (protocol 20).
+   *
+   * The asymmetry with `stepThrowers` above is the point and is worth stating rather than
+   * hiding. A throw is simulated here: the server owns a `ThrowController` per player, the cook
+   * and the release are authoritative, and `handBusy` is read off the thing that decides. A
+   * *swing* is not simulated here at all — `weapons/Melee.ts` lives in `ClientMatch` and applies
+   * its damage there — so this cannot read a state machine, because there is none to read.
+   *
+   * What it reads instead is the input, which is authoritative: `Btn.Melee` arrived in a command
+   * this player signed, and the rising edge of it is the frame they asked to swing. The timer runs
+   * on the shared `MELEE_SWING_SECONDS`, so the pose lasts exactly as long as the swing the client
+   * is running. It does not reproduce the client's gates (a knife is refused there while a grenade
+   * is in the hand, while the mortar screen is open and while the gunship has the camera), and the
+   * cost of not reproducing them is bounded and stated: in those cases a watcher sees one swing
+   * animation for a swing that dealt nothing. Nothing else in the match can observe this field.
+   *
+   * Driven from the command the body just consumed, for the reason `stepThrowers` gives.
+   */
+  private stepMelee(): void {
+    for (const player of this.players) {
+      const cmd = player.lastCommand;
+      if (cmd === null) continue;
+      const buttons = player.alive ? cmd.buttons : 0;
+      const pressed = isDown(buttons, Btn.Melee) && !isDown(player.meleePrevButtons, Btn.Melee);
+      player.meleePrevButtons = buttons;
+      // A corpse is not swinging, and a swing that survived a respawn would be drawn on the
+      // next life — the same reason `ThrowController.step` takes `alive`.
+      if (!player.alive) {
+        player.meleeSeconds = 0;
+        continue;
+      }
+      // The edge restarts it rather than extending it: holding the key is one swing on the
+      // client too, and the cooldown there is longer than the swing.
+      if (pressed) player.meleeSeconds = MELEE_SWING_SECONDS;
+      else if (player.meleeSeconds > 0) player.meleeSeconds = Math.max(0, player.meleeSeconds - DT);
     }
   }
 

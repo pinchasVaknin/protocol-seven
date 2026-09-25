@@ -119,6 +119,8 @@ interface HarnessOptions {
   readonly abandon: boolean;
   /** Have every client throw a lethal every N ticks, or 0 never (§8.24). */
   readonly throwEveryTicks: number;
+  /** Have every client swing the knife every N ticks, or 0 never (protocol 20). */
+  readonly meleeEveryTicks: number;
   /**
    * Go silent for the summary hold, the way the browser used to (playtest round 4, B4).
    *
@@ -647,6 +649,7 @@ async function runFlow(server: Server, opts: HarnessOptions, cfg: ServerConfig):
       // §8.9: if a residual misprediction survives it, the cause is not the loadout.
       loadout: streakHarnessClass(opts, i),
       throwEveryTicks: opts.throwEveryTicks,
+      meleeEveryTicks: opts.meleeEveryTicks,
       // F14. See `HarnessOptions.cheats` for why the codes differ per client and why the
       // fourth client onwards is deliberately handed nothing. `--wallet-streak` types the
       // wallet on every seat instead (M13 Phase A); the two are refused together.
@@ -1292,6 +1295,7 @@ function reportFlow(input: FlowReportInput): number {
         modeStateLine(r) +
         streakLine(r) +
         projectileLine(r) +
+        poseFlagLine(r) +
         `divergence ${r.hashMismatches}/${r.hashSamples}` +
         (r.firstMismatchTick >= 0 ? ` (first @${r.firstMismatchTick})` : '') +
         ', ' +
@@ -2536,6 +2540,22 @@ function projectileLine(r: HeadlessClientReport): string {
   );
 }
 
+/**
+ * The two bits protocol 20 widened `EFlag` for, as seen by this client on somebody else's body.
+ *
+ * Its own line rather than a clause on the grenade one, because it answers a different question:
+ * the grenade counters say a projectile reached this client, and these say the *thrower* did —
+ * the arm, before the object exists, which is the half the wire could not carry until v20. Zero
+ * with grenades in the air means the flag is not arriving.
+ */
+function poseFlagLine(r: HeadlessClientReport): string {
+  if (r.remoteThrowFrames === 0 && r.remoteMeleeFrames === 0) return '';
+  return (
+    `remote poses ${r.remoteThrowFrames} throw frm/${r.remoteThrowers} thrower(s), ` +
+    `${r.remoteMeleeFrames} melee frm/${r.remoteSwingers} swinger(s), `
+  );
+}
+
 function streakLine(r: HeadlessClientReport): string {
   if (r.streakFrames === 0) return '';
   return (
@@ -2581,6 +2601,7 @@ function parseArgs(argv: readonly string[]): HarnessOptions {
     summaryGate: argv.includes('--summary-gate'),
     abandon: argv.includes('--abandon'),
     throwEveryTicks: Math.max(0, num('--throw', 0)),
+    meleeEveryTicks: Math.max(0, num('--melee', 0)),
     dropReturn: Math.max(0, num('--drop-return', 0)),
     dropHoldMs: Math.max(0, num('--drop-hold', 3000)),
     cheats: argv.includes('--cheats'),

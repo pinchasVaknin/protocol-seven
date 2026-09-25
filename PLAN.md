@@ -315,6 +315,100 @@ being widened for the riot shield anyway — one bump, two features. A wind-up a
 consequence worth naming before it is built: seeing an enemy cook is *information*, and adding it
 changes fights, which makes it a balance decision rather than an animation one.
 
+### F17 as built (2026-09-25): the wire, the hold, and two defects the browser found
+
+Built this session alongside the jump pair and the pistol family. The line this section drew —
+*"`ThrowController` decides when the grenade leaves the hand; `ViewmodelAnim` decides what that
+looks like"* — is unchanged and now has a third-person half on the same terms.
+
+**The hold, instead of a fit.** A reload clip is stretched to the weapon's reload time; a throw
+cannot be, because **a cook has no length**. So the clip runs to its cocked frame and *pauses*
+there for as long as `EFlag.Throwing` is up, then plays out its tail into the 0.42 s the
+simulation gives the release and the follow-through. The animation never keeps a clock. The hold
+point is measured, not chosen: the right hand is furthest behind the hips at **0.508** of
+`Idle_Throw`, **0.577** of `Crouch_Idle_Throw` and **0.608** of `Walk_Throw` (Echo, through the
+real import path), and one constant at 0.55 covers the three — the spread is under two tenths of
+a second on a pose about to be thrown out of.
+
+**Two defects the live run found and the unit tests could not.** Both were in the jump, and both
+were invisible to a test of the policy because they were about *when a clip ends*:
+
+1. The launch clip is 0.55 s and its `finished` event handed the body back to a standing loop —
+   so a body still in the air stood upright mid-flight. On a 12 m drop that is the whole descent.
+   `onFinished` now holds the clamped last frame while the body is off the ground.
+2. A jump **shorter** than 0.55 s never showed its landing at all: the launch still owned the body
+   on the frame the feet touched down, and the ground edge was swallowed. The ground edge now
+   interrupts, which no other edge here does — measured on a 330 ms hop that played half a launch
+   and went back to idle.
+
+**Measured, in a live match and over the wire.** A 12 m drop: launch at 24 ms, clip exhausted at
+591 ms, its last frame **held for 12 frames** to 958 ms, `jumpLand` on contact at 989 ms, and the
+body never once drawn standing in the air. A 1.8 s cook: `throwStand` from 24 ms, paused at clip
+time **1.769 s** (= 3.217 × 0.55) until the flag cleared, then the tail at ×3. A knife swing: the
+1.583 s clip fitted to `MELEE_SWING_SECONDS` at **×2.93**, one start per press. And three headless
+clients against a real server (`--throw 240 --melee 90`): each saw the **other two** flagged
+mid-throw and mid-swing — 42 512 throw frames over 2 throwers, 15 852 melee frames over 2
+swingers, FLOW CHECK PASSED. The knife costs no prediction accuracy, as a presentation-only field
+must not: the misprediction band is the same with it and without it, and the grenades account for
+all of it.
+
+### The library's second pass (2026-09-25), and four rules settled
+
+Eight more exports, and the human's answers to the report the first pass produced.
+
+**In:** `Death_Stand_02` (a backward fall, 2.20 s) and `Death_Crouch_01` (a kneeling headshot,
+1.92 s, starting at hips 0.420 m — `Crouch_Idle_Aiming`'s depth to the millimetre), so a body no
+longer always falls the same way out of a kneel. `DEATH_VARIANTS` goes **4 → 6**, which is the
+smallest number that divides three standing falls and two kneeling ones; at 4 the first standing
+fall would have been dealt twice as often as the other two and nothing but `check:animations`
+would have said so. Verified on the real body: six variants map onto 3 and 2 with no clip favoured
+(1950 / 2093 / 1957 and 2999 / 3001 over 6 000 deals).
+
+**Swapped:** `Idle_Aiming_Pistol` for a second export of the same pose that is **65-bone** rather
+than 69, 4.017 s rather than 1.350, and steady to 3 mm rather than 7. Strictly better on every
+axis; the 69-bone one is gone.
+
+**Out, with reasons.** `Running Slide` is 1.55 s of which only **0.40 s** is actually a slide —
+the crown travels 1.63 → 0.44 → 1.63 and the hands part to 1.03 m — so it is a cinematic, not a
+loop, and a slide's length is the speed's. Admitting it needs a trimmed loop *and* a layout
+measured at the deep pose, because a body drawn at a 0.44 m crown inside the 1.39 m crouch-run
+layout is the M13 C2 defect with the sign flipped. `Braced Hang To Crouch` carries the whole
+1.58 m of the vault in its own hips while `stepMantle` is already moving `sim.y` the same
+distance, so the body would rise twice. `Climbing` is a ladder climb, mean crown **+0.72 m** over
+the standing layout, and there are no ladders. All three wait in `incoming/`.
+
+**Four rules the human settled:**
+
+| | |
+|---|---|
+| **Flinch clips** | Not wanted. `hits/` is deleted; `flinchSerial` still drives the procedural lean in `CharacterAvatar.flinch` and that is the hit reaction |
+| **Heavy weapons** | Keep the AR clips. Only the pistol gets a family of its own |
+| **The pistol's gaps** | Stay. The fallback rule makes them safe, and there is nowhere to source the rest from |
+| **The crouched throw's 12.7 cm** | Accepted, deliberately: *"a short window, and worth the slight inaccuracy for the readability of the action."* The number stays on record rather than being padded away |
+
+**The reload rule, which was not only a policy change.** *"You cannot reload while sprinting,
+sliding or vaulting."* Two of those already half-worked through `lowering`, and looking properly
+found three doors rather than one: a press while sprinting **started** a reload that the next tick
+cancelled — one tick is long enough to emit `WeaponReloadStarted`, which is a click of audio, a
+viewmodel twitch and one snapshot telling everybody else the body was reloading; a **slide** is
+deliberately not `lowering` (M4: firing mid-slide is legal), so a reload there ran to completion;
+and the **automatic** reload on a dry trigger reached `beginReload` without touching the key at
+all, which is the door that mattered, because firing while sliding is exactly the case that opens
+it. One new input flag, `reloadBlocked`, closes all three, and `WeaponBase.test.ts` holds each one
+with a planted-defect check behind it — including one test that was rewritten after it passed
+against the unguarded code for the wrong reason.
+
+**The 69-bone skeleton: asked, and the answer is no.** Twelve shipped files still carry a
+`mixamorigNeck1` that six of the seven skins lack, costing 3–4 cm of head height on those skins.
+It cannot be fixed in the file. Deleting the bones changes nothing — `importClip` already drops
+their tracks on a skin that lacks them — and would take the pose away from Sentry, which can bind
+them. Baking the rotation down into `Neck` recovers the angle but not the distance, because that
+distance is a bone length in a chain the 65-bone skin does not have; restoring it means writing a
+`Head` translation track computed against one skin's bind pose, and these files are one template
+shared by seven skins. That is retargeting, it belongs in an animation tool, and the fix is to
+re-export having picked a 65-bone character in Mixamo. The affected twelve are listed in the
+library README; `animation-manifest.mjs` prints the column, so the list is never a guess.
+
 ## F6 — what a map actually costs, measured
 
 The only item here whose cost is fully known, because three of them exist. Measured this session
@@ -454,12 +548,12 @@ Each with a recommendation, and none of them started.
 |---|---|---|
 | 1 | **F4: procedural parameters, or an asset pipeline?** | **Procedural.** (b) spends a milestone on infrastructure to ship one model, and breaks the mesh-is-the-rig identity |
 | 2 | **Are the three streak weapons registered in `ALL_WEAPONS`?** | **Yes**, with an unreachable `unlockLevel`. It is what makes `weaponIndex`, the killfeed glyph and the silhouette work with no parallel table. It moves `check:unlocks`'s count off 12 weapons and will want unlock records |
-| 3 | **`EFlag` is full. Widen to 16 bits, or go without?** | **Widen, once, as v13.** The shield's raise state and the throw wind-up both need a bit and neither can be derived |
+| 3 | ~~**`EFlag` is full. Widen to 16 bits, or go without?**~~ **Settled by the human (2026-09-25): widened, as protocol 20.** `EntitySnapshot.flags` is a `u16` and two of its eight new bits are spent — `Throwing` off the server's own `NetPlayer.handBusy`, and `Melee` derived in `ServerMatch.stepMelee` from the melee bit in the command. One byte per entity on the snapshots whose flags moved; six bits left, which is where the riot shield's raise state goes | — |
 | 4 | **Flamethrower: pellet cone, or a real burn?** | **Pellet cone.** It reuses the shotgun's machinery and adds no damage kind, no flag bit and no bot question |
 | 5 | **Riot shield hitbox: second `RigLayout`, damage predicate, or moving collider?** | **Second layout**, plus one array in `RigHistory`. The only route where what you shoot stays what you see |
 | 6 | **Are the new streaks unlock-gated?** | **No.** All six shipped ones are ungated; gating three of nine makes the picker inconsistent for no gain |
 | 7 | **Prices: minigun / flamethrower / shield** | **9 / 7 / 8.** P4 measured the balance model at 38 streaks per 705 lives, so nine streaks over three slots is a choice problem rather than inflation. These are a starting point for the human to feel, not a result |
-| 8 | **F17 third person: release only, or wind-up too?** | **Release now** — free, off `ProjectileState.ownerId`. Wind-up only alongside #3, and note that it is a balance change rather than an animation |
+| 8 | ~~**F17 third person: release only, or wind-up too?**~~ **Settled by the human (2026-09-25): both, via decision 3.** The wind-up is the whole of it — `EFlag.Throwing` is held for the cook, so the third-person clip waits at its cocked frame and runs out when the grenade goes. The balance consequence this row warned about is real and is now shipped: **seeing an enemy cook is information**, and it changes fights. Named here rather than buried in the animation | — |
 | 9 | **Does map four author all six objectives?** | **Yes.** Otherwise `modesForMap` silently offers three modes instead of five, and flags moved later mean lanes re-balanced later |
 | 10 | **F5 scope** | **Frame now, order of battle with F6, no campaign.** A campaign here ships mute |
 

@@ -1806,8 +1806,10 @@ export class Match {
 
     // The glint an enemy can see is a property of the weapon, and `PlayerCombatant` is
     // built before the weapon exists — so it is stamped here, once a tick, before
-    // perception runs against it.
+    // perception runs against it. The weapon's class rides the same mechanism for the same
+    // reason: `syncRig` needs it to pick the crouched layout, and a sidearm kneels differently.
     this.playerCombatant.glinting = !this.playerDead && this.weapons.glinting;
+    this.playerCombatant.pistol = this.weapons.definition.class === 'PISTOL';
 
     this.range?.step();
     this.equipment.simulate(cmd, this.deps.player.sim, !this.playerDead);

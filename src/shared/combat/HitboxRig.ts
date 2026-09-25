@@ -28,6 +28,11 @@ import { isLowStance, LOCOMOTION_IDLE_SPEED, LOCOMOTION_RUN_SPEED, type StanceId
  * clip they are drawn with (`scripts/measure-crouch.mjs --pose`), and `rigLayoutFor` picks
  * one by the same rule the animation selector uses to pick the clip. The standing layout is
  * untouched: every hit-rate number in the plan was taken against it.
+ *
+ * A fourth low layout arrived with the pistol family (M13 decision 11, settled this session):
+ * a sidearm is drawn crouching in a half-squat rather than a kneel, 10.9 cm of crown apart, so
+ * `rigLayoutFor` takes what is in the hands as well. It is still one rule and not two — see the
+ * note there for why the fallback is what makes an incomplete clip family safe.
  */
 
 export type HitZone = 'head' | 'torso' | 'arm' | 'leg';
@@ -277,29 +282,68 @@ const HUMANOID_CROUCH_RUN_RIG: RigLayout = poseLayout('humanoid-crouch-run', {
   rightFoot: [0.12, 0.17, 0.12],
 });
 
+/**
+ * `Crouch_Idle_Aiming_Pistol`: a **half-squat**, not a kneel. Both feet under the body, hips at
+ * 0.48 m — 7 cm above the kneel's — and the crown at 1.23 m, which is 10.9 cm above the kneel
+ * layout's head box (`measure-crouch.mjs`, Echo, this session).
+ *
+ * That number is the whole reason the pistol family sat in `incoming/` from M13 Phase D until
+ * now (decision 11): a crouching body drawn in this clip over `humanoid-crouch` has its head
+ * outside its own head box, so a round aimed at the drawn crown passes over everything it could
+ * hit — the same defect C2 found on the sliding body, in the same direction. A clip this far
+ * from a layout needs its own, and `rigLayoutFor` now asks what is in the hands.
+ */
+const HUMANOID_CROUCH_PISTOL_RIG: RigLayout = poseLayout('humanoid-crouch-pistol', {
+  headTop: [0.03, 1.23, -0.09],
+  head: [0, 1.03, -0.01],
+  neck: [0, 1.0, 0.01],
+  spine1: [0.02, 0.73, -0.02],
+  hips: [0, 0.48, -0.01],
+  leftArm: [-0.16, 0.92, -0.04],
+  leftForeArm: [-0.19, 0.8, -0.28],
+  leftHand: [-0.05, 0.98, -0.43],
+  rightArm: [0.16, 0.97, 0.1],
+  rightForeArm: [0.16, 0.95, -0.17],
+  rightHand: [0.04, 1.02, -0.4],
+  leftUpLeg: [-0.09, 0.46, -0.03],
+  leftLeg: [-0.03, 0.47, -0.43],
+  leftFoot: [-0.13, 0.12, -0.33],
+  rightUpLeg: [0.09, 0.44, 0.02],
+  rightLeg: [0.13, 0.05, -0.06],
+  rightFoot: [0.14, 0.19, 0.3],
+});
+
 /** Every layout a humanoid can wear, for anything that needs to enumerate them (debug, audits). */
 export const HUMANOID_LAYOUTS: readonly RigLayout[] = [
   HUMANOID_RIG,
   HUMANOID_CROUCH_RIG,
+  HUMANOID_CROUCH_PISTOL_RIG,
   HUMANOID_CROUCH_WALK_RIG,
   HUMANOID_CROUCH_RUN_RIG,
 ];
 
 /**
- * The layout a body wears in `stance` moving at `(vx, vz)`, chosen by the rule the animation
- * selector uses to choose the clip: standing stances wear the standing layout; a low stance
- * wears the kneel, the crouch walk above the idle dead zone, and the crouch run above the run
- * threshold — which only a slide reaches.
+ * The layout a body wears in `stance` moving at `(vx, vz)` with `pistol` in its hands, chosen by
+ * the rule the animation selector uses to choose the clip: standing stances wear the standing
+ * layout; a low stance wears the kneel, the crouch walk above the idle dead zone, and the crouch
+ * run above the run threshold — which only a slide reaches.
+ *
+ * `pistol` is the whole of the weapon's influence, and it reaches exactly one branch: the
+ * crouched idle, where a sidearm is drawn in its own half-squat 10.9 cm above the kneel's head
+ * box. Everywhere else the pistol family has no clip of its own, the body falls back to the
+ * rifle's — and because the layout is chosen by the same three facts the clip is, it falls back
+ * with it. That is what makes half a family safe to admit where M13 decision 11 could not: the
+ * clip and the boxes cannot disagree about which pose a body is in, whatever it is holding.
  *
  * Squared speeds, on purpose: `Math.hypot` is not something two runtimes have to agree on and
  * a threshold comparison does not need it.
  */
-export function rigLayoutFor(stance: StanceId, vx: number, vz: number): RigLayout {
+export function rigLayoutFor(stance: StanceId, vx: number, vz: number, pistol: boolean): RigLayout {
   if (!isLowStance(stance)) return HUMANOID_RIG;
   const speedSq = vx * vx + vz * vz;
   if (speedSq >= LOCOMOTION_RUN_SPEED * LOCOMOTION_RUN_SPEED) return HUMANOID_CROUCH_RUN_RIG;
   if (speedSq > LOCOMOTION_IDLE_SPEED * LOCOMOTION_IDLE_SPEED) return HUMANOID_CROUCH_WALK_RIG;
-  return HUMANOID_CROUCH_RIG;
+  return pistol ? HUMANOID_CROUCH_PISTOL_RIG : HUMANOID_CROUCH_RIG;
 }
 
 export function buildLayout(id: string, boxes: readonly HitboxDef[]): RigLayout {

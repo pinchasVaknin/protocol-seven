@@ -107,6 +107,8 @@ export class Bot implements Combatant, PathClient {
     reloading: boolean;
     reloadSeconds: number;
     firing: boolean;
+    throwing: boolean;
+    meleeing: boolean;
   } = {
     stance: 'STAND',
     aiming: false,
@@ -114,6 +116,11 @@ export class Bot implements Combatant, PathClient {
     reloading: false,
     reloadSeconds: 0,
     firing: false,
+    // A bot has neither equipment nor a knife (`BotBrain` presses neither button), so these are
+    // constants rather than reads. They are here because the contract is shared with a remote
+    // human, who has both — see `RemoteActor.animation`.
+    throwing: false,
+    meleeing: false,
   };
   readonly rng: Rng;
 
@@ -481,7 +488,7 @@ export class Bot implements Combatant, PathClient {
     // The rig tracks the *simulation* pose on the tick the shot resolves, and wears the
     // layout of the pose the stance is drawn in, so cover actually covers.
     this.currScale = sim.capsuleHeight / Math.max(this.deps.movement.standHeight, 1e-3);
-    this.rig.setLayout(rigLayoutFor(sim.stance, sim.vx, sim.vz));
+    this.rig.setLayout(rigLayoutFor(sim.stance, sim.vx, sim.vz, this.weapons.definition.class === 'PISTOL'));
     this.rig.setTransform(sim.x, sim.y, sim.z, sim.yaw);
 
     this.currX = sim.x;

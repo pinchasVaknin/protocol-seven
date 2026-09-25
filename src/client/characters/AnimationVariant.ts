@@ -9,7 +9,10 @@ import type { CharacterAnimationId } from './CharacterCatalog';
  * looking at. So a variant is a pure function of facts every client already shares —
  *
  * - **locomotion** — `(entityId, spawnSerial)`: fixed for a life, re-dealt at the respawn;
- * - **flinches** — `(entityId, flinchSerial)`, once a flinch clip exists;
+ * - **flinches** — `(entityId, flinchSerial)`, had there been a flinch clip. There is not, and
+ *   there is not going to be: the human's call (2026-09-25) is that the procedural lean in
+ *   `CharacterAvatar.flinch` is the hit reaction. The pair is named here because the seed rule is
+ *   the general one, not because a slot is waiting;
  * - **deaths** — the simulation's own `deathVariant`, already `(entityId, deathSerial)`
  *   through the same hash, indexed modulo the slot's count so the server and the procedural
  *   body agree with the skinned one.

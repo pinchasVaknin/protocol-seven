@@ -69,6 +69,22 @@ export interface ActorAnimationInput {
    */
   readonly reloadSeconds: number;
   readonly firing: boolean;
+  /**
+   * A grenade is in the hand rather than a weapon (protocol 20).
+   *
+   * `ThrowController.busy` for a local body, `EFlag.Throwing` for a replicated one. The throw
+   * clip is *held* while this is true and released when it clears, so the sim keeps the only
+   * clock over the cook — see `CharacterAnimator.setLocomotion`. A bot never throws, so a bot's
+   * is always false.
+   */
+  readonly throwing: boolean;
+  /**
+   * This body is mid-knife-swing (protocol 20).
+   *
+   * `Melee.busy` for a local body, `EFlag.Melee` for a replicated one. Presentation only: the
+   * swing that resolves damage is still `ClientMatch`'s, and nothing reads this but the clip.
+   */
+  readonly meleeing: boolean;
 }
 
 /**
@@ -174,5 +190,13 @@ export function cosmeticVariantFor(entityId: number, serial: number, variants: n
  * The number lives here rather than in `client/ai/BotMesh.ts` because the *choice* is made
  * in the simulation and has to be identical on a server that has no meshes to count. The
  * mesh asserts against it — see `BotMesh.beginDeath`.
+ *
+ * **Six, not the count of any one slot.** The client indexes a slot's clips by this modulo their
+ * number, so the figure has to divide evenly by every death slot's count or the low variants are
+ * dealt more often than the high ones and nothing says so; `check:animations` is the thing that
+ * refuses it. With three standing falls and two kneeling ones (2026-09-25), six is the smallest
+ * that works for both. It is not replicated — every client derives the variant from
+ * `(entityId, deathSerial)` through `deathVariantFor` — so two clients on different builds would
+ * draw the same body falling two different ways, which is the reason it lives in `shared/`.
  */
-export const DEATH_VARIANTS = 4;
+export const DEATH_VARIANTS = 6;

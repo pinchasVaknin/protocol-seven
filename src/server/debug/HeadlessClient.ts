@@ -188,6 +188,16 @@ export interface HeadlessClientOptions {
    */
   readonly throwEveryTicks?: number;
   /**
+   * Swing the knife every N ticks, or 0 never (protocol 20).
+   *
+   * The knife had never been exercised over the network at all: `weapons/Melee.ts` runs in
+   * `ClientMatch` and resolves its own damage, so nothing about a swing left the client and
+   * nothing here pressed the button. Protocol 20 gives a swing a replicated *pose*
+   * (`ServerMatch.stepMelee` derives `EFlag.Melee` from this very bit), and a flag nothing
+   * presses is a flag nothing can check — so the harness presses it.
+   */
+  readonly meleeEveryTicks?: number;
+  /**
    * Reproduce the browser's summary-screen gate (playtest round 4, B4). **A red control.**
    *
    * `Game.simulate` used to call `NetClient.update` only while the screen was `MATCH`, so from
@@ -452,6 +462,20 @@ export interface HeadlessClientReport {
   readonly hashSamples: number;
   readonly hashMismatches: number;
   readonly firstMismatchTick: number;
+  /**
+   * Snapshot frames on which some other body was flagged mid-throw or mid-swing (protocol 20).
+   *
+   * The two bits `EFlag` was widened for, counted where they are actually consumed: a remote
+   * entity's newest snapshot on this client. They are presentation-only, so nothing else in the
+   * harness can notice if they stop arriving — a `u8` write would truncate `Throwing` silently
+   * and the only symptom would be an animation nobody ever sees. A run in which grenades are
+   * thrown and these stay at zero is the regression.
+   */
+  readonly remoteThrowFrames: number;
+  readonly remoteMeleeFrames: number;
+  /** Distinct entities seen carrying each, so one cooking player cannot stand in for the path. */
+  readonly remoteThrowers: number;
+  readonly remoteSwingers: number;
   /** Projectile frames, distinct grenades thrown by others, and echoes of this client's own. */
   readonly projectileFrames: number;
   readonly remoteProjectiles: number;
@@ -713,6 +737,10 @@ export class HeadlessClient {
   private spectatePicks = 0;
   private spectateSelfPicks = 0;
   private spectateEnemyPicks = 0;
+  private remoteThrowFrames = 0;
+  private remoteMeleeFrames = 0;
+  private readonly remoteThrowerIds = new Set<number>();
+  private readonly remoteSwingerIds = new Set<number>();
   private spectateDeadPicks = 0;
 
   /**
@@ -1490,6 +1518,21 @@ export class HeadlessClient {
      * The camera that consumes it is a browser claim; the rule is an ordinary function with an
      * ordinary answer.
      */
+    // The two protocol-20 bits, sampled where a renderer would read them. Cheap enough to do
+    // every frame over a ten-entity roster, and the only place in the harness that looks at them.
+    for (const [entityId, interp] of this.net.remotes) {
+      if (entityId === this.net.entityId) continue;
+      const flags = interp.latest.flags;
+      if ((flags & EFlag.Throwing) !== 0) {
+        this.remoteThrowFrames++;
+        this.remoteThrowerIds.add(entityId);
+      }
+      if ((flags & EFlag.Melee) !== 0) {
+        this.remoteMeleeFrames++;
+        this.remoteSwingerIds.add(entityId);
+      }
+    }
+
     if (this.net.entityId >= 0 && !this.net.localAlive) {
       const target = pickSpectatorTarget(
         this.net.entityId,
@@ -1724,6 +1767,10 @@ export class HeadlessClient {
       spectatePicks: this.spectatePicks,
       spectateSelfPicks: this.spectateSelfPicks,
       spectateEnemyPicks: this.spectateEnemyPicks,
+      remoteThrowFrames: this.remoteThrowFrames,
+      remoteMeleeFrames: this.remoteMeleeFrames,
+      remoteThrowers: this.remoteThrowerIds.size,
+      remoteSwingers: this.remoteSwingerIds.size,
       spectateDeadPicks: this.spectateDeadPicks,
       hashSamples: this.hashSamples,
       hashMismatches: this.hashMismatches,
@@ -1975,6 +2022,16 @@ export class HeadlessClient {
     }
 
     /**
+     * Swing the knife on a fixed cadence (protocol 20).
+     *
+     * One tick of hold, not two: `Btn.Melee` is edge-triggered in the sim precisely so a held
+     * key is one swing, and the server derives the drawn pose from the same edge. A cadence
+     * longer than `MELEE_SWING_SECONDS` so each swing finishes before the next begins.
+     */
+    const meleePeriod = this.opts.meleeEveryTicks ?? 0;
+    if (meleePeriod > 0 && tick % meleePeriod === 0) buttons |= Btn.Melee;
+
+    /**
      * Hold Tab on a duty cycle, **outside the `alive` gate above** (playtest round 4, B6).
      *
      * Deliberately not part of a behaviour: every run should measure this, and a client that
@@ -2025,8 +2082,11 @@ export class HeadlessClient {
         bestY = this.pose.y;
         bestZ = this.pose.z;
         // Chest height of the layout that body is wearing, so a crouching target is aimed at
-        // where its torso box actually is rather than where a standing one's would be.
-        bestAimY = rigLayoutFor(this.pose.stance, interp.latest.vx, interp.latest.vz).aimY;
+        // where its torso box actually is rather than where a standing one's would be — including
+        // the sidearm's half-squat, which is 10 cm of chest away from the kneel.
+        const targetWeapon = weaponIdAt(interp.latest.weaponIndex);
+        const targetPistol = targetWeapon !== null && WEAPON_DEFS[targetWeapon]?.class === 'PISTOL';
+        bestAimY = rigLayoutFor(this.pose.stance, interp.latest.vx, interp.latest.vz, targetPistol).aimY;
       }
     }
 

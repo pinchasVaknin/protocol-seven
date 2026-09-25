@@ -57,7 +57,7 @@ Sketchfab models, built into the shipped files by `scripts/weapon-build.mjs`.
 
 ## Characters and animations
 
-The 7 character skins and 24 animation clips under `public/models/bots/` are [Mixamo](https://www.mixamo.com/) content, used
+The 7 character skins and 38 animation clips under `public/models/bots/` are [Mixamo](https://www.mixamo.com/) content, used
 under the [Mixamo terms of use](https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html): royalty-free in a
 project, and Adobe asks for no attribution. It is credited anyway, because provenance is what
 lets the next person clear the file. Each of those `.glb` files carries the same record in

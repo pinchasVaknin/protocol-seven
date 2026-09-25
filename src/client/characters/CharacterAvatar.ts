@@ -29,6 +29,8 @@ export class CharacterAvatar implements ActorAvatar {
   private lastZ = 0;
   private seeded = false;
   private armed = false;
+  /** Whether the body is holding a sidearm, which has locomotion clips of its own. */
+  private pistol = false;
 
   constructor(instance: THREE.Object3D, assets: CharacterAssetBundle) {
     this.group.name = `character:${assets.definition.id}`;
@@ -44,6 +46,7 @@ export class CharacterAvatar implements ActorAvatar {
   setWeapon(weapon: HeldWeaponAsset | null): void {
     this.skin.setWeapon(weapon);
     this.armed = weapon !== null;
+    this.pistol = weapon?.weaponClass === 'PISTOL';
   }
 
   setVisible(on: boolean): void {
@@ -100,7 +103,7 @@ export class CharacterAvatar implements ActorAvatar {
     dt: number,
   ): void {
     const planarSpeed = this.measurePlanarSpeed(x, z, dt);
-    this.animator.setLocomotion(animation, planarSpeed, this.armed);
+    this.animator.setLocomotion(animation, planarSpeed, this.armed, this.pistol);
     this.animator.update(dt);
 
     this.group.position.set(x, y, z);

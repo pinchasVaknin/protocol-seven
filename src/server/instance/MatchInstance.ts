@@ -842,6 +842,8 @@ function writePlayer(e: EntitySnapshot, p: NetPlayer): void {
     (weapon.adsFraction > 0.5 ? EFlag.Ads : 0) |
     (sim.sprintActive || sim.tacSprintActive ? EFlag.Sprinting : 0) |
     (sim.grounded ? EFlag.Grounded : 0) |
+    (p.handBusy ? EFlag.Throwing : 0) |
+    (p.meleeSeconds > 0 ? EFlag.Melee : 0) |
     (p.team === 'B' ? EFlag.TeamB : 0);
   copyVisual(e, p.visual);
 }

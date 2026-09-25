@@ -54,6 +54,16 @@ const RECOVER_SECONDS = 0.42;
 const COOLDOWN_SECONDS = 0.72;
 
 /**
+ * The whole swing, wind-up through recovery: what `busy` is true for, and the window the
+ * third-person knife clip is fitted into (`CharacterAnimator`).
+ *
+ * Exported so the animation is a function of the timing rather than a second copy of it. The
+ * 1.583 s clip plays at ×2.93 against this, which is inside `fitToSeconds`'s ×3 guard — worth
+ * knowing, because a longer swing here makes the clip slower and a shorter one hits the clamp.
+ */
+export const MELEE_SWING_SECONDS = WINDUP_SECONDS + RECOVER_SECONDS;
+
+/**
  * Reach, metres, from the eye.
  *
  * Deliberately short. 2.0 m is roughly an arm plus a lunge and it is the number that makes
@@ -155,7 +165,7 @@ export class Melee {
    */
   get fraction(): number {
     if (this.phase === 'IDLE') return 0;
-    const total = WINDUP_SECONDS + RECOVER_SECONDS;
+    const total = MELEE_SWING_SECONDS;
     const done = this.phase === 'WINDUP' ? WINDUP_SECONDS - this.timer : WINDUP_SECONDS + (RECOVER_SECONDS - this.timer);
     return clamp01(done / Math.max(total, 1e-3));
   }

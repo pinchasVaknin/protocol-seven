@@ -1,10 +1,43 @@
 import * as THREE from 'three';
 import type { CharacterAnimationDefinition, CharacterAnimationId, CharacterDefinition } from './CharacterCatalog';
-import { isLowStance, selectAction, selectDeath, selectLocomotion } from './AnimationSelector';
+import {
+  isAirborne,
+  isLowStance,
+  selectAction,
+  selectDeath,
+  selectGesture,
+  selectGroundTransition,
+  selectLocomotion,
+  selectStanceTransition,
+} from './AnimationSelector';
 import { variantFor } from './AnimationVariant';
 import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
+import { THROW_FOLLOW_THROUGH, THROW_RELEASE_TIME } from '../../shared/equipment/ThrowController';
+import { MELEE_SWING_SECONDS } from '../../shared/weapons/Melee';
 
 const CROSS_FADE_SECONDS = 0.14;
+
+/**
+ * How far into a throw clip the arm is cocked — where the clip waits while the grenade is still
+ * in the hand.
+ *
+ * Measured rather than chosen: the right hand is furthest behind the hips at 0.508 of
+ * `Idle_Throw`, 0.577 of `Crouch_Idle_Throw` and 0.608 of `Walk_Throw` (Echo, through the real
+ * import path, this session). One constant for the three because the spread is 0.10 of a clip
+ * around 2.8 s — under two tenths of a second of wind-up, on a pose that is about to be thrown
+ * out of anyway — and three numbers in the catalogue would have to be re-measured every time one
+ * of the clips was re-exported.
+ *
+ * The alternative to holding was fitting the whole clip to the throw the way a reload is fitted,
+ * and it cannot work: a cook has no length. `ThrowController` runs from the tick the button goes
+ * down to the tick it comes up, and *"an animation that decided when the hand opened would be a
+ * second authority on a timing the server owns"* (M12, F17). So the clip waits here for as long
+ * as the simulation says the hand is closed, and the release is what plays when it opens.
+ */
+const THROW_HOLD_FRACTION = 0.55;
+
+/** The release and the follow-through: the window the tail of a throw clip is fitted into. */
+const THROW_TAIL_SECONDS = THROW_RELEASE_TIME + THROW_FOLLOW_THROUGH;
 
 /** One variant of one slot, resolved: the action and the catalogue entry it came from. */
 interface Playing {
@@ -20,11 +53,23 @@ interface Playing {
  * Four kinds of thing play here, in priority order:
  *
  * 1. a **death**, which ends everything else until `endDeath`;
- * 2. a **transition** (`standToCrouch` / `crouchToStand`) when the stance crosses the crouch
- *    edge — the requested loop waits for it to finish;
- * 3. an **action** one-shot (a reload) that stands in for the locomotion loop while the input
+ * 2. the **ground edge** (`jumpLaunch` / `jumpLand`), which interrupts whatever is playing —
+ *    the only thing here that does. See `setLocomotion` for the two reasons;
+ * 3. a **transition**: a one-shot that owns the body until its clip finishes, with the requested
+ *    loop waiting behind it. The crouch edge drives it (`standToCrouch` / `crouchToStand`, in the
+ *    held weapon's version), and so do a knife swing and a grenade throw, which additionally
+ *    *pauses* partway;
+ * 3b. the **air**: once `jumpLaunch` has finished and the body has not landed, its clamped last
+ *    frame is held rather than handed back, because that frame is the pose and the air is as long
+ *    as the physics says;
+ * 4. an **action** one-shot (a reload) that stands in for the locomotion loop while the input
  *    says the actor is doing it, then hands back to the loop;
- * 4. the **locomotion loop** the selector names.
+ * 5. the **locomotion loop** the selector names.
+ *
+ * The line between 3 and 4 is what the clip does when the input stops saying so, and it is the
+ * reason a throw is not an action: a cancelled reload is over and abandoning its clip is right,
+ * while `throwing` going false is the simulation saying the grenade has *gone*, which is the
+ * moment the rest of the clip exists for.
  *
  * Which variant of a slot plays is `variantFor`'s answer from `setLife` (M13 Phase D); this
  * class never chooses one itself.
@@ -38,14 +83,42 @@ export class CharacterAnimator {
   private pendingLocomotion: CharacterAnimationId | null = null;
   private dead = false;
   private wasLow = false;
+  /**
+   * Clip time the transition waits at while a grenade is in the hand, or null when it is not a
+   * held one. The `finished` event cannot fire while the action is paused, so this is also what
+   * keeps the body from handing back to its loop mid-throw.
+   */
+  private holdAt: number | null = null;
+  private wasAirborne = false;
+  /**
+   * The gesture slot the current transition came from, held until its input clears.
+   *
+   * A knife swing is 0.54 s and its clip, fitted, is 0.54 s, so without this the flag would still
+   * be up on the frame the clip ended and the body would swing forever.
+   */
+  private gestureLatch: CharacterAnimationId | null = null;
   private entityId = 0;
   private spawnSerial = 0;
 
   private readonly onFinished = (event: { action?: THREE.AnimationAction }): void => {
-    if (event.action !== this.transition?.action) return;
+    const finished = this.transition;
+    if (finished === null || event.action !== finished.action) return;
+    const wasLaunch = finished.id === 'jumpLaunch';
     this.transition = null;
+    this.holdAt = null;
     const next = this.pendingLocomotion;
     this.pendingLocomotion = null;
+    /**
+     * The launch's last frame **is** the air pose, so a body still off the ground keeps it
+     * (`clampWhenFinished`) instead of being handed back to a loop.
+     *
+     * This is the half of the air hold that `setLocomotion` cannot do. It can decline to ask for
+     * a loop on the frames after the clip ends, and it does — but the clip ending is an event, and
+     * this handler was already several lines into starting a standing idle by the time the next
+     * frame arrived. Measured in a live match: a 0.6 s jump spent its last 30 ms standing upright
+     * in mid-air, which on a long fall is the whole descent.
+     */
+    if (wasLaunch && this.wasAirborne) return;
     if (!this.dead && next !== null) this.playLoop(next);
   };
 
@@ -82,24 +155,55 @@ export class CharacterAnimator {
   }
 
   /** Select a loop from authoritative presentation state; never moves the actor transform. */
-  setLocomotion(input: ActorAnimationInput, planarSpeed: number, armed: boolean): void {
+  setLocomotion(input: ActorAnimationInput, planarSpeed: number, armed: boolean, pistol: boolean): void {
     if (this.dead) return;
 
-    const desired = selectLocomotion(input, planarSpeed, armed);
+    const desired = selectLocomotion(input, planarSpeed, armed, pistol);
     const low = isLowStance(input);
+    const airborne = isAirborne(input);
+    const gesture = selectGesture(input, planarSpeed);
+    if (gesture === null) this.gestureLatch = null;
 
     // The crouch edge has an authored transition in each direction (M13 D; before the
     // library had `standToCrouch`, the way down was `crouchToStand` played backwards, and the
     // trap in that — the cross-fade's time warp divides by the time scale and flips a negative
     // one — is on record in PLAN.md, Phase C3). The loop that was asked for waits until the
     // transition finishes. Every other stance change cross-fades between loops, which is
-    // safer than pretending the asset pack covers slide, mantle and airborne.
-    if (this.transition !== null) {
+    // safer than pretending the asset pack covers slide and mantle.
+    if (this.wasAirborne !== airborne) {
+      // The ground edge is first and it **interrupts**, which none of the others do. Two reasons,
+      // and the first was measured rather than reasoned: a jump shorter than the 0.55 s launch
+      // clip never showed its landing at all, because the launch still owned the body on the
+      // frame the feet touched down — a 330 ms hop played half a launch and went back to idle.
+      // The second is the standing rule of this area: leaving or meeting the ground moves the
+      // hitbox layout, and a body drawn in a pose its boxes disagree with is the defect M13 C2
+      // found on the sliding body. A gesture or a stance transition already playing is dropped
+      // here, including a held throw; `begin` clears the hold with it.
+      //
+      // It also outranks the crouch edge, and `wasLow` is advanced below either way — so a body
+      // that jumps out of a kneel does not stand up in mid-air and does not owe a `crouchToStand`
+      // on the way down. What it lands in is whatever the simulation says it is doing.
+      this.begin(selectGroundTransition(airborne), desired);
+    } else if (this.transition !== null) {
       this.pendingLocomotion = desired;
-    } else if (this.wasLow !== low) {
+      this.stepHold(input.throwing);
+    } else if (gesture !== null && this.gestureLatch !== gesture) {
+      this.gestureLatch = gesture;
+      const started = this.begin(gesture, desired);
+      // A throw waits at its cocked frame; a swing is fitted to the swing, like a reload.
+      if (input.throwing) this.holdAt = started.action.getClip().duration * THROW_HOLD_FRACTION;
+      else fitToSeconds(started.action, MELEE_SWING_SECONDS);
+    } else if (airborne) {
+      // Still off the ground with the launch finished: hold its clamped last frame, which is the
+      // air pose, and ask for nothing else. Measured in a live match before this branch existed —
+      // the 0.55 s launch ended 30 ms before the landing and the body spent that frame in a
+      // standing idle, which on a long fall is a man descending a lift shaft at attention. The
+      // loop the landing hands back to is still tracked, so the body comes down into whatever the
+      // simulation says it is doing.
       this.pendingLocomotion = desired;
       this.action = null;
-      this.transition = this.playOneShot(low ? 'standToCrouch' : 'crouchToStand', 0);
+    } else if (this.wasLow !== low) {
+      this.begin(selectStanceTransition(low, pistol), desired);
     } else {
       const action = selectAction(input, planarSpeed);
       if (action !== null) {
@@ -114,6 +218,43 @@ export class CharacterAnimator {
     }
 
     this.wasLow = low;
+    this.wasAirborne = airborne;
+  }
+
+  /** Start a one-shot that owns the body, with `resume` waiting behind it. */
+  private begin(id: CharacterAnimationId, resume: CharacterAnimationId): Playing {
+    this.pendingLocomotion = resume;
+    this.action = null;
+    this.holdAt = null;
+    const started = this.playOneShot(id, 0);
+    this.transition = started;
+    return started;
+  }
+
+  /**
+   * Park a throw clip at its cocked frame while the grenade is in the hand, and let it go when
+   * the simulation says the hand has opened.
+   *
+   * The tail is fitted to `THROW_TAIL_SECONDS`, which is the release plus the follow-through —
+   * the same 0.42 s the balance was tuned against and the same window the viewmodel spends with
+   * the weapon off screen, so the third-person arm comes back as the first-person one does.
+   */
+  private stepHold(throwing: boolean): void {
+    const hold = this.holdAt;
+    const playing = this.transition;
+    if (hold === null || playing === null) return;
+    const action = playing.action;
+    if (throwing) {
+      if (action.time >= hold) {
+        action.time = hold;
+        action.paused = true;
+      }
+      return;
+    }
+    action.paused = false;
+    this.holdAt = null;
+    const remaining = action.getClip().duration - action.time;
+    if (remaining > 0) fitToSeconds(action, THROW_TAIL_SECONDS, remaining);
   }
 
   /**
@@ -126,6 +267,8 @@ export class CharacterAnimator {
     this.dead = true;
     this.pendingLocomotion = null;
     this.transition = null;
+    this.holdAt = null;
+    this.gestureLatch = null;
     this.action = null;
     const id = selectDeath(input);
     const count = this.clips.get(id)?.length ?? 0;
@@ -136,9 +279,12 @@ export class CharacterAnimator {
     if (!this.dead) return;
     this.dead = false;
     this.transition = null;
+    this.holdAt = null;
+    this.gestureLatch = null;
     this.action = null;
     this.pendingLocomotion = null;
     this.wasLow = false;
+    this.wasAirborne = false;
     this.active = null;
     this.mixer.stopAllAction();
     // Flush property bindings so the respawn starts from its bind pose, not the final death
@@ -157,6 +303,7 @@ export class CharacterAnimator {
     this.actions.clear();
     this.active = null;
     this.transition = null;
+    this.holdAt = null;
     this.action = null;
   }
 
@@ -215,10 +362,14 @@ export class CharacterAnimator {
  * SMG plays at ×1.95 and is over when the magazine is; on a 4.4 s LMG it plays at ×0.75. Left
  * alone when the duration is unknown (0), and never made absurd: a clip is not stretched past
  * three times its length or squeezed under a third.
+ *
+ * `span` is how much clip there is left to fit, for the one caller that is partway through: a
+ * released throw has to get its remaining 45 % into the 0.42 s the simulation gives the arm, and
+ * fitting the whole clip into that would put the tail at ×7 and hit the clamp instead.
  */
-function fitToSeconds(action: THREE.AnimationAction, seconds: number): void {
+function fitToSeconds(action: THREE.AnimationAction, seconds: number, span?: number): void {
   if (!(seconds > 0)) return;
-  const duration = action.getClip().duration;
+  const duration = span ?? action.getClip().duration;
   if (!(duration > 0)) return;
   const scale = THREE.MathUtils.clamp(duration / seconds, 1 / 3, 3);
   action.setEffectiveTimeScale(scale);

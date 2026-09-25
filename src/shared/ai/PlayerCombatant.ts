@@ -71,6 +71,17 @@ export class PlayerCombatant implements Combatant {
    */
   glinting = false;
 
+  /**
+   * Whether the player is holding a sidearm, which `syncRig` needs because a crouching body with
+   * one is drawn in a half-squat 10.9 cm above the kneel and wears its own layout (M13 decision
+   * 11, settled 2026-09-25).
+   *
+   * A field written once a tick, for the reason `glinting` above is one: this object is
+   * constructed before the weapon system that would answer the question. It is the local player's
+   * half of what `weaponIndex` tells the server about everybody else.
+   */
+  pistol = false;
+
   constructor(
     readonly health: Health,
     readonly team: BotTeam,
@@ -120,7 +131,7 @@ export class PlayerCombatant implements Combatant {
    */
   syncRig(): void {
     const sim = this.player.sim;
-    this.rig.setLayout(rigLayoutFor(sim.stance, sim.vx, sim.vz));
+    this.rig.setLayout(rigLayoutFor(sim.stance, sim.vx, sim.vz, this.pistol));
     this.rig.setTransform(sim.x, sim.y, sim.z, sim.yaw);
   }
 }

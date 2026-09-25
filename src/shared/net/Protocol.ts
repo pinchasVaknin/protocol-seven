@@ -17,6 +17,14 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v20 (2026-09-25, the human): **the arm, and what it is doing.** `EntitySnapshot.flags` is a
+ * `u16` where it was a `u8`, because the byte was full at `EFlag.TeamB` and the animation library
+ * had two clips waiting on a bit each — a grenade throw and a knife swing, neither of which
+ * anything in the snapshot could say was happening. M12's F17 estimate had already found this
+ * and left the instruction: *"Widen once, deliberately, rather than three times."* So the field
+ * is widened once and two of its eight new bits are spent, `Throwing` and `Melee`. One byte per
+ * entity on the snapshots whose flags moved at all, and six bits left for whatever asks next.
+ *
  * v19 (2026-09-24, the human): **whose machine fired it.** Two changes, both in service of
  * the sentry crediting its owner. `DamageEvent`'s zone byte gains bit 6, `autonomous` — the
  * shot came from something the source deployed rather than from their own aim, which is the
@@ -155,7 +163,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 19;
+export const PROTOCOL_VERSION = 20;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

@@ -103,7 +103,7 @@ export class CharacterAvatar implements ActorAvatar {
     dt: number,
   ): void {
     const planarSpeed = this.measurePlanarSpeed(x, z, dt);
-    this.animator.setLocomotion(animation, planarSpeed, this.armed, this.pistol);
+    this.animator.setLocomotion(animation, planarSpeed, this.armed, this.pistol, dt);
     this.animator.update(dt);
 
     this.group.position.set(x, y, z);

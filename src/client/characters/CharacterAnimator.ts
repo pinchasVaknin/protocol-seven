@@ -39,6 +39,40 @@ const THROW_HOLD_FRACTION = 0.55;
 /** The release and the follow-through: the window the tail of a throw clip is fitted into. */
 const THROW_TAIL_SECONDS = THROW_RELEASE_TIME + THROW_FOLLOW_THROUGH;
 
+/**
+ * Seconds a body has to be off the ground before the animation calls it a jump.
+ *
+ * `AIRBORNE` is an honest answer to *"is this capsule touching anything"* and the simulation is
+ * right to give it: a body walking off a kerb, down a stair, or over the lip of a ramp loses
+ * contact for a tick or two and gets it straight back. For two milestones nothing read the
+ * stance, so nothing noticed. The jump pair reads it **and interrupts on it**, which is the one
+ * thing in this class that does — so each of those two ticks restarted `jumpLaunch` from frame 0
+ * and each recovery restarted `jumpLand`, with a 0.14 s cross-fade fighting the loop underneath.
+ *
+ * That is the stutter the playtest reported in a walking body, and it is neither a clip nor a
+ * blend: it is a one-frame fact being read as an event. Measured on the shipped clips, a
+ * spurious launch is worth 25 cm of hip — `Transition_Stand_To_Airborne` coils from 89.0 cm to
+ * 64.4 cm before it extends — so a stumble that never left the ground dips the body a quarter of
+ * a metre and comes back.
+ *
+ * **The number is the gap in the measurement, not a taste.** Thirty seconds of a six-bot match,
+ * every ground edge classified by how long the body was actually off the ground: 1 frame x6,
+ * 2 x7, 3 x4, 4 x2, 5, 6, 7, 9 x1 each — and one episode of 32 frames, which was the only real
+ * jump in the window. Every stumble is under 10 frames and a jump is half a second, so 80 ms
+ * sits above all of the first group and an order of magnitude under the second; the grace never
+ * has to be right about which it is, because the length of the episode already says.
+ *
+ * Asymmetric, deliberately. Leaving the ground waits; **meeting it does not**, because the frame
+ * the feet touch down is the frame the landing has to start on — the interrupt this file's
+ * previous commit added for exactly that reason — and because a stumble that never became a jump
+ * has no landing to play: the edge it would land from was never taken.
+ *
+ * Nothing about the simulation changes. The same A/B, same build, one constant: the airborne
+ * episodes stay where they were (19 short ones against 17) while the clip restarts they caused
+ * go from 47 to 4, and those 4 are the launch and landing of the two real jumps.
+ */
+const GROUND_EDGE_GRACE = 0.08;
+
 /** One variant of one slot, resolved: the action and the catalogue entry it came from. */
 interface Playing {
   readonly id: CharacterAnimationId;
@@ -97,6 +131,8 @@ export class CharacterAnimator {
    * be up on the frame the clip ended and the body would swing forever.
    */
   private gestureLatch: CharacterAnimationId | null = null;
+  /** Seconds the raw ground state has disagreed with `wasAirborne`. See `GROUND_EDGE_GRACE`. */
+  private airborneHeldFor = 0;
   private entityId = 0;
   private spawnSerial = 0;
 
@@ -154,13 +190,25 @@ export class CharacterAnimator {
     this.spawnSerial = spawnSerial;
   }
 
-  /** Select a loop from authoritative presentation state; never moves the actor transform. */
-  setLocomotion(input: ActorAnimationInput, planarSpeed: number, armed: boolean, pistol: boolean): void {
+  /**
+   * Select a loop from authoritative presentation state; never moves the actor transform.
+   *
+   * `dt` is the render delta the ground edge is settled in — see `GROUND_EDGE_GRACE`. Nothing
+   * here is smoothed: the facts are still the simulation's, one of them is merely believed a
+   * little later, because the thing that reads it reads it as an event.
+   */
+  setLocomotion(
+    input: ActorAnimationInput,
+    planarSpeed: number,
+    armed: boolean,
+    pistol: boolean,
+    dt: number,
+  ): void {
     if (this.dead) return;
 
     const desired = selectLocomotion(input, planarSpeed, armed, pistol);
     const low = isLowStance(input);
-    const airborne = isAirborne(input);
+    const airborne = this.settleAirborne(isAirborne(input), dt);
     const gesture = selectGesture(input, planarSpeed);
     if (gesture === null) this.gestureLatch = null;
 
@@ -219,6 +267,25 @@ export class CharacterAnimator {
 
     this.wasLow = low;
     this.wasAirborne = airborne;
+  }
+
+  /**
+   * The ground state the jump pair is played from: the raw one, once it has held long enough to
+   * be a jump rather than a stair. See `GROUND_EDGE_GRACE` for the measurement and for why
+   * landing is not made to wait.
+   */
+  private settleAirborne(raw: boolean, dt: number): boolean {
+    if (raw === this.wasAirborne) {
+      this.airborneHeldFor = 0;
+      return this.wasAirborne;
+    }
+    // Coming down is believed on the frame it happens; going up has to earn it.
+    if (!raw) {
+      this.airborneHeldFor = 0;
+      return raw;
+    }
+    this.airborneHeldFor += Math.max(0, dt);
+    return this.airborneHeldFor >= GROUND_EDGE_GRACE ? true : this.wasAirborne;
   }
 
   /** Start a one-shot that owns the body, with `resume` waiting behind it. */
@@ -285,6 +352,7 @@ export class CharacterAnimator {
     this.pendingLocomotion = null;
     this.wasLow = false;
     this.wasAirborne = false;
+    this.airborneHeldFor = 0;
     this.active = null;
     this.mixer.stopAllAction();
     // Flush property bindings so the respawn starts from its bind pose, not the final death

@@ -28,6 +28,8 @@ export class CharacterAvatar implements ActorAvatar {
   private lastX = 0;
   private lastZ = 0;
   private seeded = false;
+  /** The last speed that was a measurement rather than a relocation. See `measurePlanarSpeed`. */
+  private lastSpeed = 0;
   private armed = false;
   /** Whether the body is holding a sidearm, which has locomotion clips of its own. */
   private pistol = false;
@@ -145,8 +147,32 @@ export class CharacterAvatar implements ActorAvatar {
     const distance = Math.hypot(x - this.lastX, z - this.lastZ);
     this.lastX = x;
     this.lastZ = z;
-    return dt > 1e-5 ? distance / dt : 0;
+    if (dt <= 1e-5) return this.lastSpeed;
+    const measured = distance / dt;
+    /**
+     * A body cannot move this fast, so this is not a body moving.
+     *
+     * The frame a body is *relocated* — a respawn, a round reset, a client adopting a snapshot
+     * after a stall — the distance between where it was drawn and where it is drawn next is the
+     * width of the map, and dividing it by a frame is a speed. Sampled over a networked match,
+     * two of the nine bodies produced 1,853 m/s and 2,579 m/s on exactly such a frame, and every
+     * one of them names a run loop for as long as the reading lasts.
+     *
+     * Held rather than zeroed: the reading is missing, not zero, and a body that was walking
+     * before it was moved is usually walking after.
+     */
+    if (measured > MAX_PLAUSIBLE_SPEED) return this.lastSpeed;
+    this.lastSpeed = measured;
+    return measured;
   }
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+
+/**
+ * Metres per second a drawn body is allowed to have moved between two frames.
+ *
+ * Above the fastest thing the simulation can do — a tactical sprint is 8.2 m/s and a slide peaks
+ * under it — with room for a frame that arrives late. See `measurePlanarSpeed`.
+ */
+const MAX_PLAUSIBLE_SPEED = 12;

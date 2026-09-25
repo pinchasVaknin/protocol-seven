@@ -4,6 +4,7 @@ import { rigLayoutFor } from '../../shared/combat/HitboxRig';
 import { LOCOMOTION_IDLE_SPEED, LOCOMOTION_RUN_SPEED, STANCES } from '../../shared/player/Stance';
 import {
   isAirborne,
+  isRunLoop,
   selectAction,
   selectGesture,
   selectGroundTransition,
@@ -43,13 +44,18 @@ function input(over: Partial<ActorAnimationInput> = {}): ActorAnimationInput {
 const STILL = 0;
 const WALKING = (LOCOMOTION_IDLE_SPEED + LOCOMOTION_RUN_SPEED) / 2;
 const RUNNING = LOCOMOTION_RUN_SPEED + 1;
+/** Inside the hysteresis band below the run threshold, where a sprint flag still decides. */
+const IN_RUN_BAND = LOCOMOTION_RUN_SPEED - 0.2;
 
 describe('selectLocomotion with a sidearm', () => {
   it('draws the four standing loops the pistol family brought', () => {
     expect(selectLocomotion(input(), STILL, true, true)).toBe('idleWeaponReadyPistol');
     expect(selectLocomotion(input(), WALKING, true, true)).toBe('walkWeaponReadyPistol');
     expect(selectLocomotion(input(), RUNNING, true, true)).toBe('runWeaponReadyPistol');
-    expect(selectLocomotion(input({ sprinting: true }), WALKING, true, true)).toBe('runWeaponReadyPistol');
+    // A sprint decides the loop inside the run band and nowhere else: a body at walking pace
+    // with its sprint bit set is drawn walking, which is what it is doing. See `isRunning`.
+    expect(selectLocomotion(input({ sprinting: true }), IN_RUN_BAND, true, true)).toBe('runWeaponReadyPistol');
+    expect(selectLocomotion(input({ sprinting: true }), WALKING, true, true)).toBe('walkWeaponReadyPistol');
   });
 
   it('draws its own kneel, which is the clip that needed a layout of its own', () => {
@@ -148,6 +154,55 @@ describe('selectAction still owns the reload alone', () => {
     expect(selectAction(input({ reloading: true }), WALKING)).toBe('reloadWalk');
     expect(selectAction(input({ reloading: true, stance: 'CROUCH' }), STILL)).toBe('reloadCrouch');
     expect(selectAction(input({ reloading: true }), RUNNING)).toBeNull();
+  });
+});
+
+/**
+ * The run edge is a band, and the band is the fix for the hitch a playtest reported in a walking
+ * body: `sprinting` is allowed to flicker — a bot's comes off `moveZ > 0.72` against the path it
+ * is steering along — and with a single threshold the loop followed it at 3 Hz, restarting a clip
+ * each time. These are the four corners of `RUN_RELEASE_SPEED`, plus the one case that must *not*
+ * widen: a crouching body, whose threshold is shared with the hitbox layout.
+ */
+describe('the run edge has hysteresis while standing', () => {
+  const BELOW_ENTRY = LOCOMOTION_RUN_SPEED - 0.2;
+  const BELOW_RELEASE = 4.6; // the walk cap: a body that is not sprinting cannot exceed it
+
+  it('needs the full run speed to start a run', () => {
+    expect(selectLocomotion(input(), BELOW_ENTRY, true, false, false)).toBe('walkWeaponReady');
+    expect(selectLocomotion(input(), LOCOMOTION_RUN_SPEED, true, false, false)).toBe('runRelaxed');
+  });
+
+  it('keeps a run through the band, which is where a dropped sprint flag lands', () => {
+    expect(selectLocomotion(input(), BELOW_ENTRY, true, false, true)).toBe('runRelaxed');
+    expect(selectLocomotion(input({ sprinting: true }), BELOW_ENTRY, true, false, false)).toBe('runRelaxed');
+  });
+
+  it('gives the run up when the body is actually walking', () => {
+    expect(selectLocomotion(input(), BELOW_RELEASE, true, false, true)).toBe('walkWeaponReady');
+  });
+
+  it('refuses a run to a body that is not moving like one, flag or no flag', () => {
+    // The measured case: 2.11 m/s with the sprint bit set, drawn at a full run over the wire.
+    expect(selectLocomotion(input({ sprinting: true }), 2.11, true, false, false)).toBe('walkWeaponReady');
+    expect(selectLocomotion(input({ sprinting: true }), 2.11, true, false, true)).toBe('walkWeaponReady');
+  });
+
+  it('names the loops that count as a run, including the sidearm and the crouch', () => {
+    expect(isRunLoop('runRelaxed')).toBe(true);
+    expect(isRunLoop('runWeaponReadyPistol')).toBe(true);
+    expect(isRunLoop('crouchRunAiming')).toBe(true);
+    expect(isRunLoop('walkWeaponReady')).toBe(false);
+    expect(isRunLoop(null)).toBe(false);
+  });
+
+  it('does not widen the crouched edge, which the hitbox layout shares', () => {
+    // `rigLayoutFor` switches to humanoid-crouch-run at exactly LOCOMOTION_RUN_SPEED and knows
+    // nothing about what is already drawn. A clip that held its run through the band here would
+    // be a body drawn running and shot walking — the defect M13 C2 found on the sliding body.
+    const below = LOCOMOTION_RUN_SPEED - 0.2;
+    expect(selectLocomotion(input({ stance: 'CROUCH' }), below, true, false, true)).toBe('crouchWalkAiming');
+    expect(rigLayoutFor('CROUCH', below, 0, false).id).toBe('humanoid-crouch-walk');
   });
 });
 

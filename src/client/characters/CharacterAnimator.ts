@@ -3,6 +3,7 @@ import type { CharacterAnimationDefinition, CharacterAnimationId, CharacterDefin
 import {
   isAirborne,
   isLowStance,
+  isRunLoop,
   selectAction,
   selectDeath,
   selectGesture,
@@ -73,6 +74,27 @@ const THROW_TAIL_SECONDS = THROW_RELEASE_TIME + THROW_FOLLOW_THROUGH;
  */
 const GROUND_EDGE_GRACE = 0.08;
 
+/**
+ * Seconds a different locomotion loop has to be the one wanted before it replaces the one
+ * playing.
+ *
+ * Older than the jump and a different defect, found while measuring it: the loop the selector
+ * names is a function of `sprinting` and of a speed measured from rendered pose deltas, and both
+ * are noisy at their boundaries. Counted over ten seconds of a six-bot match, the roster started
+ * 73 locomotion loops — better than one restart per body per second — and the fastest pair were
+ * 30 ms apart, a body pressed against geometry crossing the idle dead zone and crossing back.
+ * Every one of them is a `reset()` to frame 0 under a cross-fade, which is a body that keeps
+ * taking the first step of its walk.
+ *
+ * The fix is not to smooth the inputs — a threshold with hysteresis in the selector would have
+ * to know which pair of loops it sits between, and there are three such edges and a fourth for
+ * the sidearm. It is to make the *loop* slow to change: a new one has to stay wanted for this
+ * long before the mixer hears about it. 0.10 s is under the 0.14 s cross-fade the change would
+ * start anyway, so nothing that survives it is visibly late, and nothing that does not survive
+ * it was ever a gait change.
+ */
+const LOOP_SETTLE_SECONDS = 0.1;
+
 /** One variant of one slot, resolved: the action and the catalogue entry it came from. */
 interface Playing {
   readonly id: CharacterAnimationId;
@@ -133,6 +155,10 @@ export class CharacterAnimator {
   private gestureLatch: CharacterAnimationId | null = null;
   /** Seconds the raw ground state has disagreed with `wasAirborne`. See `GROUND_EDGE_GRACE`. */
   private airborneHeldFor = 0;
+  /** The loop the mixer has been told about, the one arguing for its place, and for how long. */
+  private settledLoop: CharacterAnimationId | null = null;
+  private candidateLoop: CharacterAnimationId | null = null;
+  private candidateHeldFor = 0;
   private entityId = 0;
   private spawnSerial = 0;
 
@@ -193,9 +219,10 @@ export class CharacterAnimator {
   /**
    * Select a loop from authoritative presentation state; never moves the actor transform.
    *
-   * `dt` is the render delta the ground edge is settled in — see `GROUND_EDGE_GRACE`. Nothing
-   * here is smoothed: the facts are still the simulation's, one of them is merely believed a
-   * little later, because the thing that reads it reads it as an event.
+   * `dt` is the render delta the two settling rules are measured in — see `GROUND_EDGE_GRACE`
+   * and `LOOP_SETTLE_SECONDS`. Nothing here is smoothed: the facts are still the simulation's,
+   * they are merely believed a little later, because a sample that disagrees with its neighbours
+   * for two frames is noise everywhere except in the place that reads it as an event.
    */
   setLocomotion(
     input: ActorAnimationInput,
@@ -206,7 +233,13 @@ export class CharacterAnimator {
   ): void {
     if (this.dead) return;
 
-    const desired = selectLocomotion(input, planarSpeed, armed, pistol);
+    const desired = this.settleLoop(
+      // The loop already on the body decides which side of the run band it is on — see
+      // `RUN_RELEASE_SPEED`. `settledLoop` and not `active`, because `active` is whatever clip is
+      // in front, which during a reload or a throw is not a locomotion loop at all.
+      selectLocomotion(input, planarSpeed, armed, pistol, isRunLoop(this.settledLoop)),
+      dt,
+    );
     const low = isLowStance(input);
     const airborne = this.settleAirborne(isAirborne(input), dt);
     const gesture = selectGesture(input, planarSpeed);
@@ -267,6 +300,32 @@ export class CharacterAnimator {
 
     this.wasLow = low;
     this.wasAirborne = airborne;
+  }
+
+  /**
+   * The locomotion loop the mixer is told about: the one wanted, once it has been wanted for
+   * `LOOP_SETTLE_SECONDS` without interruption.
+   *
+   * The first answer of a life is taken immediately — a body that spawns running should not walk
+   * for a tenth of a second first, and there is no loop in flight for it to disturb.
+   */
+  private settleLoop(desired: CharacterAnimationId, dt: number): CharacterAnimationId {
+    if (this.settledLoop === null || desired === this.settledLoop) {
+      this.settledLoop = desired;
+      this.candidateLoop = null;
+      this.candidateHeldFor = 0;
+      return desired;
+    }
+    if (desired !== this.candidateLoop) {
+      this.candidateLoop = desired;
+      this.candidateHeldFor = 0;
+    }
+    this.candidateHeldFor += Math.max(0, dt);
+    if (this.candidateHeldFor < LOOP_SETTLE_SECONDS) return this.settledLoop;
+    this.settledLoop = desired;
+    this.candidateLoop = null;
+    this.candidateHeldFor = 0;
+    return desired;
   }
 
   /**
@@ -353,6 +412,9 @@ export class CharacterAnimator {
     this.wasLow = false;
     this.wasAirborne = false;
     this.airborneHeldFor = 0;
+    this.settledLoop = null;
+    this.candidateLoop = null;
+    this.candidateHeldFor = 0;
     this.active = null;
     this.mixer.stopAllAction();
     // Flush property bindings so the respawn starts from its bind pose, not the final death

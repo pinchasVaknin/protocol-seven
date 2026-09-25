@@ -133,6 +133,36 @@ const HIGH_FLANK_CHANCE = 0.45;
 /** A flank target has to be genuinely above the bot to count as the high route. */
 const HIGH_FLANK_MIN_RISE = 1.5;
 
+/**
+ * The forward-stick band the sprint decision lives in (M13).
+ *
+ * Two numbers rather than one because `cmd.moveZ` is a steering *output*, not an intention.
+ * `followPath` aims at the next waypoint, separation pushes sideways, and a bot rounding a
+ * corner therefore has a forward component that wobbles by a tenth either side of whatever the
+ * corner needs. Tested against a single threshold it dithered: measured over ten TDM matches on
+ * FOUNDRY, one edge per travelling bot-second and a mean sprint 0.48 s long, and a bot
+ * alternating 6.9 m/s and 4.6 m/s twice a second has not decided anything.
+ *
+ * The band is 0.17 wide because that is the whole of the problem it can reach. Classifying every
+ * sprint ending in one baseline match by its cause: 39% were `moveZ`, 33% were arriving inside
+ * the 3.5 m path-distance gate, 24% were the state leaving for ENGAGE or SUPPRESS, and the rest
+ * were airborne or mid-climb. Of the `moveZ` ones, 28% sat in [0.55, 0.72) — a genuine wobble —
+ * and 44% were at a *negative* `moveZ`, which is a bot walking backwards while it faces the
+ * enemy and should not be sprinting at all. So the band covers 11% of all endings, and that is
+ * what it buys: measured, 9% fewer edges and a mean sprint 9% longer, with the share of travel
+ * spent at sprint speed unmoved. The other 89% are not dither, they are decisions.
+ *
+ * So entering a sprint still costs a genuinely forward stick, and keeping one only costs more
+ * forward than sideways — which is what a human's hand actually does through a corner.
+ *
+ * `SPRINT_KEEP_MOVE_Z` must stay above `PlayerController`'s own `moveZ > 0.5` sprint gate. Below
+ * it the brain would hold the button through a band where the controller refuses it, which is a
+ * sprint that is latched rather than running — and, because `Btn.Ads` is suppressed while the
+ * brain wants to sprint, one that costs the bot its aim for nothing.
+ */
+const SPRINT_ENTER_MOVE_Z = 0.72;
+const SPRINT_KEEP_MOVE_Z = 0.55;
+
 export class BotBrain {
   state: BotState = 'IDLE';
   /** Seconds in the current state. */
@@ -155,9 +185,24 @@ export class BotBrain {
   /** M8: mantles this bot has completed, for the Depot verticality read-out. */
   climbsCompleted = 0;
 
+  /**
+   * The sprint decision's edges, and the two populations that make the count mean something
+   * (M13). `travelTicks` is the ticks in which sprinting was even a question — travelling and
+   * not mid-climb — so `sprintFlips` can be read as a rate rather than as a total that grows
+   * with the match length, and `sprintTicks` says how much of that time was spent at speed.
+   * `sprintStarts` is the rising half of `sprintFlips`, counted rather than halved, so the mean
+   * length of one sprint is a measurement and not an estimate.
+   */
+  sprintFlips = 0;
+  sprintStarts = 0;
+  sprintTicks = 0;
+  travelTicks = 0;
+
   /** Sim ticks spent at the foot of a climb waypoint. Zero when not climbing (M8). */
   private climbTicks = 0;
   private climbStartY = 0;
+  /** The sprint Schmitt trigger's latch: which of the two `moveZ` thresholds applies now. */
+  private sprinting = false;
 
   private readonly deps: BrainDeps;
   private strafeSide = 1;
@@ -192,6 +237,9 @@ export class BotBrain {
     this.wantsReloadPress = false;
     this.pressedReload = false;
     this.climbTicks = 0;
+    // Not a falling edge: `steer` returns early once the state is DEAD, so the sprint a bot
+    // died holding is never counted as a release. Dying is not a change of mind.
+    this.sprinting = false;
   }
 
   // -- state machine ---------------------------------------------------------
@@ -505,17 +553,32 @@ export class BotBrain {
       buttons |= Btn.Jump;
     }
 
-    // Sprint only where a human would: running somewhere, facing that way, not shooting.
-    // Never while climbing: an auto-vault fires on a sprint into a ledge and would take a
-    // 0.8 m step the moment the bot wanted the 1.4 m one above it.
+    /*
+     * Sprint only where a human would: running somewhere, facing that way, not shooting.
+     * Never while climbing: an auto-vault fires on a sprint into a ledge and would take a
+     * 0.8 m step the moment the bot wanted the 1.4 m one above it.
+     *
+     * The forward-stick test is the one condition with hysteresis, and it is the only one that
+     * needed it: every other term here is a fact about the bot's situation that does not
+     * flicker at a boundary, while `moveZ` is a continuous steering output sampled against a
+     * line. See `SPRINT_ENTER_MOVE_Z`.
+     */
+    const forwardEnough = cmd.moveZ > (this.sprinting ? SPRINT_KEEP_MOVE_Z : SPRINT_ENTER_MOVE_Z);
     const sprintWorthy =
       travelling &&
       !climbing &&
       !isFiringState(this.state) &&
-      cmd.moveZ > 0.72 &&
+      forwardEnough &&
       bot.grounded &&
       !crouch &&
       bot.path.remainingDistance(bot.px, bot.pz) > 3.5;
+    if (travelling && !climbing) this.travelTicks++;
+    if (sprintWorthy) this.sprintTicks++;
+    if (sprintWorthy !== this.sprinting) {
+      this.sprintFlips++;
+      if (sprintWorthy) this.sprintStarts++;
+    }
+    this.sprinting = sprintWorthy;
     if (sprintWorthy) buttons |= Btn.Sprint;
 
     const distance = bb.hasKnownTarget ? bb.lastKnownRange : Infinity;

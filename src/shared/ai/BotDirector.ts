@@ -789,6 +789,13 @@ export class BotDirector extends Disposable {
       perTeamTier,
       stuckEvents: this.bots.reduce((n, b) => n + b.brain.stuckEvents, 0),
       pathFailures: this.bots.reduce((n, b) => n + b.brain.pathFailures, 0),
+      locomotion: {
+        sprintFlips: this.bots.reduce((n, b) => n + b.brain.sprintFlips, 0),
+        sprintStarts: this.bots.reduce((n, b) => n + b.brain.sprintStarts, 0),
+        sprintTicks: this.bots.reduce((n, b) => n + b.brain.sprintTicks, 0),
+        travelTicks: this.bots.reduce((n, b) => n + b.brain.travelTicks, 0),
+        climbs: this.bots.reduce((n, b) => n + b.brain.climbsCompleted, 0),
+      },
     };
   }
 
@@ -806,6 +813,10 @@ export class BotDirector extends Disposable {
       bot.brain.stuckEvents = 0;
       bot.brain.pathFailures = 0;
       bot.brain.replans = 0;
+      bot.brain.sprintFlips = 0;
+      bot.brain.sprintStarts = 0;
+      bot.brain.sprintTicks = 0;
+      bot.brain.travelTicks = 0;
     }
   }
 
@@ -870,4 +881,19 @@ export interface BotReport {
   perTeamTier: Record<BotTeam, Record<string, TierReport>>;
   stuckEvents: number;
   pathFailures: number;
+  /**
+   * How the roster moved, rather than how well it shot (M13).
+   *
+   * `sprintFlips` over `travelTicks` is the sprint decision's dither rate, which is the number
+   * the Schmitt trigger in `BotBrain` exists to hold down; `sprintTicks` over `travelTicks` is
+   * the share of travel spent at sprint speed, which is what says whether holding the dither
+   * down cost the roster its pace or bought it some.
+   */
+  locomotion: {
+    sprintFlips: number;
+    sprintStarts: number;
+    sprintTicks: number;
+    travelTicks: number;
+    climbs: number;
+  };
 }

@@ -287,7 +287,31 @@ function reportMatch(
         { bots: r.bots, shots: r.shotsFired, hits: r.shotsHit, hitRate: round3(r.hitRate) },
       ]),
     ),
+    /**
+     * How the roster moved (M13).
+     *
+     * `flipsPerTravelSecond` is the headline and the reason the block exists: the sprint
+     * decision used to be a bare threshold on a steering output, and a bot rounding a corner
+     * crossed it several times a second, alternating 6.9 m/s and 4.6 m/s. The two shares beside
+     * it are what stop the headline being gamed — a trigger that never sprints has no dither at
+     * all, so `sprintShare` has to hold while `flipsPerTravelSecond` falls.
+     */
+    locomotion: locomotionSummary(report),
   });
+}
+
+/** The locomotion block, with the two rates derived from the same denominator. */
+function locomotionSummary(report: ReturnType<ServerMatch['report']>): Record<string, number> {
+  const loco = report.locomotion;
+  const travelSeconds = loco.travelTicks * DT;
+  return {
+    travelSeconds: round3(travelSeconds),
+    sprintFlips: loco.sprintFlips,
+    flipsPerTravelSecond: travelSeconds > 0 ? round3(loco.sprintFlips / travelSeconds) : 0,
+    sprintShare: loco.travelTicks > 0 ? round3(loco.sprintTicks / loco.travelTicks) : 0,
+    meanSprintSeconds: loco.sprintStarts > 0 ? round3((loco.sprintTicks * DT) / loco.sprintStarts) : 0,
+    climbs: loco.climbs,
+  };
 }
 
 function newMatch(args: Args, index: number): ServerMatch {

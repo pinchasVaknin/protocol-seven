@@ -6,9 +6,19 @@ import {
   rotateHalf,
   rotateHalfProps,
   rotateHalfSpawns,
+  addSupplyPoint,
 } from './build';
 import { deriveCoverPoints, emitCoverPoint } from './cover';
-import type { Brush, CoverPoint, LaneDef, MapDef, ObjectiveDef, PropDef, SpawnZone } from './types';
+import type {
+  Brush,
+  CoverPoint,
+  LaneDef,
+  MapDef,
+  ObjectiveDef,
+  PropDef,
+  SpawnZone,
+  SupplyPointDef,
+} from './types';
 
 /**
  * MP_FOUNDRY — the M4 map (brief S6.1).
@@ -441,6 +451,20 @@ const TRIM_BRUSHES = trimHalf();
 const HALF_PROPS = propsHalf();
 const ALL_PROPS: PropDef[] = [...HALF_PROPS, ...rotateHalfProps(HALF_PROPS)];
 
+/**
+ * The two resupply stations (this session).
+ *
+ * A rotationally symmetric pair on the outer flanks, the way every placement on this map is
+ * authored: one side, mirrored. Ten metres off the nearest flag and clear of both bomb sites, so
+ * kneeling at one is a detour taken with the lane behind you rather than a thing done on the
+ * objective. Both stand on the hall floor at y = 0, measured in a live match: the capsule settles
+ * at each with no displacement.
+ */
+const SUPPLY_PROPS: PropDef[] = [];
+const SUPPLY_POINTS: SupplyPointDef[] = [];
+addSupplyPoint(SUPPLY_PROPS, SUPPLY_POINTS, 'ammo_w', -22, 0, -10, 0);
+addSupplyPoint(SUPPLY_PROPS, SUPPLY_POINTS, 'ammo_e', 22, 0, 10, Math.PI);
+
 export const FOUNDRY_MAP: MapDef = {
   id: 'mp_foundry',
   name: 'FOUNDRY',
@@ -452,7 +476,7 @@ export const FOUNDRY_MAP: MapDef = {
     ...TRIM_BRUSHES,
     ...rotateHalf(TRIM_BRUSHES),
   ],
-  props: [...ALL_PROPS, ...lightStrips()],
+  props: [...ALL_PROPS, ...lightStrips(), ...SUPPLY_PROPS],
   spawns: spawns(),
   lanes: FOUNDRY_LANES,
   /**
@@ -528,6 +552,7 @@ export const FOUNDRY_MAP: MapDef = {
 
   coverPoints: coverPoints(ALL_PROPS),
   objectives: objectives(),
+  supply: SUPPLY_POINTS,
   navBounds: {
     min: { x: -31, y: -4, z: -27 },
     max: { x: 31, y: 12, z: 27 },

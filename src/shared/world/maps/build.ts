@@ -1,4 +1,4 @@
-import type { Brush, MaterialKey, PropDef, PropShapeId, SpawnZone } from './types';
+import type { Brush, MaterialKey, PropDef, PropShapeId, SpawnZone, SupplyPointDef } from './types';
 import { simCos, simSin } from '../../core/SimMath';
 
 /**
@@ -274,6 +274,34 @@ export function rotateHalfProps(props: readonly PropDef[]): PropDef[] {
     position: { x: -p.position.x, y: p.position.y, z: -p.position.z },
     rotationY: p.rotationY + Math.PI,
   }));
+}
+
+/**
+ * A resupply station: the crate you can see and the volume that fills your pouch, from one call.
+ *
+ * Two records come out of it — a prop placement and a `SupplyPointDef` — and that is exactly why
+ * it is a helper rather than two lists a map author keeps in step by hand. A station whose
+ * trigger sat a metre from its crate would be a bug nothing could catch: both halves would be
+ * valid data, the audit would pass, and the only symptom would be a player kneeling at a box
+ * that does nothing.
+ *
+ * `radius` is generous by default — the crate itself is 1.3 m across and the player is kneeling
+ * beside it, not standing on it. Author a station **away from an objective**: the use key is
+ * shared with the plant and the defuse, and a crate inside a bombsite would offer a player two
+ * things at once at the moment they can least afford to read a prompt.
+ */
+export function addSupplyPoint(
+  props: PropDef[],
+  supply: SupplyPointDef[],
+  id: string,
+  x: number,
+  y: number,
+  z: number,
+  rotationY = 0,
+  radius = 2,
+): void {
+  props.push({ shape: 'ammoCrate', position: { x, y, z }, rotationY });
+  supply.push({ id, position: { x, y, z }, rotationY, radius });
 }
 
 /**

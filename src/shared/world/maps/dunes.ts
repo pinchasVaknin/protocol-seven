@@ -8,9 +8,19 @@ import {
   rotateHalfProps,
   rotateHalfSpawns,
   type Gap,
+  addSupplyPoint,
 } from './build';
 import { deriveCoverPoints, emitCoverPoint } from './cover';
-import type { Brush, CoverPoint, LaneDef, MapDef, ObjectiveDef, PropDef, SpawnZone } from './types';
+import type {
+  Brush,
+  CoverPoint,
+  LaneDef,
+  MapDef,
+  ObjectiveDef,
+  PropDef,
+  SpawnZone,
+  SupplyPointDef,
+} from './types';
 
 /**
  * MP_DUNES — the first M8 map (brief S6.1).
@@ -501,6 +511,19 @@ const TRIM_BRUSHES = trimHalf();
 const HALF_PROPS = propsHalf();
 const ALL_PROPS: PropDef[] = [...HALF_PROPS, ...rotateHalfProps(HALF_PROPS), ...plazaProps()];
 
+/**
+ * The two resupply stations (this session).
+ *
+ * Under the arcades on each flank, symmetric about the origin: twelve metres off the outer flags
+ * and well clear of both bomb sites, which sit in the +Z half. Measured in a live match — the
+ * capsule settles at each with no displacement, which the first pair tried (±20, ∓14) did not:
+ * it landed inside a stall and was pushed 0.86 m.
+ */
+const SUPPLY_PROPS: PropDef[] = [];
+const SUPPLY_POINTS: SupplyPointDef[] = [];
+addSupplyPoint(SUPPLY_PROPS, SUPPLY_POINTS, 'ammo_w', -18, 0, 6, 0);
+addSupplyPoint(SUPPLY_PROPS, SUPPLY_POINTS, 'ammo_e', 18, 0, -6, Math.PI);
+
 export const DUNES_MAP: MapDef = {
   id: 'mp_dunes',
   name: 'DUNES',
@@ -513,7 +536,7 @@ export const DUNES_MAP: MapDef = {
     ...TRIM_BRUSHES,
     ...rotateHalf(TRIM_BRUSHES),
   ],
-  props: ALL_PROPS,
+  props: [...ALL_PROPS, ...SUPPLY_PROPS],
   spawns: spawns(),
   lanes: DUNES_LANES,
 
@@ -600,6 +623,7 @@ export const DUNES_MAP: MapDef = {
 
   coverPoints: coverPoints(ALL_PROPS),
   objectives: objectives(),
+  supply: SUPPLY_POINTS,
   navBounds: {
     min: { x: -34, y: -4, z: -40 },
     max: { x: 34, y: 14, z: 40 },

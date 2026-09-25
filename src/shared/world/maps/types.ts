@@ -115,7 +115,9 @@ export type PropShapeId =
   | 'containerBlue'
   | 'pallets'
   | 'lightMast'
-  | 'forklift';
+  | 'forklift'
+  // The resupply station's box. Authored through `addSupplyPoint`, never placed by hand.
+  | 'ammoCrate';
 
 export interface PropShapeDef {
   id: PropShapeId;
@@ -314,6 +316,30 @@ export interface ObjectiveDef {
 }
 
 /**
+ * A resupply station: where a player can kneel and refill what they are carrying.
+ *
+ * Map data rather than a mode's, because a crate is a property of the *place* — every mode
+ * played on this map has the same two — and because the rule that spends the time belongs to
+ * the simulation, not to a game type. `SupplySystem` is the reader.
+ *
+ * `position` is the crate's base on the floor, and the trigger is a cylinder about it: a radius
+ * in XZ and `SUPPLY_REACH_UP`/`DOWN` in Y, so a crate under a catwalk cannot be used from the
+ * deck above it.
+ *
+ * Authored with `addSupplyPoint`, which emits the prop placement from the same call. The crate
+ * you can see and the volume that resupplies you are one authored fact; two lists that had to
+ * agree by hand would be a station that works a metre from where it is drawn.
+ */
+export interface SupplyPointDef {
+  id: string;
+  position: Vec3Lit;
+  /** Radians. Which way the crate faces; the lid opens toward the player. */
+  rotationY: number;
+  /** Metres in XZ. How close the player has to be. */
+  radius: number;
+}
+
+/**
  * Where a lane runs, so a debug harness can path it and report seconds (M8).
  *
  * M4 declared this in `foundry.ts` and `ModePanel` imported it from there, which meant the
@@ -371,6 +397,8 @@ export interface MapDef {
    * the lanes.
    */
   objectives: ObjectiveDef[];
+  /** Resupply stations. Absent means this map has none; see `SupplyPointDef`. */
+  supply?: readonly SupplyPointDef[];
   /** Bounds of playable space; also sizes the collision grid and the navmesh bake. */
   navBounds: Box;
   /**

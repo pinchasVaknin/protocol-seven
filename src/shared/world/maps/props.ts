@@ -13,6 +13,39 @@ import type { PropShapeDef, PropShapeId } from './types';
  * player can walk into.
  */
 export const PROP_SHAPES: Readonly<Record<PropShapeId, PropShapeDef>> = {
+  /**
+   * The resupply station (this session).
+   *
+   * Deliberately not the scenery `crate` with a different flag on it: a player has to be able
+   * to tell from across a lane which box is worth kneeling at, and every map here is already
+   * full of boxes. So it is wider than it is tall, it sits open, and the two parts that read at
+   * distance are `hazard` — the one material in the palette that means *look at this* and is
+   * used nowhere as a surface you walk on.
+   *
+   * The body is solid and the lid and stripe are not, exactly as `crate` does it: trim that
+   * collides is trim a grenade bounces off oddly.
+   */
+  ammoCrate: {
+    id: 'ammoCrate',
+    parts: [
+      { offset: { x: 0, y: 0.3, z: 0 }, size: { x: 1.3, y: 0.6, z: 0.8 }, material: 'metal', solid: true },
+      // The open lid, tilted back against the body — one box, standing proud of the rear face.
+      {
+        offset: { x: 0, y: 0.78, z: -0.34 },
+        size: { x: 1.26, y: 0.34, z: 0.06 },
+        material: 'rust',
+        solid: false,
+      },
+      // The band that says which box this is.
+      {
+        offset: { x: 0, y: 0.62, z: 0 },
+        size: { x: 1.34, y: 0.05, z: 0.84 },
+        material: 'hazard',
+        solid: false,
+      },
+      { offset: { x: 0, y: 0.3, z: 0.41 }, size: { x: 0.5, y: 0.22, z: 0.02 }, material: 'hazard', solid: false },
+    ],
+  },
   crate: {
     id: 'crate',
     parts: [

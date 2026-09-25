@@ -18,6 +18,7 @@ import {
 } from '../shared/streaks/StreakDefs';
 import { Rng } from '../shared/core/Rng';
 import { EquipmentSystem, makeEquipmentInventory, type EquipmentInventory } from '../shared/equipment/EquipmentSystem';
+import { SupplySystem } from '../shared/world/SupplySystem';
 import { equipmentDef } from '../shared/equipment/EquipmentDefs';
 import { LifeStockAudit, type LifeStockReport } from '../shared/equipment/LifeStockAudit';
 import { BotThrower, type MutableThrowIntent } from '../shared/equipment/BotThrower';
@@ -212,6 +213,17 @@ export class ServerMatch extends Disposable {
   readonly streaks: StreakSystem;
   /** Grenades and equipment, authoritative (M11 Gate B, §6.8, §8.24). */
   readonly equipment: EquipmentSystem;
+  /**
+   * The map's resupply stations (this session).
+   *
+   * The server's copy of a rule the client runs too, which is the opposite of how the bomb is
+   * arranged and for a stated reason: a plant timer lives on the mode, the mode lives here, and
+   * a client that ran one would be a second authority over it. Ammunition is not on the wire at
+   * all — the server steps its own `WeaponSystem` and `ThrowController` per player from the same
+   * commands the client stepped its own with — so a crate has to be applied in both places or
+   * the two copies of the magazine stop agreeing.
+   */
+  readonly supply: SupplySystem;
   private readonly botThrower: BotThrower;
   private readonly equipmentRng: Rng;
   /** One cursor into the bot list, so one bot is considered per tick. See `stepBotThrows`. */
@@ -521,6 +533,7 @@ export class ServerMatch extends Disposable {
       // The same fact `bots.freeForAll` carries, from the same registry flag (M13 Phase A).
       freeForAll: this.modeEntry.freeForAll === true,
     });
+    this.supply = new SupplySystem(this.mapEntry.def.supply ?? []);
     this.botThrower = new BotThrower(this.equipment, this.world, this.equipmentConfig);
     this.equipmentRng = new Rng(options.seed ^ 0x1b87_3593);
     /**
@@ -690,6 +703,7 @@ export class ServerMatch extends Disposable {
     // does it, so the two runtimes resolve a plant that starts and completes on the same tick
     // identically.
     this.stepBombInteractions();
+    this.stepSupply();
     /**
      * Equipment, in `ClientMatch.simulate`'s order (M11 Gate B, §8.24).
      *
@@ -868,6 +882,27 @@ export class ServerMatch extends Disposable {
    * cancels. That is what makes an interruption free — there is no state here to unwind, and a
    * player who dies mid-plant is handled by `onKill` inside the mode.
    */
+  /**
+   * Every connected human kneeling at a crate, in `ClientMatch.simulate`'s order.
+   *
+   * Humans only. A bot has no `Weapon` of this kind and no `EquipmentInventory` — `BotThrower`
+   * holds its stock — so giving one a crate is a decision about bot behaviour rather than about
+   * stations, and it is not this commit's.
+   */
+  private stepSupply(): void {
+    if (!this.supply.any) return;
+    for (const player of this.players) {
+      this.supply.step(
+        player.entityId,
+        player.controller.sim,
+        player.alive,
+        isDown(player.lastButtons, Btn.Use),
+        player.weapons.weapon,
+        this.handOf(player.entityId).inventory,
+      );
+    }
+  }
+
   private stepBombInteractions(): void {
     const mode = this.mode;
     if (!(mode instanceof SearchAndDestroy)) return;

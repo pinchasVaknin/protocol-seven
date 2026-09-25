@@ -74,6 +74,7 @@ import { Health, type HealthConfig } from '../shared/player/Health';
 import type { MovementConfig } from '../shared/player/MovementConfig';
 import type { PlayerController } from '../shared/player/PlayerController';
 import { eyeHeightFor } from '../shared/player/Stance';
+import { NO_SUPPLY_POINT, SupplySystem, type SupplyState } from '../shared/world/SupplySystem';
 import type { ViewmodelLayer } from './player/Viewmodel';
 import { LOW_HEALTH_THRESHOLD, type DeathReport } from './ui/Hud';
 import type { HitZone } from '../shared/combat/HitboxRig';
@@ -458,6 +459,18 @@ export class Match {
   private lastStreakCommand: InputCommand | null = null;
 
   /**
+   * The map's resupply stations, and the rule that spends time at one (this session).
+   *
+   * Stepped on **both** sides of a networked match, unlike the bomb. A plant timer is the mode's
+   * and the mode runs on the server, so a client that ran one as well would be a second
+   * authority over it. A magazine is not like that: the client and the server each own a copy of
+   * the weapon and step it from the same commands, and have since M10 — nothing about ammunition
+   * is on the wire at all. So the crate is a rule both sides apply, and the two agree because
+   * their inputs do.
+   */
+  private readonly supply: SupplySystem;
+
+  /**
    * Who this player is watching while dead (§6.8).
    *
    * Cleared on every round start — the §4.18 discard rule applied to a round boundary. Without
@@ -589,6 +602,7 @@ export class Match {
     });
     // M9: the bodies are the client's, not the director's. `BotRenderer` reconciles its
     // mesh set against the roster each frame and drives the animations off `BotVisualState`.
+    this.supply = new SupplySystem(deps.map.def.supply ?? []);
     this.botRenderer = new BotRenderer(
       deps.actors ?? (() => this.bots.bots),
       // Colour is a relation to this viewer, not an absolute A/B property. That keeps an
@@ -1857,6 +1871,9 @@ export class Match {
     // well would make the client a second authority over a plant timer the server owns, and
     // §6.8 gives that to exactly one of them.
     if (!this.isNetworked && !this.playerDead) this.stepBombInteraction(cmd);
+    // Both kinds of match, deliberately — see the `supply` field. After the bomb, so a station
+    // authored too near an objective cannot take the tick the plant wanted.
+    this.stepSupply(cmd);
     this.stepInteractPose();
     // The server owns when and where a body comes back (S4.15); the client is told. But
     // `stepPlayerRespawn` also *decrements the display timer*, and skipping the whole method
@@ -2210,6 +2227,31 @@ export class Match {
       };
     }
     return null;
+  }
+
+  /** What the station under the player is doing this tick, for the HUD. */
+  get supplyState(): SupplyState {
+    return this.supply.stateOf(this.localId);
+  }
+
+  /**
+   * One tick at a resupply station.
+   *
+   * Everything it needs is already here: where the body is and what stance it is in, the use
+   * button off the same command the bomb reads, the weapon **in the hand** — `weapons.weapon` is
+   * the active slot rather than the loadout — and the grenade inventory. A dead body is passed
+   * through as not alive rather than skipped, so the state clears and the prompt goes with it.
+   */
+  private stepSupply(cmd: InputCommand): void {
+    if (!this.supply.any) return;
+    this.supply.step(
+      this.localId,
+      this.deps.player.sim,
+      !this.playerDead,
+      isDown(cmd.buttons, Btn.Use),
+      this.weapons.weapon,
+      this.equipment.inventory,
+    );
   }
 
   /** Cycle to the next living teammate. Bound to the fire key while dead (M7's verb). */
@@ -2631,6 +2673,51 @@ export class Match {
     hud.interactLabel = '';
     hud.urgent = false;
 
+    this.fillModeBanner(hud);
+    this.fillSupplyBanner(hud);
+  }
+
+  /**
+   * The resupply prompt, which is every mode's and therefore nobody's mode's.
+   *
+   * Written after the mode and only into a slot the mode left empty. The order is the same
+   * urgency rule `fillModeBanner` is built on: a bomb being planted, defused or counting down is
+   * the most important thing on the screen, and a crate is the least — and on a map where a
+   * station sits inside an objective the player is told about the objective.
+   *
+   * Three states rather than one, because the rule has to be teachable without a tutorial: near
+   * it and standing, near it and kneeling, and kneeling with nothing left to take. The ring is
+   * the held weapon's reserve rather than progress toward the next round, which would be a
+   * quarter-second sawtooth; what the player watches climb is the ammunition counter.
+   */
+  private fillSupplyBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
+    if (hud.interactLabel.length > 0) return;
+    const state = this.supplyState;
+    if (state.pointId === NO_SUPPLY_POINT) return;
+
+    /**
+     * The banner carries the ring, and `HudStreaks.updateBanner` draws neither without a label:
+     * a ring with nothing above it is a progress bar for an unnamed thing, so the surface makes
+     * the two one decision. Written only into an empty slot, so a bomb that is counting down
+     * keeps the strip and this keeps the ring under it.
+     */
+    if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'RESUPPLY';
+
+    if (state.needsCrouch) {
+      hud.interactFraction = state.stock;
+      hud.interactLabel = 'CROUCH TO RESUPPLY';
+      return;
+    }
+    hud.interactFraction = state.stock;
+    hud.interactLabel = state.full
+      ? 'RESUPPLIED'
+      : state.working
+        ? 'RESUPPLYING'
+        : `HOLD ${this.useKeyLabel()} TO RESUPPLY`;
+  }
+
+  /** The bomb timer, the plant/defuse ring and the capture prompt. See `fillObjectiveBanner`. */
+  private fillModeBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
     const mode = this.mode;
     if (mode instanceof SearchAndDestroy) {
       // Alive counts, top of screen, every round (M7 playtest). Counted here rather than by

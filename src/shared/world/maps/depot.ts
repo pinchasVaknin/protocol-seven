@@ -7,9 +7,19 @@ import {
   rotateHalf,
   rotateHalfProps,
   rotateHalfSpawns,
+  addSupplyPoint,
 } from './build';
 import { deriveCoverPoints, emitCoverPoint } from './cover';
-import type { Brush, CoverPoint, LaneDef, MapDef, ObjectiveDef, PropDef, SpawnZone } from './types';
+import type {
+  Brush,
+  CoverPoint,
+  LaneDef,
+  MapDef,
+  ObjectiveDef,
+  PropDef,
+  SpawnZone,
+  SupplyPointDef,
+} from './types';
 import { simCos, simSin } from '../../core/SimMath';
 
 /**
@@ -679,6 +689,19 @@ const ALL_PROPS: PropDef[] = [
   ...masts(),
 ];
 
+/**
+ * The two resupply stations (this session).
+ *
+ * Just outside each lane flag, one per side: the yard's two long routes both pass one, and
+ * neither is near a bomb site or the bomb's own spawn. Measured in a live match — the capsule
+ * settles at each with no displacement, which (14, 6) did not: it stands against a container and
+ * was pushed 0.36 m.
+ */
+const SUPPLY_PROPS: PropDef[] = [];
+const SUPPLY_POINTS: SupplyPointDef[] = [];
+addSupplyPoint(SUPPLY_PROPS, SUPPLY_POINTS, 'ammo_w', -26, 0, 6, 0);
+addSupplyPoint(SUPPLY_PROPS, SUPPLY_POINTS, 'ammo_e', 26, 0, -6, Math.PI);
+
 export const DEPOT_MAP: MapDef = {
   id: 'mp_depot',
   name: 'DEPOT',
@@ -691,7 +714,7 @@ export const DEPOT_MAP: MapDef = {
     ...TRIM_BRUSHES,
     ...rotateHalf(TRIM_BRUSHES),
   ],
-  props: ALL_PROPS,
+  props: [...ALL_PROPS, ...SUPPLY_PROPS],
   spawns: spawns(),
   lanes: DEPOT_LANES,
 
@@ -846,6 +869,7 @@ export const DEPOT_MAP: MapDef = {
 
   coverPoints: coverPoints(COVER_PROPS),
   objectives: objectives(),
+  supply: SUPPLY_POINTS,
   navBounds: {
     min: { x: -32, y: -4, z: -35 },
     max: { x: 32, y: 14, z: 35 },

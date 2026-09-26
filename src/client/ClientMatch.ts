@@ -87,7 +87,8 @@ import { ViewmodelAnim, makeViewmodelDrive, type ViewmodelDrive } from './weapon
 import type { ViewmodelConfig } from '../shared/weapons/ViewmodelConfig';
 import { WeaponAudio } from './weapons/WeaponAudio';
 import { Melee } from '../shared/weapons/Melee';
-import { WEAPON_DEFS, type WeaponDef } from '../shared/weapons/WeaponDefs';
+import { anyWeaponDef } from '../shared/weapons/AnyWeapon';
+import type { WeaponDef } from '../shared/weapons/WeaponDefs';
 import { buildWeaponModel, type WeaponModel } from './weapons/WeaponMesh';
 import type { WeaponAssetService } from './weapons/WeaponAssetService';
 import type { AttachmentId } from '../shared/weapons/Attachments';
@@ -1202,7 +1203,7 @@ export class Match {
 
     return {
       killerName,
-      weaponName: WEAPON_DEFS[weaponId]?.name ?? '',
+      weaponName: anyWeaponDef(weaponId)?.name ?? '',
       distanceM,
       killerHealth,
       headshot: zone === 'head',
@@ -1865,6 +1866,7 @@ export class Match {
       this.streaks.simulate(cmd.tickIndex);
     }
     this.syncChopperBody();
+    this.syncCarriedStreakWeapon();
     if (!this.playerDead && !this.mortarOverlay.isOpen) this.stepStreakInput(cmd);
     // Local matches only (M11 Gate B). A networked client's Use key is already in the command
     // it just sent, and `ServerMatch.stepBombInteractions` acts on it there; running this as
@@ -2227,6 +2229,26 @@ export class Match {
       };
     }
     return null;
+  }
+
+  /**
+   * Put a carried killstreak weapon in the player's hands, or take it back (2026-09-26).
+   *
+   * Asked every tick from whichever list is authoritative here, and pushed by nothing — the
+   * same shape as `syncChopperBody` immediately above and for the same reason: with no edge to
+   * miss there is no state that can get stuck holding a minigun that expired. In a solo match
+   * the live streaks are this client's own; in a networked one they are the server's, arriving
+   * as replicated entities, because §4.15 puts activation on that side and this client does not
+   * activate its own streaks even when it asked for them.
+   *
+   * A dead player holds nothing: `StreakSystem.onDeath` retires a carried streak with the body
+   * that called it in, so the answer here goes to null on the same tick without a second rule.
+   */
+  private syncCarriedStreakWeapon(): void {
+    const weapon = this.isNetworked
+      ? this.replicatedStreaks.carriedWeaponFor(this.localId)
+      : this.streaks.carriedWeaponFor(this.localId);
+    this.weapons.holdStreakWeapon(weapon);
   }
 
   /** What the station under the player is doing this tick, for the HUD. */

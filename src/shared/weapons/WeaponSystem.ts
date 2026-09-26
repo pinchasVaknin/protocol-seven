@@ -208,6 +208,19 @@ export class WeaponSystem {
   }
 
   /** Put a different weapon in a slot: 0 primary, 1 secondary. */
+  /**
+   * Hold a killstreak weapon, or give the body back its loadout. Asked every tick by whichever
+   * runtime owns this weapon system — see `Inventory.holdStreakWeapon` and `CarriedWeaponStreak`.
+   */
+  holdStreakWeapon(def: WeaponDef | null): void {
+    this.inventory.holdStreakWeapon(def);
+  }
+
+  /** Whether a killstreak weapon is in the hands. The swap keys are refused while it is. */
+  get streakWeaponHeld(): boolean {
+    return this.inventory.streakWeaponHeld;
+  }
+
   equip(slotIndex: number, def: WeaponDef): void {
     this.inventory.setSlot(slotIndex, def);
     this.recoil.reset();
@@ -329,10 +342,20 @@ export class WeaponSystem {
     const prevButtons = this.prevButtons;
     this.prevButtons = buttons;
 
-    // The swap machine runs first so the weapon that steps below is the right one.
-    if (justPressed(buttons, prevButtons, Btn.SwapWeapon)) this.inventory.requestToggle();
-    if (justPressed(buttons, prevButtons, Btn.Slot1)) this.inventory.requestSwap(0);
-    if (justPressed(buttons, prevButtons, Btn.Slot2)) this.inventory.requestSwap(1);
+    /**
+     * The swap machine runs first so the weapon that steps below is the right one.
+     *
+     * **A carried killstreak weapon cannot be put away while it can still fire.** It is not in
+     * the loadout and the keys that reach the loadout must not reach it: a player who could swap
+     * to their rifle would be holding a streak in a slot they can come back to, and the thirty
+     * seconds it is priced at would become thirty seconds of *their choosing*. Once the belt is
+     * spent that argument is over — see `Inventory.streakWeaponSpent`.
+     */
+    if (!this.inventory.streakWeaponHeld || this.inventory.streakWeaponSpent) {
+      if (justPressed(buttons, prevButtons, Btn.SwapWeapon)) this.inventory.requestToggle();
+      if (justPressed(buttons, prevButtons, Btn.Slot1)) this.inventory.requestSwap(0);
+      if (justPressed(buttons, prevButtons, Btn.Slot2)) this.inventory.requestSwap(1);
+    }
     const swapLower = this.inventory.step();
 
     const wi = this.input;

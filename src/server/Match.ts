@@ -704,6 +704,7 @@ export class ServerMatch extends Disposable {
     // identically.
     this.stepBombInteractions();
     this.stepSupply();
+    this.stepCarriedStreakWeapons();
     /**
      * Equipment, in `ClientMatch.simulate`'s order (M11 Gate B, §8.24).
      *
@@ -900,6 +901,22 @@ export class ServerMatch extends Disposable {
         player.weapons.weapon,
         this.handOf(player.entityId).inventory,
       );
+    }
+  }
+
+  /**
+   * Every connected human's hands, against the streaks this server owns (2026-09-26).
+   *
+   * The authoritative half of `CarriedWeaponStreak`: asked every tick, pushed by nothing, and
+   * resolved from the same table the client resolves its replicated copy from. A player whose
+   * minigun has just expired is holding their loadout again on the tick the streak leaves the
+   * list, with no event and nothing to unwind.
+   *
+   * Humans only. A bot's weapon comes from `drawBotWeapon` and nothing gives a bot a streak.
+   */
+  private stepCarriedStreakWeapons(): void {
+    for (const player of this.players) {
+      player.weapons.holdStreakWeapon(this.streaks.carriedWeaponFor(player.entityId));
     }
   }
 

@@ -12,7 +12,14 @@
  * balance rather than merely reached.
  */
 
-export type StreakId = 'uav' | 'counter_uav' | 'care_package' | 'mortar' | 'sentry' | 'chopper';
+export type StreakId =
+  | 'uav'
+  | 'counter_uav'
+  | 'care_package'
+  | 'mortar'
+  | 'sentry'
+  | 'chopper'
+  | 'minigun';
 
 /**
  * When a streak's effect is over — which is when its cooldown starts to run.
@@ -114,6 +121,25 @@ export const STREAK_DEFS: readonly StreakDef[] = [
     effectEnds: 'expiry',
     blurb: 'Take the gun · thermal optics',
     fromCarePackage: true,
+  },
+  /**
+   * The first streak the player **carries** (2026-09-26, the human).
+   *
+   * `effectEnds: 'expiry'` for the reason the field exists: the effect is not dispatched by the
+   * keypress the way a mortar's shells are — the owner is getting something out of it for every
+   * one of those thirty seconds, so the cooldown starts when the belt is taken away.
+   *
+   * `fromCarePackage: false` on the human's instruction: the three carried weapons are earned in
+   * a streak and not drawn in a lottery.
+   */
+  {
+    id: 'minigun',
+    name: 'MINIGUN',
+    requirement: 8,
+    durationSeconds: 30,
+    effectEnds: 'expiry',
+    blurb: 'Belt-fed · 30 s in your hands',
+    fromCarePackage: false,
   },
 ];
 

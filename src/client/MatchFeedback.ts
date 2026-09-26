@@ -15,7 +15,7 @@ import type { PlayerController } from '../shared/player/PlayerController';
 import type { LatencyProbe } from './debug/LatencyProbe';
 import type { Hud } from './ui/Hud';
 import type { WeaponAudio } from './weapons/WeaponAudio';
-import { WEAPON_DEFS } from '../shared/weapons/WeaponDefs';
+import { anyWeaponDef } from '../shared/weapons/AnyWeapon';
 import { Disposable } from '../shared/core/Disposable';
 
 /**
@@ -154,8 +154,13 @@ export class MatchFeedback extends Disposable {
          * fires snipers; swap, and it swaps with you. An id nothing catalogues cannot arrive
          * (each emitter takes it from a def), so a miss here is a programming error and not a
          * case to fall back from — falling back to the viewer's weapon is the bug.
+         *
+         * `anyWeaponDef` rather than `WEAPON_DEFS`, since a killstreak weapon reached a player's
+         * hands (2026-09-26): a minigun's shots are emitted by this same `WeaponSystem` and its
+         * def is not in the loadout table, so the throw below fired on every round — inside
+         * `EventBus.emit`, which took the rest of the tick with it.
          */
-        const def = WEAPON_DEFS[p.weaponId];
+        const def = anyWeaponDef(p.weaponId);
         if (def === undefined) throw new Error(`WeaponFired names an unknown weapon "${p.weaponId}".`);
         // The muzzle *light* belongs to whoever fired, wherever they are standing; the flash
         // mesh hangs off the local player's own viewmodel and belongs only to them (M3 bug).

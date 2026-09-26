@@ -25,7 +25,7 @@ import {
   makeReplicatedMatchState,
   type ReplicatedMatchState,
 } from '../../shared/modes/MatchFlow';
-import { WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
+import { anyWeaponDef } from '../../shared/weapons/AnyWeapon';
 import type { BrowserLink } from './BrowserLink';
 import { RemoteActor } from './RemoteActor';
 
@@ -303,7 +303,7 @@ export class NetSession {
           // every muzzle flash and every gunshot the player hears from their own rifle.
           if (e.sourceId === this.client.entityId) return;
           const weaponId = weaponIdAt(e.weaponIndex);
-          const def = weaponId === null ? undefined : WEAPON_DEFS[weaponId];
+          const def = weaponId === null ? undefined : anyWeaponDef(weaponId);
           if (def === undefined) return;
           evFired.weaponId = def.id;
           evFired.sourceId = e.sourceId;

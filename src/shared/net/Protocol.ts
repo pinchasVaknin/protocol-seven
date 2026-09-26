@@ -17,6 +17,17 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v21 (2026-09-26, the human): **a fourth streak weapon, and not one byte of new message.** The
+ * minigun is the first killstreak a player *carries*, and the whole of it on the wire is one
+ * more id in the weapon table — `STREAK_WEAPON_IDS` runs mortar, sentry, chopper, minigun now,
+ * so `EntitySnapshot.weaponIndex` can say what a remote body is actually holding and the
+ * killfeed can print `[MINIGUN]` over the network as it does in a solo match. Appended, so every
+ * existing index is where it was. Which streak a body is carrying needs nothing either:
+ * `StreakEntityState` has carried `kind` and `ownerId` since M11, and a client resolves the
+ * weapon from the same table the server did. The version moves anyway, because a client reading
+ * `streak_minigun` at index 15 against a server that thinks 15 is nothing is precisely the skew
+ * this number exists to refuse.
+ *
  * v20 (2026-09-25, the human): **the arm, and what it is doing.** `EntitySnapshot.flags` is a
  * `u16` where it was a `u8`, because the byte was full at `EFlag.TeamB` and the animation library
  * had two clips waiting on a bit each — a grenade throw and a knife swing, neither of which
@@ -163,7 +174,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 20;
+export const PROTOCOL_VERSION = 21;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

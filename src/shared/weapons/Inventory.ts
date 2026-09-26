@@ -24,6 +24,17 @@ import type { WeaponDef, WeaponSlot } from './WeaponDefs';
 
 export type SwapPhase = 'READY' | 'PUT_AWAY' | 'TAKE_OUT';
 
+/**
+ * The slot a carried killstreak weapon occupies while one is live.
+ *
+ * Two is past the end of every authored loadout — a class has a primary and a secondary and
+ * the schema has no third — so nothing a player can build collides with it, and the two slots
+ * they *did* build keep their magazines, their attachments and their reload state untouched
+ * while a minigun is in the way. Putting the streak weapon *into* slot 0 was the other option
+ * and it loses all three: `setSlot` resets ammo, because it is a different gun.
+ */
+const STREAK_SLOT = 2;
+
 const evSwap = { fromId: '', toId: '', sourceId: 0, slot: 'primary' as WeaponSlot };
 
 export class Inventory {
@@ -34,6 +45,8 @@ export class Inventory {
 
   phase: SwapPhase = 'READY';
   private timer = 0;
+  /** The slot to go back to when the streak weapon is taken away. See `holdStreakWeapon`. */
+  private restoreIndex = 0;
 
   constructor(
     primary: WeaponDef,
@@ -112,6 +125,84 @@ export class Inventory {
     return true;
   }
 
+  /** Whether a killstreak weapon is in the hands, or on its way into or out of them. */
+  get streakWeaponHeld(): boolean {
+    return this.weapons.length > STREAK_SLOT;
+  }
+
+  /**
+   * The carried weapon is out of ammunition and has none to reload from.
+   *
+   * It is the one state in which the hands are given back to the player before the clock runs
+   * out. A belt-fed streak weapon has `reserveAmmo` zero by design — the streak *is* the
+   * ammunition — and a player who empties it early would otherwise stand for the rest of the
+   * thirty seconds holding a weapon that cannot fire and cannot be put away, which is a
+   * punishment nobody asked for. Spent, it stops forcing the swap and the loadout keys work
+   * again; the streak still ends on its own clock, it simply has nothing left to give.
+   */
+  get streakWeaponSpent(): boolean {
+    const streak = this.weapons[STREAK_SLOT];
+    if (streak === undefined) return false;
+    return streak.mag <= 0 && streak.reserve <= 0;
+  }
+
+  /**
+   * Hold `def`, or give the body back what it was carrying. **Idempotent, and asked every
+   * tick** rather than called on an edge — see `CarriedWeaponStreak`.
+   *
+   * The whole method is written so that being asked the same question twice costs nothing and
+   * being asked a *different* question late costs one swap. Two runtimes ask it independently
+   * from their own copy of the streak list, and neither tells the other; a tick of disagreement
+   * at the moment a streak starts or ends resolves itself on the next one, which is the same
+   * tolerance every other replicated fact in a match has.
+   *
+   * The swap itself goes through `requestSwap`, so a minigun is brought up with the ordinary
+   * put-away/take-out animation and its own `swapInTime` — which for that weapon *is* the
+   * spin-up. `requestSwap` refuses while a swap is already running; being asked again next tick
+   * is what makes that refusal harmless rather than a weapon that never arrives.
+   */
+  holdStreakWeapon(def: WeaponDef | null): void {
+    if (def !== null) {
+      const existing = this.weapons[STREAK_SLOT];
+      if (existing === undefined) {
+        this.restoreIndex = this.activeIndex;
+        this.weapons.push(new Weapon(def, this.bus, this.sourceId));
+      } else if (existing.definition.id !== def.id) {
+        // A different streak weapon while one is already held. Nothing activates two at once
+        // today; if anything ever does, the newer one is what the hands are holding.
+        existing.setDefinition(def);
+        existing.resetAmmo();
+      }
+      // Spent, the hands are the player's again — and are not dragged back next tick.
+      if (this.activeIndex !== STREAK_SLOT && !this.streakWeaponSpent) this.requestSwap(STREAK_SLOT);
+      return;
+    }
+
+    if (!this.streakWeaponHeld) return;
+    const back = this.restoreIndex < STREAK_SLOT ? this.restoreIndex : 0;
+
+    /**
+     * The streak ended while the hands were still on their way *to* it.
+     *
+     * The put-away is already running and the weapon is already going down; what it comes back
+     * up as is `pendingIndex`, and nothing has read it yet. Redirecting it is the difference
+     * between a player who never sees the expired minigun and one who raises it for a tenth of
+     * a second and has it taken away — which is the correction §4.15 exists to avoid showing.
+     */
+    if (this.phase === 'PUT_AWAY' && this.pendingIndex === STREAK_SLOT) {
+      this.pendingIndex = back;
+      return;
+    }
+    if (this.activeIndex === STREAK_SLOT) {
+      // Ask to come off it. Refused while the take-out runs; asked again next tick.
+      this.requestSwap(back);
+      return;
+    }
+    // Off it and settled: the slot goes away, which is what stops `all` and `stepIdle` from
+    // carrying a weapon nobody can reach.
+    if (this.phase === 'READY') this.weapons.length = STREAK_SLOT;
+  }
+
   /** Toggle between primary and secondary — the one key a player actually presses. */
   requestToggle(): boolean {
     if (this.weapons.length < 2) return false;
@@ -186,6 +277,10 @@ export class Inventory {
    * sights, whatever the previous one ended holding.
    */
   reset(): void {
+    // A life does not start holding the last one's streak weapon. Dropped before the indices
+    // below are set, so `activeIndex` can never be left pointing at a slot that has gone.
+    if (this.streakWeaponHeld) this.weapons.length = STREAK_SLOT;
+    this.restoreIndex = 0;
     this.phase = 'READY';
     this.timer = 0;
     this.activeIndex = 0;

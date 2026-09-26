@@ -6,7 +6,7 @@ import { relationTo, type ViewerContext } from '../../shared/ui/TeamColour';
 import { ActorIndicator, buildActorIndicatorAssets } from './ActorIndicator';
 import { BotMesh, buildBotAssets, type BotAssets } from './BotMesh';
 import { buildHeldWeapon, heldWeaponMaterial } from '../weapons/WeaponMesh';
-import { WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
+import { anyWeaponDef } from '../../shared/weapons/AnyWeapon';
 import type { WeaponAssetService } from '../weapons/WeaponAssetService';
 import type { ActorAvatar, HeldWeaponAsset } from '../characters/ActorAvatar';
 import type {
@@ -415,7 +415,9 @@ export class BotRenderer {
     }
     const asset: HeldWeaponAsset = {
       weaponId,
-      weaponClass: WEAPON_DEFS[weaponId]?.class ?? null,
+      // `anyWeaponDef`: a remote body carrying a killstreak weapon is armed like any other,
+      // and reading only the loadout table would draw it empty-handed.
+      weaponClass: anyWeaponDef(weaponId)?.class ?? null,
       geometry: built.geometry,
       material: this.weaponMaterial,
       template: lod?.scene ?? null,

@@ -7,11 +7,14 @@ import type { ScoreSystem } from '../combat/ScoreSystem';
 import { EV, type GameBus } from '../core/Events';
 import type { InputCommand } from '../core/InputCommand';
 import { CarePackage } from './CarePackage';
+import { CarriedWeaponStreak } from './CarriedWeapon';
 import { ChopperGunner } from './ChopperGunner';
 import { CounterUav } from './CounterUav';
 import { Killstreak, type StreakContext } from './KillstreakBase';
 import { MortarStrike } from './MortarStrike';
 import { makeSentryTally, SentryGun, type SentryTally } from './SentryGun';
+import { carriedStreakWeapon } from './StreakWeapons';
+import type { WeaponDef } from '../weapons/WeaponDefs';
 import {
   STREAK_COOLDOWN_SECONDS,
   STREAK_DEFS,
@@ -334,6 +337,20 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     return streak;
   }
 
+  /**
+   * The `streak_` weapon this body is holding because of a live streak, or null.
+   *
+   * Asked every tick by both runtimes — see `CarriedWeaponStreak`. A dead owner holds nothing:
+   * the streak is retired on death (`onDeath`), and until the retire lands on the same tick this
+   * answers for the body that is actually alive.
+   */
+  carriedWeaponFor(entityId: number): WeaponDef | null {
+    for (const s of this.active) {
+      if (s instanceof CarriedWeaponStreak && s.ownerId === entityId) return s.carriedWeapon;
+    }
+    return null;
+  }
+
   /** The live chopper takeover, if the local player is in one. */
   activeChopperFor(entityId: number): ChopperGunner | null {
     for (const s of this.active) {
@@ -579,6 +596,13 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
         return new SentryGun(def, ownerId, team, instance, this.ctx, x, y, z, yaw);
       case 'chopper':
         return new ChopperGunner(def, ownerId, team, instance, this.ctx);
+      case 'minigun': {
+        const weapon = carriedStreakWeapon(id);
+        // A carried streak with no weapon is a table that was not updated with the union it
+        // serves, which is a programming error and not a runtime condition.
+        if (weapon === null) throw new Error(`Streak "${id}" is carried but names no weapon.`);
+        return new CarriedWeaponStreak(def, ownerId, team, instance, this.ctx, weapon);
+      }
     }
   }
 
@@ -760,6 +784,9 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     for (let i = this.active.length - 1; i >= 0; i--) {
       const streak = this.active[i];
       if (streak instanceof ChopperGunner && streak.ownerId === entityId) this.retire(i, streak);
+      // A carried weapon dies with the body carrying it (2026-09-26, the human): it does not
+      // drop, and it is not waiting in the hands of the life that comes next.
+      if (streak instanceof CarriedWeaponStreak && streak.ownerId === entityId) this.retire(i, streak);
     }
   }
 

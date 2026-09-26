@@ -5,6 +5,8 @@ import {
   type StreakId,
 } from '../../shared/streaks/StreakDefs';
 import type { StreakEntityState, StreakView, UavContactState } from '../../shared/net/Skirmish';
+import { carriedStreakWeapon } from '../../shared/streaks/StreakWeapons';
+import type { WeaponDef } from '../../shared/weapons/WeaponDefs';
 
 /** One of this player's keys, as the server prices and gates it. Shaped like `StreakPrice`. */
 export interface ReplicatedOffer {
@@ -164,5 +166,28 @@ export class ReplicatedStreaks {
 
   get entities(): readonly StreakEntityState[] {
     return this.entities_;
+  }
+
+  /**
+   * The killstreak weapon this body is holding, from the server's own list of live streaks.
+   *
+   * The networked half of `CarriedWeaponStreak`'s "ask, never push". A client is told which
+   * streaks are live, whose they are and what kind they are — that is `kind` and `ownerId`, both
+   * of which `StreakEntityState` has carried since M11 — so it can resolve the weapon from the
+   * same table the server resolved it from and needs nothing new on the wire.
+   *
+   * It is also why the answer keeps being right when the streak ends: the record simply stops
+   * arriving, and the next frame's `apply` replaces the whole list. There is no expiry here to
+   * get stuck, which is the property this class was built around.
+   */
+  carriedWeaponFor(entityId: number): WeaponDef | null {
+    for (const entity of this.entities_) {
+      if (entity.ownerId !== entityId) continue;
+      const def = STREAK_DEFS[entity.kind];
+      if (def === undefined) continue;
+      const weapon = carriedStreakWeapon(def.id);
+      if (weapon !== null) return weapon;
+    }
+    return null;
   }
 }

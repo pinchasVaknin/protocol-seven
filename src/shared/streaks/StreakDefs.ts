@@ -20,7 +20,8 @@ export type StreakId =
   | 'sentry'
   | 'chopper'
   | 'minigun'
-  | 'flamethrower';
+  | 'flamethrower'
+  | 'shield';
 
 /**
  * When a streak's effect is over — which is when its cooldown starts to run.
@@ -158,6 +159,26 @@ export const STREAK_DEFS: readonly StreakDef[] = [
     durationSeconds: 25,
     effectEnds: 'expiry',
     blurb: 'Close-range jet · they keep burning',
+    fromCarePackage: false,
+  },
+  /**
+   * The cheapest of the three carried streaks and the shortest, which is not a contradiction.
+   *
+   * Five kills is the price of a UAV's teammate — `counter_uav` and `care_package` are already
+   * there — and what it buys is not firepower but a *direction you are safe from*. Twenty
+   * seconds is the length of a push, deliberately: long enough to cross a lane somebody is
+   * holding, too short to camp a site behind. Everything that makes it fair is in
+   * `ShieldProfile`, and the whole of it is the arc.
+   *
+   * `fromCarePackage: false` with the other two, on the human's instruction.
+   */
+  {
+    id: 'shield',
+    name: 'RIOT SHIELD',
+    requirement: 5,
+    durationSeconds: 20,
+    effectEnds: 'expiry',
+    blurb: 'Frontal cover · sidearm · 20 s',
     fromCarePackage: false,
   },
 ];

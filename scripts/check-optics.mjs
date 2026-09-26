@@ -45,6 +45,20 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SPECS = 'src/client/weapons/WeaponModelSpecs.ts';
 const DEFS_DIR = 'src/shared/weapons/defs';
+/**
+ * The second catalogue (2026-09-27).
+ *
+ * A killstreak's weapon is a `WeaponDef` like any other but it is *built* rather than authored:
+ * cloned from the carbine or the sidearm in `StreakWeapons.ts`, so it never appears in
+ * `defs/`. That was invisible to this audit until a streak weapon wanted a model spec of its
+ * own — the shield-pistol, which really is a pistol and looks absurd wearing the carbine's
+ * fallback — and the audit correctly refused an id it could not find a def for.
+ *
+ * The rule below is unchanged and still applies to them: a spec modelled with `optic: 'scope'`
+ * needs a def that scopes. None of these do, and none may, which is exactly what makes them
+ * safe to enumerate by id here rather than by parsing a builder.
+ */
+const STREAK_DEFS_FILE = 'src/shared/streaks/StreakWeapons.ts';
 
 function read(rel) {
   const p = path.join(ROOT, rel);
@@ -134,6 +148,21 @@ if (definedIds.size === 0) {
   process.exit(1);
 }
 
+// ---- 2b. the streak weapons, which are built rather than authored -----------
+
+const streakSource = stripComments(read(STREAK_DEFS_FILE));
+const streakList = /const STREAK_WEAPON_IDS:[^=]*=\s*\[([\s\S]*?)\]/.exec(streakSource);
+if (streakList === null) {
+  console.error(`optic audit: cannot find STREAK_WEAPON_IDS in ${STREAK_DEFS_FILE}.`);
+  process.exit(1);
+}
+const streakIds = [...streakList[1].matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]);
+if (streakIds.length === 0) {
+  console.error('optic audit: STREAK_WEAPON_IDS parsed to nothing — the audit read half its subject.');
+  process.exit(1);
+}
+for (const id of streakIds) definedIds.add(id);
+
 // ---- 3. the rule ------------------------------------------------------------
 
 const failures = [];
@@ -184,6 +213,7 @@ const scopedCount = [...definedIds].filter((id) => (modelled.get(id) ?? baseOpti
 const inherited = [...definedIds].filter((id) => !modelled.has(id)).length;
 console.log(
   `optic audit ok — ${definedIds.size} weapons examined ` +
-    `(${modelled.size} with their own model spec, ${inherited} inheriting AR_BASE's '${baseOptic}'), ` +
+    `(${definedIds.size - streakIds.length} authored, ${streakIds.length} built by killstreaks; ` +
+    `${modelled.size} with their own model spec, ${inherited} inheriting AR_BASE's '${baseOptic}'), ` +
     `${scopedCount} scoped model(s) against ${scopedDefs.size} scoped def(s), every pair agreeing.`,
 );

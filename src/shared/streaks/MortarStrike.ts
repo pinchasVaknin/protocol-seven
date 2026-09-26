@@ -127,6 +127,11 @@ export class MortarStrike extends Killstreak {
       req.x = c.px;
       req.y = c.py + c.aimHeight;
       req.z = c.pz;
+      // The burst, the same statement a grenade makes: a shell that lands in front of a shield
+      // is halved by it, and one that lands behind is not.
+      req.originX = x;
+      req.originY = y + 0.4;
+      req.originZ = z;
       this.ctx.damage.apply(req);
     }
   }

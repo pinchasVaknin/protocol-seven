@@ -942,7 +942,73 @@ export interface HeldWeaponGeometry {
  * one spec, rather than looking the geometry up by id in one place and the anchors up by id in
  * another. Anchors come from `WeaponMeshParts` — the same datum the first-person gloves sit on.
  */
+/**
+ * The riot shield, in metres: as wide as a torso and as tall as one plus a head behind it.
+ *
+ * Authored here rather than as a `WeaponModelSpec` because that vocabulary is a firearm's —
+ * receiver, handguard, barrel, magazine — and there is no reading of it that produces a plate.
+ * A slab is three boxes, so it does not need one.
+ */
+const SHIELD_W = 0.56;
+const SHIELD_H = 0.92;
+const SHIELD_T = 0.045;
+
+/**
+ * A riot shield as a held object: a plate, a rim that reads at distance, and a viewport.
+ *
+ * It exists for the **opponent**, not for the holder. A player whose rounds stop doing anything
+ * has to be able to see the reason from across a lane, and a body carrying a pistol looks
+ * exactly like a body carrying a pistol. The slab is deliberately plain — one merged geometry
+ * in the shared gunmetal, like every other held weapon — because what has to be legible is the
+ * silhouette, and a flat rectangle held in front of a chest is a silhouette nothing else in the
+ * game has.
+ *
+ * The viewport is a gap rather than glass: a hole in the plate costs two more boxes and no
+ * material, and at twenty metres a dark band reads the same as a window.
+ */
+function buildShieldGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const rail = 0.05;
+  const gap = 0.1;
+  // The plate, in three bands so the middle one can be a slot the eye reads as a viewport.
+  const upper = SHIELD_H * 0.34;
+  const lower = SHIELD_H - upper - gap;
+  const plate = (h: number, y: number): void => {
+    const g = new THREE.BoxGeometry(SHIELD_W, h, SHIELD_T);
+    g.translate(0, y, 0);
+    parts.push(g);
+  };
+  plate(upper, SHIELD_H * 0.5 - upper * 0.5);
+  plate(lower, -SHIELD_H * 0.5 + lower * 0.5);
+  // The bar across the viewport, and a rim down each edge: the two details that stop it
+  // reading as a crate at distance.
+  for (const x of [-SHIELD_W * 0.5 + rail * 0.5, SHIELD_W * 0.5 - rail * 0.5]) {
+    const g = new THREE.BoxGeometry(rail, SHIELD_H, SHIELD_T * 1.6);
+    g.translate(x, 0, 0);
+    parts.push(g);
+  }
+  // The grip, behind the plate, where the hand goes.
+  const grip = new THREE.BoxGeometry(0.04, 0.16, 0.05);
+  grip.translate(0, -0.05, SHIELD_T * 0.5 + 0.03);
+  parts.push(grip);
+
+  const merged = mergeGeometries(parts, false);
+  for (const g of parts) g.dispose();
+  if (merged === null) throw new Error('The riot shield merged to no geometry.');
+  merged.computeBoundingSphere();
+  return merged;
+}
+
 export function buildHeldWeapon(weaponId: string): HeldWeaponGeometry {
+  if (weaponId === 'streak_shield') {
+    return {
+      geometry: buildShieldGeometry(),
+      // The hand is on the grip behind the plate; the support palm is the same place, because
+      // a shield is carried with one arm and the other one is holding a pistol.
+      gripAnchor: new THREE.Vector3(0, -0.05, SHIELD_T * 0.5 + 0.05),
+      supportAnchor: new THREE.Vector3(0, -0.05, SHIELD_T * 0.5 + 0.05),
+    };
+  }
   const spec = modelSpecFor(weaponId);
   const grip = triggerHandAnchor(spec);
   const support = supportHandAnchor(spec);

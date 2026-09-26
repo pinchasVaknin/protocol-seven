@@ -1,9 +1,10 @@
 import { nowMs } from '../core/Clock';
 import { EV, type GameBus } from '../core/Events';
-import { clamp01, lerp } from '../core/MathUtil';
+import { DEG2RAD, clamp01, lerp } from '../core/MathUtil';
+import { simCos, simSin } from '../core/SimMath';
 import { isHostile } from './Hostility';
 import type { Health } from '../player/Health';
-import type { WeaponDef } from '../weapons/WeaponDefs';
+import type { ShieldProfile, WeaponDef } from '../weapons/WeaponDefs';
 import type { HitboxRig, HitZone } from './HitboxRig';
 
 /**
@@ -86,6 +87,24 @@ export interface DamageRequest {
   x: number;
   y: number;
   z: number;
+
+  /**
+   * Where this damage came *from*, in world space (2026-09-27).
+   *
+   * Not the shooter's feet and not always a body at all: the muzzle for a round, the blade's
+   * shoulder for a knife, the **centre of the blast** for a grenade or a shell. The question it
+   * answers is "which side of the target did this arrive on", and for an explosion the honest
+   * answer is where it went off, not where the arm that threw it was standing.
+   *
+   * `x, y, z` is the other end of the same line — the impact, on the target — so the two
+   * together are the direction, and neither is enough alone. Every call site already has this
+   * in hand at the moment it fills a request; the one that does not is `BurnSystem`, whose fire
+   * is *on* the body rather than travelling to it, and which leaves the origin equal to the
+   * impact to say exactly that (see `directionalFrom`).
+   */
+  originX: number;
+  originY: number;
+  originZ: number;
 }
 
 /** What the last hit actually cost, for the debug read-out (S7). */
@@ -124,6 +143,9 @@ export function makeDamageRequest(weapon: WeaponDef): DamageRequest {
     x: 0,
     y: 0,
     z: 0,
+    originX: 0,
+    originY: 0,
+    originZ: 0,
   };
 }
 
@@ -238,6 +260,24 @@ export class DamageSystem {
   combatantsInvulnerable = false;
 
   /**
+   * Who is behind a riot shield this tick, and what that shield is (2026-09-27).
+   *
+   * **Asked, never told.** The same shape `CarriedWeaponStreak` argues for and for the same
+   * reason: a shield is a fact about a body that lasts twenty seconds and ends four ways — the
+   * clock, a death, a round, a disconnect — and a door that was *pushed* a boolean would
+   * eventually be holding one that nobody remembered to take back. Both runtimes already ask
+   * their own streak list which weapon is in whose hands every tick; this asks the same
+   * question of the same list and reads one field off the answer.
+   *
+   * Default: nobody. A match that never sets it behaves exactly as it did before the streak
+   * existed, which is what the warmup arena, the range and every test rely on.
+   *
+   * It is a function rather than a `Damageable` field so that `combat/` still needs to know
+   * nothing about `streaks/` — the same inversion `BurnSystem` makes for the burn's def.
+   */
+  shieldOf: (entityId: number) => ShieldProfile | null = () => null;
+
+  /**
    * Hits refused because the target could not be hurt at all (playtest round 4, F14).
    *
    * The probe for `SPEC[]1`. God mode is implemented at the door and returns **before** the
@@ -251,6 +291,16 @@ export class DamageSystem {
    * at zero for them. Without it, one counter would have made the two indistinguishable.
    */
   blockedByInvulnerable = 0;
+
+  /**
+   * Hits a riot shield refused outright, for the harnesses and the debug read-out.
+   *
+   * The counterpart to `blockedByInvulnerable` and for the same reason: a shield that is working
+   * is invisible from outside — nothing happens, twenty times a second — and "nothing happened"
+   * and "nobody shot at them" are the two readings a run has to be able to tell apart. Blasts
+   * are not counted here; they were not refused.
+   */
+  blockedByShield = 0;
 
   private readonly entities = new Map<number, Damageable>();
 
@@ -300,12 +350,45 @@ export class DamageSystem {
       }
     }
 
+    /**
+     * The riot shield, and why it is here rather than in the six places that shoot (2026-09-27).
+     *
+     * A shield is not a property of any weapon, and the list of things it has to answer for is
+     * the list of things that can hurt somebody: a rifle, a pellet, a blade, a sentry's burst, a
+     * jet of fire, a grenade, a shell. Every one of those already arrives here, having done its
+     * own arithmetic, and not one of them should have to know that shields exist. So the rule
+     * lives at the door with the friendly gate and the invulnerable check — one place, and the
+     * next thing that learns to deal damage is covered by it without a line of its own.
+     *
+     * **Before the arithmetic**, unlike the arena's rule below, and the difference is the
+     * point: `combatantsInvulnerable` spares a body while still reporting what the hit *would*
+     * have cost, because that is a rule about a waiting room. A shield is a wall. A round that
+     * stopped in it did not hit anybody, so there is no hitmarker, no damage number, no report,
+     * no event and no burn lit — which falls out of returning zero here exactly as the friendly
+     * gate's zero does.
+     */
+    const shield = this.shieldOf(req.targetId);
+    const shieldRetain =
+      shield === null || !coveredByShield(shield, target, req)
+        ? 1
+        : req.weapon.explosive === true
+          ? clamp01(shield.blastRetain)
+          : 0;
+    if (shieldRetain <= 0) {
+      this.blockedByShield++;
+      return 0;
+    }
+
     const def = req.weapon;
     const base = damageAtRange(def, req.distance);
     const mult = zoneMultiplier(def, req.zone, req.upperTorso);
     const beforePenetration = base * mult;
     const retain = clamp01(req.penetrationRetain);
-    const amount = beforePenetration * retain;
+    // The penetration term and the shield's are separate losses against the same hit, and the
+    // report below splits them the only way it can: `penetrationLoss` keeps its old meaning and
+    // the shield's half shows up in `finalDamage`, which is the number that was true.
+    const throughWalls = beforePenetration * retain;
+    const amount = throughWalls * shieldRetain;
 
     /**
      * The one door, and the arena's rule is applied at it (F7).
@@ -326,7 +409,7 @@ export class DamageSystem {
     report.baseDamage = base;
     report.zoneMultiplier = mult;
     report.falloffLoss = (def.damage.near - base) * mult;
-    report.penetrationLoss = beforePenetration - amount;
+    report.penetrationLoss = beforePenetration - throughWalls;
     report.finalDamage = amount;
     report.remainingHealth = target.health.current;
     report.lethal = lethal;
@@ -371,4 +454,43 @@ export class DamageSystem {
   get count(): number {
     return this.list.length;
   }
+}
+
+/**
+ * Metres. Below this the origin and the impact are the same point, and there is no side.
+ *
+ * `BurnSystem` is the case that matters: its fire is already on the body, so it fills the
+ * origin with the body's own position rather than inventing a direction for it. A shield does
+ * not put out a fire that is burning on the arm holding it, and this is how it says so —
+ * without `combat/` knowing that burns exist.
+ */
+const NO_DIRECTION_M = 0.01;
+
+/**
+ * Did this hit arrive inside the arc the shield covers?
+ *
+ * **Horizontal only.** The rig's yaw is the body's facing and the only orientation a rig has —
+ * *"only yaw is supported, deliberately"* — so asking about elevation would be asking a
+ * question the model cannot answer. It is also the right question: a player behind a shield is
+ * deciding which way to look, not what angle to hold it at.
+ *
+ * The arc is measured from the **body**, not from the camera. A networked client and the server
+ * both set the rig's yaw from the same replicated pose, so the two agree about what the shield
+ * covers on the same tick — which they would not if one of them read a view angle the other
+ * never receives.
+ */
+function coveredByShield(shield: ShieldProfile, target: Damageable, req: DamageRequest): boolean {
+  // From the impact back towards where the damage came from: the direction the body has to be
+  // facing for the shield to be in the way.
+  const bx = req.originX - req.x;
+  const bz = req.originZ - req.z;
+  const back = Math.sqrt(bx * bx + bz * bz);
+  if (back < NO_DIRECTION_M) return false;
+
+  const yaw = target.rig.yaw;
+  // Yaw 0 looks down -Z, the same convention `HitboxRig` and the flame cone use.
+  const fx = -simSin(yaw);
+  const fz = -simCos(yaw);
+  const cosAngle = (bx * fx + bz * fz) / back;
+  return cosAngle >= simCos(shield.halfAngleDeg * DEG2RAD);
 }

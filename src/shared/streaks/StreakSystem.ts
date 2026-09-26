@@ -597,6 +597,7 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
       case 'chopper':
         return new ChopperGunner(def, ownerId, team, instance, this.ctx);
       case 'flamethrower':
+      case 'shield':
       case 'minigun': {
         const weapon = carriedStreakWeapon(id);
         // A carried streak with no weapon is a table that was not updated with the union it

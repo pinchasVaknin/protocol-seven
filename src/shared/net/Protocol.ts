@@ -17,6 +17,15 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v23 (2026-09-27, the human): **a streak that is a wall, and the two tables that had to grow
+ * for it.** `streak_shield` is one more id in the weapon table, appended as the minigun's was,
+ * so a remote body holding one is drawn holding one and the killfeed can print `[SHIELD]`. The
+ * larger change is quieter: `STREAK_DEFS` gains a ninth entry, and `StreakEntityState.kind` is
+ * an *index into that array* — so a client one version behind reading kind 8 would resolve it to
+ * nothing and draw a streak that is not there. The shield itself crosses no wire at all: who is
+ * behind one is `carriedWeaponFor` on both sides of the link, from the list that was already
+ * replicated, and what it does is a rule at the damage door in a process that owns health.
+ *
  * v22 (2026-09-26, the human): **fire, and what it leaves on people.** Two more ids in the
  * weapon table — `streak_flamethrower` and `streak_burn`, the second so a player killed by a
  * burn reads `[BURNING]` rather than a weapon they walked away from — and one more bit in
@@ -181,7 +190,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 22;
+export const PROTOCOL_VERSION = 23;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

@@ -241,6 +241,29 @@ export interface WeaponDef {
    */
   flame?: FlameProfile;
 
+  /**
+   * This weapon carries a **riot shield in the other hand** (2026-09-27).
+   *
+   * Like `flame`, a field rather than a class: what it changes is not what the weapon fires but
+   * what happens to damage aimed at whoever is holding it, and that decision is made at the one
+   * damage door. `DamageSystem.shieldOf` is how the door finds this — the weapon is never read
+   * from the inventory by the door, because a shield is a fact about a *body* and both runtimes
+   * already ask which body is holding which carried streak every tick.
+   */
+  shield?: ShieldProfile;
+
+  /**
+   * The damage arrives as a **blast** rather than along a line (2026-09-27).
+   *
+   * True for the grenades and for a mortar shell; false, and absent, for every bullet, pellet,
+   * blade and jet in the game. It is a property of the weapon rather than of the shot because
+   * nothing about a frag stops being an explosion depending on who threw it.
+   *
+   * The riot shield is the first thing that asks: a wall in front of you stops a bullet and does
+   * not stop a pressure wave, so a blast is halved where a bullet is refused.
+   */
+  explosive?: boolean;
+
   voice: WeaponVoice;
 }
 
@@ -260,6 +283,31 @@ export interface FlameProfile {
   readonly burnSeconds: number;
   /** Damage per second while burning, applied on the sim tick by `BurnSystem`. */
   readonly burnDps: number;
+}
+
+/**
+ * A wall the width of a body, held in front of it.
+ *
+ * Two numbers, because a shield is two decisions: **how much of the world is behind it**, and
+ * **what it cannot stop**. Everything else the shield does — that it lasts twenty seconds, that
+ * it dies with its owner, that it leaves a pistol in the other hand — is the killstreak's, not
+ * the profile's.
+ *
+ * The arc is measured from the body's facing on the horizontal plane only. A shield does not
+ * care whether the shot came from a rooftop or a stairwell; it cares whether the body turned
+ * towards it, which is the decision the player is actually making.
+ */
+export interface ShieldProfile {
+  /**
+   * Half-angle of the protected arc, degrees. The shield covers twice this, centred on the
+   * body's facing; anything outside it arrives as if there were no shield at all.
+   */
+  readonly halfAngleDeg: number;
+  /**
+   * What a blast still costs through the shield, 0..1 — the one thing it does not refuse
+   * outright. A bullet, a pellet, a blade and a jet inside the arc are all stopped whole.
+   */
+  readonly blastRetain: number;
 }
 
 /**

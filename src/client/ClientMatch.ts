@@ -80,6 +80,16 @@ import { BurnSystem } from '../shared/combat/BurnSystem';
 /** Seconds between puffs on a burning body, and how far up them they are drawn. */
 const BURN_FX_INTERVAL = 0.25;
 const BURN_FX_HEIGHT = 1.1;
+
+/**
+ * The inventory slot a carried killstreak borrows, as the viewmodel array indexes it.
+ *
+ * The same 2 `Inventory.STREAK_SLOT` uses, and spelled again here rather than exported because
+ * what it means on this side is *"the third mesh"*: `models` is indexed by slot and this file
+ * is the only thing that builds and disposes that one. If the two ever disagree the symptom is
+ * immediate and local — a slot with no mesh draws the weapon that was there before it.
+ */
+const STREAK_VIEWMODEL_SLOT = 2;
 import { burnWeapon } from '../shared/streaks/StreakWeapons';
 import type { ViewmodelLayer } from './player/Viewmodel';
 import { LOW_HEALTH_THRESHOLD, type DeathReport } from './ui/Hud';
@@ -968,6 +978,23 @@ export class Match {
       (id) => this.identity.is(id),
     );
     deps.scene.add(this.streakRenderer.group);
+    /**
+     * The riot shield, from whichever streak list this match believes in.
+     *
+     * The same expression `syncCarriedStreakWeapon` uses and for the same reason: a solo client
+     * owns its streaks and a networked one is told about them, and there is exactly one place
+     * that has to know the difference. The damage door then asks, every hit, without knowing
+     * that either kind of match exists.
+     *
+     * Set on a networked client too, although the server owns health there: the two simulations
+     * are supposed to reach the same answer from the same command stream (S4.15), and a client
+     * whose door refused nothing would predict a hitmarker on a body the server never moved.
+     */
+    this.damage.shieldOf = (id) =>
+      (this.isNetworked
+        ? this.replicatedStreaks.carriedWeaponFor(id)
+        : this.streaks.carriedWeaponFor(id)
+      )?.shield ?? null;
     // Care packages are contestable in every mode, so they ride the second provider slot
     // rather than the mode's (see `BotDirector.streakObjectives`).
     this.bots.streakObjectives = this.streaks;
@@ -2273,6 +2300,60 @@ export class Match {
       ? this.replicatedStreaks.carriedWeaponFor(this.localId)
       : this.streaks.carriedWeaponFor(this.localId);
     this.weapons.holdStreakWeapon(weapon);
+    this.syncStreakModel();
+  }
+
+  /**
+   * The viewmodel for the slot a killstreak borrows (2026-09-27).
+   *
+   * `models` is built up front, one mesh per inventory slot, *"because building on demand would
+   * put a geometry merge and a GPU upload on the frame the player presses the swap key"*. A
+   * carried streak is the one weapon that cannot work that way: the slot does not exist until a
+   * streak is spent and stops existing when it ends, and a match cannot pre-build a mesh for
+   * every streak weapon a class might buy.
+   *
+   * So this slot alone is built on arrival — and the cost lands in the right place, because the
+   * hands are already a second into a swap-in the streak's own `swapInTime` is holding open. The
+   * minigun's 1.1 s spin-up and the shield's 1.2 s raise are not decoration here.
+   *
+   * Before this, `models[2]` was simply absent: `showSlot` looked the slot up, found nothing and
+   * returned, and the mesh left on screen was whatever the player had been holding — a minigun
+   * that looked like a carbine and a riot shield that looked like a rifle. The slab and the
+   * sidearm are the same placeholders the bodies wear; what changes is that the hands now hold
+   * the thing the game thinks they are holding.
+   *
+   * Driven from the **inventory** rather than from the streak, deliberately: the slot outlives
+   * the streak by the length of a put-away, and disposing the mesh on the tick the clock ran out
+   * would take it out of hands that are still lowering it.
+   */
+  private syncStreakModel(): void {
+    const held = this.weapons.inventory.at(STREAK_VIEWMODEL_SLOT)?.definition ?? null;
+    const wantId = held?.id ?? null;
+    const current = this.models[STREAK_VIEWMODEL_SLOT];
+    if ((current?.weaponId ?? null) === wantId) return;
+
+    if (current !== undefined) {
+      const wasVisible = current.root.visible;
+      this.deps.viewmodel.remove(current.root);
+      current.dispose();
+      this.models.length = STREAK_VIEWMODEL_SLOT;
+      // The hands are empty for one frame otherwise: the streak's mesh is gone and the slot the
+      // inventory has already gone back to was last drawn before it was taken away.
+      if (wasVisible) this.showSlot(this.weapons.inventory.activeSlotIndex);
+    }
+    if (held === null) return;
+
+    const model = buildWeaponModel(
+      held.id,
+      this.deps.anisotropy,
+      // No camo on a streak weapon: it is not in anybody's loadout and no challenge counts it.
+      null,
+      this.modelOptions(STREAK_VIEWMODEL_SLOT),
+    );
+    this.models[STREAK_VIEWMODEL_SLOT] = model;
+    this.deps.viewmodel.add(model.root);
+    model.root.visible = false;
+    this.upgradeWhenLoaded(STREAK_VIEWMODEL_SLOT);
   }
 
   /**

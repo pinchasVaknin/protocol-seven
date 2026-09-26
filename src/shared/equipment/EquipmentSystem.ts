@@ -385,6 +385,11 @@ export class EquipmentSystem {
           this.request.x = tx;
           this.request.y = ty;
           this.request.z = tz;
+          // Where it went off, not where the arm that threw it was standing: a grenade that
+          // lands in front of a shield is in front of it, whoever put it there.
+          this.request.originX = p.x;
+          this.request.originY = p.y;
+          this.request.originZ = p.z;
           if (this.damage.apply(this.request) > 0) victims++;
         }
 

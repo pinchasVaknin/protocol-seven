@@ -355,6 +355,40 @@ const WEAPON_MODEL_SPECS: Readonly<Record<string, WeaponModelSpec>> = {
     sightHeight: 0.062,
     scale: 1,
   },
+
+  // -- killstreak weapons ---------------------------------------------------
+  /**
+   * The shield-pistol's *pistol*, which is the half of it a first-person camera can see.
+   *
+   * A shield is not a firearm and cannot be said in this vocabulary — the fields here describe
+   * a receiver, a handguard, a barrel and a magazine — so the wall is built as its own slab in
+   * `buildHeldWeapon`, on the bodies, which is the half that matters: an opponent has to be
+   * able to read *why* their rounds are doing nothing. In the holder's own hands it is the
+   * sidearm they are actually firing.
+   *
+   * The minigun and the flamethrower have no entry at all and fall back to the carbine. This
+   * one has one because it genuinely is a pistol, not because a shield is.
+   */
+  streak_shield: {
+    ...AR_BASE,
+    adsOffsetZ: -0.13,
+    receiverLength: 0.17,
+    receiverHeight: 0.062,
+    receiverWidth: 0.03,
+    handguardLength: 0,
+    handguardHeight: 0,
+    barrelLength: 0.03,
+    barrelRadius: 0.008,
+    muzzleRadius: 0.009,
+    muzzleLength: 0.012,
+    stock: 'none',
+    stockLength: 0,
+    magazine: 'grip',
+    magazineLength: 0.1,
+    optic: 'irons',
+    sightHeight: 0.062,
+    scale: 1,
+  },
 };
 
 /** Falls back to the carbine so a weapon added without a spec still draws something. */

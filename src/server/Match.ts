@@ -539,6 +539,16 @@ export class ServerMatch extends Disposable {
     });
     this.supply = new SupplySystem(this.mapEntry.def.supply ?? []);
     this.burn = new BurnSystem(this.bus, this.damage, burnWeapon());
+    /**
+     * The riot shield, wired the same way the carried weapon is: **asked**.
+     *
+     * One line, because the streak list is already the answer to "what is in whose hands" and a
+     * shield is one field off that weapon. Set after `this.streaks` exists rather than in the
+     * damage system's constructor, and pointed at the list this process owns — on a client the
+     * same line points at the replicated one, which is the whole of the difference between the
+     * two runtimes here.
+     */
+    this.damage.shieldOf = (id) => this.streaks.carriedWeaponFor(id)?.shield ?? null;
     this.botThrower = new BotThrower(this.equipment, this.world, this.equipmentConfig);
     this.equipmentRng = new Rng(options.seed ^ 0x1b87_3593);
     /**

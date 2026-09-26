@@ -1,6 +1,6 @@
 import { DT } from '../core/Loop';
 import { registerWeaponDef } from '../weapons/AnyWeapon';
-import { AR_DEFAULT, cloneWeaponDef, type WeaponDef } from '../weapons/WeaponDefs';
+import { AR_DEFAULT, PISTOL_DEFAULT, cloneWeaponDef, type WeaponDef } from '../weapons/WeaponDefs';
 
 /**
  * Weapons that belong to killstreaks rather than to a player (M7).
@@ -53,6 +53,7 @@ export const STREAK_WEAPON_IDS: readonly string[] = [
   'streak_minigun',
   'streak_flamethrower',
   'streak_burn',
+  'streak_shield',
 ];
 
 function synthetic(id: string, name: string, damage: number, headshotMult: number): WeaponDef {
@@ -75,13 +76,19 @@ function synthetic(id: string, name: string, damage: number, headshotMult: numbe
 let minigun: WeaponDef | null = null;
 let flamethrower: WeaponDef | null = null;
 let burn: WeaponDef | null = null;
+let shieldPistol: WeaponDef | null = null;
 let mortar: WeaponDef | null = null;
 let sentry: WeaponDef | null = null;
 let chopper: WeaponDef | null = null;
 
 /** Flat damage, no falloff. The blast radius is the only distance term. */
 export function mortarWeapon(damage: number): WeaponDef {
-  if (mortar === null) mortar = synthetic('streak_mortar', 'MORTAR', damage, 1);
+  if (mortar === null) {
+    mortar = synthetic('streak_mortar', 'MORTAR', damage, 1);
+    // A shell is a pressure wave, and the riot shield halves it rather than refusing it — the
+    // same statement `blast()` makes about a frag. See `WeaponDef.explosive`.
+    mortar.explosive = true;
+  }
   mortar.damage.near = damage;
   mortar.damage.far = damage;
   return mortar;
@@ -114,6 +121,7 @@ export function chopperWeapon(damage: number): WeaponDef {
 export function carriedStreakWeapon(streakId: string): WeaponDef | null {
   if (streakId === 'minigun') return minigunWeapon();
   if (streakId === 'flamethrower') return flamethrowerWeapon();
+  if (streakId === 'shield') return shieldPistolWeapon();
   return null;
 }
 
@@ -288,4 +296,67 @@ export function burnWeapon(): WeaponDef {
   def.upperTorsoMult = 1;
   burn = def;
   return burn;
+}
+
+/**
+ * The third carried streak, and the first one whose point is not what it fires.
+ *
+ * ## What five kills buys
+ *
+ * A **wall the width of a body**, held in front of it, for twenty seconds — and a sidearm in
+ * the other hand, because a shield with nothing beside it is a player who has bought the right
+ * to walk somewhere and do nothing when they arrive. The pistol is the loadout's own sidearm
+ * with its magazine halved: enough to finish a duel the shield already won, not enough to hold
+ * a lane with.
+ *
+ * ## Why it is the cheapest of the three and still the shortest
+ *
+ * The minigun and the flamethrower are bought to *take* a position; this is bought to **cross**
+ * one. Frontal cover is worth most in the ten seconds it takes to get through a doorway
+ * somebody is watching, and worth almost nothing standing still — so twenty seconds is not a
+ * weaker version of the minigun's thirty, it is the length of the thing it is for. Five kills
+ * is the price of an escort, and the arc is what makes it fair: everything the shield refuses,
+ * it refuses only from the front, and a body that turns to shoot somebody has turned its back
+ * on everybody else.
+ *
+ * ## The numbers, and what they are answering
+ *
+ * A 60-degree half-angle is a 120-degree wall. Narrower and a strafing duel slips round it
+ * frame by frame in a way no player can read; wider and it stops being a facing decision at
+ * all. Explosives keep half, which is the rule that makes a shield-carrier killable by the
+ * people who can see them coming — the grenade does not have to get past the shield, it only
+ * has to land.
+ *
+ * `swapInTime` is long on purpose: raising a shield is not drawing a pistol, and the second and
+ * a bit it costs is the window in which buying it is still a decision with a downside.
+ */
+export function shieldPistolWeapon(): WeaponDef {
+  if (shieldPistol !== null) return shieldPistol;
+  const def = cloneWeaponDef(PISTOL_DEFAULT);
+  def.id = 'streak_shield';
+  def.name = 'RIOT SHIELD';
+  // Half a magazine and no reserve: the streak is the ammunition, the same rule the minigun's
+  // belt states. A shield that could be topped up at a crate would outlive its own clock.
+  def.magSize = 6;
+  def.reserveAmmo = 0;
+  def.reloadTime = 0;
+  def.reloadEmptyTime = 0;
+  // One hand on a shield is not two hands on a pistol: it is slower up, it cannot be aimed
+  // down properly, and it wanders more than the sidearm it came from.
+  def.swapInTime = 1.2;
+  def.swapOutTime = 0.5;
+  def.sprintOutTime = 0.3;
+  def.adsFovScale = 1;
+  def.adsViewmodelFovScale = 1;
+  def.spread.hipStand = def.spread.hipStand * 1.4;
+  def.spread.hipMove = def.spread.hipMove * 1.4;
+  def.spread.ads = def.spread.hipStand;
+  def.recoil.adsScale = 1;
+  def.shield = { halfAngleDeg: 60, blastRetain: 0.5 };
+  // The one place a streak weapon is built is the one place it is catalogued. `synthetic`
+  // does this for the defs it makes; this one is cloned from the sidearm instead, so it says
+  // so itself. See `anyWeaponDef`.
+  registerWeaponDef(def);
+  shieldPistol = def;
+  return shieldPistol;
 }

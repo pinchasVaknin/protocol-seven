@@ -92,6 +92,11 @@ function jet(damage: DamageSystem, targetId: number): number {
     x: 0,
     y: 1,
     z: 0,
+    // A metre in front of the body, looking down -Z: the jet arrives from somewhere, which is
+    // what tells a shield apart from a burn. Nothing in this file is shielded.
+    originX: 0,
+    originY: 1,
+    originZ: 1,
   });
 }
 
@@ -157,6 +162,9 @@ describe('a body that has been in the jet', () => {
       x: 0,
       y: 1,
       z: 0,
+      originX: 0,
+      originY: 1,
+      originZ: 5,
     });
     expect(burn.isBurning(enemy.entityId)).toBe(false);
   });

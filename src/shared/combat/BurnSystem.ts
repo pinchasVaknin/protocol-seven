@@ -112,6 +112,12 @@ export class BurnSystem extends Disposable {
       this.request.x = target.rig.x;
       this.request.y = target.rig.y + target.rig.layout.aimY;
       this.request.z = target.rig.z;
+      // The origin *is* the impact, which is how a request says "this has no side". Fire that
+      // is already on a body did not arrive from anywhere this tick, and a riot shield does not
+      // put out the sleeve of the arm holding it. See `DamageRequest.originX`.
+      this.request.originX = this.request.x;
+      this.request.originY = this.request.y;
+      this.request.originZ = this.request.z;
       // `burnWeapon`'s damage is already the per-tick figure, so this is one plain application
       // through the one door — no borrowed numbers, no arithmetic here.
       this.damage.apply(this.request);

@@ -279,6 +279,11 @@ export class Melee {
     req.x = px;
     req.y = py;
     req.z = pz;
+    // The eye the swing was taken from. A blade is as directional as a round — a shield held
+    // towards it is in the way, and the counter to one is to be somewhere else.
+    req.originX = ox;
+    req.originY = oy;
+    req.originZ = oz;
 
     const dealt = this.deps.damage.apply(req);
     this.hitThisTick = dealt > 0;

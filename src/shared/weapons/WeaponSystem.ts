@@ -460,6 +460,11 @@ export class WeaponSystem {
     this.request.upperTorso = false;
     this.request.autonomous = false;
     this.request.penetrationRetain = 1;
+    // The jet leaves the eye and travels; a shield between the two is in its way. See
+    // `DamageRequest.originX`.
+    this.request.originX = eyeX;
+    this.request.originY = eyeY;
+    this.request.originZ = eyeZ;
 
     const report = this.lastPellets;
     report.count = 1;

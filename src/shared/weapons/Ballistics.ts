@@ -180,6 +180,11 @@ export class Ballistics {
         request.x = out.endX;
         request.y = out.endY;
         request.z = out.endZ;
+        // The muzzle, not the last penetration point: a round that came through a wall still
+        // came from where it was fired, and that is the side of the target it arrived on.
+        request.originX = ox;
+        request.originY = oy;
+        request.originZ = oz;
         out.damage = this.damage.apply(request);
         const target = this.damage.get(targetId);
         out.lethal = target !== undefined && !target.health.alive;

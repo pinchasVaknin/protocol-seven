@@ -104,6 +104,9 @@ function blast(id: string, name: string, near: number, far: number, radius: numb
     name,
     class: 'LAUNCHER',
     slot: 'primary',
+    // What it is, for the one reader that has to tell a pressure wave from a bullet: a riot
+    // shield refuses the second and only halves the first. See `WeaponDef.explosive`.
+    explosive: true,
     damage: { near, far },
     damageFalloff: { start: 0.6, end: radius },
     headshotMult: 1,

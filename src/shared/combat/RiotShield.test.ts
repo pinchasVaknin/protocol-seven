@@ -5,9 +5,10 @@ import { DEG2RAD } from '../core/MathUtil';
 import { simCos, simSin } from '../core/SimMath';
 import { Health } from '../player/Health';
 import { HitboxRig } from './HitboxRig';
-import { AR_DEFAULT } from '../weapons/WeaponDefs';
+import { AR_DEFAULT, shotInterval } from '../weapons/WeaponDefs';
 import { equipmentDef } from '../equipment/EquipmentDefs';
 import { shieldPistolWeapon } from '../streaks/StreakWeapons';
+import { STREAK_DEFS } from '../streaks/StreakDefs';
 import { DamageSystem, makeDamageRequest, type Damageable } from './DamageSystem';
 
 /**
@@ -178,8 +179,29 @@ describe('the shield-pistol', () => {
     expect(def.shield?.blastRetain).toBeLessThan(1);
   });
 
-  it('is the streak is the ammunition, like the belt and the fuel', () => {
-    expect(shieldPistolWeapon().reserveAmmo).toBe(0);
+  /**
+   * Unlike the belt and the fuel, this one is not its own clock.
+   *
+   * A minigun's rounds *are* its thirty seconds, so `reserveAmmo` is zero by design. The shield
+   * measures cover instead, and a player who emptied six rounds early would spend the rest of
+   * the streak behind a wall with a dead gun. The assertion is the property that prevents it:
+   * the reserve outlasts the clock, however fast the trigger is held.
+   */
+  it('cannot run dry inside its own twenty seconds', () => {
+    const def = shieldPistolWeapon();
+    const streak = STREAK_DEFS.find((s) => s.id === 'shield');
+    expect(streak).toBeDefined();
+    const seconds = streak?.durationSeconds ?? 0;
+
+    // The most a held trigger can get through: every shot, plus a reload from empty for each
+    // magazine after the first. Anything a real player does is slower than this.
+    const perMag = def.magSize * shotInterval(def) + def.reloadEmptyTime;
+    const magsInWindow = Math.ceil(seconds / perMag);
+    const fired = magsInWindow * def.magSize;
+    expect(def.reserveAmmo + def.magSize).toBeGreaterThan(fired);
+    // And the magazine is still small enough to be the friction it is there to be: more than
+    // four reloads inside the window.
+    expect(magsInWindow).toBeGreaterThan(4);
   });
 
   it('is one object, not one per call', () => {

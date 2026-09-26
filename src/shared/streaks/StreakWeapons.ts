@@ -306,8 +306,28 @@ export function burnWeapon(): WeaponDef {
  * A **wall the width of a body**, held in front of it, for twenty seconds — and a sidearm in
  * the other hand, because a shield with nothing beside it is a player who has bought the right
  * to walk somewhere and do nothing when they arrive. The pistol is the loadout's own sidearm
- * with its magazine halved: enough to finish a duel the shield already won, not enough to hold
- * a lane with.
+ * with its magazine halved and its reserve kept.
+ *
+ * ## The magazine is the cost; the reserve is not (2026-09-27, the human)
+ *
+ * It shipped belt-fed — six rounds and nothing behind them — by the rule the minigun states:
+ * *the streak is the ammunition*. That rule is right for a belt and wrong for this, and the
+ * difference is what each weapon's clock is measuring. A minigun's two hundred rounds **are**
+ * its thirty seconds; firing them is spending the streak. The shield's twenty seconds are
+ * measuring *cover*, and a player who emptied six rounds four seconds in spent the other
+ * sixteen behind a wall with a dead gun — which is not a trade, it is the streak ending early
+ * for a reason nobody bought it for.
+ *
+ * So the six stays and sixty go behind it. **Six is the price and it is paid often**: a full
+ * magazine is nine-tenths of a second of trigger and the reload that follows is the sidearm's
+ * own, unshortened, which means a shield-carrier in a firefight is reloading roughly every
+ * three seconds and is doing it one-handed behind a plate. That is the friction the number is
+ * for. Sixty is simply enough that the friction never becomes an ending: held down without
+ * pause the weapon cannot get through more than about forty rounds before the clock does.
+ *
+ * A crate or MUNITIONS can now top the reserve up, which it could not before and which changes
+ * nothing: the reserve already outlasts the streak, so there is nothing for a resupply to
+ * extend. The minigun's belt is still zero, and for the reason that has not changed.
  *
  * ## Why it is the cheapest of the three and still the shortest
  *
@@ -335,12 +355,12 @@ export function shieldPistolWeapon(): WeaponDef {
   const def = cloneWeaponDef(PISTOL_DEFAULT);
   def.id = 'streak_shield';
   def.name = 'RIOT SHIELD';
-  // Half a magazine and no reserve: the streak is the ammunition, the same rule the minigun's
-  // belt states. A shield that could be topped up at a crate would outlive its own clock.
+  // Half a magazine, and ten of them behind it. See the note above: the six is the friction,
+  // the sixty is what keeps the friction from ending the streak. The reload times are the
+  // sidearm's, left exactly as they came — a one-handed reload every three seconds is the cost
+  // this weapon is supposed to charge, and shortening it would refund it.
   def.magSize = 6;
-  def.reserveAmmo = 0;
-  def.reloadTime = 0;
-  def.reloadEmptyTime = 0;
+  def.reserveAmmo = 60;
   // One hand on a shield is not two hands on a pistol: it is slower up, it cannot be aimed
   // down properly, and it wanders more than the sidearm it came from.
   def.swapInTime = 1.2;

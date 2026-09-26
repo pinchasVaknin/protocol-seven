@@ -8,6 +8,8 @@ import { eventSeed, Rng } from '../core/Rng';
 import type { PlayerSim } from '../player/PlayerState';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import { Ballistics, makeShotTrace, type ShotTrace } from './Ballistics';
+import { flameHit } from './FlameCone';
+import { makeRayHit, type RayHit } from '../world/Geometry';
 import { Inventory } from './Inventory';
 import { aimWithOffset, makeAimSample, pelletOffset, Recoil, type AimSample, type SpreadContext } from './Recoil';
 import { ScopeState } from './Scope';
@@ -155,6 +157,8 @@ export class WeaponSystem {
   private readonly aim: AimSample = makeAimSample();
   private readonly pelletAim: AimSample = makeAimSample();
   private readonly pelletOff = { ax: 0, ay: 0 };
+  /** Line-of-sight scratch for the flame cone. Nothing in the tick path allocates. */
+  private readonly flameRay: RayHit = makeRayHit();
   private readonly spreadCtx: SpreadContext = {
     moveFraction: 0,
     adsFraction: 0,
@@ -178,8 +182,8 @@ export class WeaponSystem {
   constructor(
     def: WeaponDef,
     secondary: WeaponDef | null,
-    world: CollisionWorld,
-    damage: DamageSystem,
+    private readonly world: CollisionWorld,
+    private readonly damage: DamageSystem,
     private readonly bus: GameBus,
     private readonly viewmodelConfig: ViewmodelConfig,
     private readonly walkSpeed: number,
@@ -410,6 +414,112 @@ export class WeaponSystem {
     this.writeSnapshot(this.curr);
   }
 
+  /**
+   * One tick of flame (2026-09-26).
+   *
+   * Everything a shot normally is, minus the ray and plus the cone. It keeps the *trigger* —
+   * `stepTrigger` queues these at the weapon's rpm, so the fuel drains through the same
+   * magazine, the dry click is the same click, and the HUD counter is the same counter — and it
+   * keeps the **door**: every body it touches goes through `DamageSystem.apply`, which is where
+   * the friendly-fire gate, the invulnerable check and the falloff already live. So a
+   * flamethrower cannot burn a teammate for the same reason a rifle cannot shoot one, rather
+   * than for a new reason written here.
+   *
+   * Three things it does *not* do, each deliberate:
+   *
+   * **No hitbox test.** The target is a point at chest height (`layout.aimY`), because a jet
+   * that resolved against boxes would have to answer which box caught fire and the answer would
+   * be a zone multiplier on a weapon designed not to have one.
+   *
+   * **No lag compensation.** `Ballistics` rewinds the world for a bullet because a bullet is an
+   * instant along a line and a hundred milliseconds of lead is the whole skill of it. A jet is a
+   * volume held on a target for a second, and the rewind would buy a tenth of a metre of a nine
+   * metre cone; the present positions are the honest ones for a weapon you do not lead.
+   *
+   * **No penetration.** The segment test is a plain line of sight: fire stops at the wall.
+   */
+  private fireFlame(cmd: InputCommand, sim: PlayerSim, def: WeaponDef): void {
+    const flame = def.flame;
+    if (flame === undefined) return;
+
+    // The aim as the player is holding it. A jet has no spread sample and no per-pellet
+    // rotation — where it points is where they are pointing, which is what makes it readable.
+    const yaw = cmd.yaw + this.recoil.aimYaw * DEG2RAD;
+    const pitch = cmd.pitch + this.recoil.aimPitch * DEG2RAD;
+    const cp = simCos(pitch);
+    const dx = -simSin(yaw) * cp;
+    const dy = simSin(pitch);
+    const dz = -simCos(yaw) * cp;
+
+    const eyeX = sim.x;
+    const eyeY = sim.y + sim.eyeHeight;
+    const eyeZ = sim.z;
+
+    this.request.weapon = def;
+    this.request.zone = 'torso';
+    this.request.upperTorso = false;
+    this.request.autonomous = false;
+    this.request.penetrationRetain = 1;
+
+    const report = this.lastPellets;
+    report.count = 1;
+    report.hits = 0;
+    report.damage = 0;
+    report.zones[0] = 'torso';
+    report.targets[0] = -1;
+
+    for (const target of this.damage.list) {
+      if (target.entityId === this.sourceId) continue;
+      if (!target.health.alive) continue;
+      const rig = target.rig;
+      const tx = rig.x;
+      const ty = rig.y + rig.layout.aimY;
+      const tz = rig.z;
+      const hit = flameHit(eyeX, eyeY, eyeZ, dx, dy, dz, tx, ty, tz, flame.rangeM, flame.halfAngleDeg);
+      if (hit === null) continue;
+      if (!this.world.segmentClear(eyeX, eyeY, eyeZ, tx, ty, tz, this.flameRay)) continue;
+
+      this.request.targetId = target.entityId;
+      this.request.distance = hit.distance;
+      this.request.x = tx;
+      this.request.y = ty;
+      this.request.z = tz;
+      const dealt = this.damage.apply(this.request);
+      if (dealt <= 0) continue;
+      report.hits++;
+      report.damage += dealt;
+      report.targets[0] = target.entityId;
+    }
+
+    // The feedback layer wants a muzzle and a sound per tick of fuel, and the tip of the jet is
+    // what a tracer would have ended at. `BurnSystem` is not told anything here: it listens for
+    // the damage this just dealt, which is the only signal that a body was actually in the fire.
+    const muzzle = this.muzzleWorld(cmd, sim);
+    evFired.weaponId = def.id;
+    evFired.sourceId = this.sourceId;
+    evFired.x = muzzle.x;
+    evFired.y = muzzle.y;
+    evFired.z = muzzle.z;
+    evFired.endX = eyeX + dx * flame.rangeM;
+    evFired.endY = eyeY + dy * flame.rangeM;
+    evFired.endZ = eyeZ + dz * flame.rangeM;
+    evFired.dx = dx;
+    evFired.dy = dy;
+    evFired.dz = dz;
+    evFired.distance = flame.rangeM;
+    evFired.shotIndex = 0;
+    evFired.spreadDeg = flame.halfAngleDeg;
+    // No tracer on a jet: the fire *is* the visible thing, and a bullet streak through it
+    // would read as a second weapon firing.
+    evFired.tracer = false;
+    evFired.hitTarget = report.hits > 0;
+    evFired.ammoInMag = this.inventory.active.mag;
+    evFired.pellets = 1;
+    evFired.pelletsHit = report.hits;
+    evFired.minimapPing = def.minimapPing;
+    this.bus.emit(EV.WeaponFired, evFired);
+  }
+
   /** Interpolated visual state for the render pass. */
   sample(alpha: number, out: WeaponSnapshot): void {
     const a = this.prev;
@@ -427,6 +537,12 @@ export class WeaponSystem {
   // -- internals -------------------------------------------------------------
 
   private fireOne(cmd: InputCommand, sim: PlayerSim, def: WeaponDef): void {
+    // A jet is not a ray, and nothing below it applies: no spread sample, no pellet loop, no
+    // per-shot seed. See `fireFlame`.
+    if (def.flame !== undefined) {
+      this.fireFlame(cmd, sim, def);
+      return;
+    }
     const recoil = this.recoil;
     const ads = this.inventory.active.adsFraction;
 

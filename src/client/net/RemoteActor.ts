@@ -140,6 +140,17 @@ export class RemoteActor implements RenderableActor {
   }
 
   /**
+   * Protocol 22: this body is on fire, as the server's `BurnSystem` has it.
+   *
+   * Replicated rather than derived, and it is the one thing about a burn that is: the damage
+   * is applied where health lives and a client watching from across the map never saw the jet
+   * that lit them.
+   */
+  get burning(): boolean {
+    return (this.flags & EFlag.Burning) !== 0;
+  }
+
+  /**
    * Whether this body is holding a sidearm — the one thing the weapon decides about a pose.
    *
    * Read by the hitbox layout here and, separately, by the avatar off `HeldWeaponAsset`. Two

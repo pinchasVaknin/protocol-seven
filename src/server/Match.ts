@@ -19,6 +19,8 @@ import {
 import { Rng } from '../shared/core/Rng';
 import { EquipmentSystem, makeEquipmentInventory, type EquipmentInventory } from '../shared/equipment/EquipmentSystem';
 import { SupplySystem } from '../shared/world/SupplySystem';
+import { BurnSystem } from '../shared/combat/BurnSystem';
+import { burnWeapon } from '../shared/streaks/StreakWeapons';
 import { equipmentDef } from '../shared/equipment/EquipmentDefs';
 import { LifeStockAudit, type LifeStockReport } from '../shared/equipment/LifeStockAudit';
 import { BotThrower, type MutableThrowIntent } from '../shared/equipment/BotThrower';
@@ -224,6 +226,8 @@ export class ServerMatch extends Disposable {
    * the two copies of the magazine stop agreeing.
    */
   readonly supply: SupplySystem;
+  /** Bodies still alight after the jet moved on (2026-09-26). See `BurnSystem`. */
+  readonly burn: BurnSystem;
   private readonly botThrower: BotThrower;
   private readonly equipmentRng: Rng;
   /** One cursor into the bot list, so one bot is considered per tick. See `stepBotThrows`. */
@@ -534,6 +538,7 @@ export class ServerMatch extends Disposable {
       freeForAll: this.modeEntry.freeForAll === true,
     });
     this.supply = new SupplySystem(this.mapEntry.def.supply ?? []);
+    this.burn = new BurnSystem(this.bus, this.damage, burnWeapon());
     this.botThrower = new BotThrower(this.equipment, this.world, this.equipmentConfig);
     this.equipmentRng = new Rng(options.seed ^ 0x1b87_3593);
     /**
@@ -705,6 +710,9 @@ export class ServerMatch extends Disposable {
     this.stepBombInteractions();
     this.stepSupply();
     this.stepCarriedStreakWeapons();
+    // After the weapons that light them and before the flow that may end the match on the kill
+    // a burn just made — the same place in the order `ClientMatch` steps it.
+    this.burn.simulate();
     /**
      * Equipment, in `ClientMatch.simulate`'s order (M11 Gate B, §8.24).
      *

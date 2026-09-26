@@ -229,7 +229,37 @@ export interface WeaponDef {
 
   scope?: ScopeProfile;
 
+  /**
+   * This weapon throws a **cone of fire** instead of a ray (2026-09-26). Absent for every
+   * weapon anybody can equip; present on exactly one killstreak.
+   *
+   * It is a field on the def rather than a `WeaponClass`, because a class is what a weapon *is*
+   * to a loadout — a picker groups by it, a camo challenge counts by it, `rigLayoutFor` reads
+   * it — and a flamethrower is none of those things. What this changes is one branch in
+   * `fireOne`: what a shot *does*. Everything around it stays: the trigger, the fuel in the
+   * magazine, the dry click, the HUD's counter, the killfeed's attribution.
+   */
+  flame?: FlameProfile;
+
   voice: WeaponVoice;
+}
+
+/**
+ * A continuous jet: how far it reaches, how wide it opens, and what it leaves behind.
+ *
+ * Range and falloff are **not** duplicated here — `damageAtRange` already reads
+ * `damageFalloff`, and a second distance term would be two rules about the same metre. What is
+ * here is only what a ray has no answer for.
+ */
+export interface FlameProfile {
+  /** Metres the jet reaches. Beyond it, nothing is touched. */
+  readonly rangeM: number;
+  /** Half-angle of the cone, degrees: the jet opens to twice this. */
+  readonly halfAngleDeg: number;
+  /** Seconds a body keeps burning after it was last touched by the jet. */
+  readonly burnSeconds: number;
+  /** Damage per second while burning, applied on the sim tick by `BurnSystem`. */
+  readonly burnDps: number;
 }
 
 /**

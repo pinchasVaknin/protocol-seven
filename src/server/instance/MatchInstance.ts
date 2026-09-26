@@ -401,16 +401,22 @@ export abstract class MatchInstance {
    */
   private buildEntities(): void {
     let n = 0;
+    // Whether a body is alight is the burn system's, and it is the same answer for a human and
+    // for a bot — so it is asked here, once per entity, rather than threaded into two writers
+    // that have no reason to know what a flamethrower is.
+    const burning = (entityId: number): boolean => this.match.burn.isBurning(entityId);
     for (const player of this.match.players) {
       const e = this.entities[n];
       if (e === undefined) break;
       writePlayer(e, player);
+      if (burning(player.entityId)) e.flags |= EFlag.Burning;
       n++;
     }
     for (const bot of this.match.bots.bots) {
       const e = this.entities[n];
       if (e === undefined) break;
       writeBot(e, bot);
+      if (burning(bot.entityId)) e.flags |= EFlag.Burning;
       n++;
     }
     this.entityCount = n;

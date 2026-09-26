@@ -75,6 +75,12 @@ import type { MovementConfig } from '../shared/player/MovementConfig';
 import type { PlayerController } from '../shared/player/PlayerController';
 import { eyeHeightFor } from '../shared/player/Stance';
 import { NO_SUPPLY_POINT, SupplySystem, type SupplyState } from '../shared/world/SupplySystem';
+import { BurnSystem } from '../shared/combat/BurnSystem';
+
+/** Seconds between puffs on a burning body, and how far up them they are drawn. */
+const BURN_FX_INTERVAL = 0.25;
+const BURN_FX_HEIGHT = 1.1;
+import { burnWeapon } from '../shared/streaks/StreakWeapons';
 import type { ViewmodelLayer } from './player/Viewmodel';
 import { LOW_HEALTH_THRESHOLD, type DeathReport } from './ui/Hud';
 import type { HitZone } from '../shared/combat/HitboxRig';
@@ -470,6 +476,19 @@ export class Match {
    * their inputs do.
    */
   private readonly supply: SupplySystem;
+  /**
+   * Bodies still alight after the jet moved on (2026-09-26).
+   *
+   * Stepped **only in a solo match**, unlike the resupply station and for the opposite reason:
+   * a burn is damage, damage is health, and health is the server's in a networked match. A
+   * client that ticked its own burns would be a second opinion about a bar it does not own. In
+   * a networked match this object still exists and still answers `isBurning` — from the
+   * replicated `EFlag.Burning` rather than from a timer of its own, which is what the renderer
+   * asks and all it needs.
+   */
+  private readonly burn: BurnSystem;
+  /** Seconds until the next puff of fire on every burning body. See `renderBurns`. */
+  private burnFxTimer = 0;
 
   /**
    * Who this player is watching while dead (§6.8).
@@ -604,6 +623,7 @@ export class Match {
     // M9: the bodies are the client's, not the director's. `BotRenderer` reconciles its
     // mesh set against the roster each frame and drives the animations off `BotVisualState`.
     this.supply = new SupplySystem(deps.map.def.supply ?? []);
+    this.burn = new BurnSystem(deps.bus, this.damage, burnWeapon());
     this.botRenderer = new BotRenderer(
       deps.actors ?? (() => this.bots.bots),
       // Colour is a relation to this viewer, not an absolute A/B property. That keeps an
@@ -1888,6 +1908,10 @@ export class Match {
     // The mode clock is a gameplay timer and runs on ticks like everything else (S4.1) —
     // except when a server is running it, in which case score and round state arrive
     // replicated and a second clock here would disagree with the first one that matters.
+    // Burns are health, and health is the server's over the network — the same line the mode
+    // clock is on, for the same reason. See the `burn` field.
+    if (!this.isNetworked) this.burn.simulate();
+
     const t0 = performance.now();
     if (!this.isNetworked) this.flow.simulate(cmd.tickIndex);
     this.lastModeMs = performance.now() - t0;
@@ -2251,6 +2275,46 @@ export class Match {
     this.weapons.holdStreakWeapon(weapon);
   }
 
+  /**
+   * Whether this body is on fire, whichever kind of match this is (2026-09-26).
+   *
+   * The same split every other per-body fact makes here: in a solo match the burn system is the
+   * authority and is asked directly; over the network the answer arrived on the snapshot as
+   * `EFlag.Burning`, because the burn ticks where health lives and this client never saw the
+   * jet. One question, two routes, and the renderer is told neither of them.
+   */
+  isBurning(entityId: number): boolean {
+    if (!this.isNetworked) return this.burn.isBurning(entityId);
+    for (const actor of this.actorsForRender()) {
+      if (actor.entityId !== entityId) continue;
+      const remote = actor as { burning?: boolean };
+      return remote.burning === true;
+    }
+    return false;
+  }
+
+  /**
+   * A puff of fire on every body that is alight, four times a second (2026-09-26).
+   *
+   * The library has no flame particle and this session was told to use what exists rather than
+   * wait for one, so the burn borrows the impact puff: it is small, it is already pooled, and
+   * four a second at chest height reads as *that body is burning* from across a lane. It is
+   * driven from the render clock and spawns nothing on a tick, which is the rule for everything
+   * in this file below the simulation.
+   */
+  private renderBurns(dt: number): void {
+    this.burnFxTimer -= dt;
+    if (this.burnFxTimer > 0) return;
+    this.burnFxTimer = BURN_FX_INTERVAL;
+    for (const actor of this.actorsForRender()) {
+      if (!this.isBurning(actor.entityId)) continue;
+      const x = actor.renderX(1);
+      const y = actor.renderY(1) + BURN_FX_HEIGHT;
+      const z = actor.renderZ(1);
+      this.fx.spawnHitPuff(x, y, z, 0, 1, 0);
+    }
+  }
+
   /** What the station under the player is doing this tick, for the HUD. */
   get supplyState(): SupplyState {
     return this.supply.stateOf(this.localId);
@@ -2506,6 +2570,7 @@ export class Match {
     this.botRenderer.setEyesOf(this.spectatorTargetId);
     this.botRenderer.update(alpha, dt, camera);
     this.fx.update(dt);
+    this.renderBurns(dt);
     this.equipment.render(alpha, dt, camera);
     this.meta.render(dt);
     /**

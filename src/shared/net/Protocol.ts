@@ -17,6 +17,13 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v22 (2026-09-26, the human): **fire, and what it leaves on people.** Two more ids in the
+ * weapon table — `streak_flamethrower` and `streak_burn`, the second so a player killed by a
+ * burn reads `[BURNING]` rather than a weapon they walked away from — and one more bit in
+ * `EntitySnapshot.flags`, `Burning`, which is the tenth of the sixteen v20 widened it to. The
+ * damage is the server's and needs nothing; the bit exists because *which bodies are alight* is
+ * drawn by every client and derivable by none of them. No byte is added by either change.
+ *
  * v21 (2026-09-26, the human): **a fourth streak weapon, and not one byte of new message.** The
  * minigun is the first killstreak a player *carries*, and the whole of it on the wire is one
  * more id in the weapon table — `STREAK_WEAPON_IDS` runs mortar, sentry, chopper, minigun now,
@@ -174,7 +181,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 21;
+export const PROTOCOL_VERSION = 22;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

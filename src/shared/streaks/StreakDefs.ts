@@ -19,7 +19,8 @@ export type StreakId =
   | 'mortar'
   | 'sentry'
   | 'chopper'
-  | 'minigun';
+  | 'minigun'
+  | 'flamethrower';
 
 /**
  * When a streak's effect is over — which is when its cooldown starts to run.
@@ -139,6 +140,24 @@ export const STREAK_DEFS: readonly StreakDef[] = [
     durationSeconds: 30,
     effectEnds: 'expiry',
     blurb: 'Belt-fed · 30 s in your hands',
+    fromCarePackage: false,
+  },
+  /**
+   * Twenty-five seconds rather than the minigun's thirty, at two kills more.
+   *
+   * Not a longer streak for a higher price, which is the shape a list like this drifts into:
+   * what ten kills buys is a weapon that holds a doorway against anything that walks into it,
+   * and the counter to it is *time* — the room it owns is the room it is standing in. Five
+   * seconds off is what keeps the answer to "wait it out" from being twenty-five seconds of
+   * waiting.
+   */
+  {
+    id: 'flamethrower',
+    name: 'FLAMETHROWER',
+    requirement: 10,
+    durationSeconds: 25,
+    effectEnds: 'expiry',
+    blurb: 'Close-range jet · they keep burning',
     fromCarePackage: false,
   },
 ];

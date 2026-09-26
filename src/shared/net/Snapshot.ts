@@ -88,6 +88,19 @@ export const EFlag = {
    * the swing its owner asked for, which is all a pose has ever needed to be true about.
    */
   Melee: 1 << 9,
+  /**
+   * This body is on fire (protocol 22).
+   *
+   * The one thing about a burn that anybody else can see, and the reason it is on the wire at
+   * all: the damage is the server's and needs no help, but *which bodies are alight* is what the
+   * renderer draws and a client cannot derive it — the flamethrower's ticks are resolved on the
+   * server and a client watching from across the map never saw them.
+   *
+   * A bit rather than a timer: how long is left is nobody's business but `BurnSystem`'s, and a
+   * countdown on the wire would be a second clock over a fact the server already owns. It costs
+   * nothing — the tenth of the sixteen bits v20 widened this field to.
+   */
+  Burning: 1 << 10,
 } as const;
 
 /** Which fields a delta carries. One bit per line of `writeEntity`. */

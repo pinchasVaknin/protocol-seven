@@ -1,3 +1,5 @@
+import { DT } from '../core/Loop';
+import { registerWeaponDef } from '../weapons/AnyWeapon';
 import { AR_DEFAULT, cloneWeaponDef, type WeaponDef } from '../weapons/WeaponDefs';
 
 /**
@@ -49,28 +51,9 @@ export const STREAK_WEAPON_IDS: readonly string[] = [
   'streak_sentry',
   'streak_chopper',
   'streak_minigun',
+  'streak_flamethrower',
+  'streak_burn',
 ];
-
-/**
- * Every streak weapon that has been built, by id — the second half of the catalogue.
- *
- * `WEAPON_DEFS` is the *loadout* table and these are deliberately not in it: they have no
- * unlock, no attachments, no place in a picker, and three audits walk that table expecting
- * exactly the twelve weapons a player can equip. But a `WeaponFired` event names the def that
- * fired it, and `MatchFeedback` resolves that id to get a muzzle flash and a gunshot — so a
- * reader of the event needs a lookup that spans both catalogues, which is `anyWeaponDef`.
- *
- * Filled by `synthetic`, which every streak weapon is built through, and that is what makes it
- * complete rather than merely populated: an id can only reach an event by way of a def, and a
- * def can only exist by way of this function. A streak weapon that has never been built has
- * never fired.
- */
-const BY_ID = new Map<string, WeaponDef>();
-
-/** A streak weapon by id, or undefined. See `BY_ID`. */
-export function streakWeaponDef(id: string): WeaponDef | undefined {
-  return BY_ID.get(id);
-}
 
 function synthetic(id: string, name: string, damage: number, headshotMult: number): WeaponDef {
   const def = cloneWeaponDef(AR_DEFAULT);
@@ -84,11 +67,14 @@ function synthetic(id: string, name: string, damage: number, headshotMult: numbe
   // `penetrationRetain`, and a sentry's shots are already range-limited by its own arc.
   def.damageFalloff.start = 1000;
   def.damageFalloff.end = 1001;
-  BY_ID.set(id, def);
+  // The one place a streak weapon is built is the one place it is catalogued. See `anyWeaponDef`.
+  registerWeaponDef(def);
   return def;
 }
 
 let minigun: WeaponDef | null = null;
+let flamethrower: WeaponDef | null = null;
+let burn: WeaponDef | null = null;
 let mortar: WeaponDef | null = null;
 let sentry: WeaponDef | null = null;
 let chopper: WeaponDef | null = null;
@@ -126,7 +112,9 @@ export function chopperWeapon(damage: number): WeaponDef {
  * a third carried weapon arrives.
  */
 export function carriedStreakWeapon(streakId: string): WeaponDef | null {
-  return streakId === 'minigun' ? minigunWeapon() : null;
+  if (streakId === 'minigun') return minigunWeapon();
+  if (streakId === 'flamethrower') return flamethrowerWeapon();
+  return null;
 }
 
 /**
@@ -184,4 +172,120 @@ export function minigunWeapon(): WeaponDef {
   def.penetration = def.penetration * 1.4;
   minigun = def;
   return minigun;
+}
+
+/**
+ * The second carried streak, and the first weapon in the game that is not a ray.
+ *
+ * ## What the numbers are trying to be
+ *
+ * A flamethrower is an **area denial** weapon, not a duel weapon, and every figure here is
+ * chosen to keep it on that side of the line. Nine metres is short enough that crossing a lane
+ * to use it is a decision; the 16-degree half-angle is wide enough to hold a doorway and too
+ * narrow to sweep a room from its middle. Falloff runs from five metres to nine, so the tip of
+ * the jet is a *threat* and the root of it is lethal — the same shape a shotgun has, expressed
+ * through the term `damageAtRange` already applies.
+ *
+ * Ten fuel a second at 7 damage each is 70 a second in contact, so a body held in the jet for
+ * a second and a half is dead. Half a second of contact is 35 and does **not** kill: what
+ * follows them out is the burn, three seconds at 8 a second, which is another 24 and still not
+ * lethal on its own. That gap is deliberate and is the whole balance of the weapon — brushing
+ * the edge of a jet costs a player most of their health and leaves them alive to make a
+ * decision about it, and a second in the middle of one does not.
+ *
+ * No headshot: fire does not care where it lands, and a headshot multiplier on a cone that
+ * cannot be aimed at a head would be a coin toss the player has no say in. No penetration, for
+ * the reason the cone tests line of sight at all — flame goes around corners in no engine worth
+ * shipping, and through none of the walls here.
+ *
+ * 150 fuel is fifteen seconds of held trigger inside a twenty-five second streak: the same
+ * trade the minigun's belt makes, at the other end of the range band.
+ */
+export function flamethrowerWeapon(): WeaponDef {
+  if (flamethrower !== null) return flamethrower;
+  const def = synthetic('streak_flamethrower', 'FLAMETHROWER', 7, 1);
+  def.damage.near = 7;
+  def.damage.far = 3;
+  def.damageFalloff.start = 5;
+  def.damageFalloff.end = 9;
+  def.limbMult = 1;
+  def.upperTorsoMult = 1;
+  def.rpm = 600;
+  def.magSize = 150;
+  def.reserveAmmo = 0;
+  def.reloadTime = 0;
+  def.reloadEmptyTime = 0;
+  def.swapInTime = 0.7;
+  def.swapOutTime = 0.4;
+  def.sprintOutTime = 0.35;
+  def.adsFovScale = 1;
+  def.adsViewmodelFovScale = 1;
+  def.penetration = 0;
+  // Nothing about a jet is a bullet: no tracer, no spread cone to widen, and a kick that is
+  // pressure rather than recoil.
+  def.tracerFraction = 0;
+  def.pellets = 1;
+  def.recoil.verticalScale = def.recoil.verticalScale * 0.25;
+  def.recoil.horizontalScale = def.recoil.horizontalScale * 0.25;
+  def.shakePerShot = def.shakePerShot * 0.3;
+  def.muzzleFlashScale = def.muzzleFlashScale * 0.8;
+  def.flame = {
+    rangeM: 9,
+    halfAngleDeg: 16,
+    burnSeconds: 3,
+    burnDps: 8,
+  };
+  /**
+   * The voice, because ten of these leave the barrel every second.
+   *
+   * A carbine's crack at 10 Hz is a machine gun, and this is a jet: the body of the sound drops
+   * to a low roar, the click that makes a rifle sound like a rifle goes to almost nothing, and
+   * the tail is long and wet so the ticks run together into one continuous sound rather than
+   * arriving as ten separate shots. Synthesis rather than a sample, like every other weapon
+   * here — `engine/WeaponAudio` builds all of them from these numbers.
+   */
+  def.voice.level = def.voice.level * 0.45;
+  def.voice.bodyFreq = 150;
+  def.voice.bodyQ = 1.1;
+  def.voice.bodyDecay = 0.16;
+  def.voice.bodyRatio = 0.7;
+  def.voice.clickFreq = 900;
+  def.voice.clickLevel = def.voice.clickLevel * 0.15;
+  def.voice.thumpFreq = 70;
+  def.voice.thumpLevel = def.voice.thumpLevel * 0.5;
+  def.voice.tailDecay = 0.34;
+  def.voice.tailLevel = def.voice.tailLevel * 1.4;
+  def.voice.tailFreq = 1100;
+  def.voice.wet = Math.min(1, def.voice.wet * 1.6);
+  flamethrower = def;
+  return flamethrower;
+}
+
+/**
+ * What the fire itself kills with, after the jet has stopped.
+ *
+ * A weapon of its own rather than the flamethrower's def with the numbers swapped, and the
+ * reason is that these defs are **process-wide singletons**: borrowing one for a tick and
+ * putting its damage back is a mutation two systems can race over, and it is the kind that
+ * shows up as one wrong number in a killfeed a week later. So the burn gets its own id, its own
+ * entry in the wire table, and its own damage — which is a *per-tick* figure, `burnDps * DT`,
+ * because `DamageSystem` applies what the def says and the burn is applied every tick.
+ *
+ * It also reads better: a player killed by a burn sees `[BURNING]` rather than a flamethrower
+ * they walked away from two seconds ago.
+ *
+ * Derived from the flamethrower's own profile so the two cannot drift. A second flame weapon
+ * with a different `burnDps` would need a def per figure; there is one, and this is that one.
+ */
+export function burnWeapon(): WeaponDef {
+  if (burn !== null) return burn;
+  const profile = flamethrowerWeapon().flame;
+  const perTick = (profile?.burnDps ?? 0) * DT;
+  const def = synthetic('streak_burn', 'BURNING', perTick, 1);
+  def.damage.near = perTick;
+  def.damage.far = perTick;
+  def.limbMult = 1;
+  def.upperTorsoMult = 1;
+  burn = def;
+  return burn;
 }

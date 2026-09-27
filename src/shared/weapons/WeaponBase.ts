@@ -344,7 +344,9 @@ export class Weapon {
     // A reload takes the sights away: the viewmodel cannot be at the eye and working the
     // magazine at the same time, and pretending otherwise is exactly the animation lie
     // S8.1 rules out.
-    const want = input.adsHeld && !input.lowering && !this.reloading;
+    // `noAds` first: a weapon with no sights has no aimed pose to move toward, and holding the
+    // aim button on one should read as a button nobody pressed.
+    const want = !this.def.noAds && input.adsHeld && !input.lowering && !this.reloading;
     const rate = DT / Math.max(this.def.adsTime, 1e-3);
     this.adsFraction = moveTowards(this.adsFraction, want ? 1 : 0, rate);
 

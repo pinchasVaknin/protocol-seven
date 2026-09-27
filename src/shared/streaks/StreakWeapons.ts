@@ -162,8 +162,16 @@ export function minigunWeapon(): WeaponDef {
   def.swapInTime = 1.1;
   def.swapOutTime = 0.5;
   def.sprintOutTime = 0.45;
-  // No sights. `adsTime` is left alone so nothing divides by zero; the sights simply do
-  // nothing for it, which is what `adsFovScale` at 1 means.
+  /**
+   * No sights, and now no aiming either (2026-09-27).
+   *
+   * The FOV scales at 1 made aiming *look* like nothing, but `adsFraction` still ran to 1 on
+   * the button: the gun swung to the eye, the spread took its ADS value and the recoil took
+   * `adsScale`. A minigun is fired from the hip because there is nowhere on it to put an eye.
+   * `noAds` stops it at the one place `adsFraction` moves. `adsTime` is left alone so nothing
+   * divides by zero.
+   */
+  def.noAds = true;
   def.adsFovScale = 1;
   def.adsViewmodelFovScale = 1;
   def.spread.hipStand = def.spread.hipStand * 2.2;

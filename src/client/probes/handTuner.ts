@@ -10,14 +10,20 @@ import {
   handPoseSource,
   handWrapFor,
   handWrapSource,
+  viewmodelOffsetFor,
+  viewmodelOffsetSource,
   type HandPose,
   type HandSide,
   type HandWrap,
+  type ViewmodelOffset,
 } from '../weapons/HandPoses';
 import { buildKnifeModel, type KnifeModel } from '../weapons/KnifeMesh';
 import { buildGrenadeModel, type GrenadeModel } from '../weapons/GrenadeMesh';
-import { EQUIPMENT_ASSET_IDS } from '../weapons/WeaponAssetCatalog';
+import { buildShieldModel, type ShieldModel } from '../weapons/ShieldMesh';
+import { EQUIPMENT_ASSET_IDS, hasWeaponAsset } from '../weapons/WeaponAssetCatalog';
 import { ALL_EQUIPMENT } from '../../shared/equipment/EquipmentDefs';
+import { flamethrowerWeapon, minigunWeapon, STREAK_WEAPON_IDS, streakWeaponTag } from '../../shared/streaks/StreakWeapons';
+import { anyWeaponDef } from '../../shared/weapons/AnyWeapon';
 import {
   FINGERS,
   GRENADE_HOLD_CURL,
@@ -107,6 +113,48 @@ const EQUIPMENT_ID_OF: Readonly<Record<string, string>> = Object.fromEntries(
 );
 const isGrenade = (id: string): boolean => GRENADE_IDS.includes(id);
 
+/**
+ * The riot shield, which is a plate and not a firearm.
+ *
+ * Its file carries a `body` and the two hand sockets and nothing else — no muzzle, no
+ * magazine, no charging handle — so it cannot go through `buildWeaponModel`, exactly as the
+ * knife and the grenades cannot. It gets the knife's arrangement: a carbine stands in hidden
+ * under the animator and the shield is what is drawn, with one hand's sliders, because the
+ * other hand is holding the pistol this killstreak also gives you.
+ */
+const SHIELD_ID = 'streak_shield';
+const isShield = (id: string): boolean => id === SHIELD_ID;
+
+/**
+ * The killstreak weapons in the menu (2026-09-27).
+ *
+ * They are not in `ALL_WEAPONS` — a streak weapon is never in a loadout, and `StreakWeapons`
+ * builds its def rather than listing it — but the minigun and the flamethrower are carried in
+ * the hands and drawn by this exact viewmodel, so they need posing like anything else. The
+ * list is the streak ids that have a file, asked of the catalogue rather than written out
+ * again: a streak weapon with no `.glb` has nothing here to pose.
+ *
+ * The shield is in the menu too but not in this list: it takes the branch above.
+ */
+const STREAK_TUNER_IDS: readonly string[] = STREAK_WEAPON_IDS.filter((id) => hasWeaponAsset(id) && !isShield(id));
+
+/**
+ * Build the two carried streak defs so `anyWeaponDef` can answer for them.
+ *
+ * `StreakWeapons` registers a def the one time it builds one, and a match builds them when a
+ * streak is spent. Nothing here spends one, so without this the tuner would ask about the
+ * minigun and be told there is no such weapon — and `noAds` below would read as false on the
+ * one weapon it is true of. Both are memoised singletons, so this costs one object each.
+ */
+minigunWeapon();
+flamethrowerWeapon();
+
+/** Whether this weapon can be aimed at all. The minigun cannot — see `WeaponDef.noAds`. */
+function aims(): boolean {
+  if (isKnife(state.weaponId) || isGrenade(state.weaponId) || isShield(state.weaponId)) return false;
+  return anyWeaponDef(state.weaponId)?.noAds !== true;
+}
+
 /** The four keyframes of the throw, which take the place of hip/ADS/reload when one is up. */
 type Throw = 'ready' | 'pull' | 'windup' | 'release';
 const THROWS: readonly Throw[] = ['ready', 'pull', 'windup', 'release'];
@@ -190,6 +238,8 @@ type Edits = Record<
       throwTable?: GrenadeThrow;
       pinOut?: GrenadePose;
       wrapSupport?: Record<FingerName, FingerCurl>;
+      /** Where the weapon itself sits on screen — `VIEWMODEL_OFFSETS`, not a hand. */
+      offset?: ViewmodelOffset;
     }
 >;
 
@@ -270,23 +320,26 @@ const state = {
 let model: WeaponModel | null = null;
 let knife: KnifeModel | null = null;
 let grenade: GrenadeModel | null = null;
+let shield: ShieldModel | null = null;
 let anim: ViewmodelAnim | null = null;
 let loading = 0;
 
-/** Whichever rig is on screen: the weapon's hands, or the knife's one hand. */
+/** Whichever rig is on screen: the weapon's hands, the knife's one hand, or the shield's. */
 function hands(): {
   adjust: Record<HandSide, { position: THREE.Vector3; rotation: THREE.Vector3; curl: number }>;
   curl: Record<HandSide, Record<FingerName, FingerCurl>>;
 } | null {
   if (isKnife(state.weaponId)) return knife?.hands ?? null;
   if (isGrenade(state.weaponId)) return grenade?.hands ?? null;
+  if (isShield(state.weaponId)) return shield?.hands ?? null;
   return model?.hands ?? null;
 }
 
-/** Which root is being posed: the weapon, the blade or the grenade. */
+/** Which root is being posed: the weapon, the blade, the grenade or the plate. */
 function posedRoot(): THREE.Object3D | null {
   if (isKnife(state.weaponId)) return knife?.root ?? null;
   if (isGrenade(state.weaponId)) return grenade?.root ?? null;
+  if (isShield(state.weaponId)) return shield?.root ?? null;
   return model?.root ?? null;
 }
 
@@ -296,6 +349,9 @@ panel.append(element('h1', {}, 'HAND TUNER'));
 const weaponSelect = element('select');
 for (const def of ALL_WEAPONS) weaponSelect.append(element('option', { value: def.id }, `${def.name} — ${def.id}`));
 weaponSelect.append(element('option', { value: KNIFE_ID }, 'KNIFE — knife'));
+// The killstreak weapons, named by the tag the killfeed already prints for them.
+for (const id of STREAK_TUNER_IDS) weaponSelect.append(element('option', { value: id }, `${streakWeaponTag(id)} — ${id}`));
+if (hasWeaponAsset(SHIELD_ID)) weaponSelect.append(element('option', { value: SHIELD_ID }, `${streakWeaponTag(SHIELD_ID)} — ${SHIELD_ID}`));
 for (const def of ALL_EQUIPMENT) {
   const assetId = EQUIPMENT_ASSET_IDS[def.id];
   if (assetId !== undefined) weaponSelect.append(element('option', { value: assetId }, `${def.name} — ${assetId}`));
@@ -319,7 +375,12 @@ socketsLabel.append(socketsBox, 'show sockets (orbit views)');
 optionsBar.append(opticLabel, socketsLabel);
 panel.append(weaponBar, optionsBar);
 
-function buttonGroup<T extends string>(title: string, options: readonly T[], get: () => T, set: (v: T) => void): HTMLElement & { refresh(): void } {
+function buttonGroup<T extends string>(
+  title: string,
+  options: readonly T[],
+  get: () => T,
+  set: (v: T) => void,
+): HTMLElement & { refresh(): void; setHidden(option: T, hidden: boolean): void } {
   const box = element('div');
   box.append(element('h2', {}, title));
   const bar = element('div', { className: 'bar' });
@@ -335,9 +396,13 @@ function buttonGroup<T extends string>(title: string, options: readonly T[], get
   const refresh = (): void => {
     for (const [o, b] of buttons) b.classList.toggle('on', o === get());
   };
+  /** Take one option out of the bar: RELOAD on a weapon that has no reload. */
+  const setHidden = (option: T, hidden: boolean): void => {
+    for (const [o, b] of buttons) if (o === option) b.style.display = hidden ? 'none' : '';
+  };
   refresh();
   box.append(bar);
-  return Object.assign(box, { refresh });
+  return Object.assign(box, { refresh, setHidden });
 }
 
 const poseButtons = buttonGroup<Pose>('POSE', ['hip', 'ads', 'reload'], () => state.pose, (v) => (state.pose = v));
@@ -646,6 +711,110 @@ for (const which of [...THROWS, 'pin' as const]) {
   }
 }
 
+/**
+ * Where the weapon sits **on screen** (2026-09-27): `VIEWMODEL_OFFSETS`, on six sliders.
+ *
+ * The block every other one here is not about the hands. `ViewmodelConfig`'s hip pose is one
+ * pose for the whole arsenal, and the minigun does not fit in it — 0.91 m of barrel carried at
+ * chest height sat across the middle of the screen and the player could not see past it. No
+ * hand slider fixes that: moving the hands moves the hands, and the gun is where the gun is.
+ *
+ * Edits land on `anim.offset`, which `ViewmodelAnim` adds to the hip pose and fades out into
+ * ADS — so what is being tuned here is the hip-fire picture and nothing else.
+ *
+ * The shield uses the same six numbers for a different reason: a plate has no sight to land
+ * and no hip pose of its own, so this is the *only* thing that places it.
+ */
+const OFFSET_SLIDERS: readonly { key: 'x' | 'y' | 'z' | 'pitch' | 'yaw' | 'roll'; label: string; min: number; max: number; step: number }[] = [
+  { key: 'x', label: 'X (m)', min: -0.6, max: 0.6, step: 0.002 },
+  { key: 'y', label: 'Y (m)', min: -0.6, max: 0.6, step: 0.002 },
+  { key: 'z', label: 'Z (m)', min: -0.8, max: 0.8, step: 0.002 },
+  { key: 'pitch', label: 'Pitch°', min: -90, max: 90, step: 0.5 },
+  { key: 'yaw', label: 'Yaw°', min: -90, max: 90, step: 0.5 },
+  { key: 'roll', label: 'Roll°', min: -90, max: 90, step: 0.5 },
+];
+const OFFSET_AT: Readonly<Record<(typeof OFFSET_SLIDERS)[number]['key'], [0 | 1 | 2, 'position' | 'rotation']>> = {
+  x: [0, 'position'],
+  y: [1, 'position'],
+  z: [2, 'position'],
+  pitch: [0, 'rotation'],
+  yaw: [1, 'rotation'],
+  roll: [2, 'rotation'],
+};
+/**
+ * Which offset the six sliders edit.
+ *
+ * `anim.offset` is the *weapon's* — and in shield mode the weapon is a hidden carbine standing
+ * in, so editing it would move nothing on screen. The plate has `anim.shieldOffset`, which is
+ * also the only thing that places it.
+ */
+function offsetOf(): { position: [number, number, number]; rotation: [number, number, number] } | null {
+  if (anim === null) return null;
+  return isShield(state.weaponId) ? anim.shieldOffset : anim.offset;
+}
+
+const offsetControls = new Map<string, { range: HTMLInputElement; number: HTMLInputElement }>();
+const offsetBlocks: HTMLElement[] = [];
+{
+  const title = element('h2', {}, 'WEAPON ON SCREEN — VIEWMODEL_OFFSETS');
+  const reset = element('button', { type: 'button' }, 'reset');
+  reset.addEventListener('click', () => {
+    const live = offsetOf();
+    if (live === null) return;
+    const shipped = viewmodelOffsetFor(state.weaponId);
+    live.position = [...shipped.position] as [number, number, number];
+    live.rotation = [...shipped.rotation] as [number, number, number];
+    remember();
+    syncOffset();
+  });
+  title.append(reset);
+  panel.append(title);
+  offsetBlocks.push(title);
+  const note = element(
+    'div',
+    { className: 'small' },
+    'added to the shared hip pose, and faded out into ADS — the sight line is landed there and a constant would push it off',
+  );
+  panel.append(note);
+  offsetBlocks.push(note);
+  for (const sl of OFFSET_SLIDERS) {
+    const row = element('div', { className: 'row' });
+    const range = element('input', { type: 'range', min: String(sl.min), max: String(sl.max), step: String(sl.step) });
+    const number = element('input', { type: 'number', step: String(sl.step) });
+    const write = (v: number): void => {
+      const live = offsetOf();
+      if (live === null || !Number.isFinite(v)) return;
+      const [i, which] = OFFSET_AT[sl.key];
+      live[which][i] = v;
+      remember();
+    };
+    range.addEventListener('input', () => {
+      number.value = range.value;
+      write(Number(range.value));
+    });
+    number.addEventListener('input', () => {
+      range.value = number.value;
+      write(Number(number.value));
+    });
+    row.append(element('span', { className: 'small' }, sl.label), range, number);
+    panel.append(row);
+    offsetBlocks.push(row);
+    offsetControls.set(sl.key, { range, number });
+  }
+}
+
+function syncOffset(): void {
+  for (const sl of OFFSET_SLIDERS) {
+    const c = offsetControls.get(sl.key);
+    if (c === undefined) continue;
+    const [i, which] = OFFSET_AT[sl.key];
+    const v = offsetOf()?.[which][i] ?? 0;
+    c.range.value = String(v);
+    c.number.value = String(Number(v.toFixed(3)));
+  }
+  writeOutput();
+}
+
 function syncThrow(): void {
   for (const which of [...THROWS, 'pin' as const]) {
     const pose = throwPose(which);
@@ -762,18 +931,67 @@ function syncSwing(): void {
  * left on the ring — a wrap for each, the four keyframes of the throw and the pin's travel;
  * and the claymore, the one with no pin, shows the holding hand alone.
  */
+/**
+ * Whether this weapon reloads at all (2026-09-27).
+ *
+ * Asked of the **magazine group**, not of a list of ids: the build gives a weapon with nothing
+ * to drop an empty `magazine`, and `StreakWeapons` gives those same two weapons
+ * `reloadTime = 0` and `reserveAmmo = 0`. So an empty group is not a proxy for "does not
+ * reload" — it is the same fact, written on the model.
+ *
+ * The minigun's belt comes off a pack and the flamethrower's fuel is in the tank. Showing
+ * either of them a RELOAD pose, a reload slider and a hand reaching for a magazine that is not
+ * there is three controls that pose nothing.
+ */
+function reloads(): boolean {
+  if (isKnife(state.weaponId) || isGrenade(state.weaponId) || isShield(state.weaponId)) return false;
+  const magazine = model?.magazine;
+  if (magazine === undefined) return false;
+  // Any *geometry*, not any child: `buildFromTemplate` hangs the reload hand's target node
+  // under this group, so an empty magazine still has a child and counting them says every
+  // weapon reloads.
+  let found = false;
+  magazine.traverse((node) => {
+    if ((node as THREE.Mesh).isMesh) found = true;
+  });
+  return found;
+}
+
 function applyMode(): void {
   const isBlade = isKnife(state.weaponId);
   const isNade = isGrenade(state.weaponId);
+  const isPlate = isShield(state.weaponId);
   const hasPin = isNade && grenade?.root.getObjectByName('pin') !== undefined;
+  const canReload = reloads();
+  const canAim = aims();
+  // Same rule as the reload's: a control that poses something the game never does is a control
+  // that lies. The minigun is fired from the hip because there is nowhere on it to put an eye.
+  if (!canAim && state.pose === 'ads') state.pose = 'hip';
+  // A weapon that cannot reload must not be left standing in the reload pose when it is
+  // picked: the pose would persist with no control on screen to leave it.
+  if (!canReload && state.pose === 'reload') state.pose = 'hip';
   for (const [side, block] of handBlocks) {
-    const show = isBlade ? side === 'grip' : isNade ? side === 'grip' || (side === 'support' && hasPin) : true;
+    // The shield is the one entry posed from the SUPPORT sliders alone: it is carried on the
+    // left forearm and the right hand is the pistol's, so the grip's sliders would move a
+    // hand that is not drawn.
+    const show = isBlade
+      ? side === 'grip'
+      : isPlate
+        ? side === 'support'
+        : isNade
+          ? side === 'grip' || (side === 'support' && hasPin)
+          : side !== 'reload' || canReload;
     for (const el of block) el.style.display = show ? '' : 'none';
   }
+  // The weapon's own place on screen: every carried thing but the knife and the grenades,
+  // which are posed by their swing and their throw instead.
+  for (const el of offsetBlocks) el.style.display = isBlade || isNade ? 'none' : '';
+  poseButtons.setHidden('reload', !canReload);
+  poseButtons.setHidden('ads', !canAim);
   for (const el of swingBlocks) el.style.display = isBlade ? '' : 'none';
   for (const el of throwBlocks) el.style.display = isNade ? '' : 'none';
   for (const [side, block] of curlBlocks) {
-    const show = isBlade ? side === 'grip' : isNade && (side === 'grip' || hasPin);
+    const show = isBlade ? side === 'grip' : isPlate ? side === 'support' : isNade && (side === 'grip' || hasPin);
     for (const el of block) el.style.display = show ? '' : 'none';
   }
   swingButtons.style.display = isBlade ? '' : 'none';
@@ -781,9 +999,9 @@ function applyMode(): void {
   throwButtons.style.display = isNade ? '' : 'none';
   throwRow.style.display = isNade ? '' : 'none';
   keepHeldRow.style.display = isNade ? '' : 'none';
-  poseButtons.style.display = isBlade || isNade ? 'none' : '';
-  reloadRow.style.display = isBlade || isNade ? 'none' : '';
-  optionsBar.style.display = isBlade || isNade ? 'none' : '';
+  poseButtons.style.display = isBlade || isNade || isPlate ? 'none' : '';
+  reloadRow.style.display = isBlade || isNade || isPlate || !canReload ? 'none' : '';
+  optionsBar.style.display = isBlade || isNade || isPlate ? 'none' : '';
   const grip = handBlocks.get('grip')?.[0];
   if (grip !== undefined) {
     grip.firstChild!.textContent = isBlade
@@ -794,7 +1012,11 @@ function applyMode(): void {
   }
   const support = handBlocks.get('support')?.[0];
   if (support !== undefined) {
-    support.firstChild!.textContent = isNade ? "LEFT HAND — socket_pin, the ring (it rides the pin)" : SIDE_LABEL.support;
+    support.firstChild!.textContent = isNade
+      ? "LEFT HAND — socket_pin, the ring (it rides the pin)"
+      : isPlate
+        ? 'LEFT HAND — socket_support, the forearm cuff'
+        : SIDE_LABEL.support;
   }
 }
 
@@ -870,12 +1092,52 @@ function writeOutput(): void {
     ].join('\n');
     return;
   }
-  const mine = handPoseSource(state.weaponId, currentPoses());
+  /**
+   * The weapon's place on screen, printed under its own table's name.
+   *
+   * Only when it is not all zeros: `VIEWMODEL_OFFSETS` is a *corrections* table, and a row of
+   * zeros pasted into it says "this weapon is unlike the others" about a weapon that is not.
+   */
+  const offsetLines = (): string[] => {
+    const o = offsetOf() ?? undefined;
+    if (o === undefined) return [];
+    if (o.position.every((v) => v === 0) && o.rotation.every((v) => v === 0)) return [];
+    return ['', '// HandPoses.ts — VIEWMODEL_OFFSETS: where the weapon sits on screen', viewmodelOffsetSource(state.weaponId, o)];
+  };
+  if (isShield(state.weaponId)) {
+    const rig = hands();
+    const o = offsetOf() ?? undefined;
+    output.value = [
+      '// HandPoses.ts — HAND_POSES: the left hand on the cuff',
+      handPoseSource(state.weaponId, currentPoses(), ['support']),
+      '',
+      '// HandPoses.ts — HAND_WRAPS: what that hand closes into',
+      rig === null ? '// (no shield loaded)' : handWrapSource(state.weaponId, { support: rig.curl.support as HandWrap }),
+      '',
+      '// HandPoses.ts — VIEWMODEL_OFFSETS: the only thing that places a plate',
+      o === undefined ? '// (no shield loaded)' : viewmodelOffsetSource(state.weaponId, o),
+    ].join('\n');
+    return;
+  }
+  const mine = handPoseSource(state.weaponId, currentPoses(), reloads() ? ['grip', 'support', 'reload'] : ['grip', 'support']);
   const others = Object.keys(edits)
     .filter((id) => id !== state.weaponId)
     .sort()
     .map(entryFor);
-  output.value = [`// ${state.weaponId}`, mine, ...(others.length > 0 ? ['', '// every other tuned weapon', ...others] : [])].join('\n');
+  output.value = [
+    `// ${state.weaponId}`,
+    mine,
+    ...offsetLines(),
+    ...(others.length > 0 ? ['', '// every other tuned weapon', ...others] : []),
+  ].join('\n');
+}
+
+/** The live offset as a plain record, for `edits`: a copy, because `anim` is replaced on load. */
+function offsetNow(): ViewmodelOffset {
+  const o = offsetOf() ?? undefined;
+  return o === undefined
+    ? { position: [0, 0, 0], rotation: [0, 0, 0] }
+    : { position: [...o.position] as [number, number, number], rotation: [...o.rotation] as [number, number, number] };
 }
 
 let logTimer = 0;
@@ -906,6 +1168,16 @@ function remember(): void {
     logTimer = window.setTimeout(() => console.log(`[hand tuner]\n${output.value}`), 300);
     return;
   }
+  // The shield keeps the left hand's shape as well as its place: it is the hand that is drawn,
+  // so its wrap is the half of the pose the position sliders cannot say.
+  if (isShield(state.weaponId) && rig !== null) {
+    edits[state.weaponId] = { ...currentPoses(), wrapSupport: wrapOf('support'), offset: offsetNow() };
+    saveEdits(edits);
+    writeOutput();
+    window.clearTimeout(logTimer);
+    logTimer = window.setTimeout(() => console.log(`[hand tuner]\n${entryFor(state.weaponId)}`), 300);
+    return;
+  }
   if (isKnife(state.weaponId) && swing !== undefined && rig !== null) {
     const wrap = {} as Record<FingerName, FingerCurl>;
     for (const f of FINGERS) wrap[f] = [...rig.curl.grip[f]] as FingerCurl;
@@ -914,7 +1186,7 @@ function remember(): void {
       swing: { ready: { ...swing.ready }, windup: { ...swing.windup }, strike: { ...swing.strike } },
       wrap,
     };
-  } else edits[state.weaponId] = currentPoses();
+  } else edits[state.weaponId] = { ...currentPoses(), offset: offsetNow() };
   saveEdits(edits);
   writeOutput();
   window.clearTimeout(logTimer);
@@ -968,19 +1240,35 @@ clearAll.addEventListener('click', () => {
 
 // -- the weapon ----------------------------------------------------------------------------
 
+/**
+ * Put a saved on-screen offset back on the animator, which is rebuilt on every load.
+ *
+ * An entry kept before this table existed has no `offset`; the animator then keeps what its
+ * constructor read out of `VIEWMODEL_OFFSETS`, which is the shipped row or zero.
+ */
+function restoreOffset(saved: ViewmodelOffset | undefined): void {
+  const live = offsetOf();
+  if (live === null || saved === undefined) return;
+  live.position = [...saved.position] as [number, number, number];
+  live.rotation = [...saved.rotation] as [number, number, number];
+}
+
 async function load(weaponId: string): Promise<void> {
   const ticket = ++loading;
   state.weaponId = weaponId;
   hint.textContent = `loading ${weaponId}…`;
   const blade = isKnife(weaponId);
   const nade = isGrenade(weaponId);
+  const plate = isShield(weaponId);
   const equipmentId = EQUIPMENT_ID_OF[weaponId];
   await Promise.all([
     (blade
       ? assets.preloadKnife()
-      : nade && equipmentId !== undefined
-        ? assets.preloadEquipment(equipmentId)
-        : assets.preload(weaponId)
+      : plate
+        ? assets.preloadShield()
+        : nade && equipmentId !== undefined
+          ? assets.preloadEquipment(equipmentId)
+          : assets.preload(weaponId)
     ).catch(() => undefined),
     assets.preloadHands().catch(() => undefined),
   ]);
@@ -1000,6 +1288,54 @@ async function load(weaponId: string): Promise<void> {
     layer.remove(grenade.root);
     grenade.dispose();
     grenade = null;
+  }
+  if (shield !== null) {
+    layer.remove(shield.root);
+    shield.dispose();
+    shield = null;
+  }
+  if (plate) {
+    /**
+     * The knife's arrangement again, and for the third time the same reason: `ViewmodelAnim`
+     * is built around a weapon and poses one every frame, so the carbine stands in hidden
+     * while the plate and its one glove are what is drawn.
+     *
+     * One hand, and it is the **left** one — the right is holding the pistol this killstreak
+     * gives you at the same time, which `ShieldMesh` collapses. So the panel shows the SUPPORT
+     * sliders and hides the grip's, the mirror of what the knife does.
+     */
+    const carrier = buildWeaponModel('ar_carbine', 8, null, { hands: false, assets, attachments: [] });
+    carrier.root.visible = false;
+    layer.add(carrier.root);
+    model = carrier;
+    anim = new ViewmodelAnim(carrier);
+    shield = buildShieldModel(assets.shield(), assets.hands());
+    layer.add(shield.root);
+    // The half that was missing: without this the animator poses the hidden carbine and
+    // nothing else, so neither the plate nor the glove answers a slider.
+    anim.setShield(shield);
+    const savedPlate = edits[weaponId];
+    if (savedPlate !== undefined) {
+      setHand('support', savedPlate.support);
+      const rig = shield.hands;
+      if (rig !== null && savedPlate.wrapSupport !== undefined) {
+        for (const f of FINGERS) rig.curl.support[f] = [...savedPlate.wrapSupport[f]] as FingerCurl;
+      }
+      restoreOffset(savedPlate.offset);
+    }
+    applyMode();
+    syncControls();
+    syncOffset();
+    const plateUrl = new URL(window.location.href);
+    plateUrl.searchParams.set('weapon', weaponId);
+    window.history.replaceState(null, '', plateUrl);
+    hint.textContent =
+      assets.shield() === null
+        ? `${weaponId}.glb did not load — is it built? run npm run check:weapons`
+        : shield.hands === null
+          ? 'the hands file did not load — is hands.glb built?'
+          : `${weaponId} · the shield rides the left forearm; the right hand is the pistol's`;
+    return;
   }
   if (nade) {
     /**
@@ -1089,14 +1425,20 @@ async function load(weaponId: string): Promise<void> {
     return;
   }
   const attachments: AttachmentId[] = state.optic ? ['optic_reflex'] : [];
-  applyMode();
   model = buildWeaponModel(weaponId, 8, null, { hands: true, assets, attachments });
   layer.add(model.root);
   anim = new ViewmodelAnim(model);
+  // After the model, not before it: `applyMode` asks the magazine group whether this weapon
+  // reloads, and before the build that group is the previous weapon's or nothing at all.
+  applyMode();
   const saved = edits[weaponId];
   // Edits kept before the reload pose existed have no `reload`: the table's stands.
-  if (saved !== undefined) for (const side of SIDES) setHand(side, saved[side] ?? handPoseFor(weaponId, side));
+  if (saved !== undefined) {
+    for (const side of SIDES) setHand(side, saved[side] ?? handPoseFor(weaponId, side));
+    restoreOffset(saved.offset);
+  }
   syncControls();
+  syncOffset();
   const url = new URL(window.location.href);
   url.searchParams.set('weapon', weaponId);
   window.history.replaceState(null, '', url);

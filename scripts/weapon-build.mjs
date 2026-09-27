@@ -271,6 +271,99 @@ const DBAL_A2 = {
   url: 'https://sketchfab.com/3d-models/rifle-laser-sight-55d74d7d4f6a4071af856d2ffc2c429a',
 };
 
+/**
+ * The two belt-fed guns (2026-09-27), both by the same author, and the pair that closes the
+ * arsenal's last hole: `lmg_bastion` and `lmg_monolith` have been defs with no file since M19
+ * stage 3, because every "free LMG" found until now was a Call of Duty rip.
+ *
+ * They are named for the guns the defs already named. BASTION 249 is the Minimi — the source
+ * says so, its one material is `minimi` — and MONOLITH 60 is the M60. Nothing had to be chosen
+ * here; the two files simply are the two weapons.
+ */
+const MINIMI = {
+  file: 'lmg.glb',
+  title: 'LMG',
+  author: 'DJMaesen',
+  authorUrl: 'https://sketchfab.com/bumstrum',
+  license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
+  url: 'https://sketchfab.com/3d-models/lmg-8c24d7374ea64bdab1c30f49c69d5ed8',
+};
+const M60 = {
+  file: 'lmg_animated.glb',
+  title: 'lmg animated',
+  author: 'DJMaesen',
+  authorUrl: 'https://sketchfab.com/bumstrum',
+  license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
+  url: 'https://sketchfab.com/3d-models/lmg-animated-c02dc6663f344008a502148e751c9974',
+};
+
+/**
+ * The three killstreak weapons a player carries (2026-09-27).
+ *
+ * The minigun, the flamethrower and the shield are the first streak weapons with a file: a
+ * sentry and a mortar are machines on the map, but these three are held in the hands, drawn by
+ * the viewmodel, and until now each was a box from `WeaponModelSpecs`.
+ *
+ * The minigun source is the handheld M134 rather than the mounted one, and that is the whole
+ * reason it was chosen over the other candidate: the mounted model is a single welded mesh of
+ * 32k triangles, and a minigun whose barrels cannot turn is not a minigun.
+ */
+const M134_HANDHELD = {
+  file: 'm134_handheld_minigun.glb',
+  title: 'M134 handheld (Minigun)',
+  author: 'Alexander_Borisevich',
+  authorUrl: 'https://sketchfab.com/boriseviav',
+  license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
+  url: 'https://sketchfab.com/3d-models/m134-handheld-minigun-8f008c3e18934707a834cde8c72364f5',
+};
+const FLAME_THROWER = {
+  file: 'flame_thrower_team.glb',
+  title: 'Flame thrower team',
+  author: 'Chenchanchong',
+  authorUrl: 'https://sketchfab.com/Chenchanchong',
+  license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
+  url: 'https://sketchfab.com/3d-models/flame-thrower-team-60bab1c25e7a4bb799e2c36c0eb8987f',
+};
+/**
+ * The shield (2026-09-27). It replaced `assault_shield` the day after that one was built, for
+ * two reasons the human found by looking at it: the first shield's vision block is painted on
+ * a solid plate — there is no way to see through it, and none to give it one — and it cost
+ * 27,210 triangles to say so. This one has a real viewport, a light array, and 1,614 triangles.
+ *
+ * **The file in `GLB_files/weapons/` is not the file Sketchfab serves.** The source's plate is
+ * painted POLIZEI on the front and a police pistol-in-arch on the back; both are replaced with
+ * the project's own skull (`public/brand/mark.png` over `mark-eyes.png`). The pass, made once
+ * with Pillow and recorded here rather than in a script the build depends on — the same way
+ * `ui/Emblem.ts` says its own numbers were arrived at:
+ *
+ *   1. Erase: mask the yellow ink (r,g > 80 and b < r-30 and b < g-30), dilate 4 px, and
+ *      inpaint those pixels from their neighbours. An inpaint rather than a pasted rectangle
+ *      because the plate is weathered and pocked with bullet strikes; a rectangle of clean
+ *      plate read as a rectangle.
+ *   2. Lift: the mark's near-black strokes sit at luminance < 96 and vanish against a
+ *      near-black plate, so only its white core showed. Raised to 96, they read.
+ *   3. Place: 300 px tall at (247, 258) on the front island, 315 at (741, 223) on the back.
+ *      **The front island is rotated 180°, the back flipped vertically** — measured off the
+ *      mesh (world Y against texture v: +0.58 front, +0.40 back; world X against u: -0.40
+ *      front, +0.45 back), not guessed. Guessing put the skull on its head on both faces.
+ *
+ * `g-52_tactical_shield.pristine.glb` sits beside it: the untouched download, kept so the pass
+ * can be re-run and so the licence's "modified" claim can be checked against what it modified.
+ */
+const G52_SHIELD = {
+  file: 'g-52_tactical_shield.glb',
+  title: 'G-52 Tactical Shield',
+  author: 'abbyrobb1417',
+  authorUrl: 'https://sketchfab.com/abbyrobb1417',
+  license: 'CC-BY-4.0',
+  licenseUrl: CC_BY_4,
+  url: 'https://sketchfab.com/3d-models/g-52-tactical-shield-84b284a995274a7ab5c4d8cf119392ec',
+};
+
 // -- the recipes ---------------------------------------------------------------
 
 /**
@@ -990,6 +1083,293 @@ export const RECIPES = {
         socket_support: [x, m.bottom({ name: 'Cube.001' }, 0.6, 0.72) - 0.1, zForend],
       };
     },
+    lod: true,
+  },
+
+  /**
+   * BASTION 249: the Minimi, life size in the source already — the receiver measures 1.015
+   * units for the M249's 1.041 m, so the unit is a percent off a metre rather than a guess.
+   *
+   * The belt is the magazine. Thirteen `bulletholder`/`bullet` pairs hang off the `mag` box
+   * and every one of them is a node of its own, so the whole belt goes into the magazine group
+   * and leaves with it on a reload — which is what a belt-fed reload actually looks like, and
+   * something none of the box-magazine weapons could show.
+   *
+   * `handle` is the charging handle, not a carry handle: it sits 6 cm off the centreline at
+   * the receiver's right, which is where a Minimi's is and nowhere a carry handle would be.
+   */
+  lmg_bastion: {
+    kind: 'weapon',
+    source: MINIMI,
+    unit: 1.0256,
+    forward: 'z+',
+    up: 'y+',
+    parts: {
+      body: [{ match: /^(base|trigger|cover|loaderlid|loader|ejector)$/ }],
+      magazine: [{ match: /^(mag|bullet)/ }],
+      charge: [{ match: /^(handle|bolt)$/ }],
+    },
+    origin: (m) => {
+      const bore = m.tip({ name: 'base_minimi_0' });
+      const cover = m.bounds({ name: 'cover_minimi_0' });
+      return [0, bore[1], (cover.min[2] + cover.max[2]) / 2];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'base_minimi_0' });
+      const base = m.bounds({ name: 'base_minimi_0' });
+      const cover = m.bounds({ name: 'cover_minimi_0' });
+      const trigger = m.bounds({ name: 'trigger_minimi_0' });
+      const length = base.max[2] - base.min[2];
+      const at = (f) => base.min[2] + length * f;
+      // The feed cover's top, over the band behind the feed tray where nothing stands.
+      const railTop = m.plateau({ name: 'cover_minimi_0' }, 0.15, 0.55);
+      return {
+        socket_muzzle: bore,
+        socket_rail_top: [0, railTop, cover.min[2] + (cover.max[2] - cover.min[2]) * 0.35],
+        socket_rail_bottom: [0, m.bottom({ name: 'base_minimi_0' }, 0.6, 0.72), at(0.66)],
+        socket_rail_front: { at: [m.side({ name: 'base_minimi_0' }, 0.6, 0.72), bore[1], at(0.66)], roll: -90 },
+        socket_sight: [0, cover.max[1] + 0.004, at(0.4)],
+        // The pistol grip hangs under and a little behind the trigger; the support hand takes
+        // the barrel's handguard two thirds of the way out, short of the gas block.
+        socket_grip: [0, trigger.min[1] - 0.035, (trigger.min[2] + trigger.max[2]) / 2 - 0.012],
+        socket_support: [0, m.bottom({ name: 'base_minimi_0' }, 0.62, 0.74) + 0.012, at(0.68)],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * MONOLITH 60: the M60, from the same author's animated viewmodel.
+   *
+   * **The arms are left behind.** The source is a full first-person rig — two gloved forearms
+   * on a 47-bone skeleton, 13,700 of its 26,630 triangles — and the project already has one
+   * pair of hands (`hands.glb`) that every weapon is posed on. A second pair, in a second
+   * artist's gloves, on one weapon in ten, would be the one gun where the player's hands
+   * change. So the recipe names the gun's nodes and never the arms', and the skin, the joints
+   * and the clip go the way every other recipe's do.
+   *
+   * The unit comes from the receiver: 107.78 units for the M60's 1.105 m.
+   */
+  lmg_monolith: {
+    kind: 'weapon',
+    source: M60,
+    unit: 0.010252,
+    forward: 'z+',
+    up: 'y+',
+    parts: {
+      body: [{ match: /^(base|trigger|lid)$/ }],
+      magazine: [{ match: /^(mag|bullet\d)/ }],
+      charge: [{ name: 'bolt_LMG_0' }],
+    },
+    origin: (m) => {
+      const bore = m.tip({ name: 'base_LMG_0' });
+      const lid = m.bounds({ name: 'lid_LMG_0' });
+      return [0, bore[1], (lid.min[2] + lid.max[2]) / 2];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'base_LMG_0' });
+      const base = m.bounds({ name: 'base_LMG_0' });
+      const lid = m.bounds({ name: 'lid_LMG_0' });
+      const trigger = m.bounds({ name: 'trigger_LMG_0' });
+      const length = base.max[2] - base.min[2];
+      const at = (f) => base.min[2] + length * f;
+      const railTop = m.plateau({ name: 'lid_LMG_0' }, 0.2, 0.8);
+      return {
+        socket_muzzle: bore,
+        socket_rail_top: [0, railTop, (lid.min[2] + lid.max[2]) / 2],
+        socket_rail_bottom: [0, m.bottom({ name: 'base_LMG_0' }, 0.62, 0.74), at(0.68)],
+        socket_rail_front: { at: [m.side({ name: 'base_LMG_0' }, 0.62, 0.74), bore[1], at(0.68)], roll: -90 },
+        socket_sight: [0, lid.max[1] + 0.04, at(0.42)],
+        socket_grip: [0, trigger.min[1] - 3.4, (trigger.min[2] + trigger.max[2]) / 2 - 1.2],
+        socket_support: [0, m.bottom({ name: 'base_LMG_0' }, 0.64, 0.76) + 1.2, at(0.7)],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * The minigun (2026-09-27): the handheld M134, the first killstreak weapon with a file.
+   *
+   * **Why this source and not the other one.** Two M134s were offered. The mounted one is a
+   * single welded mesh of 32,201 triangles — over the budget, and with no way to turn the
+   * barrels, which is the one thing a minigun has to do. This one is 27 named parts at 15,834
+   * triangles, and `block_stvolov` (the barrel cluster) and `stvol` (the barrels) are nodes of
+   * their own, so the spin has something to spin.
+   *
+   * The part names are transliterated Russian: `stvol` barrel, `block_stvolov` barrel cluster,
+   * `kozhuh` shroud, `grip`/`rogatka` the held frame, `kurok` trigger, `lenta` belt,
+   * `podavatel` feeder, `generator` the motor. The unit is a millimetre — 564 units for the
+   * M134's 558 mm barrel.
+   *
+   * It has no magazine and no charging handle: the belt comes off a pack and the motor turns
+   * the bolts. Both groups are empty rather than absent, which is what `charge: []` has meant
+   * on the M4 since stage 1 — the reload pulls an empty group and nothing moves.
+   */
+  streak_minigun: {
+    kind: 'weapon',
+    source: M134_HANDHELD,
+    unit: 0.001,
+    forward: 'z+',
+    up: 'y+',
+    parts: {
+      body: [{ match: /_low$/ }],
+      magazine: [],
+      charge: [],
+    },
+    // The housing the rotor turns in, at the bore's height — the minigun's receiver, and the
+    // pivot a viewmodel should swing about. The barrels' own midpoint is 27 cm further out and
+    // would hang the whole gun off a point in mid-air ahead of the hands.
+    origin: (m) => {
+      const barrels = m.bounds({ name: 'stvol_low' });
+      const housing = m.bounds({ name: 'fiksator_lang_low' });
+      return [0, (barrels.min[1] + barrels.max[1]) / 2, (housing.min[2] + housing.max[2]) / 2];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: 'stvol_low' });
+      const barrels = m.bounds({ name: 'stvol_low' });
+      const grip = m.bounds({ name: 'grip_low' });
+      const frame = m.bounds({ name: 'rama_low' });
+      const housing = m.bounds({ name: 'fiksator_lang_low' });
+      const fork = m.bounds({ name: 'rogatka_low' });
+      return {
+        socket_muzzle: bore,
+        socket_rail_top: [0, frame.max[1], (housing.min[2] + housing.max[2]) / 2],
+        socket_rail_bottom: [0, frame.min[1], (housing.min[2] + housing.max[2]) / 2],
+        socket_rail_front: { at: [frame.max[0], bore[1], barrels.min[2] + (barrels.max[2] - barrels.min[2]) * 0.6], roll: -90 },
+        socket_sight: [0, frame.max[1] + 20, (housing.min[2] + housing.max[2]) / 2],
+        // The rear grip the trigger hand closes on, and the fork the other arm carries it by.
+        socket_grip: [(grip.min[0] + grip.max[0]) / 2, (grip.min[1] + grip.max[1]) / 2, (grip.min[2] + grip.max[2]) / 2],
+        socket_support: [(fork.min[0] + fork.max[0]) / 2, fork.min[1] + (fork.max[1] - fork.min[1]) * 0.3, fork.min[2] + (fork.max[2] - fork.min[2]) * 0.25],
+        socket_mag_grip: [(grip.min[0] + grip.max[0]) / 2, grip.min[1], (grip.min[2] + grip.max[2]) / 2],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * The flamethrower (2026-09-27): a tank, a wand and a pilot light.
+   *
+   * The source's eighteen parts are numbered rather than named (`1.l` … `18.l`), so the recipe
+   * takes them all as the body and measures the sockets off the two that have a shape worth
+   * measuring: `16.l`, the wand that runs the length of the weapon, and `18.l`, the tank in
+   * the middle. Nothing here is a magazine or a charging handle — the fuel is in the tank and
+   * there is nothing to cycle — so both groups are empty, as the minigun's are.
+   *
+   * The unit puts the whole thing at 1.10 m, which is a flamethrower's wand and tank carried
+   * at the hip rather than the backpack rig the title's "team" refers to.
+   */
+  streak_flamethrower: {
+    kind: 'weapon',
+    source: FLAME_THROWER,
+    unit: 0.0865,
+    forward: 'z+',
+    up: 'y+',
+    parts: {
+      body: [{ match: /^\d+\.l/ }],
+      magazine: [],
+      charge: [],
+    },
+    origin: (m) => {
+      const wand = m.bounds({ name: '16.l_10' });
+      const tank = m.bounds({ name: '18.l_6' });
+      return [0, (tank.min[1] + tank.max[1]) / 2, (tank.min[2] + tank.max[2]) / 2];
+    },
+    sockets: (m) => {
+      const bore = m.tip({ name: '16.l_10' });
+      const wand = m.bounds({ name: '16.l_10' });
+      const tank = m.bounds({ name: '18.l_6' });
+      const length = wand.max[2] - wand.min[2];
+      const at = (f) => wand.min[2] + length * f;
+      return {
+        socket_muzzle: bore,
+        socket_rail_top: [0, tank.max[1], (tank.min[2] + tank.max[2]) / 2],
+        socket_rail_bottom: [0, tank.min[1], (tank.min[2] + tank.max[2]) / 2],
+        socket_rail_front: { at: [tank.max[0], (wand.min[1] + wand.max[1]) / 2, at(0.7)], roll: -90 },
+        socket_sight: [0, tank.max[1] + 0.2, at(0.5)],
+        // The trigger hand is behind the tank on the wand; the other takes the wand forward
+        // of it, which is how a flamethrower is actually carried.
+        socket_grip: [0, (wand.min[1] + wand.max[1]) / 2 - 0.3, at(0.22)],
+        socket_support: [0, (wand.min[1] + wand.max[1]) / 2 - 0.25, at(0.6)],
+        socket_mag_grip: [0, tank.min[1], (tank.min[2] + tank.max[2]) / 2],
+      };
+    },
+    lod: true,
+  },
+
+  /**
+   * The riot shield (2026-09-27), and the first recipe whose `kind` is not a firearm's.
+   *
+   * A shield has no muzzle, no magazine and no charging handle, and giving it the weapon
+   * contract's eight sockets would mean writing down where the bullets leave a plate. So it
+   * has a kind of its own, the way the knife does: a root, a `body`, and the two sockets that
+   * are true of it — where the forearm takes the grip, and where the other hand would be if it
+   * were not holding the pistol this killstreak also gives you.
+   *
+   * Scaled to the 0.92 m the procedural slab has been since M7. The plate's silhouette is a
+   * gameplay fact — it is what an opponent reads from across a lane to know why their rounds
+   * stopped working — so the file matches the thing the game was tuned around rather than the
+   * source's own 1.07 m.
+   */
+  streak_shield: {
+    kind: 'shield',
+    source: G52_SHIELD,
+    // The plate is 292.94 units for the 0.92 m the procedural slab has been since M7. That
+    // height is a gameplay fact — it is what an opponent reads across a lane to know why their
+    // rounds stopped — so the file matches the thing the game was tuned around.
+    unit: 0.0031406,
+    // The front is -Z: the light board sits at z -5.98 and the handle at +2.8 to +19.3.
+    forward: 'z-',
+    up: 'y+',
+    parts: {
+      body: [{ match: /_low$/ }],
+      // Filled by the split below, not by a selector: the viewport is not a mesh in the
+      // source, it is a painted rectangle on both faces of one welded plate.
+      glass: [],
+    },
+    origin: (m) => {
+      const b = m.bounds({ name: 'shield_low' });
+      return [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
+    },
+    /**
+     * The viewport, cut out of the plate so it can be glass (2026-09-27).
+     *
+     * The source has no window. It has a **painted** one: a light rectangle on the front face
+     * of a solid plate, and a second on the back, both on the one material the whole shield
+     * shares. It reads as a window in a thumbnail and stops reading the moment anything is
+     * behind it, which is what the human said after the first shield shipped — you cannot see
+     * through it.
+     *
+     * So the two rectangles are cut into a `glass` group of their own, and `ShieldMesh` gives
+     * that group a transparent material. Both faces, not just the front: cutting only the
+     * front would leave the back's painted panel behind it, and a transparent pane over an
+     * opaque one is an opaque one.
+     *
+     * The box is in **output space** — metres, after the unit, the axis fix and the origin —
+     * and was measured off the built file rather than converted by hand: the 23 triangles
+     * whose UVs land in the atlas's two viewport patches span x ±0.127, y 0.203–0.330,
+     * z -0.020–0.005. A millimetre of padding for float comparison, no more; the plate
+     * triangles that ring the glass share its edge vertices but reach far outside the box, and
+     * a split takes a triangle only when all three of its corners are inside.
+     */
+    splits: [
+      { part: { name: 'shield_low' }, group: 'glass', name: 'glass', box: { x: [-0.128, 0.129], y: [0.202, 0.331], z: [-0.021, 0.006] } },
+    ],
+    sockets: (m) => {
+      // The forearm cuff: the handle's own middle, on the back of the plate.
+      const h = m.bounds({ name: 'handle_low' });
+      const grip = [(h.min[0] + h.max[0]) / 2, (h.min[1] + h.max[1]) / 2, (h.min[2] + h.max[2]) / 2];
+      return { socket_grip: grip, socket_support: grip };
+    },
+    /**
+     * The bodies' file (2026-09-27). `BotRenderer` draws a remote body's shield off this, and
+     * until it existed the body carried the procedural slab while the holder carried the G-52
+     * — two different shields in one match, depending on whose eyes you were behind.
+     *
+     * `join` flattens the scene to one primitive per material on the way, so the `glass` group
+     * merges back into the plate and a distant shield's viewport is painted again rather than
+     * cut. That is the right trade at twenty metres and the wrong one at arm's length, which is
+     * exactly why the holder is drawn from the full file and not from this one.
+     */
     lod: true,
   },
 
@@ -2487,7 +2867,20 @@ export function creditSentence(source) {
     source.license === 'CC-BY-4.0'
       ? `Creative Commons Attribution (${source.licenseUrl})`
       : `the Sketchfab Standard licence (${source.licenseUrl})`;
-  return `"${source.title}" (${source.url}) by ${source.author} is licensed under ${licence}.`;
+  /**
+   * "Modified" is not politeness, it is the other half of §3(a)(1) (2026-09-27).
+   *
+   * CC-BY 4.0 asks for the title, the author, the link and the licence — which is what
+   * Sketchfab's copy button writes — **and** for an indication that the material was changed.
+   * Every file this script produces is a changed one: it takes named parts and leaves the
+   * rest, re-origins them, decimates, cuts and splits meshes, and re-encodes every texture to
+   * WebP at 1024. Not one model ships as its author uploaded it, so the sentence said four of
+   * the five things the licence asks for, on all 85 of them.
+   *
+   * One clause for every source rather than a flag per recipe, because there is no recipe here
+   * that does not modify: a row that could say "unmodified" would never be true.
+   */
+  return `"${source.title}" (${source.url}) by ${source.author} is licensed under ${licence}. Modified for PROTOCOL SEVEN.`;
 }
 
 /** Every source a recipe draws on, once each, with the files built from it. Title order. */

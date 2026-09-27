@@ -172,7 +172,16 @@ const PLATE_CAPTION = 'ADJUST YOUR CONTROLS FOR MAXIMUM PERFORMANCE';
 const FULLSCREEN_HINT = 'F11 for fullscreen — required to capture Ctrl+W (crouch + forward)';
 
 /** The line above the credits list: why the names are there at all. */
-const CREDITS_INTRO = 'Every model in this game is an artist’s work, used under the licence they published it under.';
+/**
+ * The second sentence is the other half of CC-BY §3(a) (2026-09-27): the licence asks for an
+ * indication that the material was changed, and every model here is changed — the build takes
+ * the parts it wants, re-origins them, decimates and re-textures. Said once, over the whole
+ * list, because it is true of the whole list; a "modified" tag on each of twenty-six rows
+ * would be the same sentence twenty-six times.
+ */
+const CREDITS_INTRO =
+  'Every model in this game is an artist’s work, used under the licence they published it under. ' +
+  'All of them have been modified for PROTOCOL SEVEN — retopologised, re-scaled and re-textured to fit the game.';
 
 /**
  * One credited source: who made it, under what licence, and which of the game's things it is.

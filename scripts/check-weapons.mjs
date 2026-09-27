@@ -71,6 +71,13 @@ const FIX = 'edit the recipe in scripts/weapon-build.mjs and run `node scripts/w
 
 const WEAPON_NODES = ['body', 'magazine', 'charge', 'socket_muzzle', 'socket_rail_top', 'socket_rail_bottom', 'socket_rail_front', 'socket_sight', 'socket_grip', 'socket_support', 'socket_mag_grip'];
 const LOD_NODES = ['socket_muzzle'];
+/**
+ * A shield's LOD (2026-09-27). The bodies' file carries the two points the avatar hangs it on
+ * — `BotRenderer` reads exactly these off it — and not a muzzle, because the thing has no
+ * barrel. Held apart from `LOD_NODES` rather than merged into it: a *weapon* LOD with no
+ * muzzle is a bug, and a list that accepts either would stop catching it.
+ */
+const SHIELD_LOD_NODES = ['socket_grip', 'socket_support'];
 const PART_NODES = { att_optic: ['part', 'socket_sight'], att_suppressor: ['part', 'socket_muzzle'] };
 /** The bones `ViewmodelHands` poses (stage 4); the rig must keep its skin to be posed at all. */
 const HANDS_NODES = ['upperarm_R', 'lowerarm_R', 'hand_R', 'upperarm_L', 'lowerarm_L', 'hand_L'];
@@ -81,6 +88,20 @@ const MIN_EQUIPMENT_M = 0.04;
 const MAX_EQUIPMENT_M = 0.3;
 const MAX_HANDS_BYTES = 1024 * 1024;
 const MAX_HANDS_TRIS = 10_000;
+/**
+ * The shield (2026-09-27). It is carried like a weapon and costs what a weapon costs, but it
+ * has no muzzle, no magazine and no charging handle, so it is held to a contract of its own:
+ * a root, a `body`, and the two sockets that are true of a plate — the hand on the cuff, and
+ * the other hand, which on this killstreak is holding a pistol.
+ *
+ * The size is a plate's: as wide as a torso and as tall as one with a head behind it, which is
+ * the silhouette `WeaponMesh` has drawn since M7 and the one an opponent reads across a lane.
+ */
+const SHIELD_NODES = ['body', 'socket_grip', 'socket_support'];
+const MAX_SHIELD_BYTES = 2 * 1024 * 1024;
+const MAX_SHIELD_TRIS = 30_000;
+const MIN_SHIELD_M = 0.5;
+const MAX_SHIELD_M = 1.2;
 
 const problems = [];
 
@@ -162,15 +183,16 @@ for (const file of onDisk) {
   const isWeapon = spec.recipe.kind === 'weapon';
   const isHands = spec.recipe.kind === 'hands';
   const isEquipment = spec.recipe.kind === 'equipment';
+  const isShield = spec.recipe.kind === 'shield';
   const label = `${DIR}/${file}`;
 
   // ---- 2 and 3. size and triangles ---------------------------------------------
-  const maxBytes = spec.lod ? MAX_LOD_BYTES : isWeapon ? MAX_WEAPON_BYTES : isHands ? MAX_HANDS_BYTES : isEquipment ? MAX_EQUIPMENT_BYTES : MAX_PART_BYTES;
+  const maxBytes = spec.lod ? MAX_LOD_BYTES : isWeapon ? MAX_WEAPON_BYTES : isHands ? MAX_HANDS_BYTES : isEquipment ? MAX_EQUIPMENT_BYTES : isShield ? MAX_SHIELD_BYTES : MAX_PART_BYTES;
   if (glb.bytes > maxBytes) {
     problems.push(`${label} is ${(glb.bytes / 1048576).toFixed(2)} MB; the limit is ${(maxBytes / 1048576).toFixed(0)} MB — ${FIX}.`);
   }
   const tris = triangles(json);
-  const maxTris = spec.lod ? MAX_LOD_TRIS : isWeapon ? MAX_WEAPON_TRIS : isHands ? MAX_HANDS_TRIS : isEquipment ? MAX_EQUIPMENT_TRIS : MAX_PART_TRIS;
+  const maxTris = spec.lod ? MAX_LOD_TRIS : isWeapon ? MAX_WEAPON_TRIS : isHands ? MAX_HANDS_TRIS : isEquipment ? MAX_EQUIPMENT_TRIS : isShield ? MAX_SHIELD_TRIS : MAX_PART_TRIS;
   if (tris > maxTris) problems.push(`${label} has ${tris.toLocaleString('en-US')} triangles; the limit is ${maxTris.toLocaleString('en-US')} — ${FIX}.`);
 
   // ---- 4. textures --------------------------------------------------------------
@@ -185,16 +207,20 @@ for (const file of onDisk) {
   const rootNames = json.scenes[json.scene ?? 0].nodes.map((i) => json.nodes[i].name);
   if (!rootNames.includes(spec.id)) problems.push(`${label} has no root node named "${spec.id}" (roots: ${rootNames.join(', ') || 'none'}).`);
   const required = spec.lod
-    ? LOD_NODES
+    ? isShield
+      ? SHIELD_LOD_NODES
+      : LOD_NODES
     : isWeapon
       ? WEAPON_NODES
       : isHands
         ? HANDS_NODES
         : isEquipment
           ? [...EQUIPMENT_NODES, ...(spec.recipe.pinned ? PINNED_NODES : [])]
-          : spec.recipe.kind === 'knife'
-            ? ['body']
-            : (PART_NODES[spec.id] ?? ['part']);
+          : isShield
+            ? SHIELD_NODES
+            : spec.recipe.kind === 'knife'
+              ? ['body']
+              : (PART_NODES[spec.id] ?? ['part']);
   if (isHands && !(json.skins?.length > 0)) problems.push(`${label} has no skin; the arms are posed at runtime and a rigid rig cannot be — ${FIX}.`);
   for (const name of required) {
     if (!names.has(name)) problems.push(`${label} has no node "${name}"; the contract needs it — ${FIX}.`);
@@ -214,6 +240,14 @@ for (const file of onDisk) {
       );
     }
   }
+  if (isShield) {
+    // A plate's height is the number that matters: it is what the opponent reads, and it is
+    // the one a wrong unit gets wrong by a factor rather than a percent.
+    const tall = extent(json, 1);
+    if (!(tall >= MIN_SHIELD_M && tall <= MAX_SHIELD_M)) {
+      problems.push(`${label} is ${tall.toFixed(3)} m tall; a shield is ${MIN_SHIELD_M}–${MAX_SHIELD_M} m — the recipe's unit or up axis is wrong.`);
+    }
+  }
 
   // ---- 7. attribution -------------------------------------------------------------
   const a = json.asset?.extras?.attribution;
@@ -228,12 +262,14 @@ if (listed === null) {
   problems.push(`${CATALOG} has no WEAPON_ASSET_IDS = new Set([...]) the audit can read.`);
 } else {
   const ids = new Set([...listed[1].matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]));
-  const weaponRecipes = new Set(Object.entries(RECIPES).filter(([, r]) => r.kind === 'weapon').map(([id]) => id));
-  for (const id of weaponRecipes) {
-    if (!ids.has(id)) problems.push(`recipe "${id}" builds a weapon file that ${CATALOG} does not list; add it to WEAPON_ASSET_IDS.`);
+  // The shield is fetched by the same loader off the same list, so it is listed with the
+  // weapons even though its file is held to the shield contract rather than a firearm's.
+  const carried = new Set(Object.entries(RECIPES).filter(([, r]) => r.kind === 'weapon' || r.kind === 'shield').map(([id]) => id));
+  for (const id of carried) {
+    if (!ids.has(id)) problems.push(`recipe "${id}" builds a carried file that ${CATALOG} does not list; add it to WEAPON_ASSET_IDS.`);
   }
   for (const id of ids) {
-    if (!weaponRecipes.has(id)) problems.push(`${CATALOG} lists "${id}" but no weapon recipe builds it; the loader would fetch a file that is not there.`);
+    if (!carried.has(id)) problems.push(`${CATALOG} lists "${id}" but no weapon or shield recipe builds it; the loader would fetch a file that is not there.`);
   }
 }
 

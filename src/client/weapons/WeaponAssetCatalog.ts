@@ -14,11 +14,23 @@
  * it after a rebuild that changes a file.
  */
 
-export const WEAPON_ASSET_VERSION = '2026-09-23-credits';
+export const WEAPON_ASSET_VERSION = '2026-09-27-lmgs-streaks';
 
 const WEAPON_ROOT = '/models/weapons';
 
-/** Weapon ids with a built file. The order is the arsenal's; the set is what matters. */
+/**
+ * Weapon ids with a built file. The order is the arsenal's; the set is what matters.
+ *
+ * The two LMGs joined it on 2026-09-27 and closed the last hole in the arsenal: they have been
+ * defs with a procedural viewmodel since M19 stage 3, because every free LMG found before then
+ * was a Call of Duty rip and the project does not ship those.
+ *
+ * The last three are killstreak weapons, not loadout weapons — they are never in a loadout and
+ * `ALL_WEAPONS` does not contain them — but they are carried in the hands and drawn by the same
+ * viewmodel, so they are fetched off the same list by the same loader. `streak_shield` is the
+ * one entry whose file is built to the shield contract rather than a firearm's: it has a
+ * `body` and two hand sockets and no muzzle, because it does not have one.
+ */
 export const WEAPON_ASSET_IDS: ReadonlySet<string> = new Set([
   'ar_carbine',
   'ar_vulcan',
@@ -27,13 +39,31 @@ export const WEAPON_ASSET_IDS: ReadonlySet<string> = new Set([
   'smg_wasp',
   'smg_meridian',
   'shotgun_breacher',
+  'lmg_bastion',
+  'lmg_monolith',
   'sniper_kestrel',
   'sniper_vantage',
   'pistol_talon',
+  'streak_minigun',
+  'streak_flamethrower',
+  'streak_shield',
 ]);
 
 export function hasWeaponAsset(weaponId: string): boolean {
   return WEAPON_ASSET_IDS.has(weaponId);
+}
+
+/**
+ * Whether a weapon id's file is a **firearm** template, which is not the same question.
+ *
+ * `streak_shield` has a file, and both the bodies' loader and the credits want it in the list
+ * above — but a plate carries none of `WEAPON_SOCKET_NODES`, so asking `preload` for it would
+ * fetch 0.4 MB and then throw in `validateTemplate`. It has its own loader (`preloadShield`),
+ * and the LOD path is untouched: the bodies' file is a plain mesh with two hand points, which
+ * is all `validateLod` ever asked for.
+ */
+export function hasWeaponTemplate(weaponId: string): boolean {
+  return hasWeaponAsset(weaponId) && weaponId !== SHIELD_ASSET_ID;
 }
 
 /** The bodies' file for a weapon (stage 3): the same weapon joined per material under 10k triangles. */
@@ -49,6 +79,23 @@ export const KNIFE_ASSET_ID = 'knife';
  * root of this name, posed on each weapon's hand sockets by `ViewmodelHands`.
  */
 export const HANDS_ASSET_ID = 'hands';
+
+/**
+ * The riot shield's file (2026-09-27), and the one carried model that is not a firearm.
+ *
+ * It is fetched off `WEAPON_ASSET_IDS` like a weapon, but it is **not** a weapon template: a
+ * plate has no muzzle, no magazine and no charging handle, so `validateTemplate` would refuse
+ * it and `buildFromTemplate` would throw on the missing `socket_muzzle`. It has the knife's
+ * arrangement instead — its own loader, its own model builder — and the contract below is the
+ * whole of it: a root named for the shield, a `body`, and the two places a hand can be.
+ *
+ * `socket_support` is the one that matters. The shield rides the **left** forearm, because the
+ * right hand is holding the pistol this killstreak hands you at the same time; `socket_grip`
+ * is carried so the file can answer where the other hand would go if it were ever free.
+ */
+export const SHIELD_ASSET_ID = 'streak_shield';
+export const SHIELD_SOCKET_NODES = ['socket_grip', 'socket_support'] as const;
+export type ShieldSocketNode = (typeof SHIELD_SOCKET_NODES)[number];
 
 export function weaponAssetUrl(weaponId: string): string {
   return `${WEAPON_ROOT}/${weaponId}.glb?v=${encodeURIComponent(WEAPON_ASSET_VERSION)}`;

@@ -110,6 +110,8 @@ import type { WeaponAssetService } from './weapons/WeaponAssetService';
 import type { AttachmentId } from '../shared/weapons/Attachments';
 import { buildKnifeModel, type KnifeModel } from './weapons/KnifeMesh';
 import { buildGrenadeModel, type GrenadeModel } from './weapons/GrenadeMesh';
+import { buildShieldModel, type ShieldModel } from './weapons/ShieldMesh';
+import { SHIELD_ASSET_ID } from './weapons/WeaponAssetCatalog';
 import { WeaponSystem, type WeaponSnapshot } from '../shared/weapons/WeaponSystem';
 
 /**
@@ -370,6 +372,16 @@ export class Match {
   readonly models: WeaponModel[];
   /** The knife viewmodel. Alongside the weapons rather than among them — see the constructor. */
   private knifeModel: KnifeModel;
+  /**
+   * The riot shield in the left hand (2026-09-27), or null when the player is not holding one.
+   *
+   * Not in `models`: that array is the inventory indexed by slot, and the shield is not a slot
+   * — the slot it comes with holds a *pistol*, which is what the right hand is doing. This is
+   * the same reasoning that keeps the knife out of the array, and the shield is built on demand
+   * for the same reason the streak slot's own mesh is: a match cannot pre-build a mesh for
+   * every streak a class might buy.
+   */
+  private shieldModel: ShieldModel | null = null;
 
   /**
    * The grenade in the hand (2026-09-24), one model per equipment id, built the first time
@@ -1773,6 +1785,9 @@ export class Match {
     const model = this.models[slotIndex];
     if (model === undefined) return;
     for (const m of this.models) m.root.visible = m === model;
+    // The shield rides the streak slot: it is the other half of what that slot holds, so it is
+    // on screen exactly when the pistol it comes with is, and never on its own.
+    if (this.shieldModel !== null) this.shieldModel.root.visible = slotIndex === STREAK_VIEWMODEL_SLOT;
     this.model = model;
     this.anim.setModel(model);
     this.fx.attachMuzzle(model.muzzle);
@@ -2354,6 +2369,74 @@ export class Match {
     this.deps.viewmodel.add(model.root);
     model.root.visible = false;
     this.upgradeWhenLoaded(STREAK_VIEWMODEL_SLOT);
+    this.syncShield(wantId);
+  }
+
+  /**
+   * The shield in the other hand (2026-09-27).
+   *
+   * The streak that gives you a shield gives you a **pistol** with it, and the pistol is what
+   * the slot above builds: `WeaponModelSpecs.streak_shield` has always described the sidearm,
+   * "the half of it a first-person camera can see". The plate was the other half, and until now
+   * the player could not see it — only the bodies around them could.
+   *
+   * So the shield is a second model hung beside that pistol, not instead of it, and the two
+   * hands are split between them: the pistol keeps the right, and its **left arm is collapsed**
+   * so the shield's own rig can hold the plate. Two rigs are on screen and each draws one arm;
+   * without the collapse the left arm is drawn twice, once on the grip and once on the cuff.
+   *
+   * Where it sits on screen is `VIEWMODEL_OFFSETS.streak_shield` and nothing else — a plate has
+   * no sight to land and no hip pose of its own. The hand tuner writes that row.
+   */
+  private syncShield(wantId: string | null): void {
+    const want = wantId === SHIELD_ASSET_ID;
+    if (!want) {
+      if (this.shieldModel === null) return;
+      this.anim.setShield(null);
+      this.deps.viewmodel.remove(this.shieldModel.root);
+      this.shieldModel.dispose();
+      this.shieldModel = null;
+      return;
+    }
+    if (this.shieldModel !== null) return;
+    const assets = this.deps.weaponAssets;
+    this.shieldModel = buildShieldModel(assets?.shield() ?? null, assets?.hands() ?? null);
+    this.shieldModel.root.visible = false;
+    this.deps.viewmodel.add(this.shieldModel.root);
+    this.anim.setShield(this.shieldModel);
+    // The pistol's left arm belongs to the plate now.
+    this.models[STREAK_VIEWMODEL_SLOT]?.hands?.showArm('L', false);
+    this.upgradeShieldWhenLoaded();
+  }
+
+  /**
+   * Rebuild the shield once its file lands, the way the knife's upgrade does.
+   *
+   * The plate is built from whatever `WeaponAssetService` has when the streak is first picked
+   * up, which on the first shield of a match is nothing: `preloadShield` is started here rather
+   * than at match start because most matches never see one, and 0.4 MB fetched for every player
+   * who never calls the streak is 0.4 MB the loadout's weapons wanted.
+   *
+   * Until it arrives the root is empty — no box stands in, because the *world* shield the body
+   * wears is already drawn and a second slab in the viewmodel would be the same object twice.
+   */
+  private upgradeShieldWhenLoaded(): void {
+    const assets = this.deps.weaponAssets;
+    if (assets === null || assets === undefined) return;
+    if (assets.shield() !== null && assets.hands() !== null) return;
+    const current = this.shieldModel;
+    void Promise.all([assets.preloadShield().catch(() => undefined), assets.preloadHands().catch(() => undefined)]).then(() => {
+      // Answered by looking rather than by a flag: the streak may have ended, or the match.
+      if (this.shieldModel !== current || current === null || current.root.parent === null) return;
+      const wasVisible = current.root.visible;
+      this.deps.viewmodel.remove(current.root);
+      current.dispose();
+      this.shieldModel = buildShieldModel(assets.shield(), assets.hands());
+      this.shieldModel.root.visible = wasVisible;
+      this.deps.viewmodel.add(this.shieldModel.root);
+      this.anim.setShield(this.shieldModel);
+      this.models[STREAK_VIEWMODEL_SLOT]?.hands?.showArm('L', false);
+    });
   }
 
   /**
@@ -3150,6 +3233,12 @@ export class Match {
     this.deps.viewmodel.remove(this.knifeModel.root);
     if (this.knifeModel.arm !== null) this.deps.viewmodel.remove(this.knifeModel.arm);
     this.knifeModel.dispose();
+    if (this.shieldModel !== null) {
+      this.anim.setShield(null);
+      this.deps.viewmodel.remove(this.shieldModel.root);
+      this.shieldModel.dispose();
+      this.shieldModel = null;
+    }
     this.deps.audio.setOccluder(null);
     this.deps.audio.resetMatchState();
   }

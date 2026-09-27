@@ -253,6 +253,22 @@ export interface WeaponDef {
   shield?: ShieldProfile;
 
   /**
+   * This weapon **cannot be aimed down** (2026-09-27).
+   *
+   * Set on the minigun, and so far only there. Until now "no sights" was said by leaving
+   * `adsFovScale` and `adsViewmodelFovScale` at 1, which made aiming do nothing *visible* —
+   * but `adsFraction` still ran up to 1 on the trigger, so the gun still swung to the eye, the
+   * spread still took its ADS value, and the recoil still took `adsScale`. A weapon fired from
+   * the hip because it has no sights should not have an aimed pose at all.
+   *
+   * Read in `WeaponBase.stepAds`, which is the one place `adsFraction` is allowed to move, so
+   * the whole chain below it — spread, recoil, the FOV, the viewmodel's ADS blend, the
+   * `WeaponAdsChanged` event — sees a weapon that is never aimed rather than each having to
+   * ask. Both runtimes step the same function, so this cannot make them disagree.
+   */
+  noAds?: boolean;
+
+  /**
    * The damage arrives as a **blast** rather than along a line (2026-09-27).
    *
    * True for the grenades and for a mortar shell; false, and absent, for every bullet, pellet,

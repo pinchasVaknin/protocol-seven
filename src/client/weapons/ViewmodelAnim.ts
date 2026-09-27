@@ -4,6 +4,9 @@ import type * as THREE from 'three';
 import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import type { WeaponModel } from './WeaponMesh';
 import type { GrenadeModel } from './GrenadeMesh';
+import type { ShieldModel } from './ShieldMesh';
+import { viewmodelOffsetFor } from './HandPoses';
+import { SHIELD_ASSET_ID as SHIELD_OFFSET_ID } from './WeaponAssetCatalog';
 import type { ViewmodelHands } from './ViewmodelHands';
 
 /**
@@ -335,12 +338,12 @@ export function grenadeDriveAt(t: number): { cook: number; release: number } {
 const GRENADE_THROWS: Readonly<Record<string, { readonly table: Readonly<GrenadeThrow>; readonly pinOut: Readonly<GrenadePose> }>> = {
   eq_frag: {
     table: {
-      ready: { x: 0.27, y: -0.14, z: -0.47, pitch: -19, yaw: 9, roll: 25 },
-      pull: { x: 0.13, y: -0.18, z: -0.42, pitch: 4, yaw: 16, roll: -8 },
-      windup: { x: 0.34, y: 0.12, z: -0.275, pitch: -5, yaw: -147, roll: -55 },
-      release: { x: 0.15, y: -0.11, z: -0.8, pitch: -42, yaw: -142, roll: -35 },
+      ready: { x: 0.24, y: -0.22, z: -0.42, pitch: 8, yaw: -180, roll: -28 },
+      pull: { x: 0.215, y: -0.075, z: -0.3, pitch: 2, yaw: -180, roll: -33 },
+      windup: { x: 0.22, y: 0.12, z: -0.23, pitch: 104, yaw: -180, roll: -80 },
+      release: { x: 0.06, y: -0.04, z: -0.67, pitch: 59, yaw: -180, roll: -78 },
     },
-    pinOut: { x: 0.255, y: -0.5, z: 0.5, pitch: 9, yaw: -8, roll: 139 },
+    pinOut: { x: 0.18, y: 0.5, z: -0.5, pitch: 98, yaw: 20, roll: -85 },
   },
   /** A charge, carried flat and pushed away rather than lobbed; no pin, so `pinOut` is unused. */
   eq_semtex: {
@@ -460,6 +463,30 @@ export class ViewmodelAnim {
    * all, is `ClientMatch`'s answer.
    */
   private grenade: GrenadeModel | null = null;
+  private shield: ShieldModel | null = null;
+  /**
+   * This weapon's correction on the shared hip pose, read once when the animator is built.
+   *
+   * Live rather than frozen for the hand tuner's sake: the tuner replaces this object's
+   * contents as the sliders move, and a copy taken per frame would be a lookup in the hot
+   * path for a number that changes once a session in a match.
+   */
+  readonly offset: { position: [number, number, number]; rotation: [number, number, number] } = {
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+  };
+  /**
+   * The shield's own place on screen, read when it is handed over.
+   *
+   * Separate from `offset` because the weapon under `this.model` in shield mode is **not the
+   * shield** — it is the pistol the killstreak gives you with it, or, in the hand tuner, a
+   * hidden carbine standing in. Reading one offset for both put the plate wherever the pistol
+   * was told to go, which is exactly on top of the pistol.
+   */
+  readonly shieldOffset: { position: [number, number, number]; rotation: [number, number, number] } = {
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+  };
 
   /**
    * The throw this animator poses, its own copy of `GRENADE_THROW` plus the pin's travel.
@@ -479,6 +506,11 @@ export class ViewmodelAnim {
 
   constructor(model: WeaponModel) {
     this.model = model;
+    // Copied rather than referenced: the tuner writes into this object as its sliders move,
+    // and the table it came from is the shipped constant every other instance reads.
+    const shipped = viewmodelOffsetFor(model.weaponId);
+    this.offset.position = [...shipped.position] as [number, number, number];
+    this.offset.rotation = [...shipped.rotation] as [number, number, number];
   }
 
   /**
@@ -501,6 +533,21 @@ export class ViewmodelAnim {
   }
 
   /** Attach the knife viewmodel and its forearm. Called once per match; null unsets them. */
+  /**
+   * The shield this animator is carrying, or null.
+   *
+   * Set the same way the knife and the grenade are, and for the same reason: all three are
+   * held without being weapons, so the weapon under `this.model` is a stand-in and the thing
+   * the player actually sees has to be handed over separately.
+   */
+  setShield(shield: ShieldModel | null): void {
+    this.shield = shield;
+    if (shield === null) return;
+    const shipped = viewmodelOffsetFor(SHIELD_OFFSET_ID);
+    this.shieldOffset.position = [...shipped.position] as [number, number, number];
+    this.shieldOffset.rotation = [...shipped.rotation] as [number, number, number];
+  }
+
   setKnife(knife: THREE.Object3D | null, arm: THREE.Object3D | null = null, hands: ViewmodelHands | null = null): void {
     this.knife = knife;
     this.knifeArm = arm;
@@ -714,14 +761,64 @@ export class ViewmodelAnim {
     rx += kickPitch;
     rz += kickRoll;
 
+    /**
+     * The weapon's own correction on the shared hip pose (`VIEWMODEL_OFFSETS`).
+     *
+     * Scaled out of ADS because ADS lands the weapon's sight point on the camera axis and a
+     * constant added there would push it off by exactly that constant. See the table's own
+     * comment; the minigun is why it exists.
+     */
+    const hipOnly = 1 - aimed;
+    const o = this.offset;
     const root = this.model.root;
-    root.position.set(px, py, pz);
-    root.rotation.set(rx * DEG2RAD, ry * DEG2RAD, rz * DEG2RAD);
+    root.position.set(px + o.position[0] * hipOnly, py + o.position[1] * hipOnly, pz + o.position[2] * hipOnly);
+    root.rotation.set(
+      (rx + o.rotation[0] * hipOnly) * DEG2RAD,
+      (ry + o.rotation[1] * hipOnly) * DEG2RAD,
+      (rz + o.rotation[2] * hipOnly) * DEG2RAD,
+    );
     // The arms: solved against the base pose, carried through the rest with the gun.
     this.model.hands?.update(base);
 
     this.poseKnife(drive, cfg);
     this.poseGrenade(drive, cfg);
+    // The plate takes the same base pose with **its own** offset on top, never the weapon's.
+    this.poseShield(base, px, py, pz, rx, ry, rz, hipOnly);
+  }
+
+  /**
+   * The shield: placed where the weapon would be, and its one glove solved on it.
+   *
+   * It is not a weapon and does not go through `this.model` — the model in shield mode is a
+   * hidden carbine standing in, because this class is built around a weapon and poses one
+   * every frame. So the plate takes the same pose the gun just took, its own
+   * `VIEWMODEL_OFFSETS` row on top (that row is the *only* way to place it, since a plate has
+   * no sight to land and no hip pose of its own), and its hands are updated against the same
+   * base the weapon's would have been.
+   *
+   * Without this the shield hung at the origin and neither it nor the hand answered a slider,
+   * which is exactly what it looked like: a model that had been loaded and not connected.
+   */
+  private poseShield(
+    base: THREE.Matrix4,
+    px: number,
+    py: number,
+    pz: number,
+    rx: number,
+    ry: number,
+    rz: number,
+    hipOnly: number,
+  ): void {
+    const shield = this.shield;
+    if (shield === null) return;
+    const o = this.shieldOffset;
+    shield.root.position.set(px + o.position[0] * hipOnly, py + o.position[1] * hipOnly, pz + o.position[2] * hipOnly);
+    shield.root.rotation.set(
+      (rx + o.rotation[0] * hipOnly) * DEG2RAD,
+      (ry + o.rotation[1] * hipOnly) * DEG2RAD,
+      (rz + o.rotation[2] * hipOnly) * DEG2RAD,
+    );
+    shield.hands?.update(base);
   }
 
   /**

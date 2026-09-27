@@ -7,8 +7,11 @@ import {
   EQUIPMENT_SOCKET_NODES,
   equipmentAssetId,
   hasWeaponAsset,
+  hasWeaponTemplate,
   HANDS_ASSET_ID,
   KNIFE_ASSET_ID,
+  SHIELD_ASSET_ID,
+  SHIELD_SOCKET_NODES,
   weaponLodUrl,
   weaponAssetUrl,
   WEAPON_ASSET_VERSION,
@@ -16,6 +19,7 @@ import {
   WEAPON_SOCKET_NODES,
   type AttachmentPartId,
   type EquipmentSocketNode,
+  type ShieldSocketNode,
   type WeaponGroupNode,
   type WeaponSocketNode,
 } from './WeaponAssetCatalog';
@@ -64,6 +68,18 @@ export interface EquipmentAssetTemplate {
   readonly sockets: Readonly<Partial<Record<EquipmentSocketNode, THREE.Vector3>>>;
 }
 
+/**
+ * The riot shield's file (2026-09-27): the root and the points a hand can take it by.
+ *
+ * Separate from `WeaponAssetTemplate` because it is a different contract, not a weaker one —
+ * a plate has no muzzle to carry and no magazine to drop, so the weapon template's fields
+ * would all be lies with a vector in them.
+ */
+export interface ShieldAssetTemplate {
+  readonly scene: THREE.Object3D;
+  readonly sockets: Readonly<Partial<Record<ShieldSocketNode, THREE.Vector3>>>;
+}
+
 /** A weapon's file for the bodies (stage 3): the LOD's root and the two hand points it carries. */
 export interface WeaponLodTemplate {
   readonly weaponId: string;
@@ -101,6 +117,8 @@ export class WeaponAssetService {
   private packTask: Promise<void> | null = null;
   private knifeScene: THREE.Object3D | null = null;
   private knifeTask: Promise<void> | null = null;
+  private shieldTemplate: ShieldAssetTemplate | null = null;
+  private shieldTask: Promise<void> | null = null;
   private handsScene: THREE.Object3D | null = null;
   private handsTask: Promise<void> | null = null;
   private readonly equipment_ = new Map<string, EquipmentAssetTemplate>();
@@ -238,6 +256,54 @@ export class WeaponAssetService {
     return task;
   }
 
+  /** The shield's template, or null while it has not arrived: `ShieldMesh` builds the slab. */
+  shield(): ShieldAssetTemplate | null {
+    return this.disposed ? null : this.shieldTemplate;
+  }
+
+  /**
+   * Fetch the shield's file.
+   *
+   * Its own loader rather than `preload`'s, for the reason the knife has one: `validateTemplate`
+   * holds a file to the firearm contract, and a plate carries none of it. The check here is the
+   * shield's own — a root named for it and a `body` — and the two sockets are read if they are
+   * there, because a missing one is a hand in the middle of the plate and not a crash.
+   */
+  preloadShield(): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error('Weapon asset service has been disposed.'));
+    if (this.shieldTemplate !== null) return Promise.resolve();
+    if (this.shieldTask !== null) return this.shieldTask;
+    const task = this.loader.loadAsync(weaponAssetUrl(SHIELD_ASSET_ID)).then((gltf) => {
+      if (this.disposed) {
+        disposeTemplate(gltf.scene);
+        throw new Error('Weapon asset service was disposed while the shield was loading.');
+      }
+      const root = gltf.scene.getObjectByName(SHIELD_ASSET_ID);
+      if (root === undefined || root.getObjectByName('body') === undefined) {
+        disposeTemplate(gltf.scene);
+        throw new Error(`Shield file has no root named "${SHIELD_ASSET_ID}" with a "body" group.`);
+      }
+      const sockets: Partial<Record<ShieldSocketNode, THREE.Vector3>> = {};
+      for (const name of SHIELD_SOCKET_NODES) {
+        const node = root.getObjectByName(name);
+        if (node !== undefined) sockets[name] = node.position.clone();
+      }
+      this.shieldTemplate = { scene: root, sockets };
+      log.info(`GLB shield is ready (${WEAPON_ASSET_VERSION}).`);
+    });
+    this.shieldTask = task;
+    void task.then(
+      () => {
+        if (this.shieldTask === task) this.shieldTask = null;
+      },
+      (error: unknown) => {
+        if (this.shieldTask === task) this.shieldTask = null;
+        log.warn(`GLB shield unavailable; the procedural slab stands in. ${errorMessage(error)}`);
+      },
+    );
+    return task;
+  }
+
   /**
    * A piece of equipment's template, or null: no file (the semtex), or not arrived, and
    * `EquipmentFx` keeps the primitive it has drawn since M5.
@@ -315,7 +381,9 @@ export class WeaponAssetService {
    */
   preload(weaponId: string): Promise<void> {
     if (this.disposed) return Promise.reject(new Error('Weapon asset service has been disposed.'));
-    if (!hasWeaponAsset(weaponId) || (this.templates.has(weaponId) && this.packReady())) return Promise.resolve();
+    // `hasWeaponTemplate`, not `hasWeaponAsset`: the shield is in the catalogue and has a
+    // file, but it is not a firearm and this loader would refuse it after downloading it.
+    if (!hasWeaponTemplate(weaponId) || (this.templates.has(weaponId) && this.packReady())) return Promise.resolve();
 
     const existing = this.loading.get(weaponId);
     if (existing !== undefined) return existing;

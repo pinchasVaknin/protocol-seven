@@ -68,6 +68,52 @@ export const HAND_POSES: Readonly<Record<string, Partial<Record<HandSide, HandPo
     reload: { position: [-0.02, -0.049, 0.005], rotation: [32.5, 22.0, 18.0], curl: 0.89 },
   },
   /**
+   * The two belt-fed guns, posed by the human in the tuner (2026-09-27), the day their files
+   * landed. Both hold further forward than any rifle in the table — a Minimi's support hand is
+   * on the handguard past the belt box, not tucked under the receiver — which is why the
+   * support Z differs in sign between them: the M60's hand is behind its socket and the
+   * Minimi's ahead of it.
+   */
+  lmg_bastion: {
+    grip: { position: [0.0, 0.0, 0.05], rotation: [20.0, -40.5, 0.0], curl: 1.0 },
+    support: { position: [0.0, 0.0, -0.045], rotation: [27.0, 6.0, 27.0], curl: 1.07 },
+    reload: { position: [-0.089, -0.046, 0.001], rotation: [25.5, 0.0, 0.0], curl: 0.64 },
+  },
+  lmg_monolith: {
+    grip: { position: [0.0, 0.0, 0.052], rotation: [20.0, -24.5, 0.0], curl: 1.0 },
+    support: { position: [-0.026, 0.0, 0.031], rotation: [0.0, 0.0, 0.0], curl: 0.9 },
+    reload: { position: [-0.058, -0.036, 0.007], rotation: [13.0, 0.0, 14.5], curl: 0.59 },
+  },
+  /**
+   * The two killstreak weapons that are carried and fired (2026-09-27).
+   *
+   * Neither has a `reload` row, and that is the point rather than an omission: both are built
+   * with `reloadTime = 0` and `reserveAmmo = 0` (`StreakWeapons`), so the reload hand is never
+   * asked for and a row here would be three numbers nothing ever reads.
+   *
+   * The minigun's support hand is 30 cm forward and 12 cm up — it is on the carry frame over
+   * the barrels, not under them, because this M134 is the top-handle kind.
+   */
+  streak_minigun: {
+    grip: { position: [0.006, 0.004, 0.006], rotation: [11.0, 0.5, -17.5], curl: 1.0 },
+    support: { position: [-0.034, 0.12, -0.3], rotation: [27.0, -44.0, -67.0], curl: 1.0 },
+  },
+  streak_flamethrower: {
+    grip: { position: [0.0, -0.022, 0.34], rotation: [9.5, -26.0, 0.0], curl: 1.0 },
+    support: { position: [-0.038, -0.068, 0.265], rotation: [0.0, 0.5, 43.0], curl: 0.2 },
+  },
+  /**
+   * The riot shield (2026-09-27). One hand, and it is the **left** one: the right is holding
+   * the pistol this killstreak hands you at the same time, so there is no `grip` row and no
+   * `reload` row — the plate is not reloaded and the trigger hand belongs to another weapon.
+   *
+   * The turn is most of it. A forearm goes *through* a riot shield's cuff rather than gripping
+   * it, so the glove is rolled almost face-down and swung across the plate's back.
+   */
+  streak_shield: {
+    support: { position: [0.094, 0.011, 0.024], rotation: [-117.0, -133.0, -104.5], curl: 1.0 },
+  },
+  /**
    * The four pieces of equipment, posed by the human in the tuner (2026-09-24).
    *
    * Two hands each, doing different jobs, which is what makes these rows unlike every other
@@ -75,8 +121,8 @@ export const HAND_POSES: Readonly<Record<string, Partial<Record<HandSide, HandPo
    * through the ring, corrected **in the pin's own space** so it travels with the ring.
    */
   eq_frag: {
-    grip: { position: [0.003, -0.003, -0.034], rotation: [87.5, -6.5, -78.0], curl: 1.0 },
-    support: { position: [-0.083, 0.003, -0.003], rotation: [50.0, -65.5, 62.5], curl: 1.0 },
+    grip: { position: [-0.009, 0.0, -0.006], rotation: [-46.0, -180.0, -35.0], curl: 1.0 },
+    support: { position: [0.035, 0.011, -0.007], rotation: [98.0, 52.0, -159.5], curl: 1.0 },
   },
   /** One hand: a charge is armed by being thrown and there is no ring. */
   eq_semtex: {
@@ -161,8 +207,8 @@ export type HandWrap = Readonly<Record<'thumb' | 'index' | 'middle' | 'ring' | '
  */
 export const HAND_WRAPS: Readonly<Record<string, Partial<Record<'grip' | 'support', HandWrap>>>> = {
   eq_frag: {
-    grip: { thumb: [20, 15, 0], index: [14, 11, 23], middle: [25, 20, 25], ring: [40, 25, 25], pink: [60, 25, 25] },
-    support: { thumb: [0, 0, 0], index: [21, 41, 110], middle: [35, 60, 78], ring: [45, 66, 60], pink: [51, 59, 48] },
+    grip: { thumb: [25, 0, 15], index: [11, 24, 69], middle: [36, 0, 90], ring: [40, 0, 90], pink: [50, 0, 90] },
+    support: { thumb: [0, 0, 22], index: [40, 100, 40], middle: [40, 81, 50], ring: [40, 67, 54], pink: [5, 64, 75] },
   },
   eq_semtex: {
     grip: { thumb: [0, 50, 0], index: [0, 10, 11], middle: [0, 20, 11], ring: [0, 20, 11], pink: [0, 20, 20] },
@@ -222,4 +268,72 @@ export function handPoseSource(
     `{ position: [${p.position.map((v) => n(v, 3)).join(', ')}], rotation: [${p.rotation.map((v) => n(v, 1)).join(', ')}], curl: ${n(p.curl, 2)} }`;
   const rows = sides.map((side) => `    ${side}: ${one(poses[side])},`).join('\n');
   return `  ${weaponId}: {\n${rows}\n  },`;
+}
+
+/**
+ * Where a weapon sits **on screen**, per weapon (2026-09-27).
+ *
+ * ## Why this exists
+ *
+ * `ViewmodelConfig`'s `hipX/Y/Z` and `hipPitch/Yaw/Roll` are one pose for the whole arsenal,
+ * and that held for as long as the arsenal was rifles: twelve guns of roughly one size, held
+ * roughly one way, and every difference between them absorbed by where their hand sockets sit
+ * on the model. The minigun broke it. It is 0.91 m of barrel cluster carried at chest height,
+ * and on the shared hip pose it sat across the middle of the screen — the player could not see
+ * what they were shooting at. That is not a hand-pose problem: moving the hands moves the hands,
+ * and the gun is where the gun is.
+ *
+ * So: one correction per weapon, added to the hip pose, in viewmodel space. Zero for every
+ * weapon that does not name itself here, which is all of them but the ones below — this is a
+ * correction table, not a placement table, and a row in it means "this weapon is unlike the
+ * others" rather than "this weapon has been positioned".
+ *
+ * ## Why it fades out into ADS
+ *
+ * ADS is not a pose, it is a constraint: the weapon's own sight point is landed on the camera
+ * axis, which is what makes irons and optics agree with the crosshair (playtest 3, findings 5
+ * and 6). A constant added there would push the sight off the axis by exactly that constant.
+ * So `ViewmodelAnim` scales this by `1 - adsFraction`: it is entirely a hip-fire correction,
+ * and a weapon whose ADS is wrong needs its sight socket fixed in the recipe instead.
+ *
+ * Written by the hand tuner, like the two tables above it.
+ */
+export interface ViewmodelOffset {
+  /** Metres added to the hip pose, in viewmodel space: +X right, +Y up, +Z toward the eye. */
+  readonly position: readonly [number, number, number];
+  /** Degrees added to the hip pose: pitch, yaw, roll. */
+  readonly rotation: readonly [number, number, number];
+}
+
+export const ZERO_VIEWMODEL_OFFSET: ViewmodelOffset = { position: [0, 0, 0], rotation: [0, 0, 0] };
+
+export const VIEWMODEL_OFFSETS: Readonly<Record<string, ViewmodelOffset>> = {
+  /**
+   * The riot shield, which is the one entry here that is a *placement* rather than a correction.
+   *
+   * Every other weapon has a hip pose to be corrected from. A plate does not: it is not the
+   * weapon in the slot — the pistol is — so with no row here it is drawn exactly on top of that
+   * pistol, which is the one place it certainly does not go. These six numbers are what put it
+   * in the other hand.
+   *
+   * A starting point, not a tuned pose: far enough left of the sidearm to be the other arm, and
+   * turned a little across the body so the face is toward what is shooting at it.
+   */
+  streak_shield: { position: [-0.3, 0.02, -0.06], rotation: [0.0, 18.0, 0.0] },
+};
+
+export function viewmodelOffsetFor(weaponId: string): ViewmodelOffset {
+  return VIEWMODEL_OFFSETS[weaponId] ?? ZERO_VIEWMODEL_OFFSET;
+}
+
+/** One weapon's entry as source, in `VIEWMODEL_OFFSETS`' own shape: what the tuner prints. */
+export function viewmodelOffsetSource(weaponId: string, offset: ViewmodelOffset): string {
+  const n = (v: number, digits: number): string => {
+    const s = v.toFixed(digits);
+    return s === `-${(0).toFixed(digits)}` ? (0).toFixed(digits) : s;
+  };
+  return (
+    `  ${weaponId}: { position: [${offset.position.map((v) => n(v, 3)).join(', ')}], ` +
+    `rotation: [${offset.rotation.map((v) => n(v, 1)).join(', ')}] },`
+  );
 }

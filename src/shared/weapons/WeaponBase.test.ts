@@ -133,3 +133,48 @@ describe('a reload the body does have hands for', () => {
     expect(weapon.reloading).toBe(false);
   });
 });
+
+/**
+ * A weapon with no sights is never aimed (2026-09-27, the human: "a minigun is fired from the
+ * hip; there is no sense in seeing it with sights").
+ *
+ * `noAds` was added because saying it with `adsFovScale = 1` was not saying it: the view did
+ * not change, but `adsFraction` still ran to 1, so the gun swung to the eye, the spread took
+ * its ADS value and the recoil took `adsScale`. These hold the flag at the one place the
+ * fraction is allowed to move — and the last one holds the *other* weapons to still aiming,
+ * because a flag that stopped everything would pass the first three tests too.
+ */
+describe('a weapon that cannot be aimed', () => {
+  const sightless = (): Weapon => new Weapon({ ...AR_DEFAULT, noAds: true }, createGameBus());
+
+  it('stays at the hip however long the button is held', () => {
+    const weapon = sightless();
+    const input = makeWeaponInput();
+    input.adsHeld = true;
+    run(weapon, input, 2);
+    expect(weapon.adsFraction).toBe(0);
+    expect(weapon.aiming).toBe(false);
+  });
+
+  it('never emits WeaponAdsChanged', () => {
+    const bus = createGameBus();
+    const weapon = new Weapon({ ...AR_DEFAULT, noAds: true }, bus);
+    let heard = 0;
+    bus.on(EV.WeaponAdsChanged, () => (heard += 1));
+    const input = makeWeaponInput();
+    input.adsHeld = true;
+    run(weapon, input, 1);
+    input.adsHeld = false;
+    run(weapon, input, 1);
+    expect(heard).toBe(0);
+  });
+
+  it('is the flag and not the weapon: the same def aims without it', () => {
+    const weapon = new Weapon(AR_DEFAULT, createGameBus());
+    const input = makeWeaponInput();
+    input.adsHeld = true;
+    run(weapon, input, 2);
+    expect(weapon.adsFraction).toBe(1);
+    expect(weapon.aiming).toBe(true);
+  });
+});

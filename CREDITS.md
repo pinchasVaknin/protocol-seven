@@ -67,9 +67,10 @@ Sketchfab models, built into the shipped files by `scripts/weapon-build.mjs`.
 
 ## Map props
 
-The resupply station is a pile of crates, each its own file: `scripts/prop-build.mjs`
-normalises a Sketchfab model to life size standing on its origin, and the station places
-them. The ammunition can is placed twice from the one file.
+The resupply station is a pile of crates. `scripts/prop-build.mjs` normalises each
+Sketchfab model to life size standing on its origin, the human arranges them in the prop
+tuner, and `scripts/prop-assemble.mjs` welds `station_ammo.glb` — which carries all three
+records, being made of all three. The ammunition can is placed twice from the one piece.
 
 | Source | Author | Licence | Built files |
 |---|---|---|---|

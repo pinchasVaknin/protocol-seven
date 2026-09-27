@@ -33,6 +33,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readGlb } from './glb-images.mjs';
 import { creditSentence, creditsMarkdown, OUT_DIR, RECIPES, sources, writeGlb } from './weapon-build.mjs';
 import { PIECES } from './prop-build.mjs';
+import { STATION_PIECES } from './prop-assemble.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const BOTS_DIR = path.join(ROOT, 'public/models/bots');
@@ -134,10 +135,13 @@ export function attributionFor(file) {
   }
   if (rel.startsWith('public/models/bots/')) return { ...MIXAMO };
   if (rel.startsWith('public/models/props/')) {
-    const piece = PIECES[path.basename(file, '.glb')];
-    if (piece === undefined) return undefined;
-    const p = piece.source;
-    return { title: p.title, author: p.author, authorUrl: p.authorUrl, license: p.license, licenseUrl: p.licenseUrl, url: p.url };
+    const id = path.basename(file, '.glb');
+    const one = (p) => ({ title: p.title, author: p.author, authorUrl: p.authorUrl, license: p.license, licenseUrl: p.licenseUrl, url: p.url });
+    // The assembled station is welded from several pieces and credits each of them, so its
+    // record is a **list** where a piece's is one entry. `stamped` compares deeply either way.
+    if (id === 'station_ammo') return [...new Set(STATION_PIECES.map((i) => i.piece))].map((piece) => one(PIECES[piece].source));
+    const piece = PIECES[id];
+    return piece === undefined ? undefined : one(piece.source);
   }
   return undefined;
 }
@@ -205,9 +209,10 @@ export function rootCreditsMarkdown() {
     '',
     '## Map props',
     '',
-    'The resupply station is a pile of crates, each its own file: `scripts/prop-build.mjs`',
-    'normalises a Sketchfab model to life size standing on its origin, and the station places',
-    'them. The ammunition can is placed twice from the one file.',
+    'The resupply station is a pile of crates. `scripts/prop-build.mjs` normalises each',
+    'Sketchfab model to life size standing on its origin, the human arranges them in the prop',
+    'tuner, and `scripts/prop-assemble.mjs` welds `station_ammo.glb` — which carries all three',
+    'records, being made of all three. The ammunition can is placed twice from the one piece.',
     '',
     '| Source | Author | Licence | Built files |',
     '|---|---|---|---|',

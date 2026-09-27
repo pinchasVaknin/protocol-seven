@@ -32,6 +32,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readGlb } from './glb-images.mjs';
 import { creditSentence, creditsMarkdown, OUT_DIR, RECIPES, sources, writeGlb } from './weapon-build.mjs';
+import { PIECES } from './prop-build.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const BOTS_DIR = path.join(ROOT, 'public/models/bots');
@@ -51,47 +52,25 @@ const CC_BY_4 = 'http://creativecommons.org/licenses/by/4.0/';
  * so the records live here rather than in a recipe. The pass that made the file is recorded in
  * the commit that added it, the way `ui/Emblem.ts` says its own numbers were.
  */
-export const PROP_SOURCES = {
-  'station_ammo.glb': [
-    {
-      title: 'Wooden Ammo Crate - Specter Rounds',
-      author: 'Andrew Jepson',
-      authorUrl: 'https://sketchfab.com/ajepson',
-      license: 'CC-BY-4.0',
-      licenseUrl: CC_BY_4,
-      url: 'https://sketchfab.com/3d-models/wooden-ammo-crate-specter-rounds-69401adea118441faa9b7978183cc657',
-    },
-    {
-      title: 'Dirty wooden crate',
-      author: 'AK',
-      authorUrl: 'https://sketchfab.com/skaf13',
-      license: 'CC-BY-4.0',
-      licenseUrl: CC_BY_4,
-      url: 'https://sketchfab.com/3d-models/dirty-wooden-crate-3c29fb738a864640aa1df42eb0e04c4e',
-    },
-    {
-      title: 'Ammo Box',
-      author: 'murilojones',
-      authorUrl: 'https://sketchfab.com/murilojones',
-      license: 'CC-BY-4.0',
-      licenseUrl: CC_BY_4,
-      url: 'https://sketchfab.com/3d-models/ammo-box-7769cee68de94d56ab1f15065091e917',
-    },
-  ],
-};
-
-/** Every prop source once, in the order their files list them. */
+/**
+ * The map-prop **pieces** (2026-09-27).
+ *
+ * `scripts/prop-build.mjs` normalises each Sketchfab crate into a file of its own — life size,
+ * upright, standing on its origin — and `probes/prop-tuner.html` is where the human arranges
+ * them into a station. One source per piece, so the record is the ordinary one and the only
+ * new thing here is a third folder to walk. The ammunition can is placed twice from one file,
+ * which is a fact about the station and not about the credit.
+ */
 export function propSources() {
   const seen = new Map();
-  for (const [file, list] of Object.entries(PROP_SOURCES)) {
-    for (const source of list) {
-      const row = seen.get(source.url);
-      if (row === undefined) seen.set(source.url, { source, outputs: [file] });
-      else if (!row.outputs.includes(file)) row.outputs.push(file);
-    }
+  for (const [id, piece] of Object.entries(PIECES)) {
+    const row = seen.get(piece.source.url);
+    if (row === undefined) seen.set(piece.source.url, { source: piece.source, outputs: [`${id}.glb`] });
+    else row.outputs.push(`${id}.glb`);
   }
   return [...seen.values()];
 }
+
 export const ROOT_CREDITS = path.join(ROOT, 'CREDITS.md');
 export const WEAPON_CREDITS = path.join(OUT_DIR, 'CREDITS.md');
 export const CREDITS_MODULE = path.join(ROOT, 'src/client/ui/CreditsData.ts');
@@ -154,8 +133,12 @@ export function attributionFor(file) {
     return { title: s.title, author: s.author, authorUrl: s.authorUrl, license: s.license, licenseUrl: s.licenseUrl, url: s.url };
   }
   if (rel.startsWith('public/models/bots/')) return { ...MIXAMO };
-  // A prop carries every source it was welded from, as an array — see `PROP_SOURCES`.
-  if (rel.startsWith('public/models/props/')) return PROP_SOURCES[path.basename(file)];
+  if (rel.startsWith('public/models/props/')) {
+    const piece = PIECES[path.basename(file, '.glb')];
+    if (piece === undefined) return undefined;
+    const p = piece.source;
+    return { title: p.title, author: p.author, authorUrl: p.authorUrl, license: p.license, licenseUrl: p.licenseUrl, url: p.url };
+  }
   return undefined;
 }
 
@@ -222,9 +205,9 @@ export function rootCreditsMarkdown() {
     '',
     '## Map props',
     '',
-    'The resupply station is one `.glb` welded from three Sketchfab models — a crate on a stand,',
-    'an open crate and an ammunition can used twice. It carries all three records, which is why',
-    'its `asset.extras.attribution` is a list where every other file’s is one record.',
+    'The resupply station is a pile of crates, each its own file: `scripts/prop-build.mjs`',
+    'normalises a Sketchfab model to life size standing on its origin, and the station places',
+    'them. The ammunition can is placed twice from the one file.',
     '',
     '| Source | Author | Licence | Built files |',
     '|---|---|---|---|',

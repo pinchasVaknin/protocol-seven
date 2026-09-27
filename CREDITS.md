@@ -67,15 +67,15 @@ Sketchfab models, built into the shipped files by `scripts/weapon-build.mjs`.
 
 ## Map props
 
-The resupply station is one `.glb` welded from three Sketchfab models — a crate on a stand,
-an open crate and an ammunition can used twice. It carries all three records, which is why
-its `asset.extras.attribution` is a list where every other file’s is one record.
+The resupply station is a pile of crates, each its own file: `scripts/prop-build.mjs`
+normalises a Sketchfab model to life size standing on its origin, and the station places
+them. The ammunition can is placed twice from the one file.
 
 | Source | Author | Licence | Built files |
 |---|---|---|---|
-| [Wooden Ammo Crate - Specter Rounds](https://sketchfab.com/3d-models/wooden-ammo-crate-specter-rounds-69401adea118441faa9b7978183cc657) | [Andrew Jepson](https://sketchfab.com/ajepson) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `station_ammo.glb` |
-| [Dirty wooden crate](https://sketchfab.com/3d-models/dirty-wooden-crate-3c29fb738a864640aa1df42eb0e04c4e) | [AK](https://sketchfab.com/skaf13) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `station_ammo.glb` |
-| [Ammo Box](https://sketchfab.com/3d-models/ammo-box-7769cee68de94d56ab1f15065091e917) | [murilojones](https://sketchfab.com/murilojones) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `station_ammo.glb` |
+| [Wooden Ammo Crate - Specter Rounds](https://sketchfab.com/3d-models/wooden-ammo-crate-specter-rounds-69401adea118441faa9b7978183cc657) | [Andrew Jepson](https://sketchfab.com/ajepson) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `crate_stand.glb` |
+| [Dirty wooden crate](https://sketchfab.com/3d-models/dirty-wooden-crate-3c29fb738a864640aa1df42eb0e04c4e) | [AK](https://sketchfab.com/skaf13) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `crate_open.glb` |
+| [Ammo Box](https://sketchfab.com/3d-models/ammo-box-7769cee68de94d56ab1f15065091e917) | [murilojones](https://sketchfab.com/murilojones) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `ammo_can.glb` |
 
 ### Attribution
 

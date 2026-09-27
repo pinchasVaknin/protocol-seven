@@ -210,7 +210,7 @@ export const MODEL_CREDITS: readonly CreditEntry[] = [
     license: 'CC-BY-4.0',
     licenseUrl: 'http://creativecommons.org/licenses/by/4.0/',
     url: 'https://sketchfab.com/3d-models/wooden-ammo-crate-specter-rounds-69401adea118441faa9b7978183cc657',
-    used: 'STATION AMMO',
+    used: 'CRATE STAND',
   },
   {
     title: 'Dirty wooden crate',
@@ -218,7 +218,7 @@ export const MODEL_CREDITS: readonly CreditEntry[] = [
     license: 'CC-BY-4.0',
     licenseUrl: 'http://creativecommons.org/licenses/by/4.0/',
     url: 'https://sketchfab.com/3d-models/dirty-wooden-crate-3c29fb738a864640aa1df42eb0e04c4e',
-    used: 'STATION AMMO',
+    used: 'CRATE OPEN',
   },
   {
     title: 'Ammo Box',
@@ -226,7 +226,7 @@ export const MODEL_CREDITS: readonly CreditEntry[] = [
     license: 'CC-BY-4.0',
     licenseUrl: 'http://creativecommons.org/licenses/by/4.0/',
     url: 'https://sketchfab.com/3d-models/ammo-box-7769cee68de94d56ab1f15065091e917',
-    used: 'STATION AMMO',
+    used: 'AMMO CAN',
   },
 ];
 

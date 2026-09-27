@@ -25,35 +25,25 @@ export const PROP_SHAPES: Readonly<Record<PropShapeId, PropShapeDef>> = {
    * The body is solid and the lid and stripe are not, exactly as `crate` does it: trim that
    * collides is trim a grenade bounces off oddly.
    */
-  /**
-   * The resupply station (2026-09-27): four **invisible** boxes, and a model that stands over
-   * them.
-   *
-   * It was a striped metal box built from these parts. It is now a pile — a crate on a stand
-   * behind, an open crate front-right, two ammunition cans on the left — drawn from
-   * `station_ammo.glb` by `MapRender`, which skips every `hidden` part of a shape it has a
-   * model for.
-   *
-   * **The boxes did not go away, and that is the point.** Collision is capsule versus oriented
-   * box and nothing else (brief S4.3): a prop's silhouette is never allowed to disagree with
-   * what the player can walk into, whatever is drawn on top. So there is one box per piece of
-   * the pile, each the axis-aligned bounds of that piece — measured off the built model, in the
-   * model's own space, before the placement's yaw turns the lot.
-   *
-   * They read at distance the way the striped box did, because the minimap and the mortar's
-   * overlay walk these parts and not the mesh: a station is still a solid thing on the map.
-   */
   ammoCrate: {
     id: 'ammoCrate',
     parts: [
-      // The crate on its stand, across the back.
-      { offset: { x: -0.09, y: 0.195, z: -0.41 }, size: { x: 1.04, y: 0.39, z: 0.4 }, material: 'metal', solid: true, hidden: true },
-      // The open crate, front-right — its raised lid is in the box, because it is in the way.
-      { offset: { x: 0.31, y: 0.325, z: 0.21 }, size: { x: 0.96, y: 0.65, z: 0.8 }, material: 'rust', solid: true, hidden: true },
-      // The two cans on the left, at their own angles, each a box of its own so the gap
-      // between them is a gap rather than a solid metre.
-      { offset: { x: -0.55, y: 0.115, z: 0.09 }, size: { x: 0.34, y: 0.23, z: 0.26 }, material: 'metal', solid: true, hidden: true },
-      { offset: { x: -0.62, y: 0.115, z: -0.19 }, size: { x: 0.34, y: 0.23, z: 0.22 }, material: 'metal', solid: true, hidden: true },
+      { offset: { x: 0, y: 0.3, z: 0 }, size: { x: 1.3, y: 0.6, z: 0.8 }, material: 'metal', solid: true },
+      // The open lid, tilted back against the body â€” one box, standing proud of the rear face.
+      {
+        offset: { x: 0, y: 0.78, z: -0.34 },
+        size: { x: 1.26, y: 0.34, z: 0.06 },
+        material: 'rust',
+        solid: false,
+      },
+      // The band that says which box this is.
+      {
+        offset: { x: 0, y: 0.62, z: 0 },
+        size: { x: 1.34, y: 0.05, z: 0.84 },
+        material: 'hazard',
+        solid: false,
+      },
+      { offset: { x: 0, y: 0.3, z: 0.41 }, size: { x: 0.5, y: 0.22, z: 0.02 }, material: 'hazard', solid: false },
     ],
   },
   crate: {

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PROTOCOL SEVEN — prop tuner</title>
+    <!--
+      The prop tuner (2026-09-27): a dev page, served by `npm run dev` and never built. It loads
+      the pieces `scripts/prop-build.mjs` normalises and lets them be arranged into a station by
+      eye, the way the hand tuner poses hands. The numbers it prints are what
+      `scripts/prop-assemble.mjs` builds the shipped model and its collision boxes from.
+      See src/client/probes/propTuner.ts.
+    -->
+    <style>
+      :root { color-scheme: dark; --panel: #16191e; --line: #2a2f37; --ink: #d9dee6; --dim: #8a93a0; --accent: #5fc3ff; --warn: #ffb457; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #0e1013; color: var(--ink); font: 12px/1.4 ui-monospace, Consolas, monospace; }
+      #app { display: flex; height: 100%; }
+      #view { flex: 1; position: relative; min-width: 0; }
+      #view canvas { display: block; width: 100%; height: 100%; }
+      #hint { position: absolute; left: 10px; bottom: 8px; color: var(--dim); pointer-events: none; }
+      #panel { width: 380px; flex: none; overflow-y: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 10px 12px 16px; }
+      h1 { font-size: 13px; margin: 0 0 8px; letter-spacing: .06em; }
+      h2 { font-size: 12px; margin: 14px 0 6px; color: var(--accent); letter-spacing: .05em; display: flex; justify-content: space-between; align-items: center; }
+      h2.sel { color: var(--warn); }
+      .row { display: grid; grid-template-columns: 58px 1fr 72px; gap: 6px; align-items: center; margin: 3px 0; }
+      .row input[type=range] { width: 100%; }
+      .row input[type=number] { width: 100%; background: #0e1013; color: var(--ink); border: 1px solid var(--line); padding: 2px 4px; font: inherit; }
+      select, button { background: #0e1013; color: var(--ink); border: 1px solid var(--line); padding: 4px 8px; font: inherit; cursor: pointer; }
+      button:hover, select:hover { border-color: var(--accent); }
+      button.on { border-color: var(--warn); color: var(--warn); }
+      .bar { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; align-items: center; }
+      label.check { display: inline-flex; gap: 4px; align-items: center; color: var(--dim); }
+      textarea { width: 100%; height: 210px; background: #0e1013; color: var(--ink); border: 1px solid var(--line); font: 11px/1.35 ui-monospace, Consolas, monospace; padding: 6px; resize: vertical; white-space: pre; }
+      .small { color: var(--dim); }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="view"><div id="hint"></div></div>
+      <div id="panel"></div>
+    </div>
+    <script type="module" src="/src/client/probes/propTuner.ts"></script>
+  </body>
+</html>

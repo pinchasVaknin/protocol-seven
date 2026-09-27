@@ -35,8 +35,14 @@ export const STATION_SHAPE = 'ammoCrate';
 /**
  * Prop shapes drawn from a file. `MapRender` skips the `hidden` parts of these, and only these:
  * a shape that lost its geometry without gaining a model would be an invisible wall.
+ *
+ * **Empty until the station is arranged** (2026-09-27). The first station was baked in Blender
+ * and the human would rather lay the pile out themselves — `probes/prop-tuner.html` is where —
+ * so `ammoCrate` is its striped box again and nothing here is modelled. Putting the shape back
+ * in this set and marking its parts `hidden` is the whole of switching it over; that is the
+ * point of the set existing rather than the renderer knowing the station's name.
  */
-export const MODELLED_PROP_SHAPES: ReadonlySet<string> = new Set([STATION_SHAPE]);
+export const MODELLED_PROP_SHAPES: ReadonlySet<string> = new Set<string>();
 
 export class PropModels {
   private readonly loader = new GLTFLoader();

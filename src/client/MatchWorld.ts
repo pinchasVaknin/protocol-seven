@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PropModels, STATION_SHAPE } from './world/PropModels';
+import { MODELLED_PROP_SHAPES, PropModels, STATION_SHAPE } from './world/PropModels';
 import type { SchedulerConfig } from '../shared/ai/AiScheduler';
 import type { BotDifficulty, PerceptionConfig, TierTable } from '../shared/ai/DifficultyTiers';
 import { EV, type GameBus } from '../shared/core/Events';
@@ -305,7 +305,7 @@ export class MatchWorld {
      * the station is an invisible box that resupplies exactly as it does with it — a worse
      * picture and an identical game — and a map that places none never asks for the file.
      */
-    if (map.def.props.some((prop) => prop.shape === STATION_SHAPE)) {
+    if (MODELLED_PROP_SHAPES.has(STATION_SHAPE) && map.def.props.some((prop) => prop.shape === STATION_SHAPE)) {
       void this.propModels.preloadStation().then(() => {
         // The match may already be over; the root is the thing to ask, as everywhere else here.
         if (map.root.parent === null) return;

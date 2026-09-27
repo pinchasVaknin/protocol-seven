@@ -1127,7 +1127,18 @@ function entryFor(weaponId: string): string {
   return handPoseSource(weaponId, { grip: e.grip, support: e.support, reload: e.reload ?? handPoseFor(weaponId, 'reload') });
 }
 
-function writeOutput(): void {
+/**
+ * Everything this weapon has to say, in the shape of the tables it belongs to.
+ *
+ * One function, and both readers use it (2026-09-27). It used to be two: the output box built
+ * this, and `copy this weapon` built its own answer for anything that was not a knife or a
+ * grenade — `handPoseSource` with the default side list. So the button copied a `reload` row
+ * for weapons whose reload block is hidden because they do not reload, and copied **no**
+ * `VIEWMODEL_OFFSETS` at all, which is the only thing that places a shield and the reason the
+ * minigun sits where it does. Parameters that were not on screen, and parameters that were on
+ * screen missing: both halves of one bug, and both because the answer was written twice.
+ */
+function sourceFor(): string {
   if (isGrenade(state.weaponId)) {
     const rig = hands();
     const hasPin = grenade?.root.getObjectByName('pin') !== undefined;
@@ -1137,7 +1148,7 @@ function writeOutput(): void {
       wraps.grip = rig.curl.grip as HandWrap;
       if (hasPin) wraps.support = rig.curl.support as HandWrap;
     }
-    output.value = [
+    return [
       '// HandPoses.ts — HAND_POSES: where the two hands go',
       handPoseSource(state.weaponId, currentPoses(), sides),
       '',
@@ -1147,12 +1158,11 @@ function writeOutput(): void {
       `// ViewmodelAnim.ts — GRENADE_THROWS.${state.weaponId}`,
       anim === null ? '// (no grenade loaded)' : grenadeThrowSource(state.weaponId, anim.grenadeThrow, anim.grenadePinOut),
     ].join('\n');
-    return;
   }
   if (isKnife(state.weaponId)) {
     const swing = anim?.knifeSwing;
     const rig = hands();
-    output.value = [
+    return [
       '// HAND_POSES — the hand on the handle',
       handPoseSource(KNIFE_ID, currentPoses(), ['grip']),
       '',
@@ -1162,7 +1172,6 @@ function writeOutput(): void {
       '// ViewmodelAnim.ts — the swing itself',
       swing === undefined ? '// (no knife loaded)' : knifeSwingSource(swing),
     ].join('\n');
-    return;
   }
   /**
    * The weapon's place on screen, printed under its own table's name.
@@ -1180,7 +1189,7 @@ function writeOutput(): void {
     const rig = hands();
     const sidearm = anim?.offset;
     const plate = anim?.shieldOffset;
-    output.value = [
+    return [
       '// HandPoses.ts — HAND_POSES: the right hand on the pistol, the left through the cuff',
       handPoseSource(state.weaponId, currentPoses(), ['grip', 'support']),
       '',
@@ -1191,19 +1200,27 @@ function writeOutput(): void {
       sidearm === undefined ? '// (nothing loaded)' : viewmodelOffsetSource(state.weaponId, sidearm),
       plate === undefined ? '// (no shield loaded)' : viewmodelOffsetSource(SHIELD_PLATE_OFFSET_ID, plate),
     ].join('\n');
-    return;
   }
-  const mine = handPoseSource(state.weaponId, currentPoses(), reloads() ? ['grip', 'support', 'reload'] : ['grip', 'support']);
+  return [
+    `// ${state.weaponId}`,
+    handPoseSource(state.weaponId, currentPoses(), reloads() ? ['grip', 'support', 'reload'] : ['grip', 'support']),
+    ...offsetLines(),
+  ].join('\n');
+}
+
+/**
+ * The box: this weapon's answer, and under it every other weapon tuned in this browser.
+ *
+ * The others are a convenience for pasting a session's work in one go. `copy this weapon` takes
+ * `sourceFor()` alone, which is what the button says it does.
+ */
+function writeOutput(): void {
   const others = Object.keys(edits)
     .filter((id) => id !== state.weaponId)
     .sort()
-    .map(entryFor);
-  output.value = [
-    `// ${state.weaponId}`,
-    mine,
-    ...offsetLines(),
-    ...(others.length > 0 ? ['', '// every other tuned weapon', ...others] : []),
-  ].join('\n');
+    .map(entryFor)
+    .filter((line) => line !== '');
+  output.value = [sourceFor(), ...(others.length > 0 ? ['', '// every other tuned weapon', ...others] : [])].join('\n');
 }
 
 /** The live offset as a plain record, for `edits`: a copy, because `anim` is replaced on load. */
@@ -1283,8 +1300,11 @@ async function copy(text: string): Promise<void> {
   console.log(`[hand tuner] copied:\n${text}`);
 }
 copyOne.addEventListener('click', () => {
-  // The knife's and the grenade's answers are several blocks, and the output box is all of them.
-  void copy(isKnife(state.weaponId) || isGrenade(state.weaponId) ? output.value : handPoseSource(state.weaponId, currentPoses()));
+  // `sourceFor` and not `output.value`: the box also carries every other weapon tuned in this
+  // browser, and this button says *this* weapon. `remember` first, so what is copied is what
+  // the sliders currently say rather than the last thing that happened to redraw the box.
+  remember();
+  void copy(sourceFor());
 });
 copyAll.addEventListener('click', () => {
   remember();

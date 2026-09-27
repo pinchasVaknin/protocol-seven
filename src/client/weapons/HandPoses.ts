@@ -206,6 +206,15 @@ export type HandWrap = Readonly<Record<'thumb' | 'index' | 'middle' | 'ring' | '
  * Keyed by the file's id and the hand, like `HAND_POSES`. Written by the hand tuner.
  */
 export const HAND_WRAPS: Readonly<Record<string, Partial<Record<'grip' | 'support', HandWrap>>>> = {
+  /**
+   * The hand through the shield's cuff (2026-09-27). Four fingers folded most of the way and
+   * the thumb left straight at the knuckle — a forearm goes *through* a riot shield's strap
+   * and the fingers close on the bar beyond it; a thumb wrapped with them would be gripping
+   * something that is not there.
+   */
+  streak_shield: {
+    support: { thumb: [0, 25, 20], index: [60, 70, 40], middle: [70, 80, 40], ring: [75, 80, 40], pink: [80, 80, 40] },
+  },
   eq_frag: {
     grip: { thumb: [25, 0, 15], index: [11, 24, 69], middle: [36, 0, 90], ring: [40, 0, 90], pink: [50, 0, 90] },
     support: { thumb: [0, 0, 22], index: [40, 100, 40], middle: [40, 81, 50], ring: [40, 67, 54], pink: [5, 64, 75] },
@@ -319,18 +328,30 @@ export const SHIELD_PLATE_OFFSET_ID = 'streak_shield_plate';
 
 export const VIEWMODEL_OFFSETS: Readonly<Record<string, ViewmodelOffset>> = {
   /**
+   * The minigun, posed by the human against their own screen (2026-09-27).
+   *
+   * The weapon this table was added for: 0.91 m of barrel cluster on the arsenal's shared hip
+   * pose sat across the middle of the view. Carried right, down and pitched up out of the
+   * sight line — a minigun is held at the waist and fired across the body, not shouldered.
+   */
+  streak_minigun: { position: [0.208, -0.112, 0.0], rotation: [15.5, 9.0, 0.0] },
+  /**
+   * The riot shield's **sidearm**, which is the pistol the streak hands you with the plate.
+   *
+   * Held closer in and turned across the body: the right hand is working alone, with the left
+   * arm through a cuff and no second hand coming up to meet it.
+   */
+  streak_shield: { position: [0.09, 0.084, 0.058], rotation: [2.0, -18.5, 7.5] },
+  /**
    * The riot shield's plate, which is the one entry here that is a *placement* rather than a
    * correction.
    *
    * Every other row corrects a weapon that already has a hip pose. A plate has none: it is not
-   * the weapon in the slot — the sidearm is — so with no row here it is drawn exactly on top of
-   * that pistol, which is the one place it certainly does not go. These six numbers are the
-   * whole of where it sits.
-   *
-   * A starting point, not a tuned pose: far enough left of the sidearm to be the other arm, and
-   * turned a little across the body so the face is toward what is shooting at it.
+   * the weapon in the slot — the sidearm above is — so with no row here it is drawn exactly on
+   * top of that pistol, which is the one place it certainly does not go. These six numbers are
+   * the whole of where it sits.
    */
-  [SHIELD_PLATE_OFFSET_ID]: { position: [-0.3, 0.02, -0.06], rotation: [0.0, 18.0, 0.0] },
+  [SHIELD_PLATE_OFFSET_ID]: { position: [-0.182, -0.176, 0.058], rotation: [0.0, 1.0, 0.0] },
 };
 
 export function viewmodelOffsetFor(weaponId: string): ViewmodelOffset {

@@ -65,6 +65,24 @@ Sketchfab models, built into the shipped files by `scripts/weapon-build.mjs`.
 - "Spas 12" (https://sketchfab.com/3d-models/spas-12-614140daf5e4467fa0e36b6c23d70621) by Luiz Bueno is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/). Modified for PROTOCOL SEVEN.
 - "TAR - 21 (Tavor). Black and White." (https://sketchfab.com/3d-models/tar-21-tavor-black-and-white-40dc15941e0b456692c83a97bfcd2474) by Nik Vega is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/). Modified for PROTOCOL SEVEN.
 
+## Map props
+
+The resupply station is one `.glb` welded from three Sketchfab models — a crate on a stand,
+an open crate and an ammunition can used twice. It carries all three records, which is why
+its `asset.extras.attribution` is a list where every other file’s is one record.
+
+| Source | Author | Licence | Built files |
+|---|---|---|---|
+| [Wooden Ammo Crate - Specter Rounds](https://sketchfab.com/3d-models/wooden-ammo-crate-specter-rounds-69401adea118441faa9b7978183cc657) | [Andrew Jepson](https://sketchfab.com/ajepson) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `station_ammo.glb` |
+| [Dirty wooden crate](https://sketchfab.com/3d-models/dirty-wooden-crate-3c29fb738a864640aa1df42eb0e04c4e) | [AK](https://sketchfab.com/skaf13) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `station_ammo.glb` |
+| [Ammo Box](https://sketchfab.com/3d-models/ammo-box-7769cee68de94d56ab1f15065091e917) | [murilojones](https://sketchfab.com/murilojones) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `station_ammo.glb` |
+
+### Attribution
+
+- "Wooden Ammo Crate - Specter Rounds" (https://sketchfab.com/3d-models/wooden-ammo-crate-specter-rounds-69401adea118441faa9b7978183cc657) by Andrew Jepson is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/). Modified for PROTOCOL SEVEN.
+- "Dirty wooden crate" (https://sketchfab.com/3d-models/dirty-wooden-crate-3c29fb738a864640aa1df42eb0e04c4e) by AK is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/). Modified for PROTOCOL SEVEN.
+- "Ammo Box" (https://sketchfab.com/3d-models/ammo-box-7769cee68de94d56ab1f15065091e917) by murilojones is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/). Modified for PROTOCOL SEVEN.
+
 ## Characters and animations
 
 The 7 character skins and 38 animation clips under `public/models/bots/` are [Mixamo](https://www.mixamo.com/) content, used
@@ -78,4 +96,4 @@ lets the next person clear the file. Each of those `.glb` files carries the same
 ## Everything else
 
 Maps, weapon behaviour, particles, textures, UI and audio are generated in code in this
-repository. The two LMGs are still built in code as well, and are nobody’s model.
+repository. Every prop but the resupply station is boxes, and so is the station’s collision.

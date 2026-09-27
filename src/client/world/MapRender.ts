@@ -10,6 +10,7 @@ import {
   type LoadedCollision,
 } from '../../shared/world/MapLoader';
 import { PROP_SHAPES } from '../../shared/world/maps/props';
+import { MODELLED_PROP_SHAPES } from './PropModels';
 import type { Box, MapDef, MaterialKey, SpawnZone } from '../../shared/world/maps/types';
 import { buildBoxGeometry, type BoxSpec } from './MapMesher';
 import { SkyDome } from './SkyDome';
@@ -55,8 +56,22 @@ export interface MapStats extends CollisionStats {
 function countPropParts(def: MapDef): number {
   const shapes = new Set(def.props.map((p) => p.shape));
   let parts = 0;
-  for (const shape of shapes) parts += PROP_SHAPES[shape].parts.length;
+  // `drawn` and not `parts.length`: a modelled prop's boxes are collision and are not meshed,
+  // and counting them would make the progress bar promise chunks that never arrive.
+  for (const shape of shapes) parts += PROP_SHAPES[shape].parts.filter(drawn).length;
   return parts;
+}
+
+/**
+ * Whether a prop part is meshed (2026-09-27).
+ *
+ * A `hidden` part is a collider the renderer does not draw — the resupply station's boxes,
+ * with `PropModels` standing the pile over them. The flag is only honoured for a shape that
+ * actually has a model: a shape that lost its geometry and gained nothing would be an invisible
+ * wall, and this is the line that makes that impossible rather than merely unlikely.
+ */
+function drawn(part: { hidden?: boolean }, _i?: number, _a?: unknown): boolean {
+  return part.hidden !== true;
 }
 
 /** Tessellation target for brush faces, metres. Smaller = better AO, more vertices. */
@@ -213,9 +228,12 @@ export function* buildMapChunked(
 
     for (const [shapeId, placements] of byShape) {
       const shape = PROP_SHAPES[shapeId as keyof typeof PROP_SHAPES];
+      const modelled = MODELLED_PROP_SHAPES.has(shapeId);
       for (let partIndex = 0; partIndex < shape.parts.length; partIndex++) {
         const part = shape.parts[partIndex];
         if (part === undefined) continue;
+        // Hidden means "collides, is not drawn" — and only where a model is going to cover it.
+        if (modelled && !drawn(part)) continue;
         const identity = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
         const geometries = buildBoxGeometry(
           [

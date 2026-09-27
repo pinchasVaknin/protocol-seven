@@ -91,6 +91,15 @@ interface PropPart {
   material: MaterialKey;
   /** Whether this part collides. Trim and rails are usually false. */
   solid: boolean;
+  /**
+   * A box that collides and is **not drawn** (2026-09-27).
+   *
+   * The collision scheme is capsule versus oriented box and nothing else (brief S4.3), so a
+   * prop's shape has to stay boxes however it is rendered. The resupply station is the first
+   * one drawn from a model: its boxes describe what a player can walk into and a GLB stands
+   * over them, so they are still the silhouette — they are simply no longer the picture.
+   */
+  hidden?: boolean;
 }
 
 export type PropShapeId =

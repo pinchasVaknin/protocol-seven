@@ -35,6 +35,63 @@ import { creditSentence, creditsMarkdown, OUT_DIR, RECIPES, sources, writeGlb } 
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const BOTS_DIR = path.join(ROOT, 'public/models/bots');
+export const PROPS_DIR = path.join(ROOT, 'public/models/props');
+
+const CC_BY_4 = 'http://creativecommons.org/licenses/by/4.0/';
+
+/**
+ * The map props built from models, and the sources each is composed of (2026-09-27).
+ *
+ * The first entry in this project whose file credits **more than one artist**: the resupply
+ * station is a pile of four things from three Sketchfab models, welded into one `.glb` by a
+ * one-off Blender pass. `asset.extras.attribution` on it is an array for that reason, and the
+ * comparison that stamps and checks it is a deep one, so an array needed no other change.
+ *
+ * Not built by `weapon-build.mjs` — a prop is not on the weapon contract and has no sockets —
+ * so the records live here rather than in a recipe. The pass that made the file is recorded in
+ * the commit that added it, the way `ui/Emblem.ts` says its own numbers were.
+ */
+export const PROP_SOURCES = {
+  'station_ammo.glb': [
+    {
+      title: 'Wooden Ammo Crate - Specter Rounds',
+      author: 'Andrew Jepson',
+      authorUrl: 'https://sketchfab.com/ajepson',
+      license: 'CC-BY-4.0',
+      licenseUrl: CC_BY_4,
+      url: 'https://sketchfab.com/3d-models/wooden-ammo-crate-specter-rounds-69401adea118441faa9b7978183cc657',
+    },
+    {
+      title: 'Dirty wooden crate',
+      author: 'AK',
+      authorUrl: 'https://sketchfab.com/skaf13',
+      license: 'CC-BY-4.0',
+      licenseUrl: CC_BY_4,
+      url: 'https://sketchfab.com/3d-models/dirty-wooden-crate-3c29fb738a864640aa1df42eb0e04c4e',
+    },
+    {
+      title: 'Ammo Box',
+      author: 'murilojones',
+      authorUrl: 'https://sketchfab.com/murilojones',
+      license: 'CC-BY-4.0',
+      licenseUrl: CC_BY_4,
+      url: 'https://sketchfab.com/3d-models/ammo-box-7769cee68de94d56ab1f15065091e917',
+    },
+  ],
+};
+
+/** Every prop source once, in the order their files list them. */
+export function propSources() {
+  const seen = new Map();
+  for (const [file, list] of Object.entries(PROP_SOURCES)) {
+    for (const source of list) {
+      const row = seen.get(source.url);
+      if (row === undefined) seen.set(source.url, { source, outputs: [file] });
+      else if (!row.outputs.includes(file)) row.outputs.push(file);
+    }
+  }
+  return [...seen.values()];
+}
 export const ROOT_CREDITS = path.join(ROOT, 'CREDITS.md');
 export const WEAPON_CREDITS = path.join(OUT_DIR, 'CREDITS.md');
 export const CREDITS_MODULE = path.join(ROOT, 'src/client/ui/CreditsData.ts');
@@ -97,12 +154,14 @@ export function attributionFor(file) {
     return { title: s.title, author: s.author, authorUrl: s.authorUrl, license: s.license, licenseUrl: s.licenseUrl, url: s.url };
   }
   if (rel.startsWith('public/models/bots/')) return { ...MIXAMO };
+  // A prop carries every source it was welded from, as an array — see `PROP_SOURCES`.
+  if (rel.startsWith('public/models/props/')) return PROP_SOURCES[path.basename(file)];
   return undefined;
 }
 
 /** Every file that must carry a record, with the record it must carry. */
 export function credited() {
-  return [...glbFiles(OUT_DIR), ...glbFiles(BOTS_DIR)]
+  return [...glbFiles(OUT_DIR), ...glbFiles(BOTS_DIR), ...glbFiles(PROPS_DIR)]
     .map((file) => ({ file, want: attributionFor(file) }))
     .filter((e) => e.want !== undefined);
 }
@@ -134,6 +193,7 @@ function stamp(file, want) {
  */
 export function rootCreditsMarkdown() {
   const list = sources();
+  const props = propSources();
   const files = (outputs) => outputs.map((o) => `\`${o}\``).join(', ');
   const counts = MIXAMO_FOLDERS.map(({ dir, what }) => `${glbFiles(path.join(BOTS_DIR, dir)).length} ${what}`).join(' and ');
   return [
@@ -160,6 +220,20 @@ export function rootCreditsMarkdown() {
     '',
     ...list.map(({ source }) => `- ${creditSentence(source)}`),
     '',
+    '## Map props',
+    '',
+    'The resupply station is one `.glb` welded from three Sketchfab models — a crate on a stand,',
+    'an open crate and an ammunition can used twice. It carries all three records, which is why',
+    'its `asset.extras.attribution` is a list where every other file’s is one record.',
+    '',
+    '| Source | Author | Licence | Built files |',
+    '|---|---|---|---|',
+    ...props.map(({ source, outputs }) => `| [${source.title}](${source.url}) | [${source.author}](${source.authorUrl}) | [${source.license}](${source.licenseUrl}) | ${files(outputs)} |`),
+    '',
+    '### Attribution',
+    '',
+    ...props.map(({ source }) => `- ${creditSentence(source)}`),
+    '',
     '## Characters and animations',
     '',
     `The ${counts} under \`public/models/bots/\` are [Mixamo](${MIXAMO.url}) content, used`,
@@ -173,7 +247,7 @@ export function rootCreditsMarkdown() {
     '## Everything else',
     '',
     'Maps, weapon behaviour, particles, textures, UI and audio are generated in code in this',
-    'repository. The two LMGs are still built in code as well, and are nobody’s model.',
+    'repository. Every prop but the resupply station is boxes, and so is the station’s collision.',
     '',
   ].join('\n');
 }
@@ -187,7 +261,7 @@ export function rootCreditsMarkdown() {
  * hand is a credits screen that is wrong by the next model.
  */
 export function creditsModule() {
-  const list = sources();
+  const list = [...sources(), ...propSources()];
   // Single quotes, like every other file in src/: the generated module is read as source.
   const lit = (v) => `'${String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
   const fields = (o, indent) => Object.entries(o).map(([k, v]) => `${indent}${k}: ${lit(v)},`);

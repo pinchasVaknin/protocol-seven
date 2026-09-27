@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PropModels, STATION_SHAPE } from './world/PropModels';
 import type { SchedulerConfig } from '../shared/ai/AiScheduler';
 import type { BotDifficulty, PerceptionConfig, TierTable } from '../shared/ai/DifficultyTiers';
 import { EV, type GameBus } from '../shared/core/Events';
@@ -243,6 +244,11 @@ export class MatchWorld {
   private readonly hashScratch = makeModeStateScratch();
   /** M8. Airborne dust or haze, or null on a map that authors none. */
   readonly particulate: Particulate | null;
+  /**
+   * The prop models (2026-09-27). One today: the resupply station, hung over the invisible
+   * boxes that are still what a player walks into.
+   */
+  private readonly propModels = new PropModels();
 
   /** The connection, or null in single-player (M10). */
   readonly net: NetSession | null;
@@ -290,6 +296,22 @@ export class MatchWorld {
     const particulateDef = map.def.particulate;
     this.particulate = particulateDef === undefined ? null : new Particulate(particulateDef);
     if (this.particulate !== null) map.root.add(this.particulate.points);
+
+    /**
+     * The resupply station's model, when it arrives.
+     *
+     * Added to the map's own root for the reason the particulate is, and *after* the match has
+     * started for a reason of its own: the download is not on the critical path. Until it lands
+     * the station is an invisible box that resupplies exactly as it does with it — a worse
+     * picture and an identical game — and a map that places none never asks for the file.
+     */
+    if (map.def.props.some((prop) => prop.shape === STATION_SHAPE)) {
+      void this.propModels.preloadStation().then(() => {
+        // The match may already be over; the root is the thing to ask, as everywhere else here.
+        if (map.root.parent === null) return;
+        this.propModels.addStations(map.root, map.def);
+      });
+    }
     map.collision.configure(deps.movementConfig.maxSlopeDeg, deps.movementConfig.collisionSkin);
 
     const player = new PlayerController(deps.movementConfig, map.collision, deps.bus);
@@ -717,6 +739,7 @@ export class MatchWorld {
     this.match.dispose();
 
     this.deps.scene.remove(this.map.root);
+    this.propModels.dispose();
     this.particulate?.dispose();
     this.map.dispose();
 

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { lerp } from '../../shared/core/MathUtil';
 import type { AttachmentId } from '../../shared/weapons/Attachments';
 import { DEFAULT_VIEWMODEL_CONFIG } from '../../shared/weapons/ViewmodelConfig';
-import { ALL_WEAPONS, WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
+import { ALL_WEAPONS, PISTOL_DEFAULT, WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
 import { DEFAULT_CAMERA_CONFIG } from '../player/CameraConfig';
 import { ViewmodelLayer } from '../player/Viewmodel';
 import {
@@ -10,6 +10,7 @@ import {
   handPoseSource,
   handWrapFor,
   handWrapSource,
+  SHIELD_PLATE_OFFSET_ID,
   viewmodelOffsetFor,
   viewmodelOffsetSource,
   type HandPose,
@@ -22,7 +23,7 @@ import { buildGrenadeModel, type GrenadeModel } from '../weapons/GrenadeMesh';
 import { buildShieldModel, type ShieldModel } from '../weapons/ShieldMesh';
 import { EQUIPMENT_ASSET_IDS, hasWeaponAsset } from '../weapons/WeaponAssetCatalog';
 import { ALL_EQUIPMENT } from '../../shared/equipment/EquipmentDefs';
-import { flamethrowerWeapon, minigunWeapon, STREAK_WEAPON_IDS, streakWeaponTag } from '../../shared/streaks/StreakWeapons';
+import { flamethrowerWeapon, minigunWeapon, shieldPistolWeapon, STREAK_WEAPON_IDS, streakWeaponTag } from '../../shared/streaks/StreakWeapons';
 import { anyWeaponDef } from '../../shared/weapons/AnyWeapon';
 import {
   FINGERS,
@@ -148,6 +149,7 @@ const STREAK_TUNER_IDS: readonly string[] = STREAK_WEAPON_IDS.filter((id) => has
  */
 minigunWeapon();
 flamethrowerWeapon();
+shieldPistolWeapon();
 
 /** Whether this weapon can be aimed at all. The minigun cannot — see `WeaponDef.noAds`. */
 function aims(): boolean {
@@ -240,6 +242,8 @@ type Edits = Record<
       wrapSupport?: Record<FingerName, FingerCurl>;
       /** Where the weapon itself sits on screen — `VIEWMODEL_OFFSETS`, not a hand. */
       offset?: ViewmodelOffset;
+      /** The shield only: the plate's own row, which the sidearm's `offset` cannot hold. */
+      plateOffset?: ViewmodelOffset;
     }
 >;
 
@@ -313,6 +317,12 @@ const state = {
   swingT: 0,
   reload: 0.4,
   view: 'eye' as View,
+  /** The eye view's shape: the monitor's, because that is what the match will be drawn at. */
+  aspectName: 'screen' as string,
+  /** Filled by `setAspect` once the page is up; 16:9 until then so nothing divides by zero. */
+  aspect: 16 / 9,
+  /** Shield mode only: which of the two things on screen the placement sliders move. */
+  placing: 'shield' as 'shield' | 'pistol',
   optic: false,
   sockets: true,
   orbit: { theta: Math.PI / 2, phi: 0.12, radius: 0.75 },
@@ -473,6 +483,51 @@ panel.append(
     if (v !== 'eye') Object.assign(state.orbit, VIEWS[v]);
   }),
 );
+
+/**
+ * The shape of the eye view (2026-09-27, the human: "it has to show me exactly how it looks
+ * there").
+ *
+ * This page used to draw a fixed 16:9 box, and the game draws `renderer.aspect` — the real
+ * window. A 1920x908 screen is 2.11:1, a third wider than 16:9, and the whole of that third is
+ * frame the tuner never showed: a hand pushed just off the side here — which is how the
+ * minigun's support hand was hidden — came back on screen in the match, and no amount of
+ * re-tuning against the wrong box would have fixed it.
+ *
+ * So the default is the **monitor's** aspect and not this window's: the tuner is a panel beside
+ * a view and the match is fullscreen, so the browser's own shape is the wrong answer twice
+ * over. The presets are here for checking a pose against a narrower screen than your own.
+ */
+/**
+ * The monitor's shape, or 16:9 when it cannot be had.
+ *
+ * Read through a function and not once at module load: `window.screen` reports 0 x 0 early in
+ * some embedded browsers, and a zero aspect collapses the eye box to nothing — a black view and
+ * a read-out of `0.000 : 1`, which is how this was found. The bounds are a sanity check, not a
+ * preference: anything outside them is a browser answering badly rather than an unusual screen.
+ */
+function screenAspect(): number {
+  const a = (window.screen?.width ?? 0) / Math.max(1, window.screen?.height ?? 0);
+  return Number.isFinite(a) && a >= 0.5 && a <= 5 ? a : 16 / 9;
+}
+const ASPECT_NAMES = ['screen', '16:9', '21:9', '4:3'] as const;
+type AspectName = (typeof ASPECT_NAMES)[number];
+function aspectValue(name: AspectName): number {
+  return name === '16:9' ? 16 / 9 : name === '21:9' ? 21 / 9 : name === '4:3' ? 4 / 3 : screenAspect();
+}
+const aspectReadout = element('div', { className: 'small' });
+function setAspect(name: AspectName): void {
+  state.aspect = aspectValue(name);
+  aspectReadout.textContent = `${aspectValue('screen').toFixed(3)} : 1 — the game draws the window's own aspect, so tune against the screen you play on`;
+  resize();
+}
+const aspectButtons = buttonGroup<AspectName>('EYE FRAME', ASPECT_NAMES, () => state.aspectName as AspectName, (v) => {
+  state.aspectName = v;
+  setAspect(v);
+});
+panel.append(aspectButtons, aspectReadout);
+// The text only; `setAspect` also resizes, and the renderer does not exist yet at this point.
+aspectReadout.textContent = `${state.aspect.toFixed(3)} : 1 — the game draws the window's own aspect, so tune against the screen you play on`;
 
 /** The number inputs and ranges per hand and key, so a weapon change can write them all. */
 const controls = new Map<string, { range: HTMLInputElement; number: HTMLInputElement }>();
@@ -750,18 +805,32 @@ const OFFSET_AT: Readonly<Record<(typeof OFFSET_SLIDERS)[number]['key'], [0 | 1 
  */
 function offsetOf(): { position: [number, number, number]; rotation: [number, number, number] } | null {
   if (anim === null) return null;
-  return isShield(state.weaponId) ? anim.shieldOffset : anim.offset;
+  // Shield mode draws two things and each has a place of its own: the sidearm on `offset`
+  // (keyed `streak_shield`) and the plate on `shieldOffset` (keyed `streak_shield_plate`).
+  if (!isShield(state.weaponId)) return anim.offset;
+  return state.placing === 'shield' ? anim.shieldOffset : anim.offset;
+}
+
+/** The table key the six sliders are writing, which is what the output box prints them under. */
+function offsetKey(): string {
+  return isShield(state.weaponId) && state.placing === 'shield' ? SHIELD_PLATE_OFFSET_ID : state.weaponId;
 }
 
 const offsetControls = new Map<string, { range: HTMLInputElement; number: HTMLInputElement }>();
 const offsetBlocks: HTMLElement[] = [];
+/** Shield mode draws two things; these say which one the six sliders below move. */
+const placingButtons = buttonGroup<'shield' | 'pistol'>('PLACING', ['shield', 'pistol'], () => state.placing, (v) => {
+  state.placing = v;
+  syncOffset();
+});
+panel.append(placingButtons);
 {
   const title = element('h2', {}, 'WEAPON ON SCREEN — VIEWMODEL_OFFSETS');
   const reset = element('button', { type: 'button' }, 'reset');
   reset.addEventListener('click', () => {
     const live = offsetOf();
     if (live === null) return;
-    const shipped = viewmodelOffsetFor(state.weaponId);
+    const shipped = viewmodelOffsetFor(offsetKey());
     live.position = [...shipped.position] as [number, number, number];
     live.rotation = [...shipped.rotation] as [number, number, number];
     remember();
@@ -971,13 +1040,13 @@ function applyMode(): void {
   // picked: the pose would persist with no control on screen to leave it.
   if (!canReload && state.pose === 'reload') state.pose = 'hip';
   for (const [side, block] of handBlocks) {
-    // The shield is the one entry posed from the SUPPORT sliders alone: it is carried on the
-    // left forearm and the right hand is the pistol's, so the grip's sliders would move a
-    // hand that is not drawn.
+    // The shield shows both hands and they are holding different things: the right is on the
+    // pistol the streak carries with it, the left is through the plate's cuff. No reload row —
+    // that hand is the one holding the shield, and a one-handed reload never reaches for it.
     const show = isBlade
       ? side === 'grip'
       : isPlate
-        ? side === 'support'
+        ? side !== 'reload'
         : isNade
           ? side === 'grip' || (side === 'support' && hasPin)
           : side !== 'reload' || canReload;
@@ -986,6 +1055,7 @@ function applyMode(): void {
   // The weapon's own place on screen: every carried thing but the knife and the grenades,
   // which are posed by their swing and their throw instead.
   for (const el of offsetBlocks) el.style.display = isBlade || isNade ? 'none' : '';
+  placingButtons.style.display = isPlate ? '' : 'none';
   poseButtons.setHidden('reload', !canReload);
   poseButtons.setHidden('ads', !canAim);
   for (const el of swingBlocks) el.style.display = isBlade ? '' : 'none';
@@ -1008,7 +1078,9 @@ function applyMode(): void {
       ? 'RIGHT HAND — the handle'
       : isNade
         ? 'RIGHT HAND — socket_grip, the body'
-        : SIDE_LABEL.grip;
+        : isPlate
+          ? 'RIGHT HAND — the pistol this streak carries too'
+          : SIDE_LABEL.grip;
   }
   const support = handBlocks.get('support')?.[0];
   if (support !== undefined) {
@@ -1106,16 +1178,18 @@ function writeOutput(): void {
   };
   if (isShield(state.weaponId)) {
     const rig = hands();
-    const o = offsetOf() ?? undefined;
+    const sidearm = anim?.offset;
+    const plate = anim?.shieldOffset;
     output.value = [
-      '// HandPoses.ts — HAND_POSES: the left hand on the cuff',
-      handPoseSource(state.weaponId, currentPoses(), ['support']),
+      '// HandPoses.ts — HAND_POSES: the right hand on the pistol, the left through the cuff',
+      handPoseSource(state.weaponId, currentPoses(), ['grip', 'support']),
       '',
-      '// HandPoses.ts — HAND_WRAPS: what that hand closes into',
+      '// HandPoses.ts — HAND_WRAPS: what the hand on the cuff closes into',
       rig === null ? '// (no shield loaded)' : handWrapSource(state.weaponId, { support: rig.curl.support as HandWrap }),
       '',
-      '// HandPoses.ts — VIEWMODEL_OFFSETS: the only thing that places a plate',
-      o === undefined ? '// (no shield loaded)' : viewmodelOffsetSource(state.weaponId, o),
+      '// HandPoses.ts — VIEWMODEL_OFFSETS: two rows, because two things are carried',
+      sidearm === undefined ? '// (nothing loaded)' : viewmodelOffsetSource(state.weaponId, sidearm),
+      plate === undefined ? '// (no shield loaded)' : viewmodelOffsetSource(SHIELD_PLATE_OFFSET_ID, plate),
     ].join('\n');
     return;
   }
@@ -1171,7 +1245,14 @@ function remember(): void {
   // The shield keeps the left hand's shape as well as its place: it is the hand that is drawn,
   // so its wrap is the half of the pose the position sliders cannot say.
   if (isShield(state.weaponId) && rig !== null) {
-    edits[state.weaponId] = { ...currentPoses(), wrapSupport: wrapOf('support'), offset: offsetNow() };
+    const copy = (o: { position: [number, number, number]; rotation: [number, number, number] } | undefined): ViewmodelOffset | undefined =>
+      o === undefined ? undefined : { position: [...o.position] as [number, number, number], rotation: [...o.rotation] as [number, number, number] };
+    edits[state.weaponId] = {
+      ...currentPoses(),
+      wrapSupport: wrapOf('support'),
+      offset: copy(anim?.offset),
+      plateOffset: copy(anim?.shieldOffset),
+    };
     saveEdits(edits);
     writeOutput();
     window.clearTimeout(logTimer);
@@ -1304,12 +1385,20 @@ async function load(weaponId: string): Promise<void> {
      * gives you at the same time, which `ShieldMesh` collapses. So the panel shows the SUPPORT
      * sliders and hides the grip's, the mirror of what the knife does.
      */
-    const carrier = buildWeaponModel('ar_carbine', 8, null, { hands: false, assets, attachments: [] });
-    carrier.root.visible = false;
+    /**
+     * The sidearm, drawn (2026-09-27). It used to be a hidden carbine standing in, which made
+     * this page a picture of a plate floating alone — and the match a picture of a pistol with
+     * a plate beside it. Now it is the same pistol the match builds, by the same route: the
+     * geometry of `pistol_talon`, the identity of `streak_shield`, so its hand and its place on
+     * screen are the streak's own and not the loadout sidearm's.
+     */
+    const carrier = buildWeaponModel(SHIELD_ID, 8, null, { hands: true, assets, attachments: [], assetId: PISTOL_DEFAULT.id });
     layer.add(carrier.root);
     model = carrier;
     anim = new ViewmodelAnim(carrier);
     shield = buildShieldModel(assets.shield(), assets.hands());
+    // The pistol's left arm is the plate's; without this it is drawn twice.
+    carrier.hands?.showArm('L', false);
     layer.add(shield.root);
     // The half that was missing: without this the animator poses the hidden carbine and
     // nothing else, so neither the plate nor the glove answers a slider.
@@ -1321,7 +1410,17 @@ async function load(weaponId: string): Promise<void> {
       if (rig !== null && savedPlate.wrapSupport !== undefined) {
         for (const f of FINGERS) rig.curl.support[f] = [...savedPlate.wrapSupport[f]] as FingerCurl;
       }
-      restoreOffset(savedPlate.offset);
+      // Both rows, explicitly: `restoreOffset` writes whichever one the PLACING buttons
+      // happen to be on, and at load time that is not a question with an answer yet.
+      if (anim !== null && savedPlate.offset !== undefined) {
+        anim.offset.position = [...savedPlate.offset.position] as [number, number, number];
+        anim.offset.rotation = [...savedPlate.offset.rotation] as [number, number, number];
+      }
+      if (anim !== null && savedPlate.plateOffset !== undefined) {
+        anim.shieldOffset.position = [...savedPlate.plateOffset.position] as [number, number, number];
+        anim.shieldOffset.rotation = [...savedPlate.plateOffset.rotation] as [number, number, number];
+      }
+      setHand('grip', savedPlate.grip);
     }
     applyMode();
     syncControls();
@@ -1483,20 +1582,21 @@ renderer.domElement.addEventListener(
  * 16:9 box inside the canvas, which is the shape a player's screen is; the orbit views use the
  * whole canvas, because there nothing is being judged against a frame.
  */
-const EYE_ASPECT = 16 / 9;
 const eyeBox = { x: 0, y: 0, w: 1, h: 1 };
 
 function resize(): void {
+  // Re-read rather than trust the value taken at load: `screen` can be 0 x 0 for a frame.
+  if (state.aspectName === 'screen') state.aspect = screenAspect();
   const w = viewHost.clientWidth;
   const h = viewHost.clientHeight;
   renderer.setSize(w, h, false);
-  const boxW = Math.min(w, h * EYE_ASPECT);
-  const boxH = boxW / EYE_ASPECT;
+  const boxW = Math.min(w, h * state.aspect);
+  const boxH = boxW / state.aspect;
   eyeBox.x = (w - boxW) / 2;
   eyeBox.y = (h - boxH) / 2;
   eyeBox.w = boxW;
   eyeBox.h = boxH;
-  layer.resize(EYE_ASPECT);
+  layer.resize(state.aspect);
   orbitCamera.aspect = w / Math.max(1, h);
   orbitCamera.updateProjectionMatrix();
 }
@@ -1534,7 +1634,7 @@ function frame(now: number): void {
     }
     const def = WEAPON_DEFS[model.weaponId];
     layer.setFov(DEFAULT_CAMERA_CONFIG.viewmodelFov * lerp(1, def?.adsViewmodelFovScale ?? 1, ads));
-    layer.resize(EYE_ASPECT);
+    layer.resize(state.aspect);
     layer.scene.updateMatrixWorld(true);
 
     const outside = state.view !== 'eye';

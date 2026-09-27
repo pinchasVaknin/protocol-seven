@@ -307,19 +307,30 @@ export interface ViewmodelOffset {
 
 export const ZERO_VIEWMODEL_OFFSET: ViewmodelOffset = { position: [0, 0, 0], rotation: [0, 0, 0] };
 
+/**
+ * The riot shield's **plate**, which needs a row of its own (2026-09-27).
+ *
+ * `streak_shield` is the weapon, and the weapon is a *pistol* — the streak hands you both, and
+ * the id belongs to the thing with a trigger. The plate is carried beside it on the other arm
+ * and goes somewhere else entirely, so it cannot share the sidearm's row. Not a weapon id and
+ * never in a def: it is a key in this table and nowhere else.
+ */
+export const SHIELD_PLATE_OFFSET_ID = 'streak_shield_plate';
+
 export const VIEWMODEL_OFFSETS: Readonly<Record<string, ViewmodelOffset>> = {
   /**
-   * The riot shield, which is the one entry here that is a *placement* rather than a correction.
+   * The riot shield's plate, which is the one entry here that is a *placement* rather than a
+   * correction.
    *
-   * Every other weapon has a hip pose to be corrected from. A plate does not: it is not the
-   * weapon in the slot — the pistol is — so with no row here it is drawn exactly on top of that
-   * pistol, which is the one place it certainly does not go. These six numbers are what put it
-   * in the other hand.
+   * Every other row corrects a weapon that already has a hip pose. A plate has none: it is not
+   * the weapon in the slot — the sidearm is — so with no row here it is drawn exactly on top of
+   * that pistol, which is the one place it certainly does not go. These six numbers are the
+   * whole of where it sits.
    *
    * A starting point, not a tuned pose: far enough left of the sidearm to be the other arm, and
    * turned a little across the body so the face is toward what is shooting at it.
    */
-  streak_shield: { position: [-0.3, 0.02, -0.06], rotation: [0.0, 18.0, 0.0] },
+  [SHIELD_PLATE_OFFSET_ID]: { position: [-0.3, 0.02, -0.06], rotation: [0.0, 18.0, 0.0] },
 };
 
 export function viewmodelOffsetFor(weaponId: string): ViewmodelOffset {

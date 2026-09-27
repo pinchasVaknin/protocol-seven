@@ -370,10 +370,20 @@ export function shieldPistolWeapon(): WeaponDef {
   def.magSize = 6;
   def.reserveAmmo = 60;
   // One hand on a shield is not two hands on a pistol: it is slower up, it cannot be aimed
-  // down properly, and it wanders more than the sidearm it came from.
+  // down at all, and it wanders more than the sidearm it came from.
   def.swapInTime = 1.2;
   def.swapOutTime = 0.5;
   def.sprintOutTime = 0.3;
+  /**
+   * **No aiming** (2026-09-27, the human). "It cannot be aimed down properly" was the comment
+   * this replaced, and `adsFovScale = 1` was how it was said — which said nothing: the view did
+   * not change, but `adsFraction` still ran to 1, so the pistol still travelled to the eye.
+   *
+   * The reason is the other hand. Aiming a sidearm is a two-handed act, and this one's left
+   * arm is through a shield's cuff — there is no hand to bring it up with, and lining the
+   * sights up behind a plate is not a thing you can do anyway.
+   */
+  def.noAds = true;
   def.adsFovScale = 1;
   def.adsViewmodelFovScale = 1;
   def.spread.hipStand = def.spread.hipStand * 1.4;

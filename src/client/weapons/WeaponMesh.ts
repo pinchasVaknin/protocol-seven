@@ -161,6 +161,18 @@ export interface WeaponModelOptions {
    * the pack mounts on sockets, and the primitives have none. Absent means bare.
    */
   readonly attachments?: readonly AttachmentId[];
+  /**
+   * Build the geometry of a **different** weapon, and keep this one's identity (2026-09-27).
+   *
+   * One caller: the riot shield's sidearm. The streak hands you a pistol, and the human asked
+   * for the pistol the game already has rather than the slab `WeaponModelSpecs` describes — but
+   * it is not *that* pistol, it is a one-handed pistol held beside a plate, and its hand pose
+   * and its place on screen are its own. So the mesh comes from `pistol_talon` and everything
+   * tuned — `HAND_POSES`, `HAND_WRAPS`, `VIEWMODEL_OFFSETS` — stays keyed to the weapon asking.
+   *
+   * Absent, which is every other call, the two are the same id and nothing changes.
+   */
+  readonly assetId?: string;
 }
 
 const VIEWMODEL: WeaponModelOptions = { hands: true };
@@ -178,11 +190,13 @@ export function buildWeaponModel(
   camo: CamoId | null = null,
   options: WeaponModelOptions = VIEWMODEL,
 ): WeaponModel {
-  const spec = modelSpecFor(weaponId);
+  // The geometry's id and the identity's id, which are the same for every weapon but one.
+  const assetId = options.assetId ?? weaponId;
+  const spec = modelSpecFor(assetId);
   const surfaces = sharedSurfaces(anisotropy, camo);
 
-  const template = options.assets?.template(weaponId) ?? null;
-  if (template !== null) return buildFromTemplate(template, anisotropy, camo, surfaces, options);
+  const template = options.assets?.template(assetId) ?? null;
+  if (template !== null) return buildFromTemplate(template, anisotropy, camo, surfaces, options, weaponId);
 
   const root = new THREE.Group();
   root.name = `viewmodel:${weaponId}`;
@@ -286,10 +300,12 @@ function buildFromTemplate(
   camo: CamoId | null,
   surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
   options: WeaponModelOptions,
+  /** Whose tuning this model answers to; the template's own id for every weapon but the shield's sidearm. */
+  identity: string = template.weaponId,
 ): WeaponModel {
   const spec = modelSpecFor(template.weaponId);
   const root = template.scene.clone(true);
-  root.name = `viewmodel:${template.weaponId}`;
+  root.name = `viewmodel:${identity}`;
   const groups = groupNodes(root);
   const disposables: Array<{ dispose(): void }> = [];
   if (camo !== null) paintCamo(root, camo, anisotropy);
@@ -320,7 +336,7 @@ function buildFromTemplate(
     const grip = handTarget(root, 'grip', template.sockets.socket_grip);
     const support = handTarget(root, 'support', template.sockets.socket_support);
     const onMagazine = handTarget(groups.magazine, 'magazine', template.sockets.socket_mag_grip);
-    hands = attachHands(rig, root, { grip, support, supportPose: supportPoseFor(spec), magazine: onMagazine }, template.weaponId, disposables);
+    hands = attachHands(rig, root, { grip, support, supportPose: supportPoseFor(spec), magazine: onMagazine }, identity, disposables);
   } else if (options.hands) {
     const boxes = handBoxesAt(spec, template.sockets.socket_grip, template.sockets.socket_support);
     // `handBoxes` lists the trigger pair first and the support pair second (its own comment
@@ -354,7 +370,7 @@ function buildFromTemplate(
     adsSightDistance: spec.optic === 'scope' ? SCOPE_EYE_RELIEF : spec.handguardLength > 0 ? SIGHT_DISTANCE : PISTOL_SIGHT_DISTANCE,
     adsPitch: front === undefined ? 0 : ironsPitch(sightPoint, front.position),
     adsOffsetZ: spec.adsOffsetZ,
-    weaponId: template.weaponId,
+    weaponId: identity,
     source: 'glb',
     magazineExit: magazineExitOf(root),
     supportHand,

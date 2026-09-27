@@ -5,8 +5,7 @@ import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import type { WeaponModel } from './WeaponMesh';
 import type { GrenadeModel } from './GrenadeMesh';
 import type { ShieldModel } from './ShieldMesh';
-import { viewmodelOffsetFor } from './HandPoses';
-import { SHIELD_ASSET_ID as SHIELD_OFFSET_ID } from './WeaponAssetCatalog';
+import { SHIELD_PLATE_OFFSET_ID, viewmodelOffsetFor } from './HandPoses';
 import type { ViewmodelHands } from './ViewmodelHands';
 
 /**
@@ -543,7 +542,7 @@ export class ViewmodelAnim {
   setShield(shield: ShieldModel | null): void {
     this.shield = shield;
     if (shield === null) return;
-    const shipped = viewmodelOffsetFor(SHIELD_OFFSET_ID);
+    const shipped = viewmodelOffsetFor(SHIELD_PLATE_OFFSET_ID);
     this.shieldOffset.position = [...shipped.position] as [number, number, number];
     this.shieldOffset.rotation = [...shipped.rotation] as [number, number, number];
   }
@@ -563,8 +562,21 @@ export class ViewmodelAnim {
    * the idle phase belong to the *hands*, and resetting them on a swap would make every
    * weapon arrive perfectly still.
    */
+  /**
+   * Swap the weapon being posed — a slot change, or a streak arriving in the hands.
+   *
+   * The offset is re-read here and not only in the constructor (2026-09-27). One animator lives
+   * for the whole match and every weapon passes through it, so a table read once at
+   * construction is the *first* weapon's row applied to all of them: the minigun's placement
+   * never reached the minigun, because the animator had been built around the primary before
+   * the streak existed. Every other per-weapon fact this class uses comes off `this.model`
+   * on the frame it is needed; this one could not, because the tuner writes into it.
+   */
   setModel(model: WeaponModel): void {
     this.model = model;
+    const shipped = viewmodelOffsetFor(model.weaponId);
+    this.offset.position = [...shipped.position] as [number, number, number];
+    this.offset.rotation = [...shipped.rotation] as [number, number, number];
   }
 
   /** The sight height of the weapon currently posed, so ADS can cancel it. */

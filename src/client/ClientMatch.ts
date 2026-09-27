@@ -112,6 +112,20 @@ import { buildKnifeModel, type KnifeModel } from './weapons/KnifeMesh';
 import { buildGrenadeModel, type GrenadeModel } from './weapons/GrenadeMesh';
 import { buildShieldModel, type ShieldModel } from './weapons/ShieldMesh';
 import { SHIELD_ASSET_ID } from './weapons/WeaponAssetCatalog';
+import { PISTOL_DEFAULT } from '../shared/weapons/WeaponDefs';
+
+/**
+ * Whose **mesh** a weapon draws, which is itself for all but one (2026-09-27).
+ *
+ * The riot shield streak hands you a pistol, and the human asked for the pistol the game
+ * already has rather than the slab `WeaponModelSpecs.streak_shield` describes. It is still not
+ * *that* pistol though — it is held in one hand beside a plate — so only the geometry is
+ * borrowed and every tuned number (`HAND_POSES`, `VIEWMODEL_OFFSETS`) stays keyed to
+ * `streak_shield`, which is what `WeaponModelOptions.assetId` is for.
+ */
+function assetIdFor(weaponId: string): string {
+  return weaponId === SHIELD_ASSET_ID ? PISTOL_DEFAULT.id : weaponId;
+}
 import { WeaponSystem, type WeaponSnapshot } from '../shared/weapons/WeaponSystem';
 
 /**
@@ -747,8 +761,8 @@ export class Match {
     this.slotAttachments[0] = deps.loadout.primaryAttachments;
     this.slotAttachments[1] = deps.loadout.secondaryAttachments;
     this.models = [
-      buildWeaponModel(deps.weaponDef.id, deps.anisotropy, deps.loadout.primaryCamo, this.modelOptions(0)),
-      buildWeaponModel(deps.secondaryDef.id, deps.anisotropy, deps.loadout.secondaryCamo, this.modelOptions(1)),
+      buildWeaponModel(deps.weaponDef.id, deps.anisotropy, deps.loadout.primaryCamo, this.modelOptions(0, deps.weaponDef.id)),
+      buildWeaponModel(deps.secondaryDef.id, deps.anisotropy, deps.loadout.secondaryCamo, this.modelOptions(1, deps.secondaryDef.id)),
     ];
     for (const model of this.models) {
       deps.viewmodel.add(model.root);
@@ -1557,7 +1571,7 @@ export class Match {
     const nextCamo = camo === undefined ? (this.slotCamos[slotIndex] ?? null) : camo;
     this.slotCamos[slotIndex] = nextCamo;
     if (attachments !== undefined) this.slotAttachments[slotIndex] = attachments;
-    const model = buildWeaponModel(def.id, this.deps.anisotropy, nextCamo, this.modelOptions(slotIndex));
+    const model = buildWeaponModel(def.id, this.deps.anisotropy, nextCamo, this.modelOptions(slotIndex, def.id));
     this.models[slotIndex] = model;
     this.deps.viewmodel.add(model.root);
     model.root.visible = wasVisible;
@@ -1671,8 +1685,16 @@ export class Match {
     return model;
   }
 
-  private modelOptions(slotIndex: number): { hands: true; assets: WeaponAssetService | null; attachments: readonly AttachmentId[] } {
-    return { hands: true, assets: this.deps.weaponAssets, attachments: this.slotAttachments[slotIndex] ?? [] };
+  private modelOptions(
+    slotIndex: number,
+    weaponId: string,
+  ): { hands: true; assets: WeaponAssetService | null; attachments: readonly AttachmentId[]; assetId: string } {
+    return {
+      hands: true,
+      assets: this.deps.weaponAssets,
+      attachments: this.slotAttachments[slotIndex] ?? [],
+      assetId: assetIdFor(weaponId),
+    };
   }
 
   /**
@@ -1689,24 +1711,27 @@ export class Match {
     const model = this.models[slotIndex];
     if (assets === null || model === undefined) return;
     const weaponId = model.weaponId;
+    // The file to fetch is the *mesh's*, which is the weapon's own for all but the shield's
+    // sidearm — asking for `streak_shield` here would fetch a plate for a slot drawing a pistol.
+    const assetId = assetIdFor(weaponId);
     // Two files can upgrade a slot: the weapon's own, and the arms' (stage 4), which every
     // slot wears — the two LMGs, built from primitives, included.
-    const wantsFile = model.source !== 'glb' && assets.statusFor(weaponId) !== 'none';
+    const wantsFile = model.source !== 'glb' && assets.statusFor(assetId) !== 'none';
     const wantsHands = model.hands === null;
     if (!wantsFile && !wantsHands) return;
     const waits: Promise<void>[] = [];
-    if (wantsFile) waits.push(assets.preload(weaponId));
+    if (wantsFile) waits.push(assets.preload(assetId));
     if (wantsHands) waits.push(assets.preloadHands());
     void Promise.allSettled(waits).then(() => {
       const current = this.models[slotIndex];
       if (current === undefined || current !== model || current.weaponId !== weaponId) return;
-      const fileArrived = wantsFile && assets.template(weaponId) !== null;
+      const fileArrived = wantsFile && assets.template(assetId) !== null;
       const handsArrived = wantsHands && assets.hands() !== null;
       if (!fileArrived && !handsArrived) return;
       const wasVisible = current.root.visible;
       this.deps.viewmodel.remove(current.root);
       current.dispose();
-      const next = buildWeaponModel(weaponId, this.deps.anisotropy, this.slotCamos[slotIndex] ?? null, this.modelOptions(slotIndex));
+      const next = buildWeaponModel(weaponId, this.deps.anisotropy, this.slotCamos[slotIndex] ?? null, this.modelOptions(slotIndex, weaponId));
       this.models[slotIndex] = next;
       this.deps.viewmodel.add(next.root);
       next.root.visible = wasVisible;
@@ -2363,7 +2388,7 @@ export class Match {
       this.deps.anisotropy,
       // No camo on a streak weapon: it is not in anybody's loadout and no challenge counts it.
       null,
-      this.modelOptions(STREAK_VIEWMODEL_SLOT),
+      this.modelOptions(STREAK_VIEWMODEL_SLOT, held.id),
     );
     this.models[STREAK_VIEWMODEL_SLOT] = model;
     this.deps.viewmodel.add(model.root);

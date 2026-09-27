@@ -648,6 +648,18 @@ function mountAttachments(
     } else if (partId === 'att_suppressor') {
       const muzzle = clone.getObjectByName('socket_muzzle');
       if (muzzle !== undefined) out.muzzle = muzzle;
+    } else if (partId === 'att_grip') {
+      /**
+       * A weapon that came with a foregrip loses its own when one is mounted (2026-09-27).
+       *
+       * The same rule `optic_default` has above, for the same reason and found the same way:
+       * the MONOLITH's handguard has a vertical grip moulded into it, and mounting the pack's
+       * put a second one through it. Carved out by the build into `grip_default`, and the
+       * mounted part takes its place — `socket_rail_bottom` is that grip's own collar, so the
+       * replacement stands where the original stood rather than somewhere near it.
+       */
+      const own = root.getObjectByName('grip_default');
+      if (own !== undefined) own.visible = false;
     }
   }
   return out;

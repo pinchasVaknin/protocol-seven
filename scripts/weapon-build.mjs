@@ -1123,12 +1123,30 @@ export const RECIPES = {
       const at = (f) => base.min[2] + length * f;
       // The feed cover's top, over the band behind the feed tray where nothing stands.
       const railTop = m.plateau({ name: 'cover_minimi_0' }, 0.15, 0.55);
+      // The front post and the rear leaf, by their own spikes over the centreline.
+      const post = m.peak({ name: 'base_minimi_0' }, 0.77, 0.81, [-0.012, 0.012]);
+      const rear = m.peak({ name: 'cover_minimi_0' }, 0.14, 0.36, [-0.012, 0.012]);
       return {
         socket_muzzle: bore,
         socket_rail_top: [0, railTop, cover.min[2] + (cover.max[2] - cover.min[2]) * 0.35],
         socket_rail_bottom: [0, m.bottom({ name: 'base_minimi_0' }, 0.6, 0.72), at(0.66)],
         socket_rail_front: { at: [m.side({ name: 'base_minimi_0' }, 0.6, 0.72), bore[1], at(0.66)], roll: -90 },
-        socket_sight: [0, cover.max[1] + 0.004, at(0.4)],
+        /**
+         * The irons, measured off the sights and not off the thing they stand on (2026-09-27).
+         *
+         * This was `cover.max[1] + 0.004` — the top of the feed cover — which is 6 mm **above**
+         * the front post. ADS lands `socket_sight` on the camera axis, so a sight point over
+         * the real sights draws the gun correspondingly low and the whole sight picture renders
+         * under the crosshair: the human reported having to aim lower than the sights said,
+         * which is exactly that, and the direction gives the sign of the error.
+         *
+         * The post is a 5 mm spike over the barrel three quarters of the way out (0.146 against
+         * 0.092 either side of it); the rear leaf is the high point at the back of the cover.
+         * The line is level **at the post's height**, because the post is what the eye centres
+         * and nothing between them occludes it — the cover's forward top is 2 cm lower.
+         */
+        socket_sight: [0, post[1], rear[2]],
+        socket_sight_front: [0, post[1], post[2]],
         // The pistol grip hangs under and a little behind the trigger; the support hand takes
         // the barrel's handguard two thirds of the way out, short of the gas block.
         socket_grip: [0, trigger.min[1] - 0.035, (trigger.min[2] + trigger.max[2]) / 2 - 0.012],
@@ -1160,12 +1178,28 @@ export const RECIPES = {
       body: [{ match: /^(base|trigger|lid)$/ }],
       magazine: [{ match: /^(mag|bullet\d)/ }],
       charge: [{ name: 'bolt_LMG_0' }],
+      /**
+       * The weapon's own vertical foregrip, carved out so a mounted one can take its place.
+       *
+       * Named like `optic_default` and hidden the same way: `mountAttachments` drops it when
+       * `att_grip` arrives. The M60 is the first weapon in the arsenal that comes with the
+       * thing an attachment adds, and two grips on one handguard is what that looked like.
+       */
+      grip_default: [],
     },
     origin: (m) => {
       const bore = m.tip({ name: 'base_LMG_0' });
       const lid = m.bounds({ name: 'lid_LMG_0' });
       return [0, bore[1], (lid.min[2] + lid.max[2]) / 2];
     },
+    /**
+     * The foregrip, cut out of the receiver. Output space, from the built file: the part is
+     * 283 vertices at source x ±1.96, y -2.73..7.46, z 44.96..48.86, which the unit, the axis
+     * fix and the origin put here.
+     */
+    splits: [
+      { part: { name: 'base_LMG_0' }, group: 'grip_default', name: 'grip_default', box: { x: [-0.024, 0.024], y: [-0.188, -0.074], z: [-0.228, -0.179] } },
+    ],
     sockets: (m) => {
       const bore = m.tip({ name: 'base_LMG_0' });
       const base = m.bounds({ name: 'base_LMG_0' });
@@ -1174,12 +1208,33 @@ export const RECIPES = {
       const length = base.max[2] - base.min[2];
       const at = (f) => base.min[2] + length * f;
       const railTop = m.plateau({ name: 'lid_LMG_0' }, 0.2, 0.8);
+      // Both sights are spikes on the receiver, well clear of the cover between them.
+      const post = m.peak({ name: 'base_LMG_0' }, 0.83, 0.89, [-1.2, 1.2]);
+      const rear = m.peak({ name: 'base_LMG_0' }, 0.21, 0.29, [-1.2, 1.2]);
       return {
         socket_muzzle: bore,
         socket_rail_top: [0, railTop, (lid.min[2] + lid.max[2]) / 2],
-        socket_rail_bottom: [0, m.bottom({ name: 'base_LMG_0' }, 0.62, 0.74), at(0.68)],
-        socket_rail_front: { at: [m.side({ name: 'base_LMG_0' }, 0.62, 0.74), bore[1], at(0.68)], roll: -90 },
-        socket_sight: [0, lid.max[1] + 0.04, at(0.42)],
+        /**
+         * Where this weapon's **own** foregrip is (2026-09-27).
+         *
+         * The band was 0.62–0.74 and `bottom` answered the grip's *foot*, 18 cm under the bore,
+         * so a mounted foregrip hung off the bottom of the one already there — the doubling the
+         * human photographed. It mounts at the grip's collar now (y 7.46, z 46.9 in the
+         * source, measured off the 283 vertices the split below takes), and `grip_default` goes
+         * when it does, so there is one grip and it is in the one place a grip belongs.
+         */
+        socket_rail_bottom: [0, 7.46, 46.9],
+        socket_rail_front: { at: [m.side({ name: 'base_LMG_0' }, 0.46, 0.6), bore[1], at(0.53)], roll: -90 },
+        /**
+         * The irons (2026-09-27), and the worse half of the same mistake the BASTION had.
+         *
+         * This was the feed cover's top, 19.98 — and the M60's sights are at 24.0 (the rear
+         * leaf) and 24.8 (the front post). Four units is **4.1 cm**, and a sight point that far
+         * *under* the real sights makes ADS lift the gun 4.1 cm too high: the receiver came up
+         * in front of the eye and filled the screen, which is what the human photographed.
+         */
+        socket_sight: [0, post[1], rear[2]],
+        socket_sight_front: [0, post[1], post[2]],
         socket_grip: [0, trigger.min[1] - 3.4, (trigger.min[2] + trigger.max[2]) / 2 - 1.2],
         socket_support: [0, m.bottom({ name: 'base_LMG_0' }, 0.64, 0.76) + 1.2, at(0.7)],
       };

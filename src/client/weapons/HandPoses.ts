@@ -81,7 +81,7 @@ export const HAND_POSES: Readonly<Record<string, Partial<Record<HandSide, HandPo
   },
   lmg_monolith: {
     grip: { position: [0.0, 0.0, 0.052], rotation: [20.0, -24.5, 0.0], curl: 1.0 },
-    support: { position: [-0.026, 0.0, 0.031], rotation: [0.0, 0.0, 0.0], curl: 0.9 },
+    support: { position: [-0.026, 0.031, 0.01], rotation: [30.5, 0.0, 0.0], curl: 0.9 },
     reload: { position: [-0.058, -0.036, 0.007], rotation: [13.0, 0.0, 14.5], curl: 0.59 },
   },
   /**
@@ -334,7 +334,18 @@ export const VIEWMODEL_OFFSETS: Readonly<Record<string, ViewmodelOffset>> = {
    * pose sat across the middle of the view. Carried right, down and pitched up out of the
    * sight line — a minigun is held at the waist and fired across the body, not shouldered.
    */
-  streak_minigun: { position: [0.208, -0.112, 0.0], rotation: [15.5, 9.0, 0.0] },
+  streak_minigun: { position: [0.208, -0.112, 0.0], rotation: [6.5, 5.5, 0.0] },
+  /**
+   * The flamethrower: carried at the hip and angled up across the body, because the wand is
+   * held out in front rather than shouldered and the tank hangs under the forearm.
+   */
+  streak_flamethrower: { position: [0.114, -0.046, -0.164], rotation: [11.0, 0.0, 0.0] },
+  /**
+   * The KESTREL, and the one row here that is a **roll and nothing else**: the rifle is turned
+   * 16 degrees out of vertical at the hip. A canted sniper reads as carried rather than ready,
+   * which is the whole of what a hip pose is for on a weapon nobody fires from the hip.
+   */
+  sniper_kestrel: { position: [0.0, 0.0, 0.0], rotation: [0.0, 0.0, -16.0] },
   /**
    * The riot shield's **sidearm**, which is the pistol the streak hands you with the plate.
    *

@@ -173,6 +173,8 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     this.ledger = new StreakLedger({
       pricesOf: (id) => this.pricesFor(id),
       liveTicksFor: (entityId, id) => this.liveTicksFor(entityId, id),
+      // The same question the viewmodel and both runtimes ask every tick, asked once more.
+      holdsCarriedWeapon: (entityId) => this.carriedWeaponFor(entityId) !== null,
     });
     this.ctx = {
       ...deps.context,

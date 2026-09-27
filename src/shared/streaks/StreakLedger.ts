@@ -1,4 +1,5 @@
 import type { StreakId } from './StreakDefs';
+import { carriedStreakWeapon } from './StreakWeapons';
 
 /**
  * The killstreak economy: a balance of kills, what it has been spent on, and how long each
@@ -73,6 +74,14 @@ export interface StreakLedgerDeps {
    * bounced off a live sentry is a number rather than a silence at the call site.
    */
   readonly liveTicksFor: (entityId: number, id: StreakId) => number;
+  /**
+   * Whether this body already has a killstreak weapon **in its hands** (2026-09-27).
+   *
+   * Asked rather than tracked, exactly as `liveTicksFor` is: the streaks are the authority on
+   * what is live and the ledger is the authority on what it costs, and a second list here would
+   * be a second answer to the first question.
+   */
+  readonly holdsCarriedWeapon: (entityId: number) => boolean;
 }
 
 /**
@@ -83,7 +92,7 @@ export interface StreakLedgerDeps {
  * is not up yet. Separate here so a run can report which of the two new rules is doing the
  * work, and collapsed into one number, `lockoutTicks`, everywhere either is displayed.
  */
-export type StreakPurchase = 'ok' | 'unaffordable' | 'cooling' | 'live';
+export type StreakPurchase = 'ok' | 'unaffordable' | 'cooling' | 'live' | 'handsFull';
 
 interface LedgerRow {
   /** Kills banked this life from the score. */
@@ -177,6 +186,8 @@ export interface StreakEconomyReport {
   refusedCooling: number;
   /** Refused because this entity's own previous instance was still in the world. */
   refusedLive: number;
+  /** Refused because a killstreak weapon was already in this entity's hands. */
+  refusedHandsFull: number;
   /** Times a balance was observed below zero. Must be 0: it is the model's floor. */
   negativeBalances: number;
   /** Times the score's kill count went backwards under the anchor. Must be 0 inside a match. */
@@ -398,6 +409,19 @@ export class StreakLedger {
 
   quote(entityId: number, id: StreakId, price: number, tick: number): StreakPurchase {
     if (this.deps.liveTicksFor(entityId, id) > 0) return 'live';
+    /**
+     * One pair of hands (2026-09-27).
+     *
+     * `'live'` above is per streak **id** — it refuses a second minigun while the first is up,
+     * and says nothing about a minigun called for while a riot shield is in the hands. Taking
+     * both left the inventory holding a slot whose streak had already ended: the hands came up
+     * empty and the game went on believing a minigun was in them.
+     *
+     * The rule is only about the carried three. A UAV overhead and a mortar coming down take
+     * nothing from the hands, and refusing those would be a different rule about a different
+     * thing.
+     */
+    if (carriedStreakWeapon(id) !== null && this.deps.holdsCarriedWeapon(entityId)) return 'handsFull';
     if (this.lockoutTicks(entityId, id, tick) > 0) return 'cooling';
     return this.balanceOf(entityId) < price ? 'unaffordable' : 'ok';
   }
@@ -422,6 +446,10 @@ export class StreakLedger {
     const verdict = this.quote(entityId, id, price, tick);
     if (verdict === 'live') {
       this.totals.refusedLive++;
+      return verdict;
+    }
+    if (verdict === 'handsFull') {
+      this.totals.refusedHandsFull++;
       return verdict;
     }
     if (verdict === 'cooling') {
@@ -614,6 +642,7 @@ function blankReport(): StreakEconomyReport {
     refusedUnaffordable: 0,
     refusedCooling: 0,
     refusedLive: 0,
+    refusedHandsFull: 0,
     negativeBalances: 0,
     resyncs: 0,
     postMortemKills: 0,

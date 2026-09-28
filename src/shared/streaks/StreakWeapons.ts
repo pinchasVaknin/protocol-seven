@@ -144,12 +144,14 @@ export function carriedStreakWeapon(streakId: string): WeaponDef | null {
  * The rest is still the handling: 1.1 s to bring up — the spin, felt as a raise — no sights, a
  * kick twice a rifle's, and never a reload: `reserveAmmo` is zero, so the belt is the whole streak.
  *
- * **Harder and tighter** (2026-09-28): the report was a weak spray, and it was two numbers. 34
- * near was three to the body and 24 far was five, and the cone was 2.2 times the carbine's, so
- * past a few metres most of the belt went past. Now 40 near and 30 far — three to the body out to
- * 39 m and four past it, and three to a limb up close (36 each) where 30.6 took four — through a
- * cone 1.6 times the carbine's, so the rounds that make those numbers land. Still hip only, still
- * the bloom and the kick: it is a lethal suppression weapon that has to be walked onto a target.
+ * **Harder and tighter** (2026-09-28): the report was a weak spray, and it was two numbers. Against
+ * the 200 every body has (`DEFAULT_HEALTH_CONFIG`), 34 near was six to the body and 24 far was
+ * nine, through a cone 2.2 times the carbine's, so past a few metres most of the belt went past.
+ * Now 40 near and 30 far — five to the body up close, 0.27 s at 900 rpm against 0.33, and seven at
+ * range — through a cone 1.6 times the carbine's, so the rounds that make those numbers land.
+ * Still hip only, still the bloom and the kick: it is a lethal suppression weapon that has to be
+ * walked onto a target. (The first version of this note counted hits against 100 HP; the pool
+ * has been 200 since 2026-09-23, and every figure here is against that.)
  *
  * 200 rounds at 900 rpm is thirteen seconds of held trigger inside a thirty-second streak, which
  * is the trade: the belt runs out before the clock does unless it is fired in bursts.
@@ -214,14 +216,15 @@ export function minigunWeapon(): WeaponDef {
  * the jet is a *threat* and the root of it is lethal — the same shape a shotgun has, expressed
  * through the term `damageAtRange` already applies.
  *
- * **Buffed 2026-09-28**, because at 7 a tick it lost the close fights it exists to win: a body
- * held in the jet took a second and a half to die, and an SMG kills in a third of that. Ten fuel
- * a second at **11** is 110 a second in contact, and the burn it lights ticks alongside at **10**,
- * so a body held in the root of the jet is dead in about 0.85 s. Half a second of contact is
- * still **not** lethal, and that gap is kept on purpose — it is the whole balance of the weapon:
- * five ticks is 55, the burn while it lasts another 5, and the three seconds that follow them
- * out another 30. Ninety. Brushing the edge of a jet costs a player nearly all of their health
- * and leaves them alive to make a decision about it; a second in the middle of one does not.
+ * **Buffed 2026-09-28**, because at 7 a tick it lost the close fights it exists to win: against
+ * the 200 every body has, 70 a second in contact and the burn's 8 alongside took about 2.6 s to
+ * kill. Ten fuel a second at **11** is 110 a second, the burn it lights ticks alongside at **10**,
+ * and a body held in the root of the jet is dead in about 1.7 s. Half a second of contact is far
+ * from lethal, and that gap is kept on purpose — it is the whole balance of the weapon: five ticks
+ * is 55, the burn while it lasts another 5, and the three seconds that follow them out another 30.
+ * Ninety of two hundred. Brushing the edge of a jet costs a player close to half their health and
+ * leaves them alive to make a decision about it; staying in the middle of one does not. (The first
+ * version of this note counted against 100 HP; every figure here is against the real 200.)
  *
  * No headshot: fire does not care where it lands, and a headshot multiplier on a cone that
  * cannot be aimed at a head would be a coin toss the player has no say in. No penetration, for

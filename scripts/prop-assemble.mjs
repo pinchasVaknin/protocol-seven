@@ -35,7 +35,16 @@ import { writeGlb } from './weapon-build.mjs';
 import { PIECES, PIECES_DIR } from './prop-build.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = path.join(PIECES_DIR, 'station_ammo.glb');
+
+/**
+ * The id the welded station is written under.
+ *
+ * Exported because three other files had the string: `credits.mjs` decides the station's
+ * attribution by it, `check-props.mjs` audits it by it, and this writes it. A welded file that
+ * is not a piece is the one prop none of those can derive from `PIECES`.
+ */
+export const STATION_ID = 'station_ammo';
+const OUT = path.join(PIECES_DIR, `${STATION_ID}.glb`);
 
 const CLI = '@gltf-transform/cli@4.5.0';
 const NPX_CLI = path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npx-cli.js');

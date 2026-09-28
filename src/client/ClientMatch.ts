@@ -38,6 +38,7 @@ import { SearchAndDestroy } from '../shared/modes/SearchAndDestroy';
 import { StreakAudio } from './streaks/StreakAudio';
 import { ClientStreakPresentation } from './streaks/ClientStreakPresentation';
 import { StreakRenderer } from './streaks/StreakRenderer';
+import { preloadSentry } from './streaks/SentryModel';
 import { StreakSystem } from '../shared/streaks/StreakSystem';
 import { ReplicatedStreaks } from './streaks/ReplicatedStreaks';
 import {
@@ -1004,6 +1005,10 @@ export class Match {
       (id) => this.identity.is(id),
     );
     deps.scene.add(this.streakRenderer.group);
+    // The turret's model, started now and awaited by nobody: a sentry costs a killstreak, so
+    // the file has the opening of the match to arrive, and `SentryMesh` draws the old box
+    // turret for any that beats it. The same bargain `PropModels` makes for the station.
+    void preloadSentry();
     /**
      * The riot shield, from whichever streak list this match believes in.
      *

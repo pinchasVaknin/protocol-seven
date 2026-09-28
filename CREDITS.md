@@ -65,24 +65,31 @@ Sketchfab models, built into the shipped files by `scripts/weapon-build.mjs`.
 - "Spas 12" (https://sketchfab.com/3d-models/spas-12-614140daf5e4467fa0e36b6c23d70621) by Luiz Bueno is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/). Modified for PROTOCOL SEVEN.
 - "TAR - 21 (Tavor). Black and White." (https://sketchfab.com/3d-models/tar-21-tavor-black-and-white-40dc15941e0b456692c83a97bfcd2474) by Nik Vega is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/). Modified for PROTOCOL SEVEN.
 
-## Map props
+## Map props and the sentry turret
 
 The resupply station is a pile of crates. `scripts/prop-build.mjs` normalises each
 Sketchfab model to life size standing on its origin, the human arranges them in the prop
 tuner, and `scripts/prop-assemble.mjs` welds `station_ammo.glb` — which carries all three
 records, being made of all three. The ammunition can is placed twice from the one piece.
 
+The sentry gun shares the folder and nothing else: `scripts/sentry-build.mjs` builds it,
+because a turret has a base that stands still and a gun that traverses and a crate has
+neither. Its team light is geometry this project added, on a material of its own; the
+armour is the artist’s, repainted cold.
+
 | Source | Author | Licence | Built files |
 |---|---|---|---|
 | [Wooden Ammo Crate - Specter Rounds](https://sketchfab.com/3d-models/wooden-ammo-crate-specter-rounds-69401adea118441faa9b7978183cc657) | [Andrew Jepson](https://sketchfab.com/ajepson) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `crate_stand.glb` |
 | [Dirty wooden crate](https://sketchfab.com/3d-models/dirty-wooden-crate-3c29fb738a864640aa1df42eb0e04c4e) | [AK](https://sketchfab.com/skaf13) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `crate_open.glb` |
 | [Ammo Box](https://sketchfab.com/3d-models/ammo-box-7769cee68de94d56ab1f15065091e917) | [murilojones](https://sketchfab.com/murilojones) | [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) | `ammo_can.glb` |
+| [Fixed Machine Gun (Turret)](https://sketchfab.com/3d-models/fixed-machine-gun-turret-282a894d2a594db79b4a1e95e0cb09e0) | [Leonardo Carvalho](https://sketchfab.com/livrosparacriancas) | [SKETCHFAB Standard](https://sketchfab.com/licenses) | `sentry_turret.glb` |
 
 ### Attribution
 
 - "Wooden Ammo Crate - Specter Rounds" (https://sketchfab.com/3d-models/wooden-ammo-crate-specter-rounds-69401adea118441faa9b7978183cc657) by Andrew Jepson is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/). Modified for PROTOCOL SEVEN.
 - "Dirty wooden crate" (https://sketchfab.com/3d-models/dirty-wooden-crate-3c29fb738a864640aa1df42eb0e04c4e) by AK is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/). Modified for PROTOCOL SEVEN.
 - "Ammo Box" (https://sketchfab.com/3d-models/ammo-box-7769cee68de94d56ab1f15065091e917) by murilojones is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/). Modified for PROTOCOL SEVEN.
+- "Fixed Machine Gun (Turret)" (https://sketchfab.com/3d-models/fixed-machine-gun-turret-282a894d2a594db79b4a1e95e0cb09e0) by Leonardo Carvalho is licensed under the Sketchfab Standard licence (https://sketchfab.com/licenses). Modified for PROTOCOL SEVEN.
 
 ## Characters and animations
 

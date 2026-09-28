@@ -228,6 +228,14 @@ export const MODEL_CREDITS: readonly CreditEntry[] = [
     url: 'https://sketchfab.com/3d-models/ammo-box-7769cee68de94d56ab1f15065091e917',
     used: 'AMMO CAN',
   },
+  {
+    title: 'Fixed Machine Gun (Turret)',
+    author: 'Leonardo Carvalho',
+    license: 'SKETCHFAB Standard',
+    licenseUrl: 'https://sketchfab.com/licenses',
+    url: 'https://sketchfab.com/3d-models/fixed-machine-gun-turret-282a894d2a594db79b4a1e95e0cb09e0',
+    used: 'SENTRY TURRET',
+  },
 ];
 
 /** Mixamo: every character skin and every animation clip. Attribution is not required for it. */

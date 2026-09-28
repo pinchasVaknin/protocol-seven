@@ -33,7 +33,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readGlb } from './glb-images.mjs';
 import { creditSentence, creditsMarkdown, OUT_DIR, RECIPES, sources, writeGlb } from './weapon-build.mjs';
 import { PIECES } from './prop-build.mjs';
-import { STATION_PIECES } from './prop-assemble.mjs';
+import { STATION_ID, STATION_PIECES } from './prop-assemble.mjs';
+import { SENTRY_ID, SENTRY_SOURCE } from './sentry-build.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const BOTS_DIR = path.join(ROOT, 'public/models/bots');
@@ -61,10 +62,16 @@ const CC_BY_4 = 'http://creativecommons.org/licenses/by/4.0/';
  * them into a station. One source per piece, so the record is the ordinary one and the only
  * new thing here is a third folder to walk. The ammunition can is placed twice from one file,
  * which is a fact about the station and not about the credit.
+ *
+ * The sentry turret (2026-09-28) lives in the same folder and is listed here with them,
+ * although it is a killstreak rather than scenery and comes out of `sentry-build.mjs`. It is
+ * where it is because the credit a reader wants is "which files came from which artist", and
+ * that question does not care which script wrote the file.
  */
 export function propSources() {
   const seen = new Map();
-  for (const [id, piece] of Object.entries(PIECES)) {
+  const entries = [...Object.entries(PIECES), [SENTRY_ID, { source: SENTRY_SOURCE }]];
+  for (const [id, piece] of entries) {
     const row = seen.get(piece.source.url);
     if (row === undefined) seen.set(piece.source.url, { source: piece.source, outputs: [`${id}.glb`] });
     else row.outputs.push(`${id}.glb`);
@@ -139,7 +146,8 @@ export function attributionFor(file) {
     const one = (p) => ({ title: p.title, author: p.author, authorUrl: p.authorUrl, license: p.license, licenseUrl: p.licenseUrl, url: p.url });
     // The assembled station is welded from several pieces and credits each of them, so its
     // record is a **list** where a piece's is one entry. `stamped` compares deeply either way.
-    if (id === 'station_ammo') return [...new Set(STATION_PIECES.map((i) => i.piece))].map((piece) => one(PIECES[piece].source));
+    if (id === STATION_ID) return [...new Set(STATION_PIECES.map((i) => i.piece))].map((piece) => one(PIECES[piece].source));
+    if (id === SENTRY_ID) return one(SENTRY_SOURCE);
     const piece = PIECES[id];
     return piece === undefined ? undefined : one(piece.source);
   }
@@ -207,12 +215,17 @@ export function rootCreditsMarkdown() {
     '',
     ...list.map(({ source }) => `- ${creditSentence(source)}`),
     '',
-    '## Map props',
+    '## Map props and the sentry turret',
     '',
     'The resupply station is a pile of crates. `scripts/prop-build.mjs` normalises each',
     'Sketchfab model to life size standing on its origin, the human arranges them in the prop',
     'tuner, and `scripts/prop-assemble.mjs` welds `station_ammo.glb` — which carries all three',
     'records, being made of all three. The ammunition can is placed twice from the one piece.',
+    '',
+    'The sentry gun shares the folder and nothing else: `scripts/sentry-build.mjs` builds it,',
+    'because a turret has a base that stands still and a gun that traverses and a crate has',
+    'neither. Its team light is geometry this project added, on a material of its own; the',
+    'armour is the artist’s, repainted cold.',
     '',
     '| Source | Author | Licence | Built files |',
     '|---|---|---|---|',

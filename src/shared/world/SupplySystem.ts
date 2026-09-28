@@ -2,6 +2,7 @@ import { equipmentDef } from '../equipment/EquipmentDefs';
 import type { EquipmentInventory } from '../equipment/EquipmentSystem';
 import type { StanceId } from '../player/Stance';
 import type { Weapon } from '../weapons/WeaponBase';
+import type { WeaponClass, WeaponDef } from '../weapons/WeaponDefs';
 import type { SupplyPointDef } from './maps/types';
 
 /**
@@ -17,14 +18,20 @@ import type { SupplyPointDef } from './maps/types';
  * that agreement.
  *
  * So this is a *rule*, not a system with state to replicate: given a body's position and stance,
- * the use button, and the two containers it is allowed to fill, it decides the same thing on the
- * client and on the server on the same tick. Both call it; neither tells the other.
+ * and the two containers it is allowed to fill, it decides the same thing on the client and on
+ * the server on the same tick. Both call it; neither tells the other.
+ *
+ * ## Kneeling is the whole price (2026-09-28)
+ *
+ * It used to be kneeling *and* holding the use key. The sprint list asked for the key to go: the
+ * crouch is the cost that matters — a body down, still and gun lowered in one place — and the key
+ * on top of it was a second instruction for the same decision, the one players were not finding.
  *
  * ## Why it counts ticks rather than seconds
  *
- * S4.1: gameplay runs on the fixed 60 Hz tick and never on a frame delta. Four rounds a second
- * is one round every fifteen ticks, exactly, on both sides — a seconds accumulator would drift
- * apart on two machines with different frame rates and hand out a different number of rounds.
+ * S4.1: gameplay runs on the fixed 60 Hz tick and never on a frame delta. A beat every fifteen
+ * ticks is four a second, exactly, on both sides — a seconds accumulator would drift apart on two
+ * machines with different frame rates and hand out a different number of rounds.
  *
  * ## What it will not do
  *
@@ -42,8 +49,12 @@ export interface SupplyBody {
 }
 
 export interface SupplyConfig {
-  /** Sim ticks per round handed to the held weapon. 15 at 60 Hz is four a second. */
-  readonly ticksPerRound: number;
+  /** Sim ticks per beat of ammunition handed to the held weapon. 15 at 60 Hz is four a second. */
+  readonly ticksPerBeat: number;
+  /** Rounds a beat puts in an automatic's reserve — an AR, an SMG or an LMG. */
+  readonly automaticRoundsPerBeat: number;
+  /** Rounds a beat puts in anything else's: the snipers, the shotgun, the sidearm. */
+  readonly roundsPerBeat: number;
   /** Sim ticks per grenade. Deliberately long — see `SUPPLY_CONFIG`. */
   readonly ticksPerGrenade: number;
   /**
@@ -56,19 +67,37 @@ export interface SupplyConfig {
 /**
  * The shipped rates.
  *
- * Four rounds a second refills a 30-round magazine in 7.5 s and a full 240-round pouch in a
- * minute, which is the trade the station exists to offer: a player who wants to be whole again
- * has to give the map a minute of standing still in one place, kneeling, with their gun down.
+ * **By magazine, not one rate for every gun** (2026-09-28). One round a beat was a minute on the
+ * floor to fill a 240-round rifle pouch — long enough that nobody did it — and it was the right
+ * pace for a sniper that carries forty. So a beat is five rounds for the automatics, twenty a
+ * second: a 30-round magazine in 1.5 s and a rifle's whole pouch in twelve, which is still a
+ * body kneeling in one place with its gun down. Everything whose rounds are counted one at a
+ * time keeps one a beat, four a second: the Kestrel's forty in ten seconds.
  *
  * A grenade every four seconds is the same trade priced for a thing that wins a fight on its
  * own. Two frags and two flashes is 16 seconds — long enough that topping up the lethal slot is
  * a decision about the round rather than a reflex on the way past.
  */
 export const SUPPLY_CONFIG: SupplyConfig = {
-  ticksPerRound: 15,
+  ticksPerBeat: 15,
+  automaticRoundsPerBeat: 5,
+  roundsPerBeat: 1,
   ticksPerGrenade: 240,
   reachY: 1.6,
 };
+
+/**
+ * The classes a station feeds by the handful. Their magazines are the big ones; the rest are
+ * counted a round at a time and keep `roundsPerBeat`. A killstreak weapon is whatever class it was
+ * cloned from, and the minigun's and the flamethrower's reserves are zero, so a crate has nothing
+ * to put in either.
+ */
+const AUTOMATIC_CLASSES: ReadonlySet<WeaponClass> = new Set<WeaponClass>(['AR', 'SMG', 'LMG']);
+
+/** Rounds one beat gives `def`. See `SUPPLY_CONFIG`. */
+export function roundsPerBeatFor(def: WeaponDef, cfg: SupplyConfig = SUPPLY_CONFIG): number {
+  return AUTOMATIC_CLASSES.has(def.class) ? cfg.automaticRoundsPerBeat : cfg.roundsPerBeat;
+}
 
 /** No crate. Distinct from a crate whose id is the empty string, which the schema forbids. */
 export const NO_SUPPLY_POINT = '';
@@ -87,7 +116,7 @@ export interface SupplyState {
   needsCrouch: boolean;
   /** Taking something right now. */
   working: boolean;
-  /** Kneeling and holding, with nothing left to give. */
+  /** Kneeling, with nothing left to give. */
   full: boolean;
   /** The held weapon's reserve as a fraction of what it can carry, for the HUD ring. */
   stock: number;
@@ -138,20 +167,8 @@ export class SupplySystem {
     return state;
   }
 
-  /**
-   * One sim tick for one body.
-   *
-   * `holdingUse` is the use button as the command carried it — held, not an edge, exactly as the
-   * bomb reads it. Everything else is what the body is and what it may be given.
-   */
-  step(
-    entityId: number,
-    body: SupplyBody,
-    alive: boolean,
-    holdingUse: boolean,
-    weapon: Weapon,
-    inventory: EquipmentInventory,
-  ): SupplyState {
+  /** One sim tick for one body: what the body is, and what it may be given. */
+  step(entityId: number, body: SupplyBody, alive: boolean, weapon: Weapon, inventory: EquipmentInventory): SupplyState {
     const state = this.stateOf(entityId);
     state.working = false;
     state.needsCrouch = false;
@@ -169,19 +186,11 @@ export class SupplySystem {
     state.pointId = point.id;
 
     /**
-     * Kneeling is the price, and it is checked before the button rather than beside it.
-     *
-     * A player who is standing at the crate holding the key is not resupplying and must be told
-     * why, which is a different prompt from "hold this key" — so the two states are separate
-     * here rather than folded into one `if` that produces silence.
+     * Kneeling is the price, and the only one. A player standing at the crate is not resupplying
+     * and is told so — "crouch to resupply" is the whole of the instruction now.
      */
     if (body.stance !== 'CROUCH') {
       state.needsCrouch = true;
-      progress.roundTicks = 0;
-      progress.grenadeTicks = 0;
-      return state;
-    }
-    if (!holdingUse) {
       progress.roundTicks = 0;
       progress.grenadeTicks = 0;
       return state;
@@ -200,11 +209,11 @@ export class SupplySystem {
 
     if (roundRoom) {
       progress.roundTicks++;
-      if (progress.roundTicks >= this.cfg.ticksPerRound) {
+      if (progress.roundTicks >= this.cfg.ticksPerBeat) {
         progress.roundTicks = 0;
-        // `addReserve` caps at the weapon's own carry and reports what it actually took, so a
-        // round that had nowhere to go is not counted as one that was given.
-        state.roundsTaken += weapon.addReserve(1);
+        // `addReserve` caps at the weapon's own carry and reports what it actually took, so the
+        // last handful into a nearly full pouch counts only the rounds that fitted.
+        state.roundsTaken += weapon.addReserve(roundsPerBeatFor(weapon.definition, this.cfg));
         state.stock = stockFraction(weapon);
       }
     } else {

@@ -3,10 +3,10 @@ import { createGameBus } from '../core/Events';
 import { makeEquipmentInventory, type EquipmentInventory } from '../equipment/EquipmentSystem';
 import { equipmentDef } from '../equipment/EquipmentDefs';
 import type { StanceId } from '../player/Stance';
-import { AR_DEFAULT } from '../weapons/WeaponDefs';
+import { AR_DEFAULT, requireWeapon, type WeaponDef } from '../weapons/WeaponDefs';
 import { Weapon } from '../weapons/WeaponBase';
 import type { SupplyPointDef } from './maps/types';
-import { NO_SUPPLY_POINT, SUPPLY_CONFIG, SupplySystem, type SupplyBody } from './SupplySystem';
+import { NO_SUPPLY_POINT, roundsPerBeatFor, SUPPLY_CONFIG, SupplySystem, type SupplyBody } from './SupplySystem';
 
 /**
  * The station's rule, which is the half of the feature that can be wrong without anybody seeing
@@ -29,8 +29,8 @@ function body(over: Partial<SupplyBody> = {}): SupplyBody {
   return { ...AT_CRATE, stance: 'CROUCH' as StanceId, ...over };
 }
 
-function emptied(): Weapon {
-  const weapon = new Weapon(AR_DEFAULT, createGameBus());
+function emptied(def: WeaponDef = AR_DEFAULT): Weapon {
+  const weapon = new Weapon(def, createGameBus());
   weapon.reserve = 0;
   return weapon;
 }
@@ -42,28 +42,55 @@ function pouch(): EquipmentInventory {
   return inventory;
 }
 
-/** `seconds` of ticks at one station, with the use key in whatever state the caller says. */
+/** `seconds` of ticks at one station, kneeling unless the caller says otherwise. No key: there is none. */
 function hold(
   system: SupplySystem,
   weapon: Weapon,
   inventory: EquipmentInventory,
   seconds: number,
   over: Partial<SupplyBody> = {},
-  holdingUse = true,
   alive = true,
 ): void {
   const ticks = Math.round(seconds * 60);
   for (let tick = 0; tick < ticks; tick++) {
-    system.step(1, body(over), alive, holdingUse, weapon, inventory);
+    system.step(1, body(over), alive, weapon, inventory);
   }
 }
 
 describe('a resupply station', () => {
-  it('gives four rounds a second to the weapon in the hand', () => {
+  it('feeds an automatic twenty rounds a second, in fives', () => {
     const system = new SupplySystem(points());
     const weapon = emptied();
     hold(system, weapon, pouch(), 1);
+    expect(weapon.reserve).toBe(20);
+    // Every beat is a handful, never a single round.
+    expect(weapon.reserve % 5).toBe(0);
+  });
+
+  it('feeds the SMGs and LMGs by the handful too, and everything else a round at a time', () => {
+    for (const id of ['ar_carbine', 'ar_longbow', 'smg_wasp', 'smg_meridian', 'lmg_bastion', 'lmg_monolith']) {
+      expect(roundsPerBeatFor(requireWeapon(id)), id).toBe(5);
+    }
+    for (const id of ['sniper_kestrel', 'sniper_vantage', 'shotgun_breacher', 'pistol_talon']) {
+      expect(roundsPerBeatFor(requireWeapon(id)), id).toBe(1);
+    }
+  });
+
+  it('gives a sniper four rounds a second', () => {
+    const system = new SupplySystem(points());
+    const weapon = emptied(requireWeapon('sniper_kestrel'));
+    hold(system, weapon, pouch(), 1);
     expect(weapon.reserve).toBe(4);
+  });
+
+  it('asks for nothing but the kneel', () => {
+    // The use key came off it (2026-09-28): a body crouched at the crate is being fed, and
+    // `step` has no argument left to hold it back with.
+    const system = new SupplySystem(points());
+    const weapon = emptied();
+    hold(system, weapon, pouch(), 0.5);
+    expect(weapon.reserve).toBe(10);
+    expect(system.stateOf(1).working).toBe(true);
   });
 
   it('takes four seconds over a grenade', () => {
@@ -93,14 +120,6 @@ describe('a resupply station', () => {
     expect(system.stateOf(1).working).toBe(false);
   });
 
-  it('refuses a body that is not holding the key', () => {
-    const system = new SupplySystem(points());
-    const weapon = emptied();
-    hold(system, weapon, pouch(), 2, {}, false);
-    expect(weapon.reserve).toBe(0);
-    expect(system.stateOf(1).pointId).toBe('ammo_a');
-  });
-
   it('is not there for a body out of range, in either axis', () => {
     const system = new SupplySystem(points());
     const weapon = emptied();
@@ -115,7 +134,7 @@ describe('a resupply station', () => {
   it('gives a dead body nothing', () => {
     const system = new SupplySystem(points());
     const weapon = emptied();
-    hold(system, weapon, pouch(), 2, {}, true, false);
+    hold(system, weapon, pouch(), 2, {}, false);
     expect(weapon.reserve).toBe(0);
   });
 
@@ -147,8 +166,8 @@ describe('a resupply station', () => {
   it('never carries more than the weapon can', () => {
     const system = new SupplySystem(points());
     const weapon = emptied();
-    // Long enough to overrun the pouch several times over.
-    hold(system, weapon, pouch(), AR_DEFAULT.reserveAmmo / 4 + 10);
+    // Long enough to overrun the pouch several times over, and the last handful is capped too.
+    hold(system, weapon, pouch(), AR_DEFAULT.reserveAmmo / 20 + 10);
     expect(weapon.reserve).toBe(AR_DEFAULT.reserveAmmo);
   });
 
@@ -157,7 +176,7 @@ describe('a resupply station', () => {
       { id: 'far', position: { x: 2, y: 0, z: 0 }, rotationY: 0, radius: 3 },
       { id: 'near', position: { x: 0.5, y: 0, z: 0 }, rotationY: 0, radius: 3 },
     ]);
-    system.step(1, body(), true, true, emptied(), pouch());
+    system.step(1, body(), true, emptied(), pouch());
     expect(system.stateOf(1).pointId).toBe('near');
   });
 

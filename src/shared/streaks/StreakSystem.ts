@@ -5,7 +5,7 @@ import type { BotTeam } from '../ai/Combatant';
 import type { ObjectiveProvider, ObjectiveTarget } from '../ai/ObjectiveIntent';
 import type { ScoreSystem } from '../combat/ScoreSystem';
 import { EV, type GameBus } from '../core/Events';
-import type { InputCommand } from '../core/InputCommand';
+import { Btn, isDown, type InputCommand } from '../core/InputCommand';
 import { CarePackage } from './CarePackage';
 import { CarriedWeaponStreak } from './CarriedWeapon';
 import { ChopperGunner } from './ChopperGunner';
@@ -417,6 +417,13 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
       if (streak instanceof ChopperGunner) {
         const cmd = this.deps.commandFor(streak.ownerId);
         if (cmd !== null) streak.step(cmd);
+      }
+
+      // The owner's hands on their own turret (2026-09-28), off the same command, for the same
+      // reason: whoever placed it can take it apart, and only they can. See `stepDismantle`.
+      if (streak instanceof SentryGun) {
+        const cmd = this.deps.commandFor(streak.ownerId);
+        streak.stepDismantle(this.combatant(streak.ownerId), cmd !== null && isDown(cmd.buttons, Btn.Use));
       }
 
       if (streak.onTick(tick)) continue;

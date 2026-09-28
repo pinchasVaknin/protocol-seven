@@ -266,9 +266,12 @@ export interface StreakEntityState {
   readonly yaw: number;
   /** Turret or gunner pitch. Zero for the kinds with no elevation. */
   readonly pitch: number;
-  /** A sentry's health, 0..255. `255` for every kind that cannot be shot down. */
+  /**
+   * A sentry's health as a share of full, 0..255 — not hit points, which a byte cannot hold for a
+   * 260 HP turret (2026-09-28). `255` for every kind that cannot be shot down.
+   */
   readonly health: number;
-  /** A care package's claim progress, 0..255. Zero elsewhere. */
+  /** A care package's claim progress, or a sentry's dismantle, 0..255. Zero elsewhere. */
   readonly fraction: number;
   /** `SEFlag` bits. */
   readonly flags: number;

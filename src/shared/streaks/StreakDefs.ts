@@ -253,6 +253,14 @@ export interface StreakConfig {
   readonly sentryDamage: number;
   /** Seconds between acquiring a target and the first round. */
   readonly sentryReactionSeconds: number;
+  /**
+   * The owner's dismantle (2026-09-28): how long the use key is held, how close they stand, and
+   * how far off their facing the turret may be — the last so a sentry parked on a bomb site does
+   * not come apart under the hands of an owner holding the same key to plant.
+   */
+  readonly sentryDismantleSeconds: number;
+  readonly sentryDismantleRange: number;
+  readonly sentryDismantleFacingDeg: number;
 
   // ---- chopper ------------------------------------------------------------
   /** Height the gun sits at, metres. */
@@ -309,6 +317,10 @@ export const DEFAULT_STREAK_CONFIG: StreakConfig = {
   sentryRpm: 420,
   sentryDamage: 36,
   sentryReactionSeconds: 0.42,
+  // A second: long enough that a tap on the way past does nothing, short enough to do under fire.
+  sentryDismantleSeconds: 1,
+  sentryDismantleRange: 2,
+  sentryDismantleFacingDeg: 55,
 
   chopperHeight: 34,
   chopperOrbitRadius: 42,

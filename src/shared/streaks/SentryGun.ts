@@ -12,7 +12,7 @@ import { angleDelta, clamp, DEG2RAD } from '../core/MathUtil';
 import { Health } from '../player/Health';
 import { makeRayHit, type RayHit } from '../world/Geometry';
 import { Killstreak, type StreakContext } from './KillstreakBase';
-import type { StreakDef } from './StreakDefs';
+import type { StreakConfig, StreakDef } from './StreakDefs';
 import { sentryWeapon } from './StreakWeapons';
 import { simCos, simSin } from '../core/SimMath';
 
@@ -114,6 +114,12 @@ export class SentryGun extends Killstreak implements Damageable {
    */
   turretYaw = 0;
   turretPitch = 0;
+
+  /**
+   * How far the owner is through taking it apart, 0..1 (2026-09-28). Replicated in the entity
+   * record's `fraction`, which is how a networked owner's prompt fills its ring.
+   */
+  dismantleFraction = 0;
 
   private fireTimer = 0;
   private reaction = 0;
@@ -242,6 +248,51 @@ export class SentryGun extends Killstreak implements Damageable {
     return this.age < this.def.durationSeconds;
   }
 
+  /**
+   * One tick of the owner taking it apart (2026-09-28): the use key held, standing at it and
+   * facing it. A second of that and it comes down.
+   *
+   * **A reposition, not a refund.** Nothing comes back to the wallet, and the retire that follows
+   * is the ordinary one, which arms the thirty-second cooldown from this tick because the sentry's
+   * effect ends with its instance. So a badly placed turret can be cleared, and the next one still
+   * has to be earned and waited for — which is exactly what the brief asked for and all it asked.
+   *
+   * Only the owner: an enemy removes a sentry by shooting it, and a teammate has no business
+   * picking up somebody else's. Letting go, stepping away, turning away or dying starts it again.
+   * It is read off `commandFor`, the same command the owner's body stepped with this tick, so the
+   * server and a solo client decide it from the same fact.
+   */
+  stepDismantle(owner: Combatant | undefined, holdingUse: boolean): void {
+    if (this.destroyed) return;
+    const cfg = this.ctx.cfg;
+    if (
+      !holdingUse ||
+      owner === undefined ||
+      !owner.participating ||
+      !sentryInDismantleReach(this.x, this.y, this.z, owner.px, owner.py, owner.pz, owner.yaw, cfg)
+    ) {
+      this.dismantleFraction = 0;
+      return;
+    }
+    this.dismantleFraction = Math.min(1, this.dismantleFraction + DT / Math.max(cfg.sentryDismantleSeconds, DT));
+    if (this.dismantleFraction < 1) return;
+
+    // Down the same road as being shot down, so every client draws and hears the same thing.
+    this.destroyed = true;
+    const ev = {
+      streakId: this.def.id,
+      instanceId: this.instanceId,
+      ownerId: this.ownerId,
+      byId: this.ownerId,
+      x: this.x,
+      y: this.y,
+      z: this.z,
+    };
+    this.ctx.bus.emit(EV.StreakDestroyed, ev);
+    this.ctx.present.blast(this.x, this.y + 0.5, this.z, 1.2, false);
+    this.ctx.present.sentryDestroyed(this.x, this.y, this.z);
+  }
+
   override onExpire(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
@@ -345,6 +396,36 @@ export class SentryGun extends Killstreak implements Damageable {
     this.turretPitch = clamp(-this.combat.aimPitch, -0.7, 0.7);
     this.rig.setTransform(this.x, this.y, this.z, this.combat.aimYaw);
   }
+}
+
+/**
+ * Whether a body at `(px, py, pz)` facing `yaw` can take apart a sentry standing at `(sx, sy, sz)`.
+ *
+ * One function for the rule and the prompt: `SentryGun.stepDismantle` decides with it and the
+ * client's HUD asks it before offering the key, so the prompt can never promise a dismantle the
+ * simulation will refuse. Close, on the same floor, and facing it — within
+ * `sentryDismantleFacingDeg` of looking at it — except when practically on top of it, where the
+ * bearing stops meaning anything.
+ */
+export function sentryInDismantleReach(
+  sx: number,
+  sy: number,
+  sz: number,
+  px: number,
+  py: number,
+  pz: number,
+  yaw: number,
+  cfg: Pick<StreakConfig, 'sentryDismantleRange' | 'sentryDismantleFacingDeg'>,
+): boolean {
+  if (Math.abs(py - sy) > 1.2) return false;
+  const dx = sx - px;
+  const dz = sz - pz;
+  const d = Math.hypot(dx, dz);
+  if (d > cfg.sentryDismantleRange) return false;
+  if (d < 0.5) return true;
+  // Yaw 0 looks down -Z (`Combatant.yaw`).
+  const facing = (-simSin(yaw) * dx - simCos(yaw) * dz) / d;
+  return facing >= simCos(cfg.sentryDismantleFacingDeg * DEG2RAD);
 }
 
 /** Where the sentry sees and shoots from, above its base. */

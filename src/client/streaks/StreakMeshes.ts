@@ -44,12 +44,26 @@ function sentryTint(p: GameplayPalette, relation: TeamRelation): number {
   return new THREE.Color(base).multiplyScalar(0.5).getHex();
 }
 
+/**
+ * The health bar over a sentry (2026-09-28): metres, in the world, because it belongs to the
+ * turret rather than to the screen — it shrinks with distance and a wall hides it, so it tells
+ * nobody where a sentry is that they could not already see. The gun tops out at 0.89 m; the bar
+ * floats clear of the barrel at full elevation.
+ */
+const BAR_HEIGHT_M = 1.3;
+const BAR_WIDTH_M = 0.7;
+const BAR_THICK_M = 0.07;
+/** The dark frame around the fill, each side. */
+const BAR_BORDER_M = 0.025;
+
 export class SentryMesh {
   readonly group = new THREE.Group();
   /** Turned about Y by `aim`. The model's own yaw node, or the box turret's one group. */
   private readonly yawNode: THREE.Object3D;
   /** Turned about X by `aim`. On a box turret this is the yaw node, which pitches with it. */
   private readonly pitchNode: THREE.Object3D;
+  private readonly barFill: THREE.Sprite;
+  private shownHealth = -1;
   private readonly disposables: Array<{ dispose(): void }> = [];
 
   constructor(x: number, y: number, z: number, restYaw: number, relation: TeamRelation) {
@@ -63,9 +77,63 @@ export class SentryMesh {
       this.yawNode = parts.yaw;
       this.pitchNode = parts.pitch;
     }
+    this.barFill = this.buildHealthBar(relation);
+    this.setHealth(1);
 
     this.group.position.set(x, y, z);
     this.group.rotation.y = restYaw;
+  }
+
+  /**
+   * What is left of it, 0..1. Both runtimes feed it: the solo simulation's `Health.fraction`, and
+   * the replicated record's share-of-full byte on a networked client.
+   *
+   * The fill keeps its left edge where the frame's is and gives up length from the right. A
+   * sprite is placed by its centre, so the fill's centre is moved instead of the sprite: at a
+   * share `f` of the width, a centre of `0.5 / f` puts its left edge on the frame's.
+   */
+  setHealth(fraction: number): void {
+    const f = Math.min(1, Math.max(0, fraction));
+    if (f === this.shownHealth) return;
+    this.shownHealth = f;
+    const fill = this.barFill;
+    fill.visible = f > 0;
+    if (f <= 0) return;
+    fill.scale.set(BAR_WIDTH_M * f, BAR_THICK_M, 1);
+    fill.center.set(0.5 / f, 0.5);
+  }
+
+  /**
+   * The frame and the fill, as sprites so they always face the viewer. The fill wears the IFF
+   * colour the band does, so a bar reads as *whose* before it reads as how much. `depthWrite` is
+   * off on both so the fill, drawn second, is not refused by the frame it sits on; `depthTest` is
+   * on, so neither shows through a wall.
+   *
+   * The frame is a translucent light grey rather than black: it is the empty part of the bar, and
+   * a black one vanished against the dark maps it was checked on, leaving a half-dead sentry
+   * showing a short bar with nothing to say it had been longer.
+   */
+  private buildHealthBar(relation: TeamRelation): THREE.Sprite {
+    const frameMat = new THREE.SpriteMaterial({
+      color: 0xb8c0ca,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const fillMat = new THREE.SpriteMaterial({ depthWrite: false, toneMapped: false });
+    this.disposables.push(frameMat, fillMat);
+    this.disposables.push({ dispose: palette.onChange((p) => fillMat.color.setHex(iffColour(p, relation))) });
+
+    const frame = new THREE.Sprite(frameMat);
+    frame.scale.set(BAR_WIDTH_M + BAR_BORDER_M * 2, BAR_THICK_M + BAR_BORDER_M * 2, 1);
+    frame.position.y = BAR_HEIGHT_M;
+    frame.renderOrder = 10;
+    const fill = new THREE.Sprite(fillMat);
+    fill.position.y = BAR_HEIGHT_M;
+    fill.renderOrder = 11;
+    this.group.add(frame, fill);
+    return fill;
   }
 
   /**

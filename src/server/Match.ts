@@ -915,7 +915,6 @@ export class ServerMatch extends Disposable {
         player.entityId,
         player.controller.sim,
         player.alive,
-        isDown(player.lastButtons, Btn.Use),
         player.weapons.weapon,
         this.handOf(player.entityId).inventory,
       );

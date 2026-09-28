@@ -952,7 +952,15 @@ function describeStreak(streak: Killstreak): StreakEntityState {
       z: streak.z,
       yaw: streak.turretYaw,
       pitch: streak.turretPitch,
-      health: clampByte(streak.health.current),
+      /**
+       * A share of full, not hit points (2026-09-28). It was `clampByte(current)`, which nothing
+       * read until the health bar did — and a 260 HP sentry in a byte is "full" until it has taken
+       * five, and "full" again for every sentry anybody tunes above 255. The bar wants the one
+       * number that survives both: how much of it is left.
+       */
+      health: clampByte(streak.health.fraction * 255),
+      // The owner's dismantle, which a networked owner's prompt fills its ring from.
+      fraction: clampByte(streak.dismantleFraction * 255),
       flags: streak.health.alive ? SEFlag.Alive | SEFlag.Landed : 0,
     };
   }

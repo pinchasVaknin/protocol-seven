@@ -63,6 +63,7 @@ export class StreakRenderer {
           this.relationOf(streak.ownerId, streak.team),
           streak.turretYaw,
           streak.turretPitch,
+          streak.health.fraction,
         );
       } else if (streak instanceof CarePackage) {
         this.syncPackage(streak.instanceId, streak.x, streak.y, streak.z);
@@ -100,6 +101,8 @@ export class StreakRenderer {
           this.relationOf(e.ownerId, e.team === OBJ_TEAM_B ? 'B' : 'A'),
           e.yaw,
           e.pitch,
+          // A share of full on the wire, not hit points. See `StreakEntityState.health`.
+          e.health / 255,
         );
       } else if (def.id === 'care_package') {
         this.syncPackage(e.instanceId, e.x, e.y, e.z);
@@ -123,6 +126,7 @@ export class StreakRenderer {
     relation: TeamRelation,
     turretYaw: number,
     turretPitch: number,
+    health: number,
   ): void {
     this.present.add(instanceId);
     let mesh = this.sentries.get(instanceId);
@@ -132,6 +136,7 @@ export class StreakRenderer {
       this.group.add(mesh.group);
     }
     mesh.aim(turretYaw, turretPitch);
+    mesh.setHealth(health);
   }
 
   private syncPackage(instanceId: number, x: number, y: number, z: number): void {

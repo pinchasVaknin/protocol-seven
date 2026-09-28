@@ -58,11 +58,13 @@ const EMPTY_SMOKE: readonly SmokeState[] = [];
 import {
   ALL_STREAK_IDS,
   DEFAULT_STREAK_CONFIG,
+  STREAK_DEFS,
   streakDef,
   type StreakConfig,
   type StreakDef,
   type StreakId,
 } from '../shared/streaks/StreakDefs';
+import { sentryInDismantleReach } from '../shared/streaks/SentryGun';
 import type { CamoId } from '../shared/meta/Camos';
 import type { ResolvedLoadout } from '../shared/meta/Loadouts';
 import type { Profile } from './meta/Profile';
@@ -1975,7 +1977,7 @@ export class Match {
     if (!this.isNetworked && !this.playerDead) this.stepBombInteraction(cmd);
     // Both kinds of match, deliberately — see the `supply` field. After the bomb, so a station
     // authored too near an objective cannot take the tick the plant wanted.
-    this.stepSupply(cmd);
+    this.stepSupply();
     this.stepInteractPose();
     // The server owns when and where a body comes back (S4.15); the client is told. But
     // `stepPlayerRespawn` also *decrements the display timer*, and skipping the whole method
@@ -2525,21 +2527,15 @@ export class Match {
   /**
    * One tick at a resupply station.
    *
-   * Everything it needs is already here: where the body is and what stance it is in, the use
-   * button off the same command the bomb reads, the weapon **in the hand** — `weapons.weapon` is
-   * the active slot rather than the loadout — and the grenade inventory. A dead body is passed
-   * through as not alive rather than skipped, so the state clears and the prompt goes with it.
+   * Everything it needs is already here: where the body is and what stance it is in — kneeling is
+   * the whole of the instruction since the use key came off it (2026-09-28) — the weapon **in the
+   * hand**, since `weapons.weapon` is the active slot rather than the loadout, and the grenade
+   * inventory. A dead body is passed through as not alive rather than skipped, so the state clears
+   * and the prompt goes with it.
    */
-  private stepSupply(cmd: InputCommand): void {
+  private stepSupply(): void {
     if (!this.supply.any) return;
-    this.supply.step(
-      this.localId,
-      this.deps.player.sim,
-      !this.playerDead,
-      isDown(cmd.buttons, Btn.Use),
-      this.weapons.weapon,
-      this.equipment.inventory,
-    );
+    this.supply.step(this.localId, this.deps.player.sim, !this.playerDead, this.weapons.weapon, this.equipment.inventory);
   }
 
   /** Cycle to the next living teammate. Bound to the fire key while dead (M7's verb). */
@@ -2964,7 +2960,47 @@ export class Match {
     hud.urgent = false;
 
     this.fillModeBanner(hud);
+    this.fillDismantleBanner(hud);
     this.fillSupplyBanner(hud);
+  }
+
+  /**
+   * The prompt at the player's own sentry (2026-09-28): stand at it, face it, hold the use key.
+   *
+   * Between the mode and the crate in urgency: an objective is the match, and a turret the player
+   * chose to go and stand at is a decision they are in the middle of, which a crate beside it is
+   * not. The reach test is `sentryInDismantleReach` — the function `SentryGun.stepDismantle`
+   * decides with — so the key is never offered where the simulation would refuse it. The ring is
+   * the simulation's own progress: the local sentry's in a solo match, the replicated `fraction`
+   * over the network, so it fills at the rate the server is actually counting.
+   */
+  private fillDismantleBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
+    if (hud.interactLabel.length > 0 || this.playerDead) return;
+    const sim = this.deps.player.sim;
+    const cfg = this.deps.streakConfig ?? DEFAULT_STREAK_CONFIG;
+    const reach = (x: number, y: number, z: number): boolean =>
+      sentryInDismantleReach(x, y, z, sim.x, sim.y, sim.z, sim.yaw, cfg);
+
+    let progress = -1;
+    if (this.isNetworked) {
+      for (const e of this.replicatedStreaks.entities) {
+        if (STREAK_DEFS[e.kind]?.id !== 'sentry' || !this.identity.is(e.ownerId)) continue;
+        if (!reach(e.x, e.y, e.z)) continue;
+        progress = e.fraction / 255;
+        break;
+      }
+    } else {
+      for (const sentry of this.streaks.sentries()) {
+        if (!this.identity.is(sentry.ownerId) || !reach(sentry.x, sentry.y, sentry.z)) continue;
+        progress = sentry.dismantleFraction;
+        break;
+      }
+    }
+    if (progress < 0) return;
+
+    if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'YOUR SENTRY';
+    hud.interactFraction = progress;
+    hud.interactLabel = progress > 0 ? 'DISMANTLING' : `HOLD ${this.useKeyLabel()} TO DISMANTLE`;
   }
 
   /**
@@ -2976,9 +3012,10 @@ export class Match {
    * station sits inside an objective the player is told about the objective.
    *
    * Three states rather than one, because the rule has to be teachable without a tutorial: near
-   * it and standing, near it and kneeling, and kneeling with nothing left to take. The ring is
-   * the held weapon's reserve rather than progress toward the next round, which would be a
-   * quarter-second sawtooth; what the player watches climb is the ammunition counter.
+   * it and standing, kneeling and taking, and kneeling with nothing left to take. There is no key
+   * in any of them since 2026-09-28 — the crouch is the instruction. The ring is the held weapon's
+   * reserve rather than progress toward the next beat, which would be a quarter-second sawtooth;
+   * what the player watches climb is the ammunition counter.
    */
   private fillSupplyBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
     if (hud.interactLabel.length > 0) return;
@@ -2999,11 +3036,8 @@ export class Match {
       return;
     }
     hud.interactFraction = state.stock;
-    hud.interactLabel = state.full
-      ? 'RESUPPLIED'
-      : state.working
-        ? 'RESUPPLYING'
-        : `HOLD ${this.useKeyLabel()} TO RESUPPLY`;
+    // Kneeling and not yet `working` is the one tick before the first beat is counted.
+    hud.interactLabel = state.full ? 'RESUPPLIED' : 'RESUPPLYING';
   }
 
   /** The bomb timer, the plant/defuse ring and the capture prompt. See `fillObjectiveBanner`. */

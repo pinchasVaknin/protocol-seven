@@ -38,6 +38,8 @@ export const AR_CARBINE: WeaponDef = {
   reloadEmptyTime: 2.85,
   adsTime: 0.28,
   sprintOutTime: 0.22,
+  /** The baseline: 1.00 here is what every movement number since M1 was measured with. */
+  moveSpeedMult: 1,
   swapInTime: 0.52,
   swapOutTime: 0.4,
 
@@ -156,6 +158,7 @@ export const AR_VULCAN: WeaponDef = {
   reloadEmptyTime: 3.1,
   adsTime: 0.31,
   sprintOutTime: 0.25,
+  moveSpeedMult: 1,
   swapInTime: 0.58,
   swapOutTime: 0.45,
 
@@ -272,6 +275,7 @@ export const AR_HALCYON: WeaponDef = {
   reloadEmptyTime: 2.5,
   adsTime: 0.235,
   sprintOutTime: 0.18,
+  moveSpeedMult: 1,
   swapInTime: 0.46,
   swapOutTime: 0.35,
 
@@ -387,6 +391,7 @@ export const AR_LONGBOW: WeaponDef = {
   reloadEmptyTime: 2.95,
   adsTime: 0.325,
   sprintOutTime: 0.27,
+  moveSpeedMult: 1,
   swapInTime: 0.6,
   swapOutTime: 0.46,
 

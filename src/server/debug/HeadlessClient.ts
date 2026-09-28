@@ -19,7 +19,7 @@ import {
 import { resolveLoadout } from '../../shared/meta/Loadouts';
 import { DEFAULT_INTERPOLATION_DELAY_MS, makeInterpolatedPose } from '../../shared/net/Interpolation';
 import { EFlag, weaponIdAt } from '../../shared/net/Snapshot';
-import { WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
+import { AR_DEFAULT, heldMoveScale, WEAPON_DEFS, type WeaponDef } from '../../shared/weapons/WeaponDefs';
 import { hitsFrom, shotsFrom } from '../../shared/combat/ShotAccounting';
 import { rigLayoutFor } from '../../shared/combat/HitboxRig';
 import {
@@ -693,6 +693,8 @@ export class HeadlessClient {
   private gatedUntilMs = -1;
   private readonly notices: string[] = [];
   private currentMapId = '';
+  /** What this client's body holds, for `moveScale`: its class's primary, or the server's default. */
+  private heldDef: WeaponDef = AR_DEFAULT;
   private controllerInUse: PlayerController;
 
   /** A background build in flight, or null. See `onPrepare`. */
@@ -895,6 +897,13 @@ export class HeadlessClient {
        * and never on a replay, which is also what makes the tick counts honest.
        */
       applyNonReplayed: (cmd) => this.observeSurfaces(cmd),
+      /**
+       * The weapon's weight, asked the way the browser asks it (2026-09-28). This client has no
+       * `WeaponSystem` and never swaps, so what is in its hands is its class's primary — which is
+       * what the server's `NetPlayer` holds for it too. Leave this out and every SMG or LMG
+       * class mispredicts on every tick it moves, which is the probe's reason for asking.
+       */
+      moveScale: (cmd) => heldMoveScale(this.heldDef, cmd.buttons),
       events: {
         onDamage: (e) => {
           if (e.sourceId === this.net.entityId) {
@@ -1234,7 +1243,11 @@ export class HeadlessClient {
     const loadout = this.opts.loadout;
     if (loadout !== undefined) {
       const slot = sanitiseNetLoadout(loadout);
-      if (slot !== null) controller.speedScale = resolveLoadout(slot, 0).perkState.moveSpeedMult;
+      if (slot !== null) {
+        const resolved = resolveLoadout(slot, 0);
+        controller.speedScale = resolved.perkState.moveSpeedMult;
+        this.heldDef = resolved.primary;
+      }
     }
     return controller;
   }

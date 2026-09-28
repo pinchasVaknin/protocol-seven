@@ -31,6 +31,8 @@ export const PISTOL_TALON: WeaponDef = {
   adsTime: 0.19,
   /** 0.18, raised from 0.12 for the same reason as the WASP's — see `smgs.ts`. */
   sprintOutTime: 0.18,
+  /** The weapon in the hands decides, so swapping to this is the quick way across open ground. */
+  moveSpeedMult: 1.05,
   /** The number that justifies the slot. Half a primary's, and you can feel it. */
   swapInTime: 0.24,
   swapOutTime: 0.2,

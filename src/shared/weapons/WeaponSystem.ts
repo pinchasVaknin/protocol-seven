@@ -499,19 +499,27 @@ export class WeaponSystem {
     // The feedback layer wants a muzzle and a sound per tick of fuel, and the tip of the jet is
     // what a tracer would have ended at. `BurnSystem` is not told anything here: it listens for
     // the damage this just dealt, which is the only signal that a body was actually in the fire.
+    //
+    // The tip is the jet's reach or the first wall on the aim, whichever is nearer (2026-09-28).
+    // It is what the flame effect is drawn to, on this machine and — because the end point is
+    // what the wire carries — on every other one, so a jet held on a wall spreads on the wall
+    // rather than drawing through it. Damage is unchanged: it never reached past a wall anyway.
+    const reach = this.world.raycast(eyeX, eyeY, eyeZ, dx, dy, dz, flame.rangeM, this.flameRay)
+      ? this.flameRay.t
+      : flame.rangeM;
     const muzzle = this.muzzleWorld(cmd, sim);
     evFired.weaponId = def.id;
     evFired.sourceId = this.sourceId;
     evFired.x = muzzle.x;
     evFired.y = muzzle.y;
     evFired.z = muzzle.z;
-    evFired.endX = eyeX + dx * flame.rangeM;
-    evFired.endY = eyeY + dy * flame.rangeM;
-    evFired.endZ = eyeZ + dz * flame.rangeM;
+    evFired.endX = eyeX + dx * reach;
+    evFired.endY = eyeY + dy * reach;
+    evFired.endZ = eyeZ + dz * reach;
     evFired.dx = dx;
     evFired.dy = dy;
     evFired.dz = dz;
-    evFired.distance = flame.rangeM;
+    evFired.distance = reach;
     evFired.shotIndex = 0;
     evFired.spreadDeg = flame.halfAngleDeg;
     // No tracer on a jet: the fire *is* the visible thing, and a bullet streak through it

@@ -12,7 +12,7 @@ import { PlayerController } from '../player/PlayerController';
 import type { StanceId } from '../player/Stance';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import type { ViewmodelConfig } from '../weapons/ViewmodelConfig';
-import type { WeaponDef } from '../weapons/WeaponDefs';
+import { heldMoveScale, type WeaponDef } from '../weapons/WeaponDefs';
 import { WeaponSystem } from '../weapons/WeaponSystem';
 import { BotBlackboard } from './BotBlackboard';
 import { BotBrain, type BrainDeps } from './BotBrain';
@@ -476,6 +476,8 @@ export class Bot implements Combatant, PathClient {
       cmd.buttons = 0;
     }
 
+    // A bot carries its weapon's weight exactly as a player does: an LMG bot is a slower bot.
+    this.controller.weaponSpeedScale = heldMoveScale(this.weapons.definition, cmd.buttons);
     this.controller.step(cmd);
     const sim = this.controller.sim;
     this.weapons.step(cmd, sim);

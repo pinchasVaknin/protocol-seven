@@ -7,6 +7,7 @@ import { EV, type GameBus } from '../shared/core/Events';
 import type { Input } from './input/Input';
 import { MIX } from './engine/AudioMix';
 import type { CameraRig } from './engine/CameraRig';
+import type { FlameFx } from './engine/FlameFx';
 import type { Fx } from './engine/Fx';
 import type { ProceduralAudio } from './engine/ProceduralAudio';
 import type { CameraConfig } from './player/CameraConfig';
@@ -53,6 +54,8 @@ export interface FeedbackDeps {
   readonly playerHealth: Health;
   readonly weaponAudio: WeaponAudio;
   readonly fx: Fx;
+  /** The flamethrower's jet, which replaces the flash and tracer for a weapon with `flame`. */
+  readonly flame: FlameFx;
   readonly hud: Hud;
   readonly bots: BotDirector;
   readonly latency: LatencyProbe;
@@ -141,7 +144,7 @@ export class MatchFeedback extends Disposable {
   // -- wiring ----------------------------------------------------------------
 
   private subscribe(): void {
-    const { bus, cameraRig, input, fx, hud, weaponAudio, latency } = this.deps;
+    const { bus, cameraRig, input, fx, flame, hud, weaponAudio, latency } = this.deps;
 
     this.own(
       bus.on(EV.WeaponFired, (p) => {
@@ -165,8 +168,20 @@ export class MatchFeedback extends Disposable {
         // The muzzle *light* belongs to whoever fired, wherever they are standing; the flash
         // mesh hangs off the local player's own viewmodel and belongs only to them (M3 bug).
         const local = this.deps.identity.is(p.sourceId);
-        fx.fireMuzzleFlash(p.x, p.y, p.z, def.muzzleFlashScale, local);
-        if (p.tracer) fx.spawnTracer(p.x, p.y, p.z, p.endX, p.endY, p.endZ);
+        if (def.flame !== undefined) {
+          /**
+           * A jet, not a shot (2026-09-28). The star-shaped flash on the nozzle ten times a second
+           * is what made the flamethrower read as a machine gun, so it gets the fire instead, and
+           * of the flash only the world light — thrown a metre and a half down the jet, which is
+           * where the fire that would light a wall actually is.
+           */
+          flame.emit(p.x, p.y, p.z, p.endX, p.endY, p.endZ, local);
+          const lit = Math.min(1.5, p.distance * 0.5);
+          fx.fireMuzzleFlash(p.x + p.dx * lit, p.y + p.dy * lit, p.z + p.dz * lit, def.muzzleFlashScale, false);
+        } else {
+          fx.fireMuzzleFlash(p.x, p.y, p.z, def.muzzleFlashScale, local);
+          if (p.tracer) fx.spawnTracer(p.x, p.y, p.z, p.endX, p.endY, p.endZ);
+        }
         // M8 mix: your own rifle sits below everyone else's so an enemy at thirty metres
         // has somewhere to be heard. See `engine/AudioMix.ts` for the arithmetic.
         weaponAudio.playGunshot(p.x, p.y, p.z, def.voice, local ? MIX.ownWeapon : MIX.otherWeapon);

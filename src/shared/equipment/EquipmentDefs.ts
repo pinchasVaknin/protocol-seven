@@ -119,6 +119,8 @@ function blast(id: string, name: string, near: number, far: number, radius: numb
     reloadEmptyTime: 1,
     adsTime: 0.3,
     sprintOutTime: 0.2,
+    // A blast is attribution, never held: nobody's feet read this. 1 so it could not matter if one did.
+    moveSpeedMult: 1,
     swapInTime: 0.5,
     swapOutTime: 0.4,
     pellets: 1,

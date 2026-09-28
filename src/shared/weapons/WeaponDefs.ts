@@ -17,6 +17,7 @@
  * these types rather than hand-listed alongside them.
  */
 
+import { Btn, isDown } from '../core/InputCommand';
 import { ASSAULT_RIFLES } from './defs/assaultRifles';
 import { LMGS } from './defs/lmgs';
 import { PISTOLS } from './defs/pistols';
@@ -183,6 +184,25 @@ export interface WeaponDef {
   adsTime: number;
   /** Sprint-to-fire, seconds. A core balance lever (S6.6). */
   sprintOutTime: number;
+  /**
+   * How fast the body carrying this weapon **in its hands** moves, as a multiple of the
+   * movement config (2026-09-28). Every ground speed — walk, sprint, tac-sprint, crouch, aimed
+   * walk — and never the slide, which is committed and one length for everybody.
+   *
+   * The carbine is 1.00, so every movement number measured since M1 still describes it. The
+   * table, checked against the series: SMG, pistol and shotgun 1.05, rifles 1.00, the light sniper
+   * 0.95, the heavy one and the LMGs 0.90 — the same order as CoD4 (1.0 / 0.95 / 0.875) and MW3
+   * (1.0 / 0.9 / 0.8), and a 17% gap between the fastest and slowest class, between theirs. A
+   * required field so a new weapon cannot ship without an answer. Composed with the perks'
+   * `speedScale` in `PlayerController`, never written into it — see `weaponSpeedScale` there.
+   */
+  moveSpeedMult: number;
+  /**
+   * The same, while the trigger is held — for a weapon whose firing is itself the weight. Absent
+   * for everything but the minigun. Read off the command's fire bit rather than off the weapon's
+   * state, so the prediction replay and the server arrive at it from the same fact.
+   */
+  moveSpeedMultFiring?: number;
   /** Seconds to bring this weapon up when swapped to (S6.4). */
   swapInTime: number;
   /** Seconds to put this weapon away when swapping off it. */
@@ -369,6 +389,19 @@ export function cloneWeaponDef(src: WeaponDef): WeaponDef {
   };
   if (src.scope !== undefined) out.scope = { ...src.scope };
   return out;
+}
+
+/**
+ * The movement multiplier a body gets from the weapon in its hands this tick — the one function
+ * every runtime asks, just before `PlayerController.step`, with the command about to be stepped.
+ *
+ * It is `buttons` and not the weapon's firing state for the reason the field gives: a client
+ * replaying a correction has the command but not the weapon (`Prediction` never replays it), and
+ * a speed read off the weapon would be a speed the replay cannot reproduce.
+ */
+export function heldMoveScale(def: WeaponDef, buttons: number): number {
+  if (def.moveSpeedMultFiring !== undefined && isDown(buttons, Btn.Fire)) return def.moveSpeedMultFiring;
+  return def.moveSpeedMult;
 }
 
 /** Seconds between shots. */

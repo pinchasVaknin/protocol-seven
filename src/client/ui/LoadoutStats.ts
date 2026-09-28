@@ -90,6 +90,9 @@ const ROWS: readonly StatRow[] = [
     higherIsBetter: false,
     scale: 1000,
   },
+  // The weapon's own weight, as a share of the carbine's pace (2026-09-28): 105% for an SMG, 90%
+  // for an LMG. A percentage rather than m/s because the perks multiply on top of it.
+  { label: 'Move speed', read: (d) => d.moveSpeedMult, unit: '%', digits: 0, higherIsBetter: true, scale: 100 },
   {
     label: 'Hip spread',
     read: (d) => d.spread.hipStand,

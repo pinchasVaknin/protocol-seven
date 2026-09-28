@@ -69,6 +69,11 @@ import {
  * next `InputCommand` as absolute yaw and pitch — so a replayed command already carries the
  * post-recoil aim it was sampled with. The replay reproduces the server exactly because the
  * angles are data in the command rather than state in the weapon.
+ *
+ * The weapon's weight is the one thing it did leave behind (2026-09-28): a body moves at the
+ * speed of what it is holding, which is weapon state. So each record keeps the
+ * `weaponSpeedScale` its command was stepped with, and the replay steps with that — data beside
+ * the command, for the same reason the angles are data in it.
  */
 
 /**
@@ -130,6 +135,14 @@ interface PredictedTick {
   readonly state: PlayerSimState;
   /** The command itself, kept so it can be replayed. */
   readonly cmd: MutableInputCommand;
+  /**
+   * `PlayerController.weaponSpeedScale` as it was when this command was stepped (2026-09-28).
+   *
+   * The one input to movement that is neither in the command nor in the sim: it comes from the
+   * weapon in the hands, and the weapon is exactly what a replay does not run. Kept here for the
+   * same reason the command is — so the replay steps with what the prediction stepped with.
+   */
+  weaponSpeedScale: number;
   used: boolean;
 }
 
@@ -207,6 +220,7 @@ export class Prediction {
           buttons: 0,
           sampledAtMs: 0,
         },
+        weaponSpeedScale: 1,
         used: false,
       });
     }
@@ -236,6 +250,7 @@ export class Prediction {
     slot.seq = cmd.seq;
     slot.tick = cmd.tickIndex;
     copyCommand(cmd, slot.cmd);
+    slot.weaponSpeedScale = controller.weaponSpeedScale;
     savePlayerSim(controller.sim, slot.state);
     slot.used = true;
   }
@@ -484,12 +499,15 @@ export class Prediction {
     pending.sort((a, b) => a.seq - b.seq);
 
     this.replaying = true;
+    const live = controller.weaponSpeedScale;
     try {
       for (const p of pending) {
+        controller.weaponSpeedScale = p.weaponSpeedScale;
         controller.step(p.cmd);
         savePlayerSim(controller.sim, p.state);
       }
     } finally {
+      controller.weaponSpeedScale = live;
       this.replaying = false;
     }
     return pending.length;

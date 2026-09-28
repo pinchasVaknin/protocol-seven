@@ -17,7 +17,7 @@ import type { MovementConfig } from '../shared/player/MovementConfig';
 import { PlayerController } from '../shared/player/PlayerController';
 import { savePlayerSim, type PlayerSimState, makePlayerSimState } from '../shared/player/PlayerState';
 import type { ViewmodelConfig } from '../shared/weapons/ViewmodelConfig';
-import type { WeaponDef } from '../shared/weapons/WeaponDefs';
+import { heldMoveScale, type WeaponDef } from '../shared/weapons/WeaponDefs';
 import { WeaponSystem } from '../shared/weapons/WeaponSystem';
 import type { CollisionWorld } from '../shared/world/CollisionWorld';
 import { InputBuffer } from './net/InputBuffer';
@@ -447,6 +447,8 @@ export class NetPlayer implements Combatant {
      * record to anybody else.
      */
     this.lastCommand = cmd;
+    // The weapon as the last tick left it, which is the one the client's prediction asked too.
+    this.controller.weaponSpeedScale = heldMoveScale(this.weapons.definition, cmd.buttons);
     this.controller.step(cmd);
     const sim = this.controller.sim;
     this.weapons.step(cmd, sim);

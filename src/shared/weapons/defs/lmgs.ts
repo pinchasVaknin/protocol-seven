@@ -36,6 +36,7 @@ export const LMG_BASTION: WeaponDef = {
   reloadEmptyTime: 4.6,
   adsTime: 0.42,
   sprintOutTime: 0.36,
+  moveSpeedMult: 0.9,
   swapInTime: 0.78,
   swapOutTime: 0.62,
 
@@ -162,6 +163,7 @@ export const LMG_MONOLITH: WeaponDef = {
   reloadEmptyTime: 5.1,
   adsTime: 0.46,
   sprintOutTime: 0.4,
+  moveSpeedMult: 0.9,
   swapInTime: 0.85,
   swapOutTime: 0.68,
 

@@ -23,6 +23,7 @@ import { DT } from '../shared/core/Loop';
 import { DEG2RAD } from '../shared/core/MathUtil';
 import type { CameraRig } from './engine/CameraRig';
 import type { CameraConfig } from './player/CameraConfig';
+import { FlameFx } from './engine/FlameFx';
 import { Fx } from './engine/Fx';
 import type { ProceduralAudio } from './engine/ProceduralAudio';
 import { LatencyProbe } from './debug/LatencyProbe';
@@ -382,6 +383,8 @@ export class Match {
   /** Only on the grey-box testbed: a firing range does not belong on a TDM map. */
   readonly range: TargetRange | null;
   readonly fx: Fx;
+  /** The flamethrower's jet. See `engine/FlameFx`. */
+  readonly flame: FlameFx;
   readonly weaponAudio: WeaponAudio;
   /** One per inventory slot; only the active one is visible. */
   readonly models: WeaponModel[];
@@ -753,6 +756,8 @@ export class Match {
 
     this.fx = new Fx(deps.anisotropy);
     deps.scene.add(this.fx.group);
+    this.flame = new FlameFx();
+    deps.scene.add(this.flame.group);
 
     // One mesh per inventory slot, both built up front and toggled by visibility. Building
     // on demand would put a geometry merge and a GPU upload on the frame the player presses
@@ -772,6 +777,7 @@ export class Match {
     this.model = this.requireModel(0);
     this.model.root.visible = true;
     this.fx.attachMuzzle(this.model.muzzle);
+    this.flame.setLocalMuzzle(this.model.muzzle, deps.viewmodel.camera);
     this.anim = new ViewmodelAnim(this.model);
     // A slot whose file has not arrived starts on the primitives and upgrades in place when it
     // does (M19). `Game` warms the equipped class while the menu is up, so this is usually a
@@ -832,6 +838,7 @@ export class Match {
       playerHealth: this.playerHealth,
       weaponAudio: this.weaponAudio,
       fx: this.fx,
+      flame: this.flame,
       hud: this.ui.hud,
       bots: this.bots,
       latency: this.latency,
@@ -1821,6 +1828,7 @@ export class Match {
     this.model = model;
     this.anim.setModel(model);
     this.fx.attachMuzzle(model.muzzle);
+    this.flame.setLocalMuzzle(model.muzzle, this.deps.viewmodel.camera);
   }
 
   private requireModel(index: number): WeaponModel {
@@ -2764,6 +2772,7 @@ export class Match {
     this.botRenderer.setEyesOf(this.spectatorTargetId);
     this.botRenderer.update(alpha, dt, camera);
     this.fx.update(dt);
+    this.flame.update(dt, camera);
     this.renderBurns(dt);
     this.equipment.render(alpha, dt, camera);
     this.meta.render(dt);
@@ -3249,6 +3258,8 @@ export class Match {
     }
     this.fx.dispose();
     this.deps.scene.remove(this.fx.group);
+    this.flame.dispose();
+    this.deps.scene.remove(this.flame.group);
     this.swapSubscription?.();
     this.deathSubscription?.();
     this.swapSubscription = null;

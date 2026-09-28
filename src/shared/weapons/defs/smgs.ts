@@ -52,6 +52,7 @@ export const SMG_WASP: WeaponDef = {
    * never wins the duel outright against somebody who chose to aim. See PLAN.md.
    */
   sprintOutTime: 0.18,
+  moveSpeedMult: 1.05,
   swapInTime: 0.4,
   swapOutTime: 0.3,
 
@@ -183,6 +184,7 @@ export const SMG_MERIDIAN: WeaponDef = {
    * conclusion. The first pass raised only two weapons and this one inherited the problem.
    */
   sprintOutTime: 0.18,
+  moveSpeedMult: 1.05,
   swapInTime: 0.44,
   swapOutTime: 0.33,
 

@@ -37,7 +37,7 @@ import type { MovementConfig } from '../shared/player/MovementConfig';
 import { PlayerController } from '../shared/player/PlayerController';
 import type { ViewmodelLayer } from './player/Viewmodel';
 import type { ViewmodelConfig } from '../shared/weapons/ViewmodelConfig';
-import type { WeaponDef } from '../shared/weapons/WeaponDefs';
+import { heldMoveScale, type WeaponDef } from '../shared/weapons/WeaponDefs';
 import type { InputCommand } from '../shared/core/InputCommand';
 import type { WelcomeInfo } from '../shared/net/Messages';
 import { LocalIdentity } from '../shared/combat/LocalIdentity';
@@ -352,6 +352,7 @@ export class MatchWorld {
             // match cannot exist before the session it is being handed to.
             sample: (tick) => this.sampleCommand(tick),
             applyWeapon: (cmd) => this.applyWeaponForNet(cmd),
+            moveScale: (cmd) => this.weaponMoveScale(cmd),
           });
 
     this.match = new Match({
@@ -663,6 +664,17 @@ export class MatchWorld {
    */
   private applyWeaponForNet(cmd: InputCommand): void {
     this.match.simulate(cmd);
+  }
+
+  /**
+   * How fast the weapon in the hands lets the body move on `cmd` (2026-09-28).
+   *
+   * Asked before the controller steps, by the solo loop and by `NetClient` alike, and of the
+   * weapon as the last tick left it — which is the same weapon the server's `NetPlayer` asks,
+   * because both stepped the same commands through the same `WeaponSystem`.
+   */
+  weaponMoveScale(cmd: InputCommand): number {
+    return heldMoveScale(this.match.weapons.definition, cmd.buttons);
   }
 
   /**

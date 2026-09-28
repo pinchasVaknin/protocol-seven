@@ -133,22 +133,32 @@ export function carriedStreakWeapon(streakId: string): WeaponDef | null {
  * hands, with their spread, their recoil, their reload — so every field that was left at the
  * carbine's default because nothing consulted it is now a feel decision.
  *
- * **The weight is in the handling, not in a speed penalty.** There is no per-weapon movement
- * multiplier in `WeaponDef` and `controller.speedScale` belongs to the perks, which both
- * runtimes set from `PerkState`; adding a second writer to it is a divergence waiting for a
- * missed tick. What a minigun *can* say through the fields that already exist is that it takes
- * 1.1 s to bring up — the spin, felt as a raise — that it cannot be aimed down (there are no
- * sights on it), that it kicks twice as hard as a rifle and sprays four times as wide, and that
- * it is never reloaded: `reserveAmmo` is zero, so the belt is the whole streak.
+ * **The weight is in the feet as well as the handling now** (2026-09-28). This used to say there
+ * was no per-weapon movement multiplier to put it in; `WeaponDef.moveSpeedMult` is that field, and
+ * the sprint list asked for the minigun to be heavy to carry and heavier to fire. Carried, 0.80 —
+ * a walk of 3.7 m/s against the carbine's 4.6, and the slowest thing anybody holds by a clear
+ * margin. Firing, 0.40: 1.84 m/s, under a crouch's 2.8, which is *almost stationary* without
+ * being planted — a gunner can still step out of a grenade. The trigger decides it rather than the
+ * barrel's state, so the replay of a prediction arrives at the same speed (see `heldMoveScale`).
+ *
+ * The rest is still the handling: 1.1 s to bring up — the spin, felt as a raise — no sights, a
+ * kick twice a rifle's, and never a reload: `reserveAmmo` is zero, so the belt is the whole streak.
+ *
+ * **Harder and tighter** (2026-09-28): the report was a weak spray, and it was two numbers. 34
+ * near was three to the body and 24 far was five, and the cone was 2.2 times the carbine's, so
+ * past a few metres most of the belt went past. Now 40 near and 30 far — three to the body out to
+ * 39 m and four past it, and three to a limb up close (36 each) where 30.6 took four — through a
+ * cone 1.6 times the carbine's, so the rounds that make those numbers land. Still hip only, still
+ * the bloom and the kick: it is a lethal suppression weapon that has to be walked onto a target.
  *
  * 200 rounds at 900 rpm is thirteen seconds of held trigger inside a thirty-second streak, which
  * is the trade: the belt runs out before the clock does unless it is fired in bursts.
  */
 export function minigunWeapon(): WeaponDef {
   if (minigun !== null) return minigun;
-  const def = synthetic('streak_minigun', 'MINIGUN', 34, 1.2);
-  def.damage.near = 34;
-  def.damage.far = 24;
+  const def = synthetic('streak_minigun', 'MINIGUN', 40, 1.2);
+  def.damage.near = 40;
+  def.damage.far = 30;
   def.damageFalloff.start = 22;
   def.damageFalloff.end = 48;
   def.rpm = 900;
@@ -162,6 +172,8 @@ export function minigunWeapon(): WeaponDef {
   def.swapInTime = 1.1;
   def.swapOutTime = 0.5;
   def.sprintOutTime = 0.45;
+  def.moveSpeedMult = 0.8;
+  def.moveSpeedMultFiring = 0.4;
   /**
    * No sights, and now no aiming either (2026-09-27).
    *
@@ -174,8 +186,8 @@ export function minigunWeapon(): WeaponDef {
   def.noAds = true;
   def.adsFovScale = 1;
   def.adsViewmodelFovScale = 1;
-  def.spread.hipStand = def.spread.hipStand * 2.2;
-  def.spread.hipMove = def.spread.hipMove * 2.2;
+  def.spread.hipStand = def.spread.hipStand * 1.6;
+  def.spread.hipMove = def.spread.hipMove * 1.6;
   def.spread.ads = def.spread.hipStand;
   def.spread.perShot = def.spread.perShot * 1.6;
   def.spread.perShotMax = def.spread.perShotMax * 1.8;
@@ -202,12 +214,14 @@ export function minigunWeapon(): WeaponDef {
  * the jet is a *threat* and the root of it is lethal — the same shape a shotgun has, expressed
  * through the term `damageAtRange` already applies.
  *
- * Ten fuel a second at 7 damage each is 70 a second in contact, so a body held in the jet for
- * a second and a half is dead. Half a second of contact is 35 and does **not** kill: what
- * follows them out is the burn, three seconds at 8 a second, which is another 24 and still not
- * lethal on its own. That gap is deliberate and is the whole balance of the weapon — brushing
- * the edge of a jet costs a player most of their health and leaves them alive to make a
- * decision about it, and a second in the middle of one does not.
+ * **Buffed 2026-09-28**, because at 7 a tick it lost the close fights it exists to win: a body
+ * held in the jet took a second and a half to die, and an SMG kills in a third of that. Ten fuel
+ * a second at **11** is 110 a second in contact, and the burn it lights ticks alongside at **10**,
+ * so a body held in the root of the jet is dead in about 0.85 s. Half a second of contact is
+ * still **not** lethal, and that gap is kept on purpose — it is the whole balance of the weapon:
+ * five ticks is 55, the burn while it lasts another 5, and the three seconds that follow them
+ * out another 30. Ninety. Brushing the edge of a jet costs a player nearly all of their health
+ * and leaves them alive to make a decision about it; a second in the middle of one does not.
  *
  * No headshot: fire does not care where it lands, and a headshot multiplier on a cone that
  * cannot be aimed at a head would be a coin toss the player has no say in. No penetration, for
@@ -219,9 +233,9 @@ export function minigunWeapon(): WeaponDef {
  */
 export function flamethrowerWeapon(): WeaponDef {
   if (flamethrower !== null) return flamethrower;
-  const def = synthetic('streak_flamethrower', 'FLAMETHROWER', 7, 1);
-  def.damage.near = 7;
-  def.damage.far = 3;
+  const def = synthetic('streak_flamethrower', 'FLAMETHROWER', 11, 1);
+  def.damage.near = 11;
+  def.damage.far = 5;
   def.damageFalloff.start = 5;
   def.damageFalloff.end = 9;
   def.limbMult = 1;
@@ -234,6 +248,9 @@ export function flamethrowerWeapon(): WeaponDef {
   def.swapInTime = 0.7;
   def.swapOutTime = 0.4;
   def.sprintOutTime = 0.35;
+  // A tank on the back: a step behind a rifle, and no slower firing — a jet held on a doorway
+  // is the job, and a gunner who could not walk it onto the door would not be doing it.
+  def.moveSpeedMult = 0.95;
   def.adsFovScale = 1;
   def.adsViewmodelFovScale = 1;
   def.penetration = 0;
@@ -249,7 +266,7 @@ export function flamethrowerWeapon(): WeaponDef {
     rangeM: 9,
     halfAngleDeg: 16,
     burnSeconds: 3,
-    burnDps: 8,
+    burnDps: 10,
   };
   /**
    * The voice, because ten of these leave the barrel every second.
@@ -374,6 +391,9 @@ export function shieldPistolWeapon(): WeaponDef {
   def.swapInTime = 1.2;
   def.swapOutTime = 0.5;
   def.sprintOutTime = 0.3;
+  // The plate is the weight, not the pistol: an LMG's feet, where the sidearm it came from has an
+  // SMG's. MW3 put its riot shield at the LMG's 0.8 of an SMG; this is 0.86 of one.
+  def.moveSpeedMult = 0.9;
   /**
    * **No aiming** (2026-09-27, the human). "It cannot be aimed down properly" was the comment
    * this replaced, and `adsFovScale = 1` was how it was said — which said nothing: the view did

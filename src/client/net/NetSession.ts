@@ -80,6 +80,8 @@ export interface NetSessionDeps {
   readonly sample: (tickIndex: number) => InputCommand;
   /** The local weapon, stepped once per tick and never replayed. See `Prediction`. */
   readonly applyWeapon: (cmd: InputCommand) => void;
+  /** The weapon in the hands' movement multiplier for `cmd`. See `NetClientDeps.moveScale`. */
+  readonly moveScale: (cmd: InputCommand) => number;
   /**
    * This client's identity, adopted from the `Welcome`.
    *
@@ -229,6 +231,7 @@ export class NetSession {
       controller: deps.controller,
       sample: deps.sample,
       applyNonReplayed: deps.applyWeapon,
+      moveScale: deps.moveScale,
       displayName: deps.displayName,
       loadout: deps.loadout ?? null,
       skinIndex: deps.skinIndex,

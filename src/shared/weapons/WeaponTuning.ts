@@ -23,7 +23,11 @@ import type { RecoilPattern, ScopeProfile, SpreadProfile, WeaponDef, WeaponVoice
  */
 type NumberKeysOf<T> = { [K in keyof T]-?: number extends T[K] ? K : never }[keyof T] & string;
 
-type TopKey = Exclude<NumberKeysOf<WeaponDef>, 'projectileSpeed'>;
+/**
+ * Optional numbers are out: a slider has to show *something* on every weapon, and
+ * `moveSpeedMultFiring` exists on one killstreak that the panel never holds.
+ */
+type TopKey = Exclude<NumberKeysOf<WeaponDef>, 'projectileSpeed' | 'moveSpeedMultFiring'>;
 type DamageKey = `damage.${NumberKeysOf<WeaponDef['damage']>}`;
 type FalloffKey = `falloff.${NumberKeysOf<WeaponDef['damageFalloff']>}`;
 type SpreadKey = `spread.${NumberKeysOf<SpreadProfile>}`;
@@ -69,6 +73,7 @@ export const WEAPON_TUNABLES: Readonly<Record<WeaponNumberKey, TunableMeta>> = {
   reloadEmptyTime: { label: 'Reload empty', group: 'Handling', min: 0.4, max: 8, step: 0.05, unit: 's' },
   adsTime: { label: 'ADS time', group: 'Handling', min: 0.05, max: 1.2, step: 0.01, unit: 's' },
   sprintOutTime: { label: 'Sprint to fire', group: 'Handling', min: 0, max: 1, step: 0.01, unit: 's' },
+  moveSpeedMult: { label: 'Move speed', group: 'Handling', min: 0.5, max: 1.3, step: 0.01, unit: 'x' },
   swapInTime: { label: 'Swap in', group: 'Handling', min: 0.1, max: 1.5, step: 0.01, unit: 's' },
   swapOutTime: { label: 'Swap out', group: 'Handling', min: 0.1, max: 1.5, step: 0.01, unit: 's' },
 
@@ -159,6 +164,8 @@ export function readWeaponNumber(def: WeaponDef, key: WeaponNumberKey): number {
       return def.adsTime;
     case 'sprintOutTime':
       return def.sprintOutTime;
+    case 'moveSpeedMult':
+      return def.moveSpeedMult;
     case 'swapInTime':
       return def.swapInTime;
     case 'swapOutTime':
@@ -304,6 +311,9 @@ export function writeWeaponNumber(def: WeaponDef, key: WeaponNumberKey, v: numbe
       return;
     case 'sprintOutTime':
       def.sprintOutTime = v;
+      return;
+    case 'moveSpeedMult':
+      def.moveSpeedMult = v;
       return;
     case 'swapInTime':
       def.swapInTime = v;

@@ -36,6 +36,8 @@ export const SNIPER_KESTREL: WeaponDef = {
   reloadEmptyTime: 3.9,
   adsTime: 0.35,
   sprintOutTime: 0.34,
+  /** The heavy bolt gun, and as slow as an LMG: MW3's split, where a one-shot is paid for in feet. */
+  moveSpeedMult: 0.9,
   swapInTime: 0.72,
   swapOutTime: 0.58,
 
@@ -140,6 +142,8 @@ export const SNIPER_VANTAGE: WeaponDef = {
   reloadEmptyTime: 3.7,
   adsTime: 0.44,
   sprintOutTime: 0.32,
+  /** The light, semi-automatic one: a step behind a rifle rather than beside the Kestrel. */
+  moveSpeedMult: 0.95,
   swapInTime: 0.68,
   swapOutTime: 0.54,
 

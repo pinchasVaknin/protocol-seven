@@ -2641,6 +2641,7 @@ export class Game {
     for (let i = 0; i < count; i++) {
       const drained = this.drainBuffer[i];
       if (drained === undefined) continue;
+      world.player.weaponSpeedScale = world.weaponMoveScale(drained);
       world.player.step(drained);
       // The weapon consumes the same command the player did, one tick at a time, so
       // fire rate and reload timing are as frame-rate independent as movement is (S4.1).

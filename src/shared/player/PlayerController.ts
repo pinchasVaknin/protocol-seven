@@ -82,6 +82,18 @@ export class PlayerController {
   speedScale = 1;
 
   /**
+   * Multiplier from the weapon in the hands, for the tick about to be stepped (2026-09-28).
+   *
+   * A second field rather than a second writer of `speedScale`: that one is the perks', set once
+   * a life by both runtimes, and this changes on a swap and on a trigger. Whoever steps the
+   * controller sets it first, from `heldMoveScale(def, cmd.buttons)` — `NetPlayer`, `Bot`, the solo
+   * loop and `NetClient` — and `Prediction` records it beside each command and puts it back for a
+   * replay, because a replay has the command and not the weapon. 1 for a body with no weapon.
+   * Multiplied, never added: a Lightweight SMG is 1.07 × 1.05.
+   */
+  weaponSpeedScale = 1;
+
+  /**
    * Held down by something other than the crouch key (post-M8).
    *
    * Planting and defusing use it: S6.3 asks for a visible indicator that somebody is working
@@ -302,7 +314,7 @@ export class PlayerController {
     integrateMotion(sim, cfg, this.world);
 
     if (wasGroundedForCap && !sim.grounded && !sim.jumpedThisTick) {
-      sim.airSpeedCap = Math.max(sim.speed, cfg.sprintSpeed);
+      sim.airSpeedCap = Math.max(sim.speed, this.airSprintFloor());
     }
 
     // ---- post-move stance ------------------------------------------------
@@ -482,12 +494,24 @@ export class PlayerController {
     sim.tacSprintCooldown = this.cfg.tacSprintCooldown;
   }
 
+  /**
+   * The least an airborne body may accelerate to: sprint speed, in the weapon's hands.
+   *
+   * Air control can reach this from a standstill, so left at the config's sprint speed a jump
+   * would be the way out from under a heavy weapon — a minigun walks at 3.7 m/s and a hop could
+   * take it to 6.9 in a fifth of a second. The perks' `speedScale` is deliberately not in it: the
+   * air has never been scaled by Lightweight, and every M1 jump number was measured that way.
+   */
+  private airSprintFloor(): number {
+    return this.cfg.sprintSpeed * this.weaponSpeedScale;
+  }
+
   /** Horizontal speed cap for the current state, before the input magnitude scale. */
   private speedCap(adsHeld: boolean): number {
     const sim = this.sim;
     const cfg = this.cfg;
-    if (!sim.grounded) return Math.max(sim.airSpeedCap, cfg.sprintSpeed);
-    const scale = this.speedScale;
+    if (!sim.grounded) return Math.max(sim.airSpeedCap, this.airSprintFloor());
+    const scale = this.speedScale * this.weaponSpeedScale;
     if (sim.stance === 'CROUCH') return cfg.crouchSpeed * scale;
     if (adsHeld) return cfg.adsSpeed * scale;
     if (sim.tacSprintActive) {
@@ -514,7 +538,7 @@ export class PlayerController {
     sim.coyote = 0;
     sim.jumpBuffer = 0;
     sim.jumpedThisTick = true;
-    sim.airSpeedCap = Math.max(sim.speed, cfg.sprintSpeed);
+    sim.airSpeedCap = Math.max(sim.speed, this.airSprintFloor());
     this.setStance('AIRBORNE');
 
     evJump.entityId = this.entityId;

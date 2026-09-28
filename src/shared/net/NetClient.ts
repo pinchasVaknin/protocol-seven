@@ -99,6 +99,12 @@ export interface NetClientDeps {
    * a weapon would fire its rounds again. This runs once per real tick and never on a replay.
    */
   readonly applyNonReplayed?: ((cmd: InputCommand) => void) | undefined;
+  /**
+   * The movement multiplier of the weapon in the hands, for `cmd` — `heldMoveScale` of the
+   * active def (2026-09-28). Asked before each predicted step, because the server asks it before
+   * each authoritative one; `Prediction` keeps the answer for replays. Absent means 1.
+   */
+  readonly moveScale?: ((cmd: InputCommand) => number) | undefined;
   /** Gameplay events from the server, for presentation. */
   readonly events?: EventSink | undefined;
   readonly displayName: string;
@@ -1037,6 +1043,7 @@ export class NetClient {
     let steps = 0;
     while (this.currentTick < target && steps < MAX_CATCHUP_STEPS) {
       const cmd = this.neutralise(this.deps.sample(this.currentTick));
+      this.controller.weaponSpeedScale = this.deps.moveScale?.(cmd) ?? 1;
       this.controller.step(cmd);
       this.deps.applyNonReplayed?.(cmd);
       this.prediction.record(cmd, this.controller);

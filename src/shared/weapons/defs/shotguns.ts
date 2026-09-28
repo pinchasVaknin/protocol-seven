@@ -42,6 +42,8 @@ export const SHOTGUN_BREACHER: WeaponDef = {
   reloadEmptyTime: 3.0,
   adsTime: 0.29,
   sprintOutTime: 0.2,
+  /** An SMG's feet: every game in the series moves a shotgun, an SMG and a pistol alike. */
+  moveSpeedMult: 1.05,
   swapInTime: 0.54,
   swapOutTime: 0.42,
 

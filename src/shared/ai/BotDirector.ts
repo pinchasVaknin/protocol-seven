@@ -27,7 +27,7 @@ import type { ObjectiveProvider } from './ObjectiveIntent';
 import { BOT_TIERS, type BotTier, type PerceptionConfig, type TierTable } from './DifficultyTiers';
 import { NoiseKind, Perception } from './Perception';
 import { Pathfinder } from './Pathing';
-import { dealTiers } from './RosterDeal';
+import { dealTiers, seatToVacate } from './RosterDeal';
 import { hitsFrom, shotsFrom } from '../combat/ShotAccounting';
 import { makeSpawnChoice, SpawnSelector, type SpawnChoice } from './SpawnSelector';
 import { simCos } from '../core/SimMath';
@@ -430,7 +430,12 @@ export class BotDirector extends Disposable {
   }
 
   /**
-   * Take one bot off `team` to make room for a human, newest first. Null if that side has none.
+   * Take one bot off `team` to make room for a human. Null if that side has none.
+   *
+   * **The weakest on that side, and among equals the newest** — `RosterDeal.seatToVacate`, the
+   * same ordering the deal leaves a short side's surplus out by. It used to be the newest
+   * outright, which on Foundry and Dunes is the VETERAN: the first human on a live side replaced
+   * its best bot in every match (playtest 2026-09-28).
    *
    * Releases everything a bot holds **in `shared/`** — roster slot, id map, `DamageSystem`
    * registration, cover reservation. It cannot release the one thing the bot holds in `server/`,
@@ -438,18 +443,16 @@ export class BotDirector extends Disposable {
    * so route removal through `ServerMatch.removeBotForSeat`, never this directly.
    */
   removeOne(team: BotTeam): Bot | null {
-    for (let i = this.bots.length - 1; i >= 0; i--) {
-      const bot = this.bots[i];
-      if (bot === undefined || bot.team !== team) continue;
-      this.bots.splice(i, 1);
-      const at = this.roster.indexOf(bot);
-      if (at >= 0) this.roster.splice(at, 1);
-      this.byId.delete(bot.entityId);
-      this.deps.damage.unregister(bot.entityId);
-      this.cover.release(bot.entityId);
-      return bot;
-    }
-    return null;
+    const side = this.bots.filter((b) => b.team === team);
+    const bot = side[seatToVacate(side.map((b) => b.tierName))];
+    if (bot === undefined) return null;
+    this.bots.splice(this.bots.indexOf(bot), 1);
+    const at = this.roster.indexOf(bot);
+    if (at >= 0) this.roster.splice(at, 1);
+    this.byId.delete(bot.entityId);
+    this.deps.damage.unregister(bot.entityId);
+    this.cover.release(bot.entityId);
+    return bot;
   }
 
   /**

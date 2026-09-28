@@ -1295,6 +1295,9 @@ export class ServerMatch extends Disposable {
   removeBotForSeat(team: BotTeam): boolean {
     const bot = this.bots.removeOne(team);
     if (bot === null) return false;
+    // The tier is in the line for the reason `replacePlayerWithBot` gives: which bot a human
+    // displaces decides the balance of the match, and nothing on a client shows a bot's tier.
+    log.info(`${bot.displayName} (${bot.tierName}) gave team ${team}'s seat to a human.`);
     this.rewind.unregister(bot.entityId);
     // Its row goes with it (M13 Phase B, bug 4.3): a bot that gave its seat to a human is not a
     // result, and its `0/0/0` row was what placed Free-for-All players eleventh in an

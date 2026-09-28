@@ -49,6 +49,17 @@ function strength(tier: BotTier): number {
   return at < 0 ? 0 : at;
 }
 
+/**
+ * The order a side gives bodies up in: weakest first, and among equals the latest.
+ *
+ * One ordering for both places a side loses a bot — `dealTiers` leaving the short side's
+ * surplus out before the match, and `seatToVacate` choosing whom a joining human displaces
+ * during it — so a live 5v5 with a human seated lands on exactly the roster a solo 4v5 is dealt.
+ */
+function yieldOrder(lTier: BotTier, lIndex: number, rTier: BotTier, rIndex: number): number {
+  return strength(lTier) - strength(rTier) || rIndex - lIndex;
+}
+
 export interface RosterDeal {
   readonly a: readonly BotTier[];
   readonly b: readonly BotTier[];
@@ -58,8 +69,8 @@ export interface RosterDeal {
  * Deal `teamA` and `teamB` bots from `mix`.
  *
  * Both arrays come back in mix order, so the creation order inside a side is the order the
- * spread was authored in — which is what `BotDirector.removeOne` walks backwards when a human
- * takes a seat.
+ * spread was authored in — which is the order `seatToVacate` breaks ties by when a human takes
+ * a seat.
  */
 export function dealTiers(teamA: number, teamB: number, mix: readonly BotTier[]): RosterDeal {
   const a = Math.max(0, Math.trunc(teamA));
@@ -81,7 +92,7 @@ export function dealTiers(teamA: number, teamB: number, mix: readonly BotTier[])
   const dropped = new Set<number>();
   const byWeakest = full
     .map((tier, index) => ({ tier, index }))
-    .sort((l, r) => strength(l.tier) - strength(r.tier) || r.index - l.index);
+    .sort((l, r) => yieldOrder(l.tier, l.index, r.tier, r.index));
   for (let i = 0; i < long - short; i++) {
     const entry = byWeakest[i];
     if (entry !== undefined) dropped.add(entry.index);
@@ -89,6 +100,28 @@ export function dealTiers(teamA: number, teamB: number, mix: readonly BotTier[])
   const shortSide = full.filter((_, index) => !dropped.has(index));
 
   return a >= b ? { a: full, b: shortSide } : { a: shortSide, b: full };
+}
+
+/**
+ * Which bot a joining human displaces: an index into `roster` — one side, in creation order —
+ * or -1 when the side has none.
+ *
+ * The weakest, and among equals the latest: the entry `dealTiers` would have left off this side
+ * had it been dealt one body shorter. It used to be simply the newest bot, which follows the
+ * mix's *authored order* rather than strength (playtest 2026-09-28). Every live server deals an
+ * even 5v5, Foundry and Dunes put their VETERAN fifth, and so the first human on either side
+ * always replaced that side's VETERAN — a 4+1 against a 5 that still had one, in every match.
+ * The deal itself was already fair; the seat was the hole in it.
+ */
+export function seatToVacate(roster: readonly BotTier[]): number {
+  let at = -1;
+  for (let i = 0; i < roster.length; i++) {
+    const tier = roster[i];
+    if (tier === undefined) continue;
+    const held = roster[at];
+    if (held === undefined || yieldOrder(tier, i, held, at) < 0) at = i;
+  }
+  return at;
 }
 
 /**
@@ -265,15 +298,38 @@ export function auditRosterDeal(mixes: readonly RosterMix[], maxPerSide = 12): R
          * its own, so it can disagree with the deal and nothing says so — a replacement at the
          * wrong tier produces no error and no divergence, only one bot that is harder or softer
          * than the rest. This walks the whole cycle a human puts a side through:
-         * `removeOne` takes the newest bot off a side, and `tierForExtraBot` has to name that
-         * same tier when the seat comes back.
+         * `seatToVacate` picks the bot a joining human displaces, and `tierForExtraBot` has to
+         * name that same tier when the seat comes back.
          */
         for (const team of ['A', 'B'] as const) {
           const mine = team === 'A' ? deal.a : deal.b;
           const theirs = team === 'A' ? deal.b : deal.a;
-          if (mine.length === 0) continue;
-          const taken = mine[mine.length - 1];
-          const afterJoin = mine.slice(0, -1);
+          const seat = seatToVacate(mine);
+          const taken = mine[seat];
+          if (taken === undefined) continue;
+          const afterJoin = mine.filter((_, index) => index !== seat);
+
+          /*
+           * The seat is taken from the weak end (playtest 2026-09-28). A human joining a side
+           * that is not the longer one leaves exactly the roster `dealTiers` makes one body
+           * shorter — which is every live server's first join, an even 5v5 — so the side the
+           * human is on keeps the stronger half by the same rule the solo deal already kept.
+           */
+          if (mine.length <= theirs.length) {
+            const expected =
+              team === 'A'
+                ? dealTiers(mine.length - 1, theirs.length, entry.mix).a
+                : dealTiers(theirs.length, mine.length - 1, entry.mix).b;
+            const got = tally(afterJoin);
+            const want = tally(expected);
+            if (BOT_TIERS.some((tier) => got[tier] !== want[tier])) {
+              problems.push(
+                `${where}: a human took team ${team}'s ${taken} seat, leaving ${afterJoin.join(' ')} ` +
+                  `where the deal one body shorter is ${expected.join(' ')}.`,
+              );
+            }
+          }
+
           const back = tierForExtraBot(afterJoin, theirs, entry.mix);
           if (back !== taken) {
             problems.push(

@@ -14,9 +14,44 @@ import {
 import { variantFor } from './AnimationVariant';
 import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
 import { THROW_FOLLOW_THROUGH, THROW_RELEASE_TIME } from '../../shared/equipment/ThrowController';
+import { DEFAULT_MOVEMENT_CONFIG } from '../../shared/player/MovementConfig';
 import { MELEE_SWING_SECONDS } from '../../shared/weapons/Melee';
 
 const CROSS_FADE_SECONDS = 0.14;
+
+/**
+ * The part of `Running_Slide` that is a slide, in clip seconds (2026-09-28).
+ *
+ * The clip is 1.55 s of a whole manoeuvre, traced frame by frame with `measure-crouch.mjs
+ * --trace`: a run to 0.10 s, the drop to 0.37 (crown 1.58 → 0.73 m), the slide itself to 0.77
+ * (crown 0.44–0.61), the get-up to 1.10 and a run again. The simulation's slide *is* the low part
+ * — the capsule and the hitbox layout are down on the tick it starts and up on the tick it ends —
+ * so only the low part is played, fitted across `slideDuration` at about ×0.47, and the drop is
+ * `SLIDE_FADE_IN_SECONDS` of cross-fade from whatever the body was doing.
+ *
+ * It opened at 0.333 first, two frames up the drop, and a live match measured what that cost: the
+ * drawn crown 0.2–0.8 m over the head box for the first 0.1 s of every slide. At 0.400 the crown is
+ * already at 0.61 m, so the window starts where the box does.
+ *
+ * `humanoid-slide` is measured over exactly this window (`--window 0.4:0.8 --pose`); move one and
+ * the other has to be measured again.
+ */
+const SLIDE_CLIP_WINDOW = { start: 0.4, end: 0.8 } as const;
+
+/**
+ * The cross-fade into a slide, shorter than `CROSS_FADE_SECONDS` because it is the whole drop:
+ * the layout is lying down from the first tick, and every frame of fade is a frame of a body drawn
+ * above its own boxes. Half the loop fade is still four frames, which reads as a fall rather than
+ * a cut.
+ */
+const SLIDE_FADE_IN_SECONDS = 0.07;
+
+/**
+ * How long the slide lasts, for the fit. The default config's, and a constant: every body in a
+ * match slides by the server's rules, and a debug tuner that changes the local one is changing a
+ * number no remote body obeys.
+ */
+const SLIDE_SECONDS = DEFAULT_MOVEMENT_CONFIG.slideDuration;
 
 /**
  * How far into a throw clip the arm is cocked — where the clip waits while the grenade is still
@@ -115,6 +150,10 @@ interface Playing {
  *    loop waiting behind it. The crouch edge drives it (`standToCrouch` / `crouchToStand`, in the
  *    held weapon's version), and so do a knife swing and a grenade throw, which additionally
  *    *pauses* partway;
+ * 2b. the **slide**, which owns the body from the tick the stance says `SLIDE` to the tick it
+ *    says anything else, and is fitted to the slide rather than played at its authored speed —
+ *    see `SLIDE_CLIP_WINDOW`. It is not a transition because it does not finish on its own: the
+ *    simulation ends it, early for a jump or a wall, and the body leaves it for whatever comes next;
  * 3b. the **air**: once `jumpLaunch` has finished and the body has not landed, its clamped last
  *    frame is held rather than handed back, because that frame is the pose and the air is as long
  *    as the physics says;
@@ -135,6 +174,9 @@ export class CharacterAnimator {
   private readonly actions = new Map<string, THREE.AnimationAction>();
   private active: Playing | null = null;
   private transition: Playing | null = null;
+  /** The slide clip while the body is sliding, or null. See `SLIDE_CLIP_WINDOW`. */
+  private slide: Playing | null = null;
+  private wasSliding = false;
   private action: Playing | null = null;
   private pendingLocomotion: CharacterAnimationId | null = null;
   private dead = false;
@@ -241,6 +283,7 @@ export class CharacterAnimator {
       dt,
     );
     const low = isLowStance(input);
+    const sliding = input.stance === 'SLIDE';
     const airborne = this.settleAirborne(isAirborne(input), dt);
     const gesture = selectGesture(input, planarSpeed);
     if (gesture === null) this.gestureLatch = null;
@@ -249,8 +292,9 @@ export class CharacterAnimator {
     // library had `standToCrouch`, the way down was `crouchToStand` played backwards, and the
     // trap in that — the cross-fade's time warp divides by the time scale and flips a negative
     // one — is on record in PLAN.md, Phase C3). The loop that was asked for waits until the
-    // transition finishes. Every other stance change cross-fades between loops, which is
-    // safer than pretending the asset pack covers slide and mantle.
+    // transition finishes. The slide has a clip of its own and a branch of its own below; every
+    // other stance change cross-fades between loops, which is safer than pretending the asset
+    // pack covers the mantle.
     if (this.wasAirborne !== airborne) {
       // The ground edge is first and it **interrupts**, which none of the others do. Two reasons,
       // and the first was measured rather than reasoned: a jump shorter than the 0.55 s launch
@@ -264,7 +308,23 @@ export class CharacterAnimator {
       // It also outranks the crouch edge, and `wasLow` is advanced below either way — so a body
       // that jumps out of a kneel does not stand up in mid-air and does not owe a `crouchToStand`
       // on the way down. What it lands in is whatever the simulation says it is doing.
-      this.begin(selectGroundTransition(airborne), desired);
+      //
+      // Including a slide: at 20 snapshots a second a body can land and start one between two of
+      // them, and handing `jumpLand` a slide to resume would play the whole clip from its run-in.
+      if (sliding) {
+        this.beginSlide();
+      } else {
+        this.slide = null;
+        this.begin(selectGroundTransition(airborne), desired);
+      }
+    } else if (sliding !== this.wasSliding) {
+      // The slide edge comes before the crouch edge, which it also is — `SLIDE` is a low stance,
+      // and without this a slide would open with `standToCrouch` and close with `crouchToStand`.
+      // Neither is what a body does going into or out of a slide.
+      if (sliding) this.beginSlide();
+      else this.endSlide(desired);
+    } else if (sliding) {
+      this.holdSlide();
     } else if (this.transition !== null) {
       this.pendingLocomotion = desired;
       this.stepHold(input.throwing);
@@ -299,7 +359,44 @@ export class CharacterAnimator {
     }
 
     this.wasLow = low;
+    this.wasSliding = sliding;
     this.wasAirborne = airborne;
+  }
+
+  /**
+   * Into the slide: the clip's slide window, fitted to the simulation's slide.
+   *
+   * Everything else the body was doing is dropped, the way the ground edge drops it — a slide
+   * moves the hitbox layout on its first tick, so a stance transition or a throw still playing
+   * would be a body drawn in one pose and shot in another.
+   */
+  private beginSlide(): void {
+    this.transition = null;
+    this.pendingLocomotion = null;
+    this.holdAt = null;
+    this.action = null;
+    const started = this.playOneShot('slide', 0, SLIDE_FADE_IN_SECONDS);
+    started.action.time = SLIDE_CLIP_WINDOW.start;
+    fitToSeconds(started.action, SLIDE_SECONDS, SLIDE_CLIP_WINDOW.end - SLIDE_CLIP_WINDOW.start);
+    this.slide = started;
+  }
+
+  /**
+   * Hold the last frame of the window rather than play into the get-up. A remote body's slide
+   * reaches here late by up to a snapshot, and the clip past the window stands the body up
+   * inside a layout that is still lying down.
+   */
+  private holdSlide(): void {
+    const action = this.slide?.action;
+    if (action === undefined || action.time < SLIDE_CLIP_WINDOW.end) return;
+    action.time = SLIDE_CLIP_WINDOW.end;
+    action.paused = true;
+  }
+
+  /** Out of the slide, into whatever the stance is now — the cross-fade is the get-up. */
+  private endSlide(next: CharacterAnimationId): void {
+    this.slide = null;
+    this.playLoop(next);
   }
 
   /**
@@ -307,10 +404,13 @@ export class CharacterAnimator {
    * `LOOP_SETTLE_SECONDS` without interruption.
    *
    * The first answer of a life is taken immediately — a body that spawns running should not walk
-   * for a tenth of a second first, and there is no loop in flight for it to disturb.
+   * for a tenth of a second first, and there is no loop in flight for it to disturb. So is either
+   * side of a slide: it is the stance, which does not flicker at a threshold the way a speed does,
+   * and its hitbox layout changes on the tick the stance does.
    */
   private settleLoop(desired: CharacterAnimationId, dt: number): CharacterAnimationId {
-    if (this.settledLoop === null || desired === this.settledLoop) {
+    const slideEdge = desired === 'slide' || this.settledLoop === 'slide';
+    if (this.settledLoop === null || desired === this.settledLoop || slideEdge) {
       this.settledLoop = desired;
       this.candidateLoop = null;
       this.candidateHeldFor = 0;
@@ -393,6 +493,7 @@ export class CharacterAnimator {
     this.dead = true;
     this.pendingLocomotion = null;
     this.transition = null;
+    this.slide = null;
     this.holdAt = null;
     this.gestureLatch = null;
     this.action = null;
@@ -409,7 +510,9 @@ export class CharacterAnimator {
     this.gestureLatch = null;
     this.action = null;
     this.pendingLocomotion = null;
+    this.slide = null;
     this.wasLow = false;
+    this.wasSliding = false;
     this.wasAirborne = false;
     this.airborneHeldFor = 0;
     this.settledLoop = null;
@@ -433,6 +536,7 @@ export class CharacterAnimator {
     this.actions.clear();
     this.active = null;
     this.transition = null;
+    this.slide = null;
     this.holdAt = null;
     this.action = null;
   }
@@ -473,7 +577,7 @@ export class CharacterAnimator {
     this.active = next;
   }
 
-  private playOneShot(id: CharacterAnimationId, variant: number): Playing {
+  private playOneShot(id: CharacterAnimationId, variant: number, fadeSeconds = CROSS_FADE_SECONDS): Playing {
     const next = this.resolve(id, variant);
     const previous = this.active?.action ?? null;
     next.action.reset();
@@ -481,7 +585,7 @@ export class CharacterAnimator {
     next.action.setEffectiveWeight(1);
     next.action.setEffectiveTimeScale(1);
     next.action.play();
-    if (previous !== null && previous !== next.action) next.action.crossFadeFrom(previous, CROSS_FADE_SECONDS, true);
+    if (previous !== null && previous !== next.action) next.action.crossFadeFrom(previous, fadeSeconds, true);
     this.active = next;
     return next;
   }

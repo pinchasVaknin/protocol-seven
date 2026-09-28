@@ -66,7 +66,15 @@ describe('selectLocomotion with a sidearm', () => {
   it('falls back to the rifle where the family has no clip', () => {
     // No crouched walk and no crouched run were delivered with it.
     expect(selectLocomotion(input({ stance: 'CROUCH' }), WALKING, true, true)).toBe('crouchWalkAiming');
-    expect(selectLocomotion(input({ stance: 'SLIDE' }), RUNNING, true, true)).toBe('crouchRunAiming');
+  });
+
+  it('slides in the one slide clip there is, in either hand and at any speed', () => {
+    for (const speed of [STILL, WALKING, RUNNING]) {
+      for (const pistol of [false, true]) {
+        expect(selectLocomotion(input({ stance: 'SLIDE' }), speed, true, pistol)).toBe('slide');
+        expect(rigLayoutFor('SLIDE', speed, 0, pistol).id).toBe('humanoid-slide');
+      }
+    }
   });
 
   it('leaves every rifle answer exactly as it was', () => {
@@ -217,6 +225,7 @@ describe('the drawn pose and the hitbox layout are one decision', () => {
     crouchIdleAimingPistol: 'humanoid-crouch-pistol',
     crouchWalkAiming: 'humanoid-crouch-walk',
     crouchRunAiming: 'humanoid-crouch-run',
+    slide: 'humanoid-slide',
   };
 
   const speeds = [0, LOCOMOTION_IDLE_SPEED, LOCOMOTION_IDLE_SPEED + 0.01, 3, LOCOMOTION_RUN_SPEED, RUNNING];

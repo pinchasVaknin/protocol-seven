@@ -233,8 +233,7 @@ const HUMANOID_CROUCH_RIG: RigLayout = poseLayout('humanoid-crouch', {
 
 /**
  * `Crouch_Walk_Aiming`: hips at 0.65 m, torso pitched forward, crown at 1.26 m and half a
- * metre in front of the feet. Also what a slide draws once it has slowed below the run
- * threshold.
+ * metre in front of the feet.
  */
 const HUMANOID_CROUCH_WALK_RIG: RigLayout = poseLayout('humanoid-crouch-walk', {
   headTop: [0.2, 1.26, -0.47],
@@ -258,9 +257,8 @@ const HUMANOID_CROUCH_WALK_RIG: RigLayout = poseLayout('humanoid-crouch-walk', {
 
 /**
  * `Crouch_Run_Aiming`: a hunched run — hips at 0.82 m, nearly standing, the crown at 1.38 m
- * and 0.56 m in front of the feet. A crouching player never reaches the run speed; this is
- * the pose a **slide** is drawn with while it is fast, and the one the 0.54 m slide rig was
- * furthest from.
+ * and 0.56 m in front of the feet. A crouching player never reaches the run speed; this was the
+ * pose a **slide** was drawn with until it had a clip of its own (`HUMANOID_SLIDE_RIG`).
  */
 const HUMANOID_CROUCH_RUN_RIG: RigLayout = poseLayout('humanoid-crouch-run', {
   headTop: [0.12, 1.38, -0.56],
@@ -313,6 +311,111 @@ const HUMANOID_CROUCH_PISTOL_RIG: RigLayout = poseLayout('humanoid-crouch-pistol
   rightFoot: [0.14, 0.19, 0.3],
 });
 
+/**
+ * A box around every joint of one body part, padded by the same radius on every axis.
+ *
+ * The slide's own builder, because `PAD` cannot describe a body lying down. Those pads are an
+ * upright limb's radius written per axis — lateral, along the bone, front to back — which is why
+ * the head's y pad is one centimetre: standing, the segment itself spans the height. On its back
+ * the same head runs along x and z, and `segmentBox` with `PAD.head` would draw it seven
+ * centimetres tall. A capsule's bounding box is its segment's bounds plus the radius on every
+ * axis, so that is what this is; and the torso is boxed with its shoulders and hips as well as
+ * its spine, because a torso rolled onto its side no longer carries its width on x.
+ */
+function jointsBox(
+  name: string,
+  zone: HitZone,
+  joints: readonly Joint[],
+  radius: number,
+  upper?: boolean,
+): HitboxDef {
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  for (const [x, y, z] of joints) {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    minZ = Math.min(minZ, z);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+    maxZ = Math.max(maxZ, z);
+  }
+  const box: HitboxDef = {
+    name,
+    zone,
+    ox: round((minX + maxX) * 0.5),
+    oy: round((minY + maxY) * 0.5),
+    oz: round((minZ + maxZ) * 0.5),
+    sx: round(maxX - minX + radius * 2),
+    sy: round(maxY - minY + radius * 2),
+    sz: round(maxZ - minZ + radius * 2),
+  };
+  return upper === true ? { ...box, upper: true } : box;
+}
+
+/**
+ * `poseLayout` for a body lying down: the same twelve boxes, built with `jointsBox`.
+ *
+ * The radii are half of each part's thickness on its short axis — an 0.22 m head less its crown
+ * landmark's own offset, the 0.27 m-deep chest and the 0.24 m abdomen, the standing layout's limb
+ * widths — and the zones and the `upper` chest are every other layout's, so a zone multiplier
+ * means on a sliding body exactly what it means on a standing one.
+ */
+function lyingLayout(id: string, j: PoseJoints): RigLayout {
+  return buildLayout(id, [
+    jointsBox('head', 'head', [j.head, j.headTop], 0.08),
+    jointsBox('neck', 'head', [j.neck, j.head], 0.05),
+    jointsBox('chest', 'torso', [j.spine1, j.neck, j.leftArm, j.rightArm], 0.08, true),
+    jointsBox('abdomen', 'torso', [j.hips, j.spine1, j.leftUpLeg, j.rightUpLeg], 0.08),
+    jointsBox('upperArmL', 'arm', [j.leftArm, j.leftForeArm], 0.06),
+    jointsBox('foreArmL', 'arm', [j.leftForeArm, j.leftHand], 0.06),
+    jointsBox('upperArmR', 'arm', [j.rightArm, j.rightForeArm], 0.06),
+    jointsBox('foreArmR', 'arm', [j.rightForeArm, j.rightHand], 0.06),
+    jointsBox('thighL', 'leg', [j.leftUpLeg, j.leftLeg], 0.08),
+    jointsBox('shinL', 'leg', [j.leftLeg, j.leftFoot], 0.07),
+    jointsBox('thighR', 'leg', [j.rightUpLeg, j.rightLeg], 0.08),
+    jointsBox('shinR', 'leg', [j.rightLeg, j.rightFoot], 0.07),
+  ]);
+}
+
+/**
+ * `Running_Slide` over clip time 0.400–0.800 s — the part `CharacterAnimator` plays across a
+ * slide (2026-09-28). A baseball slide: the left leg out straight 0.83 m in front of the feet,
+ * the right folded under, the torso laid back and rolled onto its right side with the right hand
+ * planted behind. Crown at 0.50 m against the crouch run's 1.38, which is the pose a slide used to
+ * be drawn with and the reason it needs a layout of its own: a round aimed at this head passes
+ * under every box the old one had.
+ *
+ * Echo's joints, mean over that window, from
+ * `scripts/measure-crouch.mjs --dir public/models/bots/animations/locomotion/slide --window 0.4:0.8 --pose`.
+ * The other six skins agree within 3.5 cm (Apex, 1.025 scale, is the 3.5). Over the window the
+ * crown runs 0.44–0.61 m and the head box spans 0.39–0.58, so the crown is inside it on every
+ * frame but the window's first and last, where it is 3 cm over — left on record rather than padded
+ * away, as the crouched throw's 12.7 cm was. The drop before the window belongs to the cross-fade.
+ */
+const HUMANOID_SLIDE_RIG: RigLayout = lyingLayout('humanoid-slide', {
+  headTop: [0.67, 0.5, -0.06],
+  head: [0.48, 0.47, 0.1],
+  neck: [0.43, 0.5, 0.12],
+  spine1: [0.15, 0.41, 0.1],
+  hips: [0, 0.28, -0.01],
+  leftArm: [0.31, 0.52, -0.03],
+  leftForeArm: [0.08, 0.53, -0.09],
+  leftHand: [-0.16, 0.52, -0.12],
+  rightArm: [0.37, 0.44, 0.3],
+  rightForeArm: [0.3, 0.37, 0.52],
+  rightHand: [0.33, 0.17, 0.61],
+  leftUpLeg: [-0.06, 0.34, -0.12],
+  leftLeg: [0.01, 0.22, -0.49],
+  leftFoot: [-0.05, 0.12, -0.83],
+  rightUpLeg: [-0.03, 0.15, 0.06],
+  rightLeg: [0.26, 0.03, -0.18],
+  rightFoot: [-0.09, 0.04, -0.21],
+});
+
 /** Every layout a humanoid can wear, for anything that needs to enumerate them (debug, audits). */
 export const HUMANOID_LAYOUTS: readonly RigLayout[] = [
   HUMANOID_RIG,
@@ -320,13 +423,14 @@ export const HUMANOID_LAYOUTS: readonly RigLayout[] = [
   HUMANOID_CROUCH_PISTOL_RIG,
   HUMANOID_CROUCH_WALK_RIG,
   HUMANOID_CROUCH_RUN_RIG,
+  HUMANOID_SLIDE_RIG,
 ];
 
 /**
  * The layout a body wears in `stance` moving at `(vx, vz)` with `pistol` in its hands, chosen by
  * the rule the animation selector uses to choose the clip: standing stances wear the standing
  * layout; a low stance wears the kneel, the crouch walk above the idle dead zone, and the crouch
- * run above the run threshold — which only a slide reaches.
+ * run above the run threshold — which a crouch reaches only by landing in one at speed.
  *
  * `pistol` is the whole of the weapon's influence, and it reaches exactly one branch: the
  * crouched idle, where a sidearm is drawn in its own half-squat 10.9 cm above the kneel's head
@@ -337,8 +441,14 @@ export const HUMANOID_LAYOUTS: readonly RigLayout[] = [
  *
  * Squared speeds, on purpose: `Math.hypot` is not something two runtimes have to agree on and
  * a threshold comparison does not need it.
+ *
+ * **A slide is a stance, not a speed** (2026-09-28). It used to fall through to the crouch
+ * layouts by speed, because it was drawn with the crouch loops; it has a clip of its own now,
+ * played for the whole of a fixed-length slide, so it wears that clip's layout from its first
+ * tick to its last whatever it is doing — and in either hand, because the clip is the same.
  */
 export function rigLayoutFor(stance: StanceId, vx: number, vz: number, pistol: boolean): RigLayout {
+  if (stance === 'SLIDE') return HUMANOID_SLIDE_RIG;
   if (!isLowStance(stance)) return HUMANOID_RIG;
   const speedSq = vx * vx + vz * vz;
   if (speedSq >= LOCOMOTION_RUN_SPEED * LOCOMOTION_RUN_SPEED) return HUMANOID_CROUCH_RUN_RIG;

@@ -31,6 +31,7 @@ export type CharacterAnimationId =
   | 'crouchIdleAiming'
   | 'crouchWalkAiming'
   | 'crouchRunAiming'
+  | 'slide'
   | 'crouchToStand'
   | 'standToCrouch'
   | 'jumpLaunch'
@@ -158,7 +159,7 @@ export interface CharacterDefinition {
 // M15 B0: the skins were re-encoded (1024 px, JPEG) — the URLs move so a cached 28 MB Echo is not kept.
 // 2026-09-23: every skin and clip now carries its Mixamo attribution in `asset.extras`
 // (`scripts/credits.mjs`), so the bytes moved again and a cached copy is the un-credited one.
-const CHARACTER_VERSION = '2026-09-25-animation-library';
+const CHARACTER_VERSION = '2026-09-28-slide';
 const ANIMATION_ROOT = '/models/bots/animations';
 
 /**
@@ -315,6 +316,11 @@ function slot(id: CharacterAnimationId, kind: ClipKind, first: string, ...rest: 
  *   ever drawn in one pose and shot in another. `runWeaponReadyPistol` takes the run and the
  *   sprint as variants the way `runRelaxed` does, and is a slot of its own rather than two more
  *   variants of that one because its clips hold a weapon and `runRelaxed`'s do not.
+ * - **`slide`** (2026-09-28): `Running_Slide`, turned away in round 2 because a slide then lasted
+ *   as long as the key was held and the clip is a fixed 1.55 s of run-in, slide and get-up. The
+ *   slide is committed now, so only its middle is played — `CharacterAnimator` fits clip time
+ *   0.400–0.800 s across `slideDuration` — and the body wears `humanoid-slide`, measured over
+ *   exactly that window. A one-shot, not a loop: nothing about a slide repeats.
  */
 const MIXAMO_ANIMATIONS: Readonly<Record<CharacterAnimationId, CharacterAnimationSlot>> = {
   idleRelaxed: slot('idleRelaxed', 'loop', 'locomotion/stand/Idle_Relaxed'),
@@ -325,6 +331,7 @@ const MIXAMO_ANIMATIONS: Readonly<Record<CharacterAnimationId, CharacterAnimatio
   crouchIdleAiming: slot('crouchIdleAiming', 'weaponReadyLoop', 'locomotion/crouch/Crouch_Idle_Aiming'),
   crouchWalkAiming: slot('crouchWalkAiming', 'weaponReadyLoop', 'locomotion/crouch/Crouch_Walk_Aiming'),
   crouchRunAiming: slot('crouchRunAiming', 'weaponReadyLoop', 'locomotion/crouch/Crouch_Run_Aiming'),
+  slide: slot('slide', 'oneShot', 'locomotion/slide/Running_Slide'),
   crouchToStand: slot('crouchToStand', 'oneShot', 'transitions/Transition_Crouch_To_Stand'),
   standToCrouch: slot('standToCrouch', 'oneShot', 'transitions/Transition_Stand_To_Crouch_Aiming'),
   jumpLaunch: slot('jumpLaunch', 'oneShot', 'transitions/Transition_Stand_To_Airborne'),

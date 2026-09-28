@@ -124,7 +124,8 @@ export type AnnouncerCue =
   | 'defeat'
   | 'draw';
 
-export type SlideEndReason = 'expired' | 'jumpCancel' | 'crouchReleased' | 'tooSlow' | 'blocked';
+/** No `crouchReleased`: a slide is committed for its whole length (2026-09-28, `PlayerController`). */
+export type SlideEndReason = 'expired' | 'jumpCancel' | 'tooSlow' | 'blocked';
 
 /**
  * The keyframed reload sequence (S6.6). Each step is both an animation segment and an

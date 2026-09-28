@@ -10,9 +10,13 @@ import type { PlayerSim } from './PlayerState';
  *   Tac-sprint after a slide  locked out for slideTacLockout seconds, any exit route
  *   Slide cooldown            slideCooldown seconds
  *   Entry gate                sprint held for at least slideMinSprintTime
+ *   Length                    committed: slideDuration from one press (2026-09-28)
  *
  * Net effect: a slide is a burst above sprint speed, but it cannot be chained, and the
  * maximum *sustained* speed stays bounded by tactical sprint.
+ *
+ * Releasing crouch no longer ends one. The only early exits are a jump, leaving the ground and
+ * being stopped by the world — see `PlayerController.slideExitReason`.
  */
 
 export function canStartSlide(sim: PlayerSim, cfg: MovementConfig): boolean {

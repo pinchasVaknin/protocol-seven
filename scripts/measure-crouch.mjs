@@ -38,6 +38,14 @@
  *   node scripts/measure-crouch.mjs
  *   node scripts/measure-crouch.mjs --dir public/models/bots/animations/locomotion/crouch --skin all
  *   node scripts/measure-crouch.mjs --skin path/to/other.glb --match 'crouch|slide|idle'
+ *   node scripts/measure-crouch.mjs --dir public/models/bots/animations/locomotion/slide --trace
+ *   node scripts/measure-crouch.mjs --dir public/models/bots/animations/locomotion/slide --window 0.4:0.8 --pose
+ *
+ * `--trace` prints the body frame by frame — crown, hips, hands and feet — which is how a
+ * one-shot's *usable* part is found: `Running_Slide` is 1.55 s of run-in, slide and get-up, and
+ * only the middle is a slide. `--window a:b` then restricts every statistic, the `--pose` table
+ * included, to clip time [a, b] s, so a layout can be built from the part of a clip the game
+ * actually plays (2026-09-28).
  *
  * Since M13 Phase D the library is a tree of slot folders (`locomotion/stand`, `deaths`, …)
  * and `--dir` is one folder, not recursive; the default is still `incoming/`, where a clip
@@ -59,7 +67,7 @@ const DEFAULT_DIR = 'public/models/bots/animations/incoming';
 // -- arguments ----------------------------------------------------------------
 
 function parseArgs(argv) {
-  const args = { dirs: [], skin: 'echo', match: 'crouch|slide', fps: 30, pose: false };
+  const args = { dirs: [], skin: 'echo', match: 'crouch|slide', fps: 30, pose: false, trace: false, window: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = () => {
@@ -72,9 +80,14 @@ function parseArgs(argv) {
     else if (arg === '--match') args.match = next();
     else if (arg === '--fps') args.fps = Number(next());
     else if (arg === '--pose') args.pose = true;
-    else if (arg === '--help' || arg === '-h') {
+    else if (arg === '--trace') args.trace = true;
+    else if (arg === '--window') {
+      const [a, b] = next().split(':').map(Number);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || !(b > a)) throw new Error('--window needs <start>:<end> seconds, start < end');
+      args.window = { start: a, end: b };
+    } else if (arg === '--help' || arg === '-h') {
       console.log(
-        'usage: measure-crouch.mjs [--dir <animations dir>]... [--skin <id|all|file.glb>] [--match <regex>] [--fps <n>] [--pose]',
+        'usage: measure-crouch.mjs [--dir <animations dir>]... [--skin <id|all|file.glb>] [--match <regex>] [--fps <n>] [--pose] [--trace] [--window <start>:<end>]',
       );
       process.exit(0);
     } else throw new Error(`unknown argument ${arg}`);
@@ -279,7 +292,8 @@ async function main() {
      */
     const layoutForClip = (stem, kind) => {
       if (kind.kind === 'death') return null;
-      const stance = kind.stance === 'stand' ? 'STAND' : 'CROUCH';
+      // A slide has a layout of its own now that it has a clip of its own; speed does not pick it.
+      const stance = kind.stance === 'stand' ? 'STAND' : kind.stance === 'slide' ? 'SLIDE' : 'CROUCH';
       const speed = /run/i.test(stem)
         ? LOCOMOTION_RUN_SPEED
         : /walk/i.test(stem)
@@ -336,7 +350,7 @@ async function main() {
     // results[skinId] = { bind, clips: [{ stem, ... }] }
     const results = [];
     for (const skin of skins) {
-      results.push(await measureSkin(skin, sources, args.fps, { validateSkin, importClip, CharacterSkin }));
+      results.push(await measureSkin(skin, sources, args, { validateSkin, importClip, CharacterSkin }));
     }
 
     printReport({
@@ -355,7 +369,11 @@ async function main() {
   }
 }
 
-async function measureSkin(skin, sources, fps, game) {
+async function measureSkin(skin, sources, args, game) {
+  const fps = args.fps;
+  // Every statistic below is taken over the window when there is one; the trace shows all of it.
+  const inWindow = (frames) =>
+    args.window === null ? frames : frames.filter((f) => f.t >= args.window.start - 1e-6 && f.t <= args.window.end + 1e-6);
   const gltf = await parseGlb(skin.file);
   const scene = gltf.scene;
   const binding = game.validateSkin(scene, skin.rig, skin.id);
@@ -400,7 +418,9 @@ async function measureSkin(skin, sources, fps, game) {
     }
 
     restoreBindPose(bindPose);
-    const frames = sampleClip(root, prepared, fps);
+    const allFrames = sampleClip(root, prepared, fps);
+    const frames = inWindow(allFrames);
+    if (frames.length === 0) throw new Error(`--window leaves no frames of ${source.stem} (${prepared.duration.toFixed(3)} s)`);
 
     // The same clip on the skeleton it was exported with, placed as the skin is placed, so
     // "what was authored" and "what the skin draws" are two columns of one table.
@@ -418,7 +438,7 @@ async function measureSkin(skin, sources, fps, game) {
         bindMotionPosition: ownMotion.position.clone(),
         bones: boneNames(own),
       });
-      const ownFrames = sampleClip(ownRoot, ownPrepared, fps);
+      const ownFrames = inWindow(sampleClip(ownRoot, ownPrepared, fps));
       restoreBindPose(ownBindPose);
       ownRoot.remove(own);
       authored = Object.fromEntries(LANDMARKS.map((name) => [name, stats(ownFrames, name)]));
@@ -440,6 +460,7 @@ async function measureSkin(skin, sources, fps, game) {
         ]),
       ),
       authored,
+      trace: args.trace ? allFrames : null,
     });
   }
   restoreBindPose(bindPose);
@@ -456,6 +477,9 @@ function printReport({ args, skins, sources, layouts, layoutFor, standing }) {
   line('# Crouch measurement (M13 Phase C1)');
   line();
   line(`- Clips: ${sources.length} file(s) matching \`/${args.match}/i\` in ${args.dirs.map((d) => `\`${d}\``).join(', ')}, the **last** clip of each (the only one in a contract file; the wanted one in a session export), sampled at ${args.fps} fps.`);
+  if (args.window !== null) {
+    line(`- **Window ${fmt(args.window.start, 3)}–${fmt(args.window.end, 3)} s**: every statistic below is over that part of each clip only.`);
+  }
   line(`- Skin(s): ${skins.map((s) => `\`${s.id}\` (${s.rigId}, modelScale ${s.modelScale})`).join(', ')}. World Y in metres, actor origin at the feet.`);
   line(
     `- Layouts (\`HitboxRig\`), head box top / head box bottom / chest centre: ` +
@@ -559,6 +583,25 @@ function printReport({ args, skins, sources, layouts, layoutFor, standing }) {
           cells.push(xyz(pick(p.x), pick(p.y), pick(p.z)));
         }
         line(`| ${name.replace('mixamorig', '')} | ${cells.join(' | ')} |`);
+      }
+      line();
+    }
+
+    for (const clip of skin.clips) {
+      if (clip.trace === null) continue;
+      line(`### Trace: \`${clip.stem}\`, every frame`);
+      line();
+      line('Actor frame, metres. Crown and hips are Y; the hands and feet are Y with Z after the slash (−Z is in front of the feet). The window, when one was given, is marked ▸.');
+      line();
+      line('| t (s) | Crown | Head | Hips | Hips Z | L hand | R hand | L foot | R foot |');
+      line('|---|---|---|---|---|---|---|---|---|');
+      const w = args.window;
+      for (const f of clip.trace) {
+        const mark = w !== null && f.t >= w.start - 1e-6 && f.t <= w.end + 1e-6 ? '▸ ' : '';
+        const yz = (name) => `${fmt(f[name], 2)} / ${fmt(f[name + '.z'], 2)}`;
+        line(
+          `| ${mark}${fmt(f.t, 3)} | ${fmt(f['mixamorigHeadTop_End'], 2)} | ${fmt(f['mixamorigHead'], 2)} | ${fmt(f['mixamorigHips'], 2)} | ${fmt(f['mixamorigHips.z'], 2)} | ${yz('mixamorigLeftHand')} | ${yz('mixamorigRightHand')} | ${yz('mixamorigLeftFoot')} | ${yz('mixamorigRightFoot')} |`,
+        );
       }
       line();
     }

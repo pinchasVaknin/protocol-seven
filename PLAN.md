@@ -376,6 +376,10 @@ layout is the M13 C2 defect with the sign flipped. `Braced Hang To Crouch` carri
 1.58 m of the vault in its own hips while `stepMantle` is already moving `sim.y` the same
 distance, so the body would rise twice. `Climbing` is a ladder climb, mean crown **+0.72 m** over
 the standing layout, and there are no ladders. All three wait in `incoming/`.
+*(2026-09-28: `Running Slide` is in. The slide became committed — one press, `slideDuration`
+long — so it has a length a clip can be fitted to; only clip time 0.400–0.800 s is played, and the
+body wears `humanoid-slide`, measured over that window. `incoming/Slide_Aiming.glb`, the copy this
+note turned away, went with it.)*
 
 **Four rules the human settled:**
 

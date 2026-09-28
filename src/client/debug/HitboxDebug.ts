@@ -15,7 +15,11 @@ import { HIT_ZONES, type HitZone } from '../../shared/combat/HitboxRig';
  */
 
 const MAX_RIGS = 12;
-const MAX_BOXES_PER_RIG = 10;
+/**
+ * Twelve: every low layout is built per segment — head, neck, chest, abdomen and two boxes a
+ * limb — and at ten the right thigh and shin were never drawn on a crouching or sliding body.
+ */
+const MAX_BOXES_PER_RIG = 12;
 const EDGES_PER_BOX = 12;
 const VERTS = MAX_RIGS * MAX_BOXES_PER_RIG * EDGES_PER_BOX * 2;
 

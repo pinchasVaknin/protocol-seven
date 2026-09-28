@@ -217,7 +217,7 @@ export class PlayerController {
     // ---- slide -----------------------------------------------------------
     this.crouchHeldThisTick = crouchHeld;
     if (sim.slideActive) {
-      const reason = this.slideExitReason(crouchHeld, cfg);
+      const reason = this.slideExitReason(cfg);
       if (reason !== null) this.exitSlide(reason);
       else stepSlide(sim, cfg, wishX, wishZ);
     } else if (crouchPressed && sprintHeld && canStartSlide(sim, cfg)) {
@@ -525,12 +525,28 @@ export class PlayerController {
     this.bus.emit(EV.PlayerJumped, evJump);
   }
 
-  private slideExitReason(crouchHeld: boolean, cfg: MovementConfig): SlideEndReason | null {
+  /**
+   * Why the slide ends this tick, or null.
+   *
+   * **The crouch key is not one of the reasons** (2026-09-28). A slide used to last exactly as
+   * long as the key was held, so a tap made a 50 ms slide that read as a dropped input and still
+   * paid the full cooldown and tac-sprint lockout. It is committed now: the press starts all of
+   * it, `slideDuration` long, and only the world or a jump ends it early — which is also what
+   * lets the third-person clip be fitted to it, since a slide has a length the clip can know.
+   *
+   * That makes the wall a reason. `slideSpeed` is the curve, not the body: into a wall head on,
+   * `integrateMotion` projects the velocity away and `stepSlide` writes the curve's speed back
+   * next tick, so a held key used to be the only way out of pressing into the wall for the rest
+   * of the slide. `sim.speed` is the velocity collision left, so the body stopping ends the slide
+   * the way the curve running down does. Along a wall at an angle it keeps the tangential part and
+   * carries on, which is a slide.
+   */
+  private slideExitReason(cfg: MovementConfig): SlideEndReason | null {
     const sim = this.sim;
     if (sim.slideElapsed >= cfg.slideDuration) return 'expired';
-    if (!crouchHeld) return 'crouchReleased';
     if (sim.slideSpeed < cfg.slideMinSpeed) return 'tooSlow';
     if (sim.slideAirTime > 0.1) return 'blocked';
+    if (sim.speed < cfg.slideMinSpeed) return 'blocked';
     return null;
   }
 

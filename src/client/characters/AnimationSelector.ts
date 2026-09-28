@@ -99,8 +99,12 @@ export function isAirborne(input: Pick<ActorAnimationInput, 'stance'>): boolean 
  *
  * Files, Three.js actions, and cross-fades intentionally do not appear here — a slot is a
  * pose, and how many clips stand behind it is the catalogue's business (M13 Phase D). Missing
- * authored states (fire/slide/mantle) use the closest safe locomotion pose rather than
- * inventing a new branch in the renderer.
+ * authored states (fire/mantle) use the closest safe locomotion pose rather than inventing a
+ * new branch in the renderer.
+ *
+ * A slide is the stance and nothing else decides it (2026-09-28): `rigLayoutFor` gives `SLIDE`
+ * its own layout at every speed and in either hand, so the clip has to be chosen by the same
+ * one fact or the two could disagree.
  */
 export function selectLocomotion(
   input: ActorAnimationInput,
@@ -115,6 +119,7 @@ export function selectLocomotion(
    */
   drawnRunning = false,
 ): CharacterAnimationId {
+  if (input.stance === 'SLIDE') return 'slide';
   const low = isLowStance(input);
 
   if (low) {

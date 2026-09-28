@@ -123,6 +123,57 @@ const GUNMETAL = [0x2b, 0x30, 0x38];
 const REPAINT = 0.8;
 
 /**
+ * How far the armour is lifted out of the dark, as the exponent of `1 - (1 - v)^LIFT`.
+ *
+ * The source is a **black** gun: its albedo means `#2b2823`, a value of 16%, which is paint
+ * for a model lit by an HDRI in a turntable render. This game lights a grey-box map with a
+ * hemisphere and a key and has no environment at all, and a human looking at the turret on a
+ * bright testbed floor could not find it. Fixing the metalness got its shape back (see
+ * `METAL_FACTOR`) and left it still reading darker than the concrete under it — measured in
+ * `probes/sentry-check.html`, which samples what the thing actually renders at rather than
+ * asking someone to judge it: the floor came out at 61 of 255 and the gun body at 29.
+ *
+ * A screen curve rather than a multiply, because a multiply on a 16% albedo needs a factor
+ * that clips every rivet and weld seam the texture has. This one lifts the low end hardest and
+ * asymptotes at white, so the marks survive the move: the mean goes 41 -> ~105 and nothing in
+ * the image reaches 255. It is applied per channel after the tint, which on a texture this
+ * close to grey keeps the cold cast and only washes the saturation out by a point or two.
+ *
+ * Set it to 1 to ship the artist's own values.
+ */
+const LIFT = 2.9;
+
+/**
+ * Taming the source's metal, which is why the turret rendered black (2026-09-28).
+ *
+ * A human looked at it in a bright testbed and could barely find it against a lit floor. It
+ * was not the repaint — that moved the albedo's luminance by 0.3 of a unit out of 255. It was
+ * the material: the source declares **no `metallicFactor`**, so glTF's default 1.0 applies, and
+ * its metalness map averages **0.927** with 69% of its pixels above 0.94. In a
+ * `MeshStandardMaterial` the diffuse response scales with `1 - metalness`, and this project has
+ * no environment map anywhere, so the turret kept about 7% of an albedo that was already dark
+ * and reflected nothing in place of the rest.
+ *
+ * `WeaponMesh.ts` wrote this down the first time it happened: *"A physically honest 0.85 metal
+ * has almost no diffuse response and gets nearly all its colour from reflections — with no
+ * environment map in the scene there is nothing to reflect, and the gun renders black."* Every
+ * material in the project sits between 0.02 and 0.6 for that reason, and its gunmetal is 0.3.
+ *
+ * So the factor is set so the **product** with the map lands there — 0.32 × 0.927 ≈ 0.30 — and
+ * `KHR_materials_specular` goes with it, because the source sets `specularFactor: 0` and a
+ * surface that is now mostly dielectric with its dielectric highlight switched off is flat
+ * paint. Roughness comes down to the project's gunmetal too: the map's green channel is a
+ * saturated 1.0 everywhere, so the factor was the whole story and 0.67 was simply matte.
+ *
+ * Fixed here rather than in `SentryMesh` because it is a fact about the asset, not about the
+ * renderer: a viewer opening the file should see the turret the game sees. `weapon-build.mjs`
+ * strips `KHR_materials_transmission` from imported materials for the same kind of reason.
+ */
+const METAL_FACTOR = 0.32;
+const ROUGHNESS_FACTOR = 0.44;
+const DROP_EXTENSIONS = ['KHR_materials_specular'];
+
+/**
  * The IFF band, in the source's own units, round the shoulder plate of the mount.
  *
  * `bottom`/`top` bracket the plate at y 3.9 — the widest ring on the tripod, 12.2 by 9.4, and
@@ -377,7 +428,11 @@ function repaint(image) {
     const l = luminance(data[o], data[o + 1], data[o + 2]);
     for (let k = 0; k < 3; k++) {
       const wanted = l * tint[k];
-      data[o + k] = Math.max(0, Math.min(255, Math.round(data[o + k] * (1 - REPAINT) + wanted * REPAINT)));
+      const tinted = Math.max(0, Math.min(255, data[o + k] * (1 - REPAINT) + wanted * REPAINT));
+      // The lift, as the screen curve `LIFT` describes. At LIFT 1 this is the identity, so an
+      // armour left at the artist's own values costs nothing but the multiply.
+      const lifted = 255 * (1 - Math.pow(1 - tinted / 255, LIFT));
+      data[o + k] = Math.round(Math.max(0, Math.min(255, lifted)));
     }
   }
   return image;
@@ -610,6 +665,19 @@ function build(work) {
     }],
   }) - 1;
   const bandBin = Buffer.concat(chunks);
+
+  // -- the armour's material, brought into a world with no reflections ---------------
+  // See METAL_FACTOR for the measurement that made this necessary.
+  const armour = json.materials.filter((m) => m.name !== IFF_MATERIAL);
+  for (const m of armour) {
+    const pbr = (m.pbrMetallicRoughness ??= {});
+    pbr.metallicFactor = METAL_FACTOR;
+    pbr.roughnessFactor = ROUGHNESS_FACTOR;
+    for (const name of DROP_EXTENSIONS) delete m.extensions?.[name];
+    if (m.extensions !== undefined && Object.keys(m.extensions).length === 0) delete m.extensions;
+  }
+  json.extensionsUsed = (json.extensionsUsed ?? []).filter((e) => !DROP_EXTENSIONS.includes(e));
+  if (json.extensionsUsed.length === 0) delete json.extensionsUsed;
 
   // -- the repaint ------------------------------------------------------------------
   const albedo = json.materials.find((m) => m.name !== IFF_MATERIAL)?.pbrMetallicRoughness?.baseColorTexture;

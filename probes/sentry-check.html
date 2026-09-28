@@ -49,6 +49,12 @@
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       renderer.setSize(innerWidth, innerHeight);
       renderer.shadowMap.enabled = true;
+      // The game's own output settings (client/engine/Renderer.ts). Without them this page
+      // judges a brightness no player will ever see — which is how a turret that looked fine
+      // here came out nearly black on a lit testbed floor.
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.25;
       document.body.appendChild(renderer.domElement);
 
       const scene = new THREE.Scene();
@@ -164,11 +170,36 @@
         renderer.render(scene, camera);
       });
 
+      /**
+       * The mean luminance the turret actually renders at, 0–255, in a rectangle of the canvas.
+       *
+       * Here because "is it too dark?" was answered by eye once and answered wrong: the model
+       * looked plausible on this page and was a silhouette in the game. Renders and reads in
+       * one call, because the drawing buffer is not preserved between frames.
+       */
+      function sample(x0, y0, x1, y1) {
+        renderer.render(scene, camera);
+        const c = renderer.domElement;
+        const gl = renderer.getContext();
+        const s = c.width / c.clientWidth;
+        const [ax, ay, bx, by] = [x0 * s, y0 * s, x1 * s, y1 * s].map(Math.round);
+        const w = bx - ax;
+        const h = by - ay;
+        const px = new Uint8Array(w * h * 4);
+        gl.readPixels(ax, c.height - by, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        let sum = 0;
+        for (let i = 0; i < w * h; i++) {
+          sum += 0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2];
+        }
+        return Math.round((sum / (w * h)) * 10) / 10;
+      }
+
       window.__sentry = {
         view,
         aim: (yaw, pitch) => { yawNode.rotation.y = yaw; pitchNode.rotation.x = pitch; },
         iff: (hex) => band.color.setHex(hex),
         rig: (on) => { rig.visible = on; },
+        sample,
       };
     </script>
   </body>

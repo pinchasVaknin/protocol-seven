@@ -18,7 +18,7 @@ import {
 } from '../../shared/net/Skirmish';
 import { resolveLoadout } from '../../shared/meta/Loadouts';
 import { DEFAULT_INTERPOLATION_DELAY_MS, makeInterpolatedPose } from '../../shared/net/Interpolation';
-import { EFlag, weaponIdAt } from '../../shared/net/Snapshot';
+import { EFlag, THROW_PHASES, weaponIdAt } from '../../shared/net/Snapshot';
 import { AR_DEFAULT, heldMoveScale, WEAPON_DEFS, type WeaponDef } from '../../shared/weapons/WeaponDefs';
 import { hitsFrom, shotsFrom } from '../../shared/combat/ShotAccounting';
 import { rigLayoutFor } from '../../shared/combat/HitboxRig';
@@ -472,6 +472,13 @@ export interface HeadlessClientReport {
    * thrown and these stay at zero is the regression.
    */
   readonly remoteThrowFrames: number;
+  /**
+   * Of those, the frames whose snapshot also named the grenade in the hand, and every throw phase
+   * seen on the wire (protocol 24). Throw frames with none of these is a body drawn throwing its
+   * rifle again; phases without `THROWING` is an arm that can only let go at the end.
+   */
+  readonly remoteGrenadeFrames: number;
+  readonly remoteThrowPhases: string;
   readonly remoteMeleeFrames: number;
   /** Distinct entities seen carrying each, so one cooking player cannot stand in for the path. */
   readonly remoteThrowers: number;
@@ -740,6 +747,8 @@ export class HeadlessClient {
   private spectateSelfPicks = 0;
   private spectateEnemyPicks = 0;
   private remoteThrowFrames = 0;
+  private remoteGrenadeFrames = 0;
+  private readonly remoteThrowPhases = new Set<number>();
   private remoteMeleeFrames = 0;
   private readonly remoteThrowerIds = new Set<number>();
   private readonly remoteSwingerIds = new Set<number>();
@@ -1539,6 +1548,9 @@ export class HeadlessClient {
       if ((flags & EFlag.Throwing) !== 0) {
         this.remoteThrowFrames++;
         this.remoteThrowerIds.add(entityId);
+        // Protocol 24: what is in that hand, and how far through the throw it is.
+        if (interp.latest.heldEquipment !== 255) this.remoteGrenadeFrames++;
+        this.remoteThrowPhases.add(interp.latest.throwPhase);
       }
       if ((flags & EFlag.Melee) !== 0) {
         this.remoteMeleeFrames++;
@@ -1781,6 +1793,8 @@ export class HeadlessClient {
       spectateSelfPicks: this.spectateSelfPicks,
       spectateEnemyPicks: this.spectateEnemyPicks,
       remoteThrowFrames: this.remoteThrowFrames,
+      remoteGrenadeFrames: this.remoteGrenadeFrames,
+      remoteThrowPhases: [...this.remoteThrowPhases].sort().map((i) => THROW_PHASES[i] ?? `?${i}`).join('/'),
       remoteMeleeFrames: this.remoteMeleeFrames,
       remoteThrowers: this.remoteThrowerIds.size,
       remoteSwingers: this.remoteSwingerIds.size,
@@ -2019,19 +2033,22 @@ export class HeadlessClient {
     /**
      * Throw a grenade on a fixed cadence (§8.24).
      *
-     * A **press and release**, not a held bit: `ThrowController` begins a cook on the press and
-     * lets go on the release, so a permanently-held Lethal would cook one grenade for ever and
-     * throw nothing. Two ticks of hold is the shortest thing that is unambiguously both.
+     * Drawn, cooked and thrown, the way a player does it since 2026-09-24: the equipment key takes
+     * one out, the **fire button** pulls the pin and cocks, and letting it go throws. Until
+     * 2026-09-28 this still pressed the equipment key twice a period — which under that mechanic
+     * draws the frag, swaps it for the tactical and never throws either — so the "throw" runs were
+     * measuring a hand held up and nothing leaving it. Half a second of cook, from the twelfth
+     * tick of the period to the forty-second; a period under ninety ticks has no room for it.
      */
     const period = this.opts.throwEveryTicks ?? 0;
     if (period > 0) {
       // Alternating slots, so both a lethal and a **tactical** are exercised. Smoke is the
       // tactical, and §6.8 gives it a requirement of its own — occluding bot line of sight —
       // so a run that only ever threw frags would leave the smoke channel unmeasured.
-      if (tick % period < 2) buttons |= Btn.Lethal;
-      else if (tick % period >= period >> 1 && tick % period < (period >> 1) + 2) {
-        buttons |= Btn.Tactical;
-      }
+      const at = tick % period;
+      const lethal = Math.floor(tick / period) % 2 === 0;
+      if (at < 2) buttons |= lethal ? Btn.Lethal : Btn.Tactical;
+      else if (period >= 90 && at >= 12 && at < 42) buttons |= Btn.Fire;
     }
 
     /**

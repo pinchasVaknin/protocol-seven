@@ -11,6 +11,8 @@ import { HitboxRig, HUMANOID_RIG, rigLayoutFor } from '../shared/combat/HitboxRi
 import type { GameBus } from '../shared/core/Events';
 import type { InputCommand } from '../shared/core/InputCommand';
 import { DT } from '../shared/core/Loop';
+import type { EquipmentId } from '../shared/equipment/EquipmentDefs';
+import type { ThrowPhase } from '../shared/equipment/ThrowController';
 import type { PerkState } from '../shared/perks/PerkState';
 import { Health, type HealthConfig } from '../shared/player/Health';
 import type { MovementConfig } from '../shared/player/MovementConfig';
@@ -18,7 +20,7 @@ import { PlayerController } from '../shared/player/PlayerController';
 import { savePlayerSim, type PlayerSimState, makePlayerSimState } from '../shared/player/PlayerState';
 import type { ViewmodelConfig } from '../shared/weapons/ViewmodelConfig';
 import { heldMoveScale, type WeaponDef } from '../shared/weapons/WeaponDefs';
-import { WeaponSystem } from '../shared/weapons/WeaponSystem';
+import { handsOffWeapon, WeaponSystem } from '../shared/weapons/WeaponSystem';
 import type { CollisionWorld } from '../shared/world/CollisionWorld';
 import { InputBuffer } from './net/InputBuffer';
 
@@ -101,6 +103,15 @@ export class NetPlayer implements Combatant {
    * Written by `ServerMatch.stepThrowers` from the one authority on it, the thrower's `busy`.
    */
   handBusy = false;
+
+  /**
+   * What is in the hand while `handBusy`, and how far through the throw (protocol 24): the
+   * grenade from the draw to the tick it leaves, and null for the follow-through, when the hand
+   * is empty and still off the weapon. Written beside `handBusy` from the same thrower, so the
+   * people watching draw the grenade — not the rifle — in the arm that throws it.
+   */
+  heldEquipment: EquipmentId | null = null;
+  throwPhase: ThrowPhase = 'IDLE';
 
   /**
    * Seconds left of the knife swing this body is **drawn** taking (protocol 20).
@@ -437,6 +448,7 @@ export class NetPlayer implements Combatant {
   }
 
   private advance(cmd: InputCommand): void {
+    const prevButtons = this.lastButtons;
     this.lastButtons = cmd.buttons;
     /**
      * Kept whole for the Chopper Gunner (M11 Gate B).
@@ -451,6 +463,15 @@ export class NetPlayer implements Combatant {
     this.controller.weaponSpeedScale = heldMoveScale(this.weapons.definition, cmd.buttons);
     this.controller.step(cmd);
     const sim = this.controller.sim;
+    /**
+     * A hand on a grenade or the knife is a hand off the rifle — on the machine whose hits count
+     * (2026-09-28). The fire button pulls the pin and throws, so until this line a player cooking
+     * a frag was also firing a rifle nobody could see: the client blocked its own copy and the
+     * server, which never set the flag, dealt the damage. `handBusy` and `meleeSeconds` are last
+     * tick's answers, as the client's thrower and knife are when its weapon steps, and the presses
+     * cover the first tick of each — the same function the client calls, so the two cannot differ.
+     */
+    this.weapons.fireBlocked = handsOffWeapon(cmd.buttons, prevButtons, this.handBusy, this.meleeSeconds > 0);
     this.weapons.step(cmd, sim);
 
     // The unrecovered half of a recoil kick is a real aim change. On a client it goes into

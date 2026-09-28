@@ -16,6 +16,7 @@ import {
   type ActorAvatar,
   type ActorIndicatorAnchor,
   type ActorIndicatorFrameAnchor,
+  type HeldEquipmentAsset,
   type HeldWeaponAsset,
 } from '../characters/ActorAvatar';
 
@@ -173,6 +174,7 @@ export class BotMesh implements ActorAvatar {
   private readonly shoulderFrames: Readonly<Record<ActorIndicatorFrameAnchor, THREE.Object3D>>;
   /** The weapon in the hands. Null until the renderer knows which one this body carries. */
   private weapon: THREE.Object3D | null = null;
+  private weaponAway = false;
   private heldAsset: HeldWeaponAsset | null = null;
 
   private readonly quat = new THREE.Quaternion();
@@ -274,8 +276,20 @@ export class BotMesh implements ActorAvatar {
       node.castShadow = true;
     });
     mesh.position.set(WEAPON_OFFSET.x, WEAPON_OFFSET.y, WEAPON_OFFSET.z - stockShift(mesh, asset.gripAnchor));
+    mesh.visible = !this.weaponAway;
     this.weapon = mesh;
     this.group.add(mesh);
+  }
+
+  /**
+   * The weapon put away for a throw (2026-09-28). The boxes have no hand that moves and no throw
+   * to play, so there is nowhere honest to put a grenade: the rifle goes, which is the half of the
+   * fix that is true of any body, and the grenade is the skinned avatar's to draw.
+   */
+  setThrow(weaponAway: boolean, _grenade: HeldEquipmentAsset | null): void {
+    if (weaponAway === this.weaponAway) return;
+    this.weaponAway = weaponAway;
+    if (this.weapon !== null) this.weapon.visible = !weaponAway;
   }
 
   get isDying(): boolean {

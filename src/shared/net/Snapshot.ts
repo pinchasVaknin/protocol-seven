@@ -1,3 +1,5 @@
+import { ALL_EQUIPMENT, type EquipmentId } from '../equipment/EquipmentDefs';
+import type { ThrowPhase } from '../equipment/ThrowController';
 import type { StanceId } from '../player/Stance';
 import { STANCES } from '../player/Stance';
 import type { PlayerSimState } from '../player/PlayerState';
@@ -119,7 +121,28 @@ const F = {
   Flinch: 1 << 11,
   Name: 1 << 12,
   Character: 1 << 13,
+  Hand: 1 << 14,
 } as const;
+
+/**
+ * The stage of a throw a body's hand is at, as `EntitySnapshot.throwPhase` carries it (v24).
+ *
+ * `ThrowController`'s own phases in its own order, so the index is the phase and nothing
+ * translates between them. `IDLE` is also the follow-through: the grenade has gone and the hand is
+ * on its way back, which `EFlag.Throwing` still says while this says the hand is empty.
+ */
+export const THROW_PHASES: readonly ThrowPhase[] = ['IDLE', 'READY', 'COOKING', 'THROWING'];
+
+/** The wire's equipment table: `ALL_EQUIPMENT`'s order, 255 for nothing. Appended, never interleaved. */
+export function equipmentIndexOf(id: EquipmentId | null): number {
+  if (id === null) return 255;
+  const at = ALL_EQUIPMENT.findIndex((def) => def.id === id);
+  return at < 0 ? 255 : at;
+}
+
+export function equipmentIdAt(index: number): EquipmentId | null {
+  return ALL_EQUIPMENT[index]?.id ?? null;
+}
 
 /**
  * One replicated actor.
@@ -165,6 +188,22 @@ export interface EntitySnapshot {
    */
   characterIndex: number;
   flags: number;
+  /**
+   * The grenade in this body's hand, as an index into `ALL_EQUIPMENT`; 255 when the hand is on
+   * the weapon or empty (protocol 24).
+   *
+   * `EFlag.Throwing` said a grenade was out and nothing else, so everybody watching drew the body
+   * throwing its rifle: the weapon stayed in the hand, because nothing on the wire said what to
+   * put there instead. It is set from the tick the grenade is drawn to the tick it leaves the
+   * hand, and cleared for the follow-through, when the hand is empty and still off the weapon.
+   */
+  heldEquipment: number;
+  /**
+   * Where the throw is, as an index into `THROW_PHASES` (protocol 24): drawn with the pin in,
+   * cooking, or the arm swinging. What the third-person arm is posed from, so it lets go on the
+   * tick the simulation's does rather than when the whole throw is over.
+   */
+  throwPhase: number;
   /** M3 visual serials (`BotVisualState`). The animation seam, replicated verbatim. */
   deathSerial: number;
   deathAngle: number;
@@ -190,6 +229,8 @@ export function makeEntitySnapshot(): EntitySnapshot {
     weaponIndex: 255,
     characterIndex: NO_SKIN_INDEX,
     flags: EFlag.Alive,
+    heldEquipment: 255,
+    throwPhase: 0,
     deathSerial: 0,
     deathAngle: 0,
     spawnSerial: 0,
@@ -214,6 +255,8 @@ export function copyEntitySnapshot(src: EntitySnapshot, dst: EntitySnapshot): vo
   dst.weaponIndex = src.weaponIndex;
   dst.characterIndex = src.characterIndex;
   dst.flags = src.flags;
+  dst.heldEquipment = src.heldEquipment;
+  dst.throwPhase = src.throwPhase;
   dst.deathSerial = src.deathSerial;
   dst.deathAngle = src.deathAngle;
   dst.spawnSerial = src.spawnSerial;
@@ -290,6 +333,8 @@ export function writeEntity(w: ByteWriter, e: EntitySnapshot, base: EntitySnapsh
     if (e.deathSerial !== 0) mask |= F.Death;
     if (e.spawnSerial !== 0) mask |= F.Spawn;
     if (e.flinchSerial !== 0) mask |= F.Flinch;
+    // An empty hand is the default, as a zero serial is.
+    if (e.heldEquipment !== 255 || e.throwPhase !== 0) mask |= F.Hand;
   } else {
     if (qx !== quantPos(base.x) || qy !== quantPos(base.y) || qz !== quantPos(base.z)) mask |= F.Pos;
     if (qyaw !== quantAngle(base.yaw)) mask |= F.Yaw;
@@ -301,6 +346,7 @@ export function writeEntity(w: ByteWriter, e: EntitySnapshot, base: EntitySnapsh
     if (e.weaponIndex !== base.weaponIndex) mask |= F.Weapon;
     if (e.characterIndex !== base.characterIndex) mask |= F.Character;
     if (e.flags !== base.flags) mask |= F.Flags;
+    if (e.heldEquipment !== base.heldEquipment || e.throwPhase !== base.throwPhase) mask |= F.Hand;
     if (e.deathSerial !== base.deathSerial) mask |= F.Death;
     if (e.spawnSerial !== base.spawnSerial) mask |= F.Spawn;
     if (e.flinchSerial !== base.flinchSerial) mask |= F.Flinch;
@@ -327,6 +373,10 @@ export function writeEntity(w: ByteWriter, e: EntitySnapshot, base: EntitySnapsh
   if ((mask & F.Weapon) !== 0) w.u8v(e.weaponIndex);
   if ((mask & F.Character) !== 0) w.u8v(e.characterIndex);
   if ((mask & F.Flags) !== 0) w.u16(e.flags);
+  if ((mask & F.Hand) !== 0) {
+    w.u8v(e.heldEquipment);
+    w.u8v(e.throwPhase);
+  }
   if ((mask & F.Death) !== 0) {
     w.u8v(e.deathSerial & 0xff);
     w.u16(quantAngle(e.deathAngle));
@@ -368,6 +418,10 @@ export function readEntity(r: ByteReader, out: EntitySnapshot): void {
   if ((mask & F.Weapon) !== 0) out.weaponIndex = r.u8v();
   if ((mask & F.Character) !== 0) out.characterIndex = r.u8v();
   if ((mask & F.Flags) !== 0) out.flags = r.u16();
+  if ((mask & F.Hand) !== 0) {
+    out.heldEquipment = r.u8v();
+    out.throwPhase = r.u8v();
+  }
   if ((mask & F.Death) !== 0) {
     out.deathSerial = r.u8v();
     out.deathAngle = dequantAngle(r.u16());

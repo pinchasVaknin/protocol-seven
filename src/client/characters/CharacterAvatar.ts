@@ -3,7 +3,13 @@ import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
 import type { CharacterAssetBundle } from './CharacterAssetRepository';
 import { CharacterAnimator } from './CharacterAnimator';
 import { CharacterSkin } from './CharacterSkin';
-import type { ActorAvatar, ActorIndicatorAnchor, ActorIndicatorFrameAnchor, HeldWeaponAsset } from './ActorAvatar';
+import type {
+  ActorAvatar,
+  ActorIndicatorAnchor,
+  ActorIndicatorFrameAnchor,
+  HeldEquipmentAsset,
+  HeldWeaponAsset,
+} from './ActorAvatar';
 
 const FLINCH_SECONDS = 0.18;
 const FLINCH_ANGLE = 0.075;
@@ -49,6 +55,10 @@ export class CharacterAvatar implements ActorAvatar {
     this.skin.setWeapon(weapon);
     this.armed = weapon !== null;
     this.pistol = weapon?.weaponClass === 'PISTOL';
+  }
+
+  setThrow(weaponAway: boolean, grenade: HeldEquipmentAsset | null): void {
+    this.skin.setThrow(weaponAway, grenade);
   }
 
   setVisible(on: boolean): void {

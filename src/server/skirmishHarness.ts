@@ -2551,7 +2551,8 @@ function projectileLine(r: HeadlessClientReport): string {
 function poseFlagLine(r: HeadlessClientReport): string {
   if (r.remoteThrowFrames === 0 && r.remoteMeleeFrames === 0) return '';
   return (
-    `remote poses ${r.remoteThrowFrames} throw frm/${r.remoteThrowers} thrower(s), ` +
+    `remote poses ${r.remoteThrowFrames} throw frm/${r.remoteThrowers} thrower(s)/` +
+    `${r.remoteGrenadeFrames} grenade-in-hand frm/phases ${r.remoteThrowPhases || '-'}, ` +
     `${r.remoteMeleeFrames} melee frm/${r.remoteSwingers} swinger(s), `
   );
 }

@@ -72,8 +72,26 @@ const SLIDE_SECONDS = DEFAULT_MOVEMENT_CONFIG.slideDuration;
  */
 const THROW_HOLD_FRACTION = 0.55;
 
-/** The release and the follow-through: the window the tail of a throw clip is fitted into. */
-const THROW_TAIL_SECONDS = THROW_RELEASE_TIME + THROW_FOLLOW_THROUGH;
+/**
+ * Where in each throw clip the hand lets go (2026-09-28): over the top and coming forward, the frame
+ * the grenade has to leave it on.
+ *
+ * Measured the way `THROW_HOLD_FRACTION` was — the right hand against the hips, through the real
+ * import path, Echo — as the top of the arc after the furthest-back point: 0.58 of `Idle_Throw`,
+ * 0.66 of `Crouch_Idle_Throw`, 0.72 of `Walk_Throw`. Three numbers rather than the hold's one,
+ * because the spread is 0.14 of a clip and this is the frame everybody watching is looking at.
+ *
+ * It splits the tail in two. The swing up to it is fitted to `THROW_RELEASE_TIME`, so the hand opens
+ * on the tick the simulation spawns the grenade and the grenade drawn in it goes on the same tick;
+ * the rest is fitted to `THROW_FOLLOW_THROUGH`. The first version fitted the whole tail to the sum,
+ * and on `Idle_Throw` the arm was over the top in 0.03 s and carried the grenade round through its
+ * follow-through for another 0.15 before letting go of it.
+ */
+const THROW_RELEASE_FRACTION: Partial<Record<CharacterAnimationId, number>> = {
+  throwStand: 0.58,
+  throwCrouch: 0.66,
+  throwWalk: 0.72,
+};
 
 /**
  * Seconds a body has to be off the ground before the animation calls it a jump.
@@ -163,8 +181,8 @@ interface Playing {
  *
  * The line between 3 and 4 is what the clip does when the input stops saying so, and it is the
  * reason a throw is not an action: a cancelled reload is over and abandoning its clip is right,
- * while `throwing` going false is the simulation saying the grenade has *gone*, which is the
- * moment the rest of the clip exists for.
+ * while the arm starting its swing (`throwPhase` leaving `COOKING`) is the moment the rest of the
+ * clip exists for.
  *
  * Which variant of a slot plays is `variantFor`'s answer from `setLife` (M13 Phase D); this
  * class never chooses one itself.
@@ -187,6 +205,8 @@ export class CharacterAnimator {
    * keeps the body from handing back to its loop mid-throw.
    */
   private holdAt: number | null = null;
+  /** Clip time the hand opens at while a released throw is swinging to it; null otherwise. */
+  private releaseAt: number | null = null;
   private wasAirborne = false;
   /**
    * The gesture slot the current transition came from, held until its input clears.
@@ -210,6 +230,7 @@ export class CharacterAnimator {
     const wasLaunch = finished.id === 'jumpLaunch';
     this.transition = null;
     this.holdAt = null;
+    this.releaseAt = null;
     const next = this.pendingLocomotion;
     this.pendingLocomotion = null;
     /**
@@ -327,7 +348,8 @@ export class CharacterAnimator {
       this.holdSlide();
     } else if (this.transition !== null) {
       this.pendingLocomotion = desired;
-      this.stepHold(input.throwing);
+      this.stepHold(input);
+      this.stepRelease();
     } else if (gesture !== null && this.gestureLatch !== gesture) {
       this.gestureLatch = gesture;
       const started = this.begin(gesture, desired);
@@ -374,6 +396,7 @@ export class CharacterAnimator {
     this.transition = null;
     this.pendingLocomotion = null;
     this.holdAt = null;
+    this.releaseAt = null;
     this.action = null;
     const started = this.playOneShot('slide', 0, SLIDE_FADE_IN_SECONDS);
     started.action.time = SLIDE_CLIP_WINDOW.start;
@@ -452,35 +475,69 @@ export class CharacterAnimator {
     this.pendingLocomotion = resume;
     this.action = null;
     this.holdAt = null;
+    this.releaseAt = null;
     const started = this.playOneShot(id, 0);
     this.transition = started;
     return started;
   }
 
   /**
-   * Park a throw clip at its cocked frame while the grenade is in the hand, and let it go when
-   * the simulation says the hand has opened.
+   * Park a throw clip at its cocked frame while the grenade is in the hand with the arm back, and
+   * let it go on the tick the simulation's arm starts its swing.
    *
-   * The tail is fitted to `THROW_TAIL_SECONDS`, which is the release plus the follow-through —
-   * the same 0.42 s the balance was tuned against and the same window the viewmodel spends with
-   * the weapon off screen, so the third-person arm comes back as the first-person one does.
+   * The tail is fitted in two parts (`THROW_RELEASE_FRACTION`): the swing to the frame the hand
+   * opens on over `THROW_RELEASE_TIME`, then the rest over `THROW_FOLLOW_THROUGH` — the same 0.42 s
+   * in all the balance was tuned against and the same window the viewmodel spends with the weapon
+   * off screen, so the third-person arm comes back as the first-person one does.
+   *
+   * **It lets go on `THROWING`, not when `throwing` clears** (protocol 24). `throwing` is the
+   * thrower's `busy`, which stays up through the follow-through, so the arm used to stay cocked
+   * for the whole 0.42 s the tail is fitted to and swing *after* the grenade was already in the
+   * air — and with the grenade drawn in the hand now, it would have swung an empty one. The phase
+   * says when the swing starts; the release still covers a client that never saw `THROWING`
+   * between two snapshots, because the follow-through (`IDLE` while `throwing`) lets go too.
+   *
+   * A grenade put back rather than thrown — `throwing` gone while the arm was still cocked — never
+   * swung, so it does not play the swing either: the body goes back to what it was doing.
    */
-  private stepHold(throwing: boolean): void {
+  private stepHold(input: ActorAnimationInput): void {
     const hold = this.holdAt;
     const playing = this.transition;
     if (hold === null || playing === null) return;
     const action = playing.action;
-    if (throwing) {
+    if (armCocked(input)) {
       if (action.time >= hold) {
         action.time = hold;
         action.paused = true;
       }
       return;
     }
-    action.paused = false;
     this.holdAt = null;
-    const remaining = action.getClip().duration - action.time;
-    if (remaining > 0) fitToSeconds(action, THROW_TAIL_SECONDS, remaining);
+    if (!input.throwing) {
+      action.paused = false;
+      this.transition = null;
+      const next = this.pendingLocomotion;
+      this.pendingLocomotion = null;
+      if (next !== null) this.playLoop(next);
+      return;
+    }
+    action.paused = false;
+    const release = action.getClip().duration * (THROW_RELEASE_FRACTION[playing.id] ?? 0);
+    if (action.time < release) {
+      this.releaseAt = release;
+      fitToSeconds(action, THROW_RELEASE_TIME, release - action.time);
+    } else {
+      fitFollowThrough(action);
+    }
+  }
+
+  /** Past the frame the hand opens on: the rest of the clip is the follow-through. */
+  private stepRelease(): void {
+    const at = this.releaseAt;
+    const playing = this.transition;
+    if (at === null || playing === null || playing.action.time < at) return;
+    this.releaseAt = null;
+    fitFollowThrough(playing.action);
   }
 
   /**
@@ -495,6 +552,7 @@ export class CharacterAnimator {
     this.transition = null;
     this.slide = null;
     this.holdAt = null;
+    this.releaseAt = null;
     this.gestureLatch = null;
     this.action = null;
     const id = selectDeath(input);
@@ -507,6 +565,7 @@ export class CharacterAnimator {
     this.dead = false;
     this.transition = null;
     this.holdAt = null;
+    this.releaseAt = null;
     this.gestureLatch = null;
     this.action = null;
     this.pendingLocomotion = null;
@@ -538,6 +597,7 @@ export class CharacterAnimator {
     this.transition = null;
     this.slide = null;
     this.holdAt = null;
+    this.releaseAt = null;
     this.action = null;
   }
 
@@ -589,6 +649,17 @@ export class CharacterAnimator {
     this.active = next;
     return next;
   }
+}
+
+/** The grenade is in the hand and the arm has not started its swing: drawn, or cooking. */
+function armCocked(input: ActorAnimationInput): boolean {
+  return input.throwing && (input.throwPhase === 'READY' || input.throwPhase === 'COOKING');
+}
+
+/** What is left of a throw clip after the hand has opened, over the simulation's follow-through. */
+function fitFollowThrough(action: THREE.AnimationAction): void {
+  const remaining = action.getClip().duration - action.time;
+  if (remaining > 0) fitToSeconds(action, THROW_FOLLOW_THROUGH, remaining);
 }
 
 /**

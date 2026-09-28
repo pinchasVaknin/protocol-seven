@@ -41,7 +41,14 @@ import { MortarStrike } from '../../shared/streaks/MortarStrike';
 import { SentryGun } from '../../shared/streaks/SentryGun';
 import { STREAK_DEFS, type StreakId } from '../../shared/streaks/StreakDefs';
 import { Uav } from '../../shared/streaks/Uav';
-import { EFlag, makeEntitySnapshot, weaponIndexOf, type EntitySnapshot } from '../../shared/net/Snapshot';
+import {
+  EFlag,
+  equipmentIndexOf,
+  makeEntitySnapshot,
+  THROW_PHASES,
+  weaponIndexOf,
+  type EntitySnapshot,
+} from '../../shared/net/Snapshot';
 import { NO_SKIN_INDEX } from '../../shared/meta/Skins';
 import type { ReplicatedScoreRow } from '../../shared/combat/ScoreSystem';
 import type { LoadoutSlot } from '../../shared/meta/Loadouts';
@@ -851,6 +858,8 @@ function writePlayer(e: EntitySnapshot, p: NetPlayer): void {
     (p.handBusy ? EFlag.Throwing : 0) |
     (p.meleeSeconds > 0 ? EFlag.Melee : 0) |
     (p.team === 'B' ? EFlag.TeamB : 0);
+  e.heldEquipment = equipmentIndexOf(p.heldEquipment);
+  e.throwPhase = THROW_PHASES.indexOf(p.throwPhase);
   copyVisual(e, p.visual);
 }
 
@@ -881,6 +890,10 @@ function writeBot(e: EntitySnapshot, b: Bot): void {
     (sim.grounded ? EFlag.Grounded : 0) |
     EFlag.Bot |
     (b.team === 'B' ? EFlag.TeamB : 0);
+  // A bot's throw has no arm (`BotThrower`), and the record is pooled: a slot a player's cook
+  // left behind must not put a grenade in the next bot's hand.
+  e.heldEquipment = 255;
+  e.throwPhase = 0;
   copyVisual(e, b.visual);
 }
 

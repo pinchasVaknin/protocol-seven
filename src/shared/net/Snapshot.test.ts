@@ -2,7 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { NO_SKIN_INDEX } from '../meta/Skins';
 import { decodeHeader, writeHello } from './Messages';
 import { PROTOCOL_VERSION } from './Protocol';
-import { copyEntitySnapshot, EFlag, makeEntitySnapshot, readEntity, writeEntity, type EntitySnapshot } from './Snapshot';
+import { ALL_EQUIPMENT } from '../equipment/EquipmentDefs';
+import {
+  copyEntitySnapshot,
+  EFlag,
+  equipmentIdAt,
+  equipmentIndexOf,
+  makeEntitySnapshot,
+  readEntity,
+  THROW_PHASES,
+  writeEntity,
+  type EntitySnapshot,
+} from './Snapshot';
 import { ByteReader, ByteWriter } from './Wire';
 
 /**
@@ -147,5 +158,65 @@ describe('EntitySnapshot.flags, widened', () => {
     const b = makeEntitySnapshot();
     copyEntitySnapshot(a, b);
     expect(b.flags).toBe(a.flags);
+  });
+});
+
+/**
+ * Protocol 24: what is in the hand that throws. `EFlag.Throwing` said a grenade was out and nothing
+ * more, so every client drew the body throwing its rifle; the grenade and the stage of the throw are
+ * on the wire now, and these hold the codec to carrying them and to costing nothing when idle.
+ */
+describe('EntitySnapshot.heldEquipment and throwPhase', () => {
+  it('names every piece of equipment and nothing else', () => {
+    for (const def of ALL_EQUIPMENT) expect(equipmentIdAt(equipmentIndexOf(def.id))).toBe(def.id);
+    expect(equipmentIndexOf(null)).toBe(255);
+    expect(equipmentIdAt(255)).toBeNull();
+    expect(THROW_PHASES).toEqual(['IDLE', 'READY', 'COOKING', 'THROWING']);
+  });
+
+  it('starts empty-handed, and a full write of an empty hand spends nothing on it', () => {
+    const idle = standing(5);
+    expect(idle.heldEquipment).toBe(255);
+    expect(idle.throwPhase).toBe(0);
+    const w = new ByteWriter(256);
+    writeEntity(w, idle, null);
+    const cocked = standing(5);
+    cocked.heldEquipment = equipmentIndexOf('frag');
+    cocked.throwPhase = THROW_PHASES.indexOf('COOKING');
+    const w2 = new ByteWriter(256);
+    writeEntity(w2, cocked, null);
+    expect(w2.bytes().length - w.bytes().length).toBe(2);
+  });
+
+  it('carries the grenade and the phase through a full write and a delta, and copies them', () => {
+    const e = standing(6);
+    e.heldEquipment = equipmentIndexOf('flashbang');
+    e.throwPhase = THROW_PHASES.indexOf('READY');
+    const out = makeEntitySnapshot();
+    roundTrip(e, null, out);
+    expect(equipmentIdAt(out.heldEquipment)).toBe('flashbang');
+    expect(THROW_PHASES[out.throwPhase]).toBe('READY');
+
+    // The release: the phase moves and the grenade stays, for 0.18 s — then the follow-through.
+    const swinging = standing(6);
+    swinging.heldEquipment = e.heldEquipment;
+    swinging.throwPhase = THROW_PHASES.indexOf('THROWING');
+    const changed = roundTrip(swinging, e, out);
+    expect(THROW_PHASES[out.throwPhase]).toBe('THROWING');
+    const gone = standing(6);
+    roundTrip(gone, swinging, out);
+    expect(out.heldEquipment).toBe(255);
+    expect(THROW_PHASES[out.throwPhase]).toBe('IDLE');
+
+    // And a hand that did not move costs nothing on the delta.
+    const still = standing(6);
+    still.heldEquipment = swinging.heldEquipment;
+    still.throwPhase = swinging.throwPhase;
+    expect(roundTrip(still, swinging, out)).toBe(changed - 2);
+
+    const copy = makeEntitySnapshot();
+    copyEntitySnapshot(swinging, copy);
+    expect(copy.heldEquipment).toBe(swinging.heldEquipment);
+    expect(copy.throwPhase).toBe(swinging.throwPhase);
   });
 });

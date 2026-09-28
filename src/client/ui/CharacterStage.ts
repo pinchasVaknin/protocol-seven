@@ -167,6 +167,7 @@ const STANDING_ARMED: ActorAnimationInput = {
   reloadSeconds: 0,
   firing: false,
   throwing: false,
+  throwPhase: 'IDLE',
   meleeing: false,
 };
 

@@ -130,7 +130,7 @@ import { PISTOL_DEFAULT } from '../shared/weapons/WeaponDefs';
 function assetIdFor(weaponId: string): string {
   return weaponId === SHIELD_ASSET_ID ? PISTOL_DEFAULT.id : weaponId;
 }
-import { WeaponSystem, type WeaponSnapshot } from '../shared/weapons/WeaponSystem';
+import { handsOffWeapon, WeaponSystem, type WeaponSnapshot } from '../shared/weapons/WeaponSystem';
 
 /**
  * Composition root for the MATCH state.
@@ -1908,13 +1908,15 @@ export class Match {
       meleePressed;
     if (!this.playerDead && reachedThisTick) this.weapons.weapon.cancelReload();
 
-    const reachingForEquipment = isDown(cmd.buttons, Btn.Lethal) || isDown(cmd.buttons, Btn.Tactical);
-    // `meleePressed` is part of the test and not just `melee.busy`, for the reason the
-    // equipment note above gives: `melee.step` runs *after* the weapon this tick, so on the
-    // first tick of a swing `busy` is still last tick's answer — which is exactly how the
-    // grenade path let one round escape before it was measured and fixed.
-    this.weapons.fireBlocked =
-      this.equipment.thrower.busy || reachingForEquipment || this.melee.busy || meleePressed;
+    // The presses are part of the test and not just the busy flags, for the reason the equipment
+    // note above gives: the thrower and the knife step *after* the weapon this tick. The rule is
+    // shared with the server's `NetPlayer`, which is the one whose hits count — see `handsOffWeapon`.
+    this.weapons.fireBlocked = handsOffWeapon(
+      cmd.buttons,
+      this.prevButtons,
+      this.equipment.thrower.busy,
+      this.melee.busy,
+    );
     this.weapons.suspended = flyingChopper;
 
     if (!this.playerDead && !mortarOpen) {

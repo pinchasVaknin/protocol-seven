@@ -557,7 +557,7 @@ Each with a recommendation, and none of them started.
 | 5 | **Riot shield hitbox: second `RigLayout`, damage predicate, or moving collider?** | **Second layout**, plus one array in `RigHistory`. The only route where what you shoot stays what you see |
 | 6 | **Are the new streaks unlock-gated?** | **No.** All six shipped ones are ungated; gating three of nine makes the picker inconsistent for no gain |
 | 7 | **Prices: minigun / flamethrower / shield** | **9 / 7 / 8.** P4 measured the balance model at 38 streaks per 705 lives, so nine streaks over three slots is a choice problem rather than inflation. These are a starting point for the human to feel, not a result |
-| 8 | ~~**F17 third person: release only, or wind-up too?**~~ **Settled by the human (2026-09-25): both, via decision 3.** The wind-up is the whole of it — `EFlag.Throwing` is held for the cook, so the third-person clip waits at its cocked frame and runs out when the grenade goes. The balance consequence this row warned about is real and is now shipped: **seeing an enemy cook is information**, and it changes fights. Named here rather than buried in the animation | — |
+| 8 | ~~**F17 third person: release only, or wind-up too?**~~ **Settled by the human (2026-09-25): both, via decision 3.** The wind-up is the whole of it — `EFlag.Throwing` is held for the cook, so the third-person clip waits at its cocked frame and runs out when the grenade goes. The balance consequence this row warned about is real and is now shipped: **seeing an enemy cook is information**, and it changes fights. Named here rather than buried in the animation. *(2026-09-28: it ran out when `Throwing` cleared, which is the end of the follow-through — 0.42 s after the grenade had gone — and the rifle stayed in the throwing hand. Protocol 24 carries the grenade and the phase: the rifle is put away, the grenade is on the palm, and the arm reaches its release frame on the tick the grenade leaves.)* | — |
 | 9 | **Does map four author all six objectives?** | **Yes.** Otherwise `modesForMap` silently offers three modes instead of five, and flags moved later mean lanes re-balanced later |
 | 10 | **F5 scope** | **Frame now, order of battle with F6, no campaign.** A campaign here ships mute |
 
@@ -718,7 +718,10 @@ carries:
   material, for the ten bodies at twenty metres (`buildHeldWeapon`'s replacement). 5k was
   written first; meshopt cannot collapse across UV seams and a kit mesh is mostly seams, so the
   M4 stalls at a third whatever the ratio, and the number that matters at that distance — the
-  draw calls — is what `join` cuts.
+  draw calls — is what `join` cuts. *(2026-09-28: <= 12k. The simplifier's error limit was 0.1 of
+  the mesh radius, and five of the fifteen LODs had lost their barrels to it — the playtest's
+  "the barrel is missing but its tip floats in the air". At 0.01 every one is whole, and the M249
+  is 10.7k.)*
 
 The geometry pass is the JSON chunk edited directly — select, re-parent, rename, bake the world
 matrices, add the sockets — with no parser package (`glb-images.mjs` set that precedent), and

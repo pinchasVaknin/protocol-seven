@@ -783,6 +783,10 @@ export class ServerMatch extends Disposable {
       // What the snapshot needs to know: the fire button means "pull the pin" while this is
       // true, and nobody watching should see a muzzle flash for it. See `NetPlayer.handBusy`.
       player.handBusy = hand.thrower.busy;
+      // And what is in that hand: the grenade while it is there, nothing once it has gone.
+      const phase = hand.thrower.phase;
+      player.throwPhase = phase;
+      player.heldEquipment = phase === 'IDLE' ? null : EquipmentSystem.slotDef(hand.inventory, hand.thrower.slot).id;
     }
   }
 
@@ -981,6 +985,16 @@ export class ServerMatch extends Disposable {
    * single-player.
    */
   private stepPlayer(player: NetPlayer, tickIndex: number): void {
+    /**
+     * A gunner flying a Chopper Gunner is not holding their rifle (2026-09-28).
+     *
+     * `WeaponSystem.suspended` exists because *"the chopper drains my primary ammo"*, and
+     * `ClientMatch` has set it since post-M8 — for its own copy. The server never did, so a
+     * networked gunner holding the trigger in the gunship was also firing the rifle standing on
+     * the ground, for real. Found beside the grenade leak `NetPlayer.advance` closes, and the same
+     * shape: a rule written into one runtime. Last tick's streak state, as the client reads it.
+     */
+    player.weapons.suspended = this.streaks.activeChopperFor(player.entityId) !== null;
     const lagMs = this.viewLag(player.entityId);
     this.rewind.begin(player.entityId, tickIndex, lagMs);
     try {

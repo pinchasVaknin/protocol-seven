@@ -76,6 +76,18 @@ export interface HeldWeaponAsset {
 }
 
 /**
+ * A grenade, ready to be put in a hand (2026-09-28): the equipment's own file and the point on it
+ * the hand closes around, in the file's space — the same pairing `HeldWeaponAsset` makes of a
+ * weapon and its trigger grip, so an avatar hangs one exactly as it hangs the other.
+ */
+export interface HeldEquipmentAsset {
+  readonly equipmentId: string;
+  readonly template: THREE.Object3D;
+  /** `socket_grip`: the point that sits at the hand socket. */
+  readonly gripAnchor: THREE.Vector3;
+}
+
+/**
  * The narrow scene-object contract consumed by `BotRenderer`.
  *
  * `BotMesh` implements it as the procedural fallback; `CharacterAvatar` implements it for a
@@ -87,6 +99,13 @@ export interface ActorAvatar {
 
   /** Put this in the body's hands, or empty them. Idempotent for an unchanged weapon id. */
   setWeapon(weapon: HeldWeaponAsset | null): void;
+  /**
+   * The hand off the weapon for a throw (2026-09-28). `weaponAway` takes the weapon out of the
+   * hand for the whole of it — draw, cook, swing and the follow-through after — and `grenade` is
+   * drawn in that hand from the draw to the release. The weapon keeps its place in `setWeapon`;
+   * this only hides it, so a throw that ends gives back the very object it took. Idempotent.
+   */
+  setThrow(weaponAway: boolean, grenade: HeldEquipmentAsset | null): void;
   setVisible(on: boolean): void;
   /**
    * Which life this body is on (M13 Phase D): the entity and its replicated spawn serial.

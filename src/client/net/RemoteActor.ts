@@ -12,7 +12,9 @@ import {
   type EntityInterpolator,
   type InterpolatedPose,
 } from '../../shared/net/Interpolation';
-import { EFlag, weaponIdAt, type EntitySnapshot } from '../../shared/net/Snapshot';
+import { EFlag, equipmentIdAt, THROW_PHASES, weaponIdAt, type EntitySnapshot } from '../../shared/net/Snapshot';
+import type { EquipmentId } from '../../shared/equipment/EquipmentDefs';
+import type { ThrowPhase } from '../../shared/equipment/ThrowController';
 import { skinIdAt, type SkinId } from '../../shared/meta/Skins';
 import type { StanceId } from '../../shared/player/Stance';
 import { WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
@@ -48,6 +50,10 @@ export class RemoteActor implements RenderableActor {
   displayName = '';
   health = 100;
   weaponId: string | null = null;
+  /** Protocol 24: the grenade in the hand, from the draw to the release. See `RenderableActor`. */
+  heldEquipmentId: EquipmentId | null = null;
+  /** Protocol 24: how far through the throw that hand is. See `ActorAnimationInput.throwPhase`. */
+  throwPhase: ThrowPhase = 'IDLE';
   /** The body the server says this player wears (M16, B6); null until the first snapshot, and for one who declared none. */
   characterId: SkinId | null = null;
   flags = 0;
@@ -73,6 +79,7 @@ export class RemoteActor implements RenderableActor {
     reloadSeconds: 0,
     firing: false,
     throwing: false,
+    throwPhase: 'IDLE' as ThrowPhase,
     meleeing: false,
   };
 
@@ -176,6 +183,7 @@ export class RemoteActor implements RenderableActor {
       this.reloading && this.weaponId !== null ? (WEAPON_DEFS[this.weaponId]?.reloadTime ?? 0) : 0;
     this.animation_.firing = this.firing;
     this.animation_.throwing = this.throwing;
+    this.animation_.throwPhase = this.throwPhase;
     this.animation_.meleeing = this.meleeing;
     return this.animation_;
   }
@@ -269,6 +277,8 @@ export class RemoteActor implements RenderableActor {
     this.health = latest.health;
     this.flags = latest.flags;
     this.weaponId = weaponIdAt(latest.weaponIndex);
+    this.heldEquipmentId = equipmentIdAt(latest.heldEquipment);
+    this.throwPhase = THROW_PHASES[latest.throwPhase] ?? 'IDLE';
     this.characterId = skinIdAt(latest.characterIndex);
     if (latest.displayName !== '') this.displayName = latest.displayName;
 

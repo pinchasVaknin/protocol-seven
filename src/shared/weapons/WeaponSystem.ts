@@ -99,6 +99,31 @@ const evFired = {
   minimapPing: true,
 };
 
+/**
+ * Whether the hands are on something other than the gun this tick — what `fireBlocked` is set
+ * from, in both runtimes (2026-09-28).
+ *
+ * A grenade drawn, cooking or being thrown (`throwBusy`), a knife mid-swing (`meleeBusy`), and the
+ * two presses that *start* one of those: the equipment keys held, and the knife's rising edge.
+ * The presses are in the test because the thrower and the knife are stepped *after* the weapon,
+ * so on the first tick of either the busy flag is still last tick's answer — exactly how one round
+ * used to escape at the start of every cook.
+ *
+ * It lived inline in `ClientMatch`, which is why it only ever held in a solo match: the server
+ * stepped every connected human's rifle with nothing set, so a player cooking a grenade with the
+ * fire button — the button that pulls the pin — was also emptying a hidden rifle at whatever they
+ * were looking at, on the machine whose hits count. One function now, called by both.
+ */
+export function handsOffWeapon(buttons: number, prevButtons: number, throwBusy: boolean, meleeBusy: boolean): boolean {
+  return (
+    throwBusy ||
+    meleeBusy ||
+    isDown(buttons, Btn.Lethal) ||
+    isDown(buttons, Btn.Tactical) ||
+    justPressed(buttons, prevButtons, Btn.Melee)
+  );
+}
+
 /** Per-pellet record for the S8.5 read-out. Fixed length, written in place. */
 export interface PelletReport {
   count: number;
@@ -317,10 +342,11 @@ export class WeaponSystem {
 
   /** One simulation tick. */
   /**
-   * Set true while something else owns the player's hands (a grenade cook or throw).
+   * Set true while something else owns the player's hands (a grenade, the knife).
    *
-   * Written by `Match` from `ThrowController.busy` before `step` runs, so there is one
-   * answer to "is the weapon available" and the viewmodel reads the same flag.
+   * Written from `handsOffWeapon` before `step` runs — by `ClientMatch` for the local player and
+   * by `NetPlayer` for every connected one — so there is one answer to "is the weapon available"
+   * and the viewmodel reads the same flag.
    */
   fireBlocked = false;
 

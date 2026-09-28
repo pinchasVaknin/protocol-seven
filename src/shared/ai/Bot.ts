@@ -6,6 +6,7 @@ import { Btn, isDown, type MutableInputCommand, type InputCommand } from '../cor
 import { shortestAngle } from '../core/MathUtil';
 import { DT } from '../core/Loop';
 import { Rng } from '../core/Rng';
+import type { ThrowPhase } from '../equipment/ThrowController';
 import { Health, type HealthConfig } from '../player/Health';
 import type { MovementConfig } from '../player/MovementConfig';
 import { PlayerController } from '../player/PlayerController';
@@ -108,6 +109,7 @@ export class Bot implements Combatant, PathClient {
     reloadSeconds: number;
     firing: boolean;
     throwing: boolean;
+    throwPhase: ThrowPhase;
     meleeing: boolean;
   } = {
     stance: 'STAND',
@@ -120,8 +122,11 @@ export class Bot implements Combatant, PathClient {
     // constants rather than reads. They are here because the contract is shared with a remote
     // human, who has both — see `RemoteActor.animation`.
     throwing: false,
+    throwPhase: 'IDLE',
     meleeing: false,
   };
+  /** A bot's grenades leave through `BotThrower` with no arm to hold them. See `RenderableActor`. */
+  readonly heldEquipmentId = null;
   readonly rng: Rng;
 
   /** Live-tunable: the debug panel can promote a bot mid-match. */

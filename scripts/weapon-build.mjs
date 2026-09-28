@@ -49,7 +49,8 @@
  * Sources live outside the repository in `../GLB_files/weapons/` (the sibling of
  * `../FBX_files`, where the bodies came from) — 313 MB of downloads do not belong in git.
  * `node scripts/weapon-build.mjs` builds every recipe; `node scripts/weapon-build.mjs ar_carbine`
- * builds one. The outputs are committed like any other asset and `check:weapons` holds them to
+ * builds one, and `--lod-only` rebuilds just the bodies' `.lod1.glb` and leaves every viewmodel file
+ * as it was. The outputs are committed like any other asset and `check:weapons` holds them to
  * the budget. Attribution is a condition of CC-BY, not a courtesy: every output carries its
  * source's title, author, licence and URL in `asset.extras`, and `CREDITS.md` beside the files
  * is regenerated from the same records. A Sketchfab download carries the same four facts in its
@@ -79,14 +80,35 @@ const MAX_SIDE = 1024;
 const LOD_SIDE = 256;
 const WEBP_QUALITY = 85;
 /**
- * The LOD asks for this fraction of the vertices, with the error limit loose (a fraction of the
- * mesh radius). meshopt cannot collapse across UV seams and hard edges, and a kit mesh is
- * mostly seams — the M4 stalls at about a third whatever the ratio — so `check:weapons` holds
- * the result to 10k triangles rather than the 5k first written down, and the draw calls are
- * what `join` cuts: one primitive per material, five for the M4.
+ * The LOD asks for this fraction of the vertices, with the error limit a fraction of the mesh
+ * radius. meshopt cannot collapse across UV seams and hard edges, and a kit mesh is mostly
+ * seams — the M4 stalls at about a third whatever the ratio — so `check:weapons` holds the
+ * result to 12k triangles rather than the 5k first written down, and the draw calls are what
+ * `join` cuts: one primitive per material, five for the M4.
+ *
+ * **The error is what decides what survives, and at 0.1 it decided against barrels** (2026-09-28,
+ * playtest: *"the barrel is missing but its tip floats in the air"*). A tenth of the radius is
+ * five centimetres on a rifle, and a barrel is a tube a centimetre and a half across, so the
+ * simplifier was free to fold the whole of it into its own axis — and did, on five of the fifteen
+ * (the limit it was held to, 10k, was being met partly by what it deleted):
+ * `lmg_bastion` and `lmg_monolith` lost their barrels and gas tubes, `ar_longbow` a hand's width of
+ * barrel ahead of the handguard, `shotgun_breacher`'s magazine tube became a spike, and
+ * `streak_flamethrower`'s tube went and left the nozzle. Every body carrying one drew a gun that
+ * stopped at the handguard and a muzzle hanging in the air in front of it.
+ *
+ * At 0.01 the allowance is five millimetres, under the radius of the thinnest barrel in the
+ * arsenal. Measured, each against the viewmodel's file from both sides: 0.02 lost both LMG barrels
+ * again; 0.005 put `lmg_bastion` at 14k triangles for nothing visible; locking the open borders
+ * at 0.02 saved nothing either, because the barrels are closed meshes.
  */
 const LOD_RATIO = 0.15;
-const LOD_ERROR = 0.1;
+const LOD_ERROR = 0.01;
+/**
+ * The viewmodel's own pre-pass for a source over its budget (`recipe.simplify`). It was the same
+ * constant as the LOD's; it keeps the 0.1 it has always had, so the LOD's fix does not rebuild a
+ * first-person model nobody reported and every file that pre-pass made stays byte for byte.
+ */
+const SOURCE_SIMPLIFY_ERROR = 0.1;
 /** A plateau bin counts as a surface when it holds this share of the fullest bin. See `plateau`. */
 const PLATEAU_SHARE = 0.4;
 /** Metres the optic's clamp plate sinks below the rail surface it mounts on. See `att_optic`. */
@@ -2853,7 +2875,7 @@ function triangles(json) {
   return Math.round(n);
 }
 
-export function buildOne(id, work) {
+export function buildOne(id, work, { lodOnly = false } = {}) {
   const recipe = RECIPES[id];
   if (recipe === undefined) throw new Error(`no recipe "${id}"; known: ${Object.keys(RECIPES).join(', ')}`);
   const sourceFile = path.join(SOURCE_DIR, recipe.source.file);
@@ -2877,12 +2899,14 @@ export function buildOne(id, work) {
     const welded = path.join(work, `${id}.welded0.glb`);
     run(['weld', dedupedRaw, welded]);
     deduped = path.join(work, `${id}.simplified0.glb`);
-    run(['simplify', welded, deduped, '--ratio', String(recipe.simplify), '--error', String(LOD_ERROR), '--lock-border', 'false']);
+    run(['simplify', welded, deduped, '--ratio', String(recipe.simplify), '--error', String(SOURCE_SIMPLIFY_ERROR), '--lock-border', 'false']);
   }
   const resized = path.join(work, `${id}.resized.glb`);
   const side = recipe.textureSide ?? MAX_SIDE;
   run(['resize', deduped, resized, '--width', String(side), '--height', String(side)]);
-  const out = path.join(OUT_DIR, `${id}.glb`);
+  // `--lod-only` leaves the viewmodel's file alone: it is built into the work folder, where it
+  // still feeds the report, and only the bodies' LOD is written over.
+  const out = path.join(lodOnly ? work : OUT_DIR, `${id}.glb`);
   run(['webp', resized, out, '--quality', String(WEBP_QUALITY)]);
 
   const report = { id, kept: kept.length, origin: round(origin), sockets, triangles: triangles(readGlb(out).json), bytes: statSync(out).size };
@@ -3006,12 +3030,13 @@ function main() {
     return;
   }
   const wanted = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-  const ids = wanted.length > 0 ? wanted : Object.keys(RECIPES);
+  const lodOnly = process.argv.includes('--lod-only');
+  const ids = (wanted.length > 0 ? wanted : Object.keys(RECIPES)).filter((id) => !lodOnly || RECIPES[id]?.lod === true);
   mkdirSync(OUT_DIR, { recursive: true });
   const work = mkdtempSync(path.join(tmpdir(), 'operator-weapons-'));
   try {
     for (const id of ids) {
-      const r = buildOne(id, work);
+      const r = buildOne(id, work, { lodOnly });
       const lod = r.lod1 ? `; lod1 ${r.lod1.triangles.toLocaleString('en-US')} tris, ${(r.lod1.bytes / 1048576).toFixed(2)} MB` : '';
       console.log(`${id.padEnd(16)} ${r.kept} node(s), ${r.triangles.toLocaleString('en-US')} tris, ${(r.bytes / 1048576).toFixed(2)} MB${lod}`);
       console.log(`${''.padEnd(16)} origin ${JSON.stringify(r.origin)}; sockets ${JSON.stringify(r.sockets)}`);

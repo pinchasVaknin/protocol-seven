@@ -35,6 +35,7 @@ function input(over: Partial<ActorAnimationInput> = {}): ActorAnimationInput {
     reloadSeconds: 0,
     firing: false,
     throwing: false,
+    throwPhase: 'IDLE',
     meleeing: false,
     ...over,
   };

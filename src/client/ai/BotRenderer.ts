@@ -8,7 +8,8 @@ import { BotMesh, buildBotAssets, type BotAssets } from './BotMesh';
 import { buildHeldWeapon, heldWeaponMaterial } from '../weapons/WeaponMesh';
 import { anyWeaponDef } from '../../shared/weapons/AnyWeapon';
 import type { WeaponAssetService } from '../weapons/WeaponAssetService';
-import type { ActorAvatar, HeldWeaponAsset } from '../characters/ActorAvatar';
+import type { ActorAvatar, HeldEquipmentAsset, HeldWeaponAsset } from '../characters/ActorAvatar';
+import type { EquipmentId } from '../../shared/equipment/EquipmentDefs';
 import type {
   CharacterAvatarProvider,
   CharacterAvatarProviderResolver,
@@ -93,6 +94,9 @@ export class BotRenderer {
   private readonly indicatorAssets = buildActorIndicatorAssets();
   /** One held weapon per id — merged geometry, anchors, the shared material — for every body carrying it. */
   private readonly weapons = new Map<string, HeldWeaponAsset>();
+  /** One grenade per equipment id, for the bodies throwing one. The file is the asset service's. */
+  private readonly grenades = new Map<string, HeldEquipmentAsset>();
+  private readonly grenadesAsked = new Set<string>();
   private readonly weaponMaterial: THREE.Material;
   /** GLB avatars once ready; `BotMesh` instances are the safe procedural fallback. */
   private readonly avatars = new Map<number, ActorAvatar>();
@@ -180,6 +184,9 @@ export class BotRenderer {
       // Cheap and idempotent: `setWeapon` returns immediately unless the id actually moved,
       // which it does once per body per life rather than once per frame.
       mesh.setWeapon(this.heldWeapon(actor.weaponId));
+      // The throw has the hand from the draw to the end of the follow-through, and the grenade is
+      // in it until it leaves. Idempotent too: both change a handful of times per throw.
+      mesh.setThrow(animation.throwing, this.heldGrenade(actor.heldEquipmentId));
       const x = actor.renderX(alpha);
       const y = actor.renderY(alpha);
       const z = actor.renderZ(alpha);
@@ -428,6 +435,38 @@ export class BotRenderer {
     return asset;
   }
 
+  /**
+   * The grenade for an equipment id, built once and kept; null for none, or while its file is on
+   * its way (2026-09-28).
+   *
+   * The equipment's own file — the one the viewmodel holds and the world throws — asked for the
+   * first time a body is seen with one out, so a match nobody throws in fetches nothing. Until it
+   * lands the hand is empty and the weapon is still put away: a body mid-throw with nothing in its
+   * hand is the less wrong of the two, and five files of a few hundred kilobytes land fast.
+   */
+  private heldGrenade(equipmentId: EquipmentId | null): HeldEquipmentAsset | null {
+    if (equipmentId === null || this.weaponAssets === null) return null;
+    const existing = this.grenades.get(equipmentId);
+    if (existing !== undefined) return existing;
+    const template = this.weaponAssets.equipment(equipmentId);
+    if (template === null) {
+      // Asked once: a file that failed stays failed for this match rather than being fetched
+      // again on every frame some body holds one.
+      if (!this.grenadesAsked.has(equipmentId)) {
+        this.grenadesAsked.add(equipmentId);
+        void this.weaponAssets.preloadEquipment(equipmentId).catch(() => undefined);
+      }
+      return null;
+    }
+    const asset: HeldEquipmentAsset = {
+      equipmentId,
+      template: template.scene,
+      gripAnchor: template.sockets.socket_grip ?? new THREE.Vector3(),
+    };
+    this.grenades.set(equipmentId, asset);
+    return asset;
+  }
+
   /** Only walked when the counts disagree, which is a roster change and not a frame event. */
   private retireAbsent(): void {
     for (const [id, mesh] of this.avatars) {
@@ -462,6 +501,8 @@ export class BotRenderer {
     // built, releases it there.
     for (const weapon of this.weapons.values()) weapon.geometry.dispose();
     this.weapons.clear();
+    // The grenades are the asset service's templates, held by reference; nothing here to free.
+    this.grenades.clear();
     this.indicatorAssets.dispose();
     this.assets.dispose();
   }

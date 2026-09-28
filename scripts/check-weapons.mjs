@@ -14,9 +14,11 @@
  *      recipe — a file dropped in by hand has no attribution record and no measured sockets.
  *   2. **Sizes.** A weapon ≤ `MAX_WEAPON_BYTES` (4 MB), its LOD ≤ 1 MB, a pack part ≤ 1 MB.
  *      The client is 1.4 MB; a loadout's primary must not cost three of it.
- *   3. **Triangles.** A weapon ≤ 30k, its LOD ≤ 10k, a pack part ≤ 8k. The LOD's 10k is what
- *      meshopt reaches on kit meshes (the build script says why); ten bodies at 10k each is
- *      nothing for the GPU and the draw calls are joined per material.
+ *   3. **Triangles.** A weapon ≤ 30k, its LOD ≤ 12k, a pack part ≤ 8k. The LOD's figure is what
+ *      meshopt reaches on kit meshes (the build script says why); ten bodies at 12k each is
+ *      nothing for the GPU and the draw calls are joined per material. It was 10k until the
+ *      simplifier stopped being allowed to delete barrels (2026-09-28): the M249 came back whole
+ *      at 10.7k, and a limit that only a gun without a barrel could meet was measuring the bug.
  *   4. **Textures ≤ 1024 on a side (the LOD 256), WebP or JPEG.** A 2048 PNG normal map is
  *      the usual way a 4 MB file becomes a 20 MB one.
  *   5. **The contract's nodes.** A weapon carries a root named for it, `body`, `magazine`,
@@ -62,7 +64,7 @@ const MAX_PART_BYTES = 1024 * 1024;
 const MAX_EQUIPMENT_BYTES = 1024 * 1024;
 const MAX_EQUIPMENT_TRIS = 10_000;
 const MAX_WEAPON_TRIS = 30_000;
-const MAX_LOD_TRIS = 10_000;
+const MAX_LOD_TRIS = 12_000;
 const MAX_PART_TRIS = 8_000;
 const MAX_SIDE = 1024;
 const MAX_LOD_SIDE = 256;

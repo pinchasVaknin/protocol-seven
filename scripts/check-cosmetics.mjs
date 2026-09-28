@@ -59,6 +59,15 @@ const ALLOWED = {
    */
   characterIndex: 'identity; which of the catalogued bodies this player is — the name and the team are the other two halves',
   flags: 'alive/firing/reloading/ads/sprinting/grounded/bot/team — all §4.15 gameplay state',
+  /**
+   * The grenade in the hand and the stage of its throw (protocol 24) — `weaponIndex`'s row, for
+   * the hand that is not holding the weapon. Both are read off the server's `ThrowController`,
+   * which decides when the pin is out and when the grenade leaves; neither says anything about
+   * what a grenade or an arm looks like. The model, the socket on the palm and the clip it is
+   * posed from stay the client's.
+   */
+  heldEquipment: '§4.15 equipped weapon — the grenade in the hand while one is out, from the server thrower',
+  throwPhase: "§4.15 equipped weapon — drawn / cooking / thrown, the server thrower's own phase",
 
   /**
    * The four visual serials, and the one deliberate judgement call in this file.

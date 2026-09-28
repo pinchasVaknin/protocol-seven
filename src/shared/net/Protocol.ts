@@ -17,6 +17,14 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v24 (2026-09-28, the human): **what is in the hand that throws.** `EntitySnapshot` gains
+ * `heldEquipment` and `throwPhase` under one new delta bit, two bytes on the snapshots where either
+ * moved and nothing on the rest. `EFlag.Throwing` said a grenade was out and nothing more, so every
+ * client drew the body throwing its rifle — the weapon stayed in the hand because nothing said what
+ * to put there — and swung the arm when the whole throw was over, 0.42 s after the grenade had left.
+ * The equipment is an index into `ALL_EQUIPMENT` (appended, never interleaved, 255 for none) and
+ * the phase an index into `ThrowController`'s own four.
+ *
  * v23 (2026-09-27, the human): **a streak that is a wall, and the two tables that had to grow
  * for it.** `streak_shield` is one more id in the weapon table, appended as the minigun's was,
  * so a remote body holding one is drawn holding one and the killfeed can print `[SHIELD]`. The
@@ -190,7 +198,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 23;
+export const PROTOCOL_VERSION = 24;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

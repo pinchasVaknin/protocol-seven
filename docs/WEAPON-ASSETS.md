@@ -56,8 +56,10 @@ A socket is an empty node whose +Y is the mount's up and -Z its forward. A pack 
 `socket.add(part)`; the optic carries its own `socket_sight` (the line the ADS pose cancels
 once it is on), the suppressor its own `socket_muzzle` (where the flash moves to).
 
-Budgets, held by `npm run check:weapons`: a weapon ≤ 30k triangles and 4 MB, its LOD ≤ 10k
-and 1 MB, a pack part ≤ 8k and 1 MB, a piece of equipment ≤ 10k and 1 MB; textures ≤ 1024 on a
+Budgets, held by `npm run check:weapons`: a weapon ≤ 30k triangles and 4 MB, its LOD ≤ 12k
+and 1 MB (10k until 2026-09-28, when the LOD's simplifier error went from 0.1 to 0.01 of the
+radius — at 0.1 it folded whole barrels away, and five LODs drew a muzzle floating ahead of a gun
+that stopped at the handguard; `node scripts/weapon-build.mjs --lod-only` rebuilds the LODs alone), a pack part ≤ 8k and 1 MB, a piece of equipment ≤ 10k and 1 MB; textures ≤ 1024 on a
 side (the LOD 256), WebP or JPEG; a weapon between 0.15 and 1.5 m long and a piece of equipment
 between 0.04 and 0.30 m; an `asset.extras.attribution` record on every file.
 

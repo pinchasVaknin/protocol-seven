@@ -1,3 +1,5 @@
+import type { EquipmentId } from '../equipment/EquipmentDefs';
+import type { ThrowPhase } from '../equipment/ThrowController';
 import type { SkinId } from '../meta/Skins';
 import type { StanceId } from '../player/Stance';
 
@@ -79,6 +81,15 @@ export interface ActorAnimationInput {
    */
   readonly throwing: boolean;
   /**
+   * Where that throw is (protocol 24): `READY` and `COOKING` hold the arm cocked, `THROWING` is the
+   * swing, and `IDLE` while `throwing` is the follow-through after the grenade has gone.
+   *
+   * `throwing` alone could not say when to let go, so the arm let go when `throwing` cleared —
+   * the end of the follow-through, 0.42 s after the projectile was already in the air. A bot's is
+   * always `IDLE`, for the reason its `throwing` is always false.
+   */
+  readonly throwPhase: ThrowPhase;
+  /**
    * This body is mid-knife-swing (protocol 20).
    *
    * `Melee.busy` for a local body, `EFlag.Melee` for a replicated one. Presentation only: the
@@ -117,6 +128,15 @@ export interface RenderableActor {
    * change at all. Null means an unknown id, and an unarmed body is better than a wrong one.
    */
   readonly weaponId: string | null;
+  /**
+   * The grenade in this body's hand instead of `weaponId`, or null (protocol 24).
+   *
+   * Set from the draw to the tick it leaves the hand; `animation.throwing` is what puts the
+   * weapon away, and it stays up through the follow-through while this is already null — the
+   * hand is empty then, and a weapon or a grenade in it would both be wrong. A remote player's
+   * comes from `EntitySnapshot.heldEquipment`; a bot's is null, since its throws have no arm.
+   */
+  readonly heldEquipmentId: EquipmentId | null;
   /**
    * The body this actor declared, as a `SKIN_IDS` id, or null to let the client deal one (M16,
    * B6). A remote player's is `skinIdAt(EntitySnapshot.characterIndex)`; a bot's is null,

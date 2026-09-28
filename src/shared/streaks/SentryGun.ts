@@ -404,12 +404,49 @@ const SENTRY_PROFILE = {
 } as const;
 
 /**
- * The sentry's hitbox: one box, roughly the size of the model.
+ * The sentry's hitbox, measured off the model it now wears (2026-09-28).
+ *
+ * It was two boxes standing in for a turret drawn from primitives — a 0.42 cube and a 0.36 ×
+ * 0.6 post — and when `public/models/props/sentry_turret.glb` replaced that drawing the two
+ * stopped describing it: the tripod is **0.74 by 0.85** at the feet where the boxes said 0.36,
+ * and the gun reaches **0.67 m in front** of the mount where they said 0.21. A player shooting
+ * the legs or the barrel was shooting air. Every number below is the built file's own bounds,
+ * sliced out of it rather than eyeballed.
  *
  * Deliberately not `HUMANOID_RIG` — a turret has no head to shoot off, and giving it head
- * multipliers would make it die to a lucky spray in a way a 260 HP object should not.
+ * multipliers would make it die to a lucky spray in a way a 260 HP object should not. It keeps
+ * the two zones it always had and the meaning they always carried: **the receiver is the part
+ * that counts** and wears `torso`, and everything structural around it — the stand, the jacket,
+ * the barrel, the spade grips — is `leg` and takes the shooter's limb multiplier. So the
+ * silhouette grew by the model's real shape without the thing becoming proportionally cheaper
+ * to destroy.
+ *
+ * ## What one yaw can and cannot express
+ *
+ * `applyPose` transforms the whole rig by `combat.aimYaw`, and `HitboxRig` supports yaw and
+ * nothing else, on purpose (see the note on that class). Two consequences are baked into the
+ * numbers here:
+ *
+ *  - **The gun's boxes are right and the stand's are a compromise.** Everything from `jacket`
+ *    forward is authored along -Z and traverses exactly as the model does. The tripod does not
+ *    turn, but its boxes do, so `feet` and `mast` are **square**: the stand is 0.736 across and
+ *    0.850 deep and `sentryArcDeg` lets the turret swing ±80°, so a rectangle would be broadside
+ *    to the real legs at the ends of the arc. 0.80 splits the two axes — it covers 3 cm past the
+ *    narrow one and falls 2.5 cm short of the deep one, and which is which changes as it turns.
+ *  - **Elevation is not modelled.** The turret pitches ±0.7 rad and these boxes never do, so at
+ *    full elevation `barrel` lags the barrel a player sees. It is left honest rather than padded
+ *    upward: a fat box that covered the swing would be wrong at every angle instead of one, and
+ *    the mass worth hitting is `body`, which sits on the trunnion and barely moves with pitch.
  */
-const SENTRY_RIG: RigLayout = buildLayout('sentry', [
-  { name: 'body', zone: 'torso', ox: 0, oy: 0.68, oz: 0, sx: 0.42, sy: 0.42, sz: 0.42 },
-  { name: 'legs', zone: 'leg', ox: 0, oy: 0.3, oz: 0, sx: 0.36, sy: 0.6, sz: 0.36 },
+export const SENTRY_RIG: RigLayout = buildLayout('sentry', [
+  // The gun. `body` is the receiver and the back plate — the only `torso` box, so it is also
+  // what `buildLayout` hands bots as `aimY` (0.697, where the old single box's 0.68 was).
+  { name: 'body', zone: 'torso', ox: 0, oy: 0.697, oz: -0.025, sx: 0.33, sy: 0.39, sz: 0.35 },
+  { name: 'jacket', zone: 'leg', ox: 0, oy: 0.631, oz: -0.31, sx: 0.24, sy: 0.23, sz: 0.22 },
+  { name: 'barrel', zone: 'leg', ox: 0, oy: 0.722, oz: -0.55, sx: 0.12, sy: 0.1, sz: 0.26 },
+  // The spade grips and the ammunition box, which hang behind the trunnion.
+  { name: 'breech', zone: 'leg', ox: 0, oy: 0.65, oz: 0.325, sx: 0.3, sy: 0.19, sz: 0.35 },
+  // The stand: splayed feet, then the column up to the collar at 0.472.
+  { name: 'feet', zone: 'leg', ox: 0, oy: 0.08, oz: 0, sx: 0.8, sy: 0.16, sz: 0.8 },
+  { name: 'mast', zone: 'leg', ox: 0, oy: 0.316, oz: 0, sx: 0.34, sy: 0.312, sz: 0.34 },
 ]);

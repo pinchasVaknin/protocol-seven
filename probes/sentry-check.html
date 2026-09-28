@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PROTOCOL SEVEN — sentry check</title>
+    <!--
+      The sentry viewer (2026-09-28): a dev page, served by `npm run dev` and never built.
+
+      `scripts/sentry-build.mjs` decides three things a number alone cannot settle — where the
+      IFF band sits, how far proud of the armour it stands, and whether the yaw and pitch nodes
+      turn around the axes the artist drew. This is where those are looked at. The band began
+      round the `Swivel` collar and was invisible from all four quarters; that was seen here,
+      not reasoned about, which is the whole reason the page exists.
+
+      `?` in the console: `__sentry.view(angle, radius, height)` orbits, `__sentry.aim(yaw,
+      pitch)` traverses the gun, `__sentry.iff(0xRRGGBB)` repaints the band, and
+      `__sentry.rig(true)` draws the hitboxes `SENTRY_RIG` gives the thing a player shoots at.
+    -->
+    <style>
+      html, body { margin: 0; height: 100%; background: #1b1f24; color: #d9dee6; font: 12px/1.4 ui-monospace, Consolas, monospace; }
+      canvas { display: block; }
+      #hud { position: fixed; left: 10px; top: 8px; white-space: pre; text-shadow: 0 0 4px #000; pointer-events: none; }
+      #bar { position: fixed; left: 10px; bottom: 10px; display: flex; gap: 5px; flex-wrap: wrap; }
+      button { background: #0e1013; color: #d9dee6; border: 1px solid #2a2f37; padding: 4px 9px; font: inherit; cursor: pointer; }
+      button:hover { border-color: #5fc3ff; }
+    </style>
+  </head>
+  <body>
+    <div id="hud">loading…</div>
+    <div id="bar">
+      <button data-a="0.8">3/4</button>
+      <button data-a="3.14">front</button>
+      <button data-a="0">back</button>
+      <button data-a="1.57">side</button>
+      <button id="friendly">friendly</button>
+      <button id="hostile">hostile</button>
+      <button id="traverse">traverse</button>
+      <button id="rig">hitboxes</button>
+    </div>
+    <script type="module">
+      import * as THREE from 'three';
+      import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+      import { SENTRY_IFF_MATERIAL, SENTRY_NODES } from '/src/client/streaks/SentryModel.ts';
+      import { SENTRY_RIG } from '/src/shared/streaks/SentryGun.ts';
+      import { palette } from '/src/client/ui/Palette.ts';
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.shadowMap.enabled = true;
+      document.body.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1b1f24);
+      scene.add(new THREE.HemisphereLight(0xa8c4e0, 0x2a2622, 1.5));
+      const sun = new THREE.DirectionalLight(0xfff2e0, 2.4);
+      sun.position.set(2, 3.5, 2);
+      sun.castShadow = true;
+      scene.add(sun);
+      const rim = new THREE.DirectionalLight(0x90b0ff, 0.9);
+      rim.position.set(-2.5, 1.5, -2);
+      scene.add(rim);
+
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(12, 12),
+        new THREE.MeshStandardMaterial({ color: 0x3a3f46, roughness: 0.95 }),
+      );
+      ground.rotation.x = -Math.PI / 2;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      // The real `SENTRY_RIG`, imported rather than copied: these boxes are what a bullet is
+      // tested against, and a viewer that drew its own numbers would agree with the model on
+      // screen while the game disagreed with both. The one box a shot does full damage to —
+      // the `torso`, the receiver — is drawn apart from the limbs.
+      const rig = new THREE.Group();
+      for (const box of SENTRY_RIG.boxes) {
+        const wire = new THREE.Mesh(
+          new THREE.BoxGeometry(box.sx, box.sy, box.sz),
+          new THREE.MeshBasicMaterial({ color: box.zone === 'torso' ? 0xffb457 : 0x5fc3ff, wireframe: true }),
+        );
+        wire.position.set(box.ox, box.oy, box.oz);
+        rig.add(wire);
+      }
+      rig.visible = false;
+      scene.add(rig);
+
+      const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, 0.02, 60);
+      let angle = 0.8;
+      let yawNode = null;
+      let pitchNode = null;
+      const band = new THREE.MeshBasicMaterial({ toneMapped: false });
+      // The live palette, through the subscription the client itself uses: the two buttons
+      // below then show what a colourblind mode does to the band as well as what it is.
+      let colours = null;
+      palette.onChange((p) => {
+        colours = p;
+        band.color.setHex(p.friendly);
+      });
+
+      function view(a = angle, radius = 1.9, height = 0.85) {
+        angle = a;
+        camera.position.set(Math.sin(a) * radius, height, Math.cos(a) * radius);
+        camera.lookAt(0, 0.45, 0);
+      }
+
+      new GLTFLoader().load('/models/props/sentry_turret.glb', (gltf) => {
+        const root = gltf.scene;
+        scene.add(root);
+        yawNode = root.getObjectByName(SENTRY_NODES.yaw);
+        pitchNode = root.getObjectByName(SENTRY_NODES.pitch);
+        const lines = [];
+        root.traverse((node) => {
+          let depth = 0;
+          for (let p = node.parent; p !== null && p !== scene; p = p.parent) depth += 1;
+          const mesh = node;
+          let tag = '';
+          if (mesh.isMesh) {
+            if (mesh.material.name === SENTRY_IFF_MATERIAL) mesh.material = band;
+            else {
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+            }
+            const index = mesh.geometry.getIndex();
+            const tris = (index === null ? mesh.geometry.getAttribute('position').count : index.count) / 3;
+            tag = `  ${Math.round(tris)} tris  [${mesh.material.name || SENTRY_IFF_MATERIAL}]`;
+          }
+          lines.push(`${'  '.repeat(depth)}${node.name || '(unnamed)'}${tag}`);
+        });
+        const size = new THREE.Vector3();
+        new THREE.Box3().setFromObject(root).getSize(size);
+        lines.push('', `${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} m`);
+        lines.push(yawNode === undefined || pitchNode === undefined ? 'NODE CONTRACT BROKEN' : '');
+        document.getElementById('hud').textContent = lines.join('\n');
+      });
+
+      for (const b of document.querySelectorAll('button[data-a]')) b.onclick = () => view(Number(b.dataset.a));
+      document.getElementById('friendly').onclick = () => band.color.setHex(colours.friendly);
+      document.getElementById('hostile').onclick = () => band.color.setHex(colours.hostile);
+      let traversing = false;
+      document.getElementById('traverse').onclick = () => { traversing = !traversing; };
+      document.getElementById('rig').onclick = () => { rig.visible = !rig.visible; };
+
+      addEventListener('resize', () => {
+        renderer.setSize(innerWidth, innerHeight);
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+      });
+
+      view();
+      renderer.setAnimationLoop(() => {
+        if (traversing && yawNode !== undefined && yawNode !== null) {
+          const t = performance.now() / 1000;
+          yawNode.rotation.y = Math.sin(t * 0.7) * 1.1;
+          pitchNode.rotation.x = Math.sin(t * 0.4) * 0.22;
+        }
+        // The whole rig turns with the gun, because `SentryGun.applyPose` hands `HitboxRig` one
+        // yaw for every box and that yaw is the turret's. Turn the traverse on with the
+        // hitboxes drawn to watch what that costs: the gun's boxes stay on the gun, and the
+        // square `feet` and `mast` spin under a tripod that never moves. That is the whole
+        // reason those two are square, and it is easier to see than to argue about.
+        if (yawNode !== undefined && yawNode !== null) rig.rotation.y = yawNode.rotation.y;
+        renderer.render(scene, camera);
+      });
+
+      window.__sentry = {
+        view,
+        aim: (yaw, pitch) => { yawNode.rotation.y = yaw; pitchNode.rotation.x = pitch; },
+        iff: (hex) => band.color.setHex(hex),
+        rig: (on) => { rig.visible = on; },
+      };
+    </script>
+  </body>
+</html>

@@ -178,3 +178,47 @@ describe('a weapon that cannot be aimed', () => {
     expect(weapon.aiming).toBe(true);
   });
 });
+
+/**
+ * The Shooting Range's guns (2026-10-03): the playtest ran the range dry at about 270 rounds, 0/0
+ * with no word on screen. The magazine still empties and still reloads; the pool behind it is
+ * what goes.
+ */
+describe('a weapon with an infinite reserve', () => {
+  it('reloads a full magazine with nothing in reserve, and takes nothing from it', () => {
+    const weapon = new Weapon(AR_DEFAULT, createGameBus());
+    weapon.infiniteReserve = true;
+    weapon.mag = 0;
+    weapon.reserve = 0;
+    const input = makeWeaponInput();
+    input.reloadPressed = true;
+    weapon.step(input);
+    expect(weapon.reloading).toBe(true);
+    input.reloadPressed = false;
+    run(weapon, input, AR_DEFAULT.reloadEmptyTime + 0.5);
+    expect(weapon.mag).toBe(AR_DEFAULT.magSize);
+    expect(weapon.reserve).toBe(0);
+  });
+
+  it('reloads itself from a dry trigger, as a finite one with rounds left would', () => {
+    const weapon = new Weapon(AR_DEFAULT, createGameBus());
+    weapon.infiniteReserve = true;
+    weapon.mag = 0;
+    weapon.reserve = 0;
+    const input = makeWeaponInput();
+    input.fireHeld = true;
+    input.firePressed = true;
+    weapon.step(input);
+    expect(weapon.reloading).toBe(true);
+  });
+
+  it('is off unless asked for: a finite gun with nothing left does not reload', () => {
+    const weapon = new Weapon(AR_DEFAULT, createGameBus());
+    weapon.mag = 0;
+    weapon.reserve = 0;
+    const input = makeWeaponInput();
+    input.reloadPressed = true;
+    weapon.step(input);
+    expect(weapon.reloading).toBe(false);
+  });
+});

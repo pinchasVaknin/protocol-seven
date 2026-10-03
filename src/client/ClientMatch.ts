@@ -629,6 +629,9 @@ export class Match {
        */
       this.identity.entityId,
     );
+    // The range is an instrument, not a fight: its guns never run out of spare magazines
+    // (2026-10-03). See `Weapon.infiniteReserve`.
+    this.weapons.inventory.infiniteReserve = deps.mode.id === 'RANGE';
 
     this.melee = new Melee({
       world: deps.world,
@@ -2860,7 +2863,7 @@ export class Match {
       state.mag = weapon.mag;
       state.magSize = def.magSize;
       state.reserve = weapon.reserve;
-      state.reserveInfinite = false;
+      state.reserveInfinite = weapon.infiniteReserve;
       state.reloading = weapon.reloading;
       state.reloadFraction = this.visual.reloadFraction;
     }

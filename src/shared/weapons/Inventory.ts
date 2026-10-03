@@ -76,6 +76,25 @@ export class Inventory {
     return this.phase !== 'READY';
   }
 
+  private infiniteReserveOn = false;
+
+  /**
+   * The class's two guns never run out of spare magazines: the Shooting Range (2026-10-03).
+   * See `Weapon.infiniteReserve`. The streak slot is left alone — a belt-fed streak weapon's
+   * ammunition *is* the streak, and `streakWeaponSpent` is how the hands come back from it.
+   */
+  get infiniteReserve(): boolean {
+    return this.infiniteReserveOn;
+  }
+
+  set infiniteReserve(on: boolean) {
+    this.infiniteReserveOn = on;
+    for (let i = 0; i < Math.min(this.weapons.length, STREAK_SLOT); i++) {
+      const weapon = this.weapons[i];
+      if (weapon !== undefined) weapon.infiniteReserve = on;
+    }
+  }
+
   /** The weapon in a slot, for the HUD and the debug panel. */
   at(index: number): Weapon | undefined {
     return this.weapons[index];
@@ -94,7 +113,9 @@ export class Inventory {
     const existing = this.weapons[index];
     if (existing === undefined) {
       if (index !== this.weapons.length) return;
-      this.weapons.push(new Weapon(def, this.bus, this.sourceId));
+      const added = new Weapon(def, this.bus, this.sourceId);
+      added.infiniteReserve = this.infiniteReserveOn && index < STREAK_SLOT;
+      this.weapons.push(added);
       return;
     }
     existing.setDefinition(def);

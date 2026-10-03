@@ -203,8 +203,14 @@ export function introSeconds(def: MapDef, modeId: GameModeId): number {
 /**
  * The round-one freeze: the intro, the blend back to the player's eyes, the countdown. The
  * server's number and the client's, from the same two facts (see the file comment).
+ *
+ * **None in the Shooting Range** (2026-10-03). `IntroCamera` has never flown the range — there
+ * is no fight to introduce — but the freeze was still sized for the flight it skipped, so the
+ * testbed opened on sixteen seconds of GET READY with nobody to get ready for. A range is
+ * entered to shoot at something; it goes live on its first tick.
  */
 export function matchStartSeconds(def: MapDef, modeId: GameModeId): number {
+  if (modeId === 'RANGE') return 0;
   return introSeconds(def, modeId) + RETURN_SECONDS + COUNTDOWN_SECONDS;
 }
 

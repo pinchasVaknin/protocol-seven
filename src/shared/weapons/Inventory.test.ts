@@ -152,3 +152,21 @@ describe('a spent belt', () => {
     expect(inventory.active.definition.id).toBe(AR_DEFAULT.id);
   });
 });
+
+describe('an infinite reserve (the Shooting Range, 2026-10-03)', () => {
+  it('covers both of the class slots and never the streak weapon', () => {
+    const inventory = loadout();
+    inventory.infiniteReserve = true;
+    expect(inventory.at(0)?.infiniteReserve).toBe(true);
+    expect(inventory.at(1)?.infiniteReserve).toBe(true);
+    inventory.holdStreakWeapon(minigunWeapon());
+    expect(inventory.at(2)?.infiniteReserve).toBe(false);
+  });
+
+  it('reaches a secondary added after it was switched on', () => {
+    const inventory = new Inventory(AR_DEFAULT, null, createGameBus(), 1);
+    inventory.infiniteReserve = true;
+    inventory.setSlot(1, PISTOL_DEFAULT);
+    expect(inventory.at(1)?.infiniteReserve).toBe(true);
+  });
+});

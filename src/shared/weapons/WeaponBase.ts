@@ -79,6 +79,15 @@ const evDry = { weaponId: '', sourceId: 0 };
 export class Weapon {
   mag: number;
   reserve: number;
+  /**
+   * Reloads draw from nothing and take nothing (2026-10-03): the Shooting Range's guns.
+   *
+   * The range is a measuring instrument, and the playtest ran it dry at about 270 rounds — 0/0
+   * with no word on screen, and the only way on the Munitions Box, which works and is explained
+   * nowhere. The magazine still empties and still reloads, so a reload is still measured; only
+   * the pool behind it is gone. Set by `Inventory`, which knows which slots are the class's.
+   */
+  infiniteReserve = false;
 
   /** Seconds until the next round may leave the barrel. */
   fireTimer = 0;
@@ -156,6 +165,11 @@ export class Weapon {
 
   get isEmpty(): boolean {
     return this.mag <= 0;
+  }
+
+  /** Whether a reload has anything to draw from. Always, on the range. */
+  get hasReserve(): boolean {
+    return this.infiniteReserve || this.reserve > 0;
   }
 
   get reloadFraction(): number {
@@ -260,7 +274,7 @@ export class Weapon {
   beginReload(): void {
     if (this.reloading) return;
     const def = this.def;
-    if (this.mag >= def.magSize || this.reserve <= 0) return;
+    if (this.mag >= def.magSize || !this.hasReserve) return;
     this.reloading = true;
     this.reloadEmpty = this.mag <= 0;
     this.reloadDuration = this.reloadEmpty ? def.reloadEmptyTime : def.reloadTime;
@@ -322,9 +336,9 @@ export class Weapon {
 
     const def = this.def;
     const wanted = def.magSize - this.mag;
-    const taken = Math.min(wanted, this.reserve);
+    const taken = this.infiniteReserve ? wanted : Math.min(wanted, this.reserve);
     this.mag += taken;
-    this.reserve -= taken;
+    if (!this.infiniteReserve) this.reserve -= taken;
     this.reloading = false;
     this.reloadElapsed = 0;
     this.reloadStepIndex = 0;
@@ -388,7 +402,7 @@ export class Weapon {
         // The automatic reload on a dry trigger is the same magazine change and obeys the same
         // rule. This is the path that made blocking the key alone insufficient: firing is legal
         // mid-slide, so an empty weapon fired while sliding reloaded itself.
-        if (this.reserve > 0 && !input.reloadBlocked) this.beginReload();
+        if (this.hasReserve && !input.reloadBlocked) this.beginReload();
       }
       if (this.fireTimer < 0) this.fireTimer = 0;
       return;

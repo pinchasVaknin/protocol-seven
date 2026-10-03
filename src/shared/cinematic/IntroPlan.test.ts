@@ -62,6 +62,9 @@ describe('planIntro on Foundry', () => {
     expect(matchStartSeconds(FOUNDRY_MAP, 'FFA')).toBe(tdm);
     expect(matchStartSeconds(FOUNDRY_MAP, 'SND')).toBeGreaterThan(tdm);
     expect(matchStartSeconds(FOUNDRY_MAP, 'DOM')).toBeGreaterThan(matchStartSeconds(FOUNDRY_MAP, 'SND'));
+    // The range flies no intro, so it holds no freeze for one (2026-10-03): it was sixteen
+    // seconds of GET READY on the testbed with nobody to get ready for.
+    expect(matchStartSeconds(FOUNDRY_MAP, 'RANGE')).toBe(0);
   });
 
   it('holds the overview for the deathmatch modes and visits both sites for Search & Destroy', () => {

@@ -13,8 +13,8 @@ import { Rng } from '../core/Rng';
  * ## Where it sits
  *
  * Between the protocol and the socket, on **both** sides, per connection. Frames go in, and
- * come out later, sometimes in a different order, sometimes not at all. Nothing above it
- * knows it exists, which is the point: the code being tested is the code that ships.
+ * come out later, sometimes not at all. Nothing above it knows it exists, which is the point:
+ * the code being tested is the code that ships.
  *
  * It **layers on top of the real link** rather than replacing it (S7: *"It must be able to
  * layer on top of the real RTT to the deployed server, so you can test a 200 ms player
@@ -27,30 +27,37 @@ import { Rng } from '../core/Rng';
  * report numbers that are quietly double what they claim, so it is stated here and applied
  * in exactly one place.
  *
- * ## Reordering is mostly emergent
+ * ## In order, because the link is a stream (2026-10-03)
  *
- * With jitter on, two frames sent 5 ms apart can draw delays 20 ms apart, and the second
- * arrives first. That is how reordering happens on a real network and it falls out of the
- * jitter model for free. `reorderPct` exists on top of it to force the case deterministically
- * when a test needs it rather than waiting for jitter to produce it.
+ * The game talks over a WebSocket, which is TCP, and TCP hands frames to the application in
+ * the order they were sent — a late frame holds back everything behind it rather than being
+ * overtaken. This used to model a datagram link: every frame drew its own delay, so two frames
+ * sent 5 ms apart with delays 20 ms apart arrived the other way round, and a `reorderPct` could
+ * force it. Nothing that ships can see that, and the harness was reporting it as a bug: the
+ * mode-state hash, sent last in its tick, overtook the bomb frame sent just before it and the
+ * client answered for tick N with tick N-3's bomb — 178 confirmed S&D divergences under `bad`,
+ * every one of them this simulator. A frame is now due no earlier than the frame sent before it,
+ * so jitter bunches frames up behind a slow one, which is what it does on a real connection.
+ *
+ * **Loss is still a dropped frame**, and that is the one thing here a WebSocket would not do —
+ * it would deliver the frame late, after a retransmit, and stall the frames behind it. Modelling
+ * that honestly means modelling segments, since many frames share one; dropping is kept because
+ * S7 names 2% loss and the netcode's recovery from a missing snapshot is what that measures.
  */
 
 export interface NetConditions {
   /** Added round-trip time in ms. Split evenly across the two hops. */
   readonly latencyMs: number;
-  /** Plus or minus this much on each hop's delay, uniform. */
+  /** Plus or minus this much on each hop's delay, uniform. Never reorders; see the header. */
   readonly jitterMs: number;
   /** Percentage of frames dropped outright, 0..100. */
   readonly lossPct: number;
-  /** Percentage of frames given an extra shuffle of delay, 0..100. */
-  readonly reorderPct: number;
 }
 
 export const NET_PERFECT: NetConditions = {
   latencyMs: 0,
   jitterMs: 0,
   lossPct: 0,
-  reorderPct: 0,
 };
 
 /**
@@ -61,10 +68,10 @@ export const NET_PERFECT: NetConditions = {
  */
 export const NET_PRESETS: Readonly<Record<string, NetConditions>> = {
   off: NET_PERFECT,
-  '50': { latencyMs: 50, jitterMs: 0, lossPct: 0, reorderPct: 0 },
-  '100': { latencyMs: 100, jitterMs: 0, lossPct: 0, reorderPct: 0 },
-  '150': { latencyMs: 150, jitterMs: 0, lossPct: 0, reorderPct: 0 },
-  bad: { latencyMs: 100, jitterMs: 30, lossPct: 2, reorderPct: 0 },
+  '50': { latencyMs: 50, jitterMs: 0, lossPct: 0 },
+  '100': { latencyMs: 100, jitterMs: 0, lossPct: 0 },
+  '150': { latencyMs: 150, jitterMs: 0, lossPct: 0 },
+  bad: { latencyMs: 100, jitterMs: 30, lossPct: 2 },
 };
 
 /** Look a preset up by name, or null. Used by the URL flag and the live toggle. */
@@ -107,6 +114,8 @@ export class NetSim {
   private readonly pool: Pending[] = [];
   private readonly rng: Rng;
   private serial = 0;
+  /** When the last frame offered becomes deliverable. The next is never due before it. */
+  private lastDueMs = 0;
 
   /**
    * Seeded, not `Math.random` (M1's ban, and it is not incidental here): a loss pattern that
@@ -130,7 +139,7 @@ export class NetSim {
   /** True when this simulator is a no-op and the caller may skip it entirely. */
   get idle(): boolean {
     const c = this.conditions;
-    return c.latencyMs <= 0 && c.jitterMs <= 0 && c.lossPct <= 0 && c.reorderPct <= 0;
+    return c.latencyMs <= 0 && c.jitterMs <= 0 && c.lossPct <= 0;
   }
 
   /** Frames currently held. */
@@ -149,6 +158,7 @@ export class NetSim {
   /** Drop everything in flight. Called when a connection closes. */
   clear(): void {
     for (const p of this.pool) p.active = false;
+    this.lastDueMs = 0;
   }
 
   /**
@@ -181,22 +191,25 @@ export class NetSim {
     // One hop is half the round trip.
     let delay = c.latencyMs * 0.5;
     if (c.jitterMs > 0) delay += this.rng.spread() * c.jitterMs;
-    if (c.reorderPct > 0 && this.rng.float() * 100 < c.reorderPct) {
-      // Force this frame behind the next one or two.
-      delay += this.rng.range(5, 40);
-    }
     if (delay < 0) delay = 0;
+
+    // A stream, not datagrams: nothing is delivered ahead of a frame sent before it. See the
+    // header — a frame that drew a short delay waits behind a slow one, as it would on TCP.
+    let due = nowMs() + delay;
+    if (due < this.lastDueMs) due = this.lastDueMs;
+    this.lastDueMs = due;
 
     slot.bytes.set(bytes, 0);
     slot.length = bytes.length;
-    slot.dueMs = nowMs() + delay;
+    slot.dueMs = due;
     slot.serial = this.serial++;
     slot.active = true;
     return true;
   }
 
   /**
-   * Deliver every frame whose time has come, oldest due first.
+   * Deliver every frame whose time has come, oldest due first — which is send order, since no
+   * frame is due before the one sent ahead of it; equal due times fall back to the serial.
    *
    * Called once per frame on the client and once per tick on the server. The handler is
    * given a view valid only for the duration of the call — decode it, do not retain it.
@@ -250,7 +263,7 @@ export function parseConditions(spec: string): NetConditions | null {
   const loss = parts.length > 2 ? Number(parts[2]) : 0;
   if (!Number.isFinite(jitter) || jitter < 0) return null;
   if (!Number.isFinite(loss) || loss < 0 || loss > 100) return null;
-  return { latencyMs: latency, jitterMs: jitter, lossPct: loss, reorderPct: 0 };
+  return { latencyMs: latency, jitterMs: jitter, lossPct: loss };
 }
 
 export function describeConditions(c: NetConditions): string {
@@ -258,6 +271,5 @@ export function describeConditions(c: NetConditions): string {
   const bits = [`+${c.latencyMs.toFixed(0)}ms`];
   if (c.jitterMs > 0) bits.push(`+/-${c.jitterMs.toFixed(0)}ms jitter`);
   if (c.lossPct > 0) bits.push(`${c.lossPct.toFixed(1)}% loss`);
-  if (c.reorderPct > 0) bits.push(`${c.reorderPct.toFixed(1)}% reorder`);
   return bits.join(', ');
 }

@@ -166,24 +166,38 @@ export function selectStanceTransition(low: boolean, pistol: boolean): Character
  * The one-shot that **owns** the body for its whole length, or null. Distinct from
  * `selectAction`, and the distinction is what the clip does when the input stops saying so.
  *
- * A reload that is cancelled is over, and abandoning its clip is correct. A throw is the
- * opposite: the flag clearing is the sim saying *the grenade has left the hand*, which is the
- * moment the second half of the clip exists to show. So a gesture is handed to the animator's
- * transition channel, which holds the body until the clip finishes, and the throw additionally
- * pauses partway — see `THROW_HOLD_FRACTION`.
+ * A reload that is cancelled is over, and abandoning its clip is correct. A knife swing is the
+ * opposite: the flag clearing is the end of the swing, and the clip is fitted to it. So a gesture
+ * is handed to the animator's transition channel, which holds the body until the clip finishes.
+ *
+ * **The throw is not a gesture any more** (2026-09-28, the human's bug 1). It owned the whole
+ * body: the legs froze in the wind-up for as long as a grenade was held, and every step, stop or
+ * jump started the wind-up again. It is the upper-body layer now — see `selectThrowClip` and
+ * `ThrowLayer` — and the legs keep whatever this file says about locomotion.
  *
  * Priority is the simulation's own: `ClientMatch` blocks a swing while the thrower is busy and
- * cancels a reload on either, so throw outranks melee outranks reload.
+ * cancels a reload on either, so a body with the throw bit up swings nothing.
  */
 export function selectGesture(input: ActorAnimationInput, planarSpeed: number): CharacterAnimationId | null {
-  if (input.throwing) {
-    if (isLowStance(input)) return planarSpeed <= IDLE_SPEED ? 'throwCrouch' : null;
-    return planarSpeed <= IDLE_SPEED ? 'throwStand' : 'throwWalk';
-  }
+  void planarSpeed;
+  if (input.throwing) return null;
   // No crouched knife clip, and none while airborne: the body keeps its loop, exactly as it
   // does for a reload the library cannot draw.
   if (input.meleeing && !isLowStance(input) && !isAirborne(input)) return 'meleeStand';
   return null;
+}
+
+/**
+ * Which throw clip the **upper body** is posed from while a grenade is in the hand (2026-09-28).
+ *
+ * Only the arms, the spine and the head take it; the legs are the locomotion loop's. So the clip
+ * is chosen for what the torso is doing over them: a kneel keeps its own, because a standing
+ * throw's spine on crouched hips leans the body over its knees; a moving body takes the walking
+ * throw, whose torso is authored over a stride; a still one the standing throw.
+ */
+export function selectThrowClip(input: ActorAnimationInput, planarSpeed: number): 'throwStand' | 'throwWalk' | 'throwCrouch' {
+  if (isLowStance(input)) return 'throwCrouch';
+  return planarSpeed <= IDLE_SPEED ? 'throwStand' : 'throwWalk';
 }
 
 /**

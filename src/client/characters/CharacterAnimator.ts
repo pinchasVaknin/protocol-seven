@@ -13,9 +13,9 @@ import {
 } from './AnimationSelector';
 import { variantFor } from './AnimationVariant';
 import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
-import { THROW_FOLLOW_THROUGH, THROW_RELEASE_TIME } from '../../shared/equipment/ThrowController';
 import { DEFAULT_MOVEMENT_CONFIG } from '../../shared/player/MovementConfig';
 import { MELEE_SWING_SECONDS } from '../../shared/weapons/Melee';
+import { ThrowLayer } from './ThrowLayer';
 
 const CROSS_FADE_SECONDS = 0.14;
 
@@ -52,46 +52,6 @@ const SLIDE_FADE_IN_SECONDS = 0.07;
  * number no remote body obeys.
  */
 const SLIDE_SECONDS = DEFAULT_MOVEMENT_CONFIG.slideDuration;
-
-/**
- * How far into a throw clip the arm is cocked — where the clip waits while the grenade is still
- * in the hand.
- *
- * Measured rather than chosen: the right hand is furthest behind the hips at 0.508 of
- * `Idle_Throw`, 0.577 of `Crouch_Idle_Throw` and 0.608 of `Walk_Throw` (Echo, through the real
- * import path, this session). One constant for the three because the spread is 0.10 of a clip
- * around 2.8 s — under two tenths of a second of wind-up, on a pose that is about to be thrown
- * out of anyway — and three numbers in the catalogue would have to be re-measured every time one
- * of the clips was re-exported.
- *
- * The alternative to holding was fitting the whole clip to the throw the way a reload is fitted,
- * and it cannot work: a cook has no length. `ThrowController` runs from the tick the button goes
- * down to the tick it comes up, and *"an animation that decided when the hand opened would be a
- * second authority on a timing the server owns"* (M12, F17). So the clip waits here for as long
- * as the simulation says the hand is closed, and the release is what plays when it opens.
- */
-const THROW_HOLD_FRACTION = 0.55;
-
-/**
- * Where in each throw clip the hand lets go (2026-09-28): over the top and coming forward, the frame
- * the grenade has to leave it on.
- *
- * Measured the way `THROW_HOLD_FRACTION` was — the right hand against the hips, through the real
- * import path, Echo — as the top of the arc after the furthest-back point: 0.58 of `Idle_Throw`,
- * 0.66 of `Crouch_Idle_Throw`, 0.72 of `Walk_Throw`. Three numbers rather than the hold's one,
- * because the spread is 0.14 of a clip and this is the frame everybody watching is looking at.
- *
- * It splits the tail in two. The swing up to it is fitted to `THROW_RELEASE_TIME`, so the hand opens
- * on the tick the simulation spawns the grenade and the grenade drawn in it goes on the same tick;
- * the rest is fitted to `THROW_FOLLOW_THROUGH`. The first version fitted the whole tail to the sum,
- * and on `Idle_Throw` the arm was over the top in 0.03 s and carried the grenade round through its
- * follow-through for another 0.15 before letting go of it.
- */
-const THROW_RELEASE_FRACTION: Partial<Record<CharacterAnimationId, number>> = {
-  throwStand: 0.58,
-  throwCrouch: 0.66,
-  throwWalk: 0.72,
-};
 
 /**
  * Seconds a body has to be off the ground before the animation calls it a jump.
@@ -166,8 +126,7 @@ interface Playing {
  *    the only thing here that does. See `setLocomotion` for the two reasons;
  * 3. a **transition**: a one-shot that owns the body until its clip finishes, with the requested
  *    loop waiting behind it. The crouch edge drives it (`standToCrouch` / `crouchToStand`, in the
- *    held weapon's version), and so do a knife swing and a grenade throw, which additionally
- *    *pauses* partway;
+ *    held weapon's version), and so does a knife swing;
  * 2b. the **slide**, which owns the body from the tick the stance says `SLIDE` to the tick it
  *    says anything else, and is fitted to the slide rather than played at its authored speed —
  *    see `SLIDE_CLIP_WINDOW`. It is not a transition because it does not finish on its own: the
@@ -179,10 +138,13 @@ interface Playing {
  *    says the actor is doing it, then hands back to the loop;
  * 5. the **locomotion loop** the selector names.
  *
- * The line between 3 and 4 is what the clip does when the input stops saying so, and it is the
- * reason a throw is not an action: a cancelled reload is over and abandoning its clip is right,
- * while the arm starting its swing (`throwPhase` leaving `COOKING`) is the moment the rest of the
- * clip exists for.
+ * The line between 3 and 4 is what the clip does when the input stops saying so: a cancelled
+ * reload is over and abandoning its clip is right, while a swing is fitted to the swing and ends
+ * with it.
+ *
+ * And over all five, on the upper body only, the **throw** (`ThrowLayer`, 2026-09-28): the spine
+ * and the arms posed from the throw clip after the mixer has posed everything else, so a grenade is
+ * held, cooked and thrown over whatever the legs are doing.
  *
  * Which variant of a slot plays is `variantFor`'s answer from `setLife` (M13 Phase D); this
  * class never chooses one itself.
@@ -199,14 +161,8 @@ export class CharacterAnimator {
   private pendingLocomotion: CharacterAnimationId | null = null;
   private dead = false;
   private wasLow = false;
-  /**
-   * Clip time the transition waits at while a grenade is in the hand, or null when it is not a
-   * held one. The `finished` event cannot fire while the action is paused, so this is also what
-   * keeps the body from handing back to its loop mid-throw.
-   */
-  private holdAt: number | null = null;
-  /** Clip time the hand opens at while a released throw is swinging to it; null otherwise. */
-  private releaseAt: number | null = null;
+  /** The upper body while a grenade is out. See `ThrowLayer`. */
+  private readonly throwLayer: ThrowLayer;
   private wasAirborne = false;
   /**
    * The gesture slot the current transition came from, held until its input clears.
@@ -229,8 +185,6 @@ export class CharacterAnimator {
     if (finished === null || event.action !== finished.action) return;
     const wasLaunch = finished.id === 'jumpLaunch';
     this.transition = null;
-    this.holdAt = null;
-    this.releaseAt = null;
     const next = this.pendingLocomotion;
     this.pendingLocomotion = null;
     /**
@@ -254,6 +208,7 @@ export class CharacterAnimator {
   ) {
     this.mixer = new THREE.AnimationMixer(root);
     this.mixer.addEventListener('finished', this.onFinished);
+    this.throwLayer = new ThrowLayer(root, clips);
   }
 
   get isDying(): boolean {
@@ -324,7 +279,7 @@ export class CharacterAnimator {
       // The second is the standing rule of this area: leaving or meeting the ground moves the
       // hitbox layout, and a body drawn in a pose its boxes disagree with is the defect M13 C2
       // found on the sliding body. A gesture or a stance transition already playing is dropped
-      // here, including a held throw; `begin` clears the hold with it.
+      // here. A throw is not: it is the upper body's (`ThrowLayer`), and it carries on over the jump.
       //
       // It also outranks the crouch edge, and `wasLow` is advanced below either way — so a body
       // that jumps out of a kneel does not stand up in mid-air and does not owe a `crouchToStand`
@@ -348,14 +303,11 @@ export class CharacterAnimator {
       this.holdSlide();
     } else if (this.transition !== null) {
       this.pendingLocomotion = desired;
-      this.stepHold(input);
-      this.stepRelease();
     } else if (gesture !== null && this.gestureLatch !== gesture) {
       this.gestureLatch = gesture;
       const started = this.begin(gesture, desired);
-      // A throw waits at its cocked frame; a swing is fitted to the swing, like a reload.
-      if (input.throwing) this.holdAt = started.action.getClip().duration * THROW_HOLD_FRACTION;
-      else fitToSeconds(started.action, MELEE_SWING_SECONDS);
+      // A swing is fitted to the swing, like a reload.
+      fitToSeconds(started.action, MELEE_SWING_SECONDS);
     } else if (airborne) {
       // Still off the ground with the launch finished: hold its clamped last frame, which is the
       // air pose, and ask for nothing else. Measured in a live match before this branch existed —
@@ -383,6 +335,8 @@ export class CharacterAnimator {
     this.wasLow = low;
     this.wasSliding = sliding;
     this.wasAirborne = airborne;
+    // Whatever the legs were just given, the arms are the throw's while a grenade is out.
+    this.throwLayer.step(input, planarSpeed, dt);
   }
 
   /**
@@ -395,8 +349,6 @@ export class CharacterAnimator {
   private beginSlide(): void {
     this.transition = null;
     this.pendingLocomotion = null;
-    this.holdAt = null;
-    this.releaseAt = null;
     this.action = null;
     const started = this.playOneShot('slide', 0, SLIDE_FADE_IN_SECONDS);
     started.action.time = SLIDE_CLIP_WINDOW.start;
@@ -474,70 +426,9 @@ export class CharacterAnimator {
   private begin(id: CharacterAnimationId, resume: CharacterAnimationId): Playing {
     this.pendingLocomotion = resume;
     this.action = null;
-    this.holdAt = null;
-    this.releaseAt = null;
     const started = this.playOneShot(id, 0);
     this.transition = started;
     return started;
-  }
-
-  /**
-   * Park a throw clip at its cocked frame while the grenade is in the hand with the arm back, and
-   * let it go on the tick the simulation's arm starts its swing.
-   *
-   * The tail is fitted in two parts (`THROW_RELEASE_FRACTION`): the swing to the frame the hand
-   * opens on over `THROW_RELEASE_TIME`, then the rest over `THROW_FOLLOW_THROUGH` — the same 0.42 s
-   * in all the balance was tuned against and the same window the viewmodel spends with the weapon
-   * off screen, so the third-person arm comes back as the first-person one does.
-   *
-   * **It lets go on `THROWING`, not when `throwing` clears** (protocol 24). `throwing` is the
-   * thrower's `busy`, which stays up through the follow-through, so the arm used to stay cocked
-   * for the whole 0.42 s the tail is fitted to and swing *after* the grenade was already in the
-   * air — and with the grenade drawn in the hand now, it would have swung an empty one. The phase
-   * says when the swing starts; the release still covers a client that never saw `THROWING`
-   * between two snapshots, because the follow-through (`IDLE` while `throwing`) lets go too.
-   *
-   * A grenade put back rather than thrown — `throwing` gone while the arm was still cocked — never
-   * swung, so it does not play the swing either: the body goes back to what it was doing.
-   */
-  private stepHold(input: ActorAnimationInput): void {
-    const hold = this.holdAt;
-    const playing = this.transition;
-    if (hold === null || playing === null) return;
-    const action = playing.action;
-    if (armCocked(input)) {
-      if (action.time >= hold) {
-        action.time = hold;
-        action.paused = true;
-      }
-      return;
-    }
-    this.holdAt = null;
-    if (!input.throwing) {
-      action.paused = false;
-      this.transition = null;
-      const next = this.pendingLocomotion;
-      this.pendingLocomotion = null;
-      if (next !== null) this.playLoop(next);
-      return;
-    }
-    action.paused = false;
-    const release = action.getClip().duration * (THROW_RELEASE_FRACTION[playing.id] ?? 0);
-    if (action.time < release) {
-      this.releaseAt = release;
-      fitToSeconds(action, THROW_RELEASE_TIME, release - action.time);
-    } else {
-      fitFollowThrough(action);
-    }
-  }
-
-  /** Past the frame the hand opens on: the rest of the clip is the follow-through. */
-  private stepRelease(): void {
-    const at = this.releaseAt;
-    const playing = this.transition;
-    if (at === null || playing === null || playing.action.time < at) return;
-    this.releaseAt = null;
-    fitFollowThrough(playing.action);
   }
 
   /**
@@ -548,11 +439,11 @@ export class CharacterAnimator {
    */
   beginDeath(input: ActorAnimationInput, variant: number): void {
     this.dead = true;
+    // A body falls as the death clip has it, arms and all.
+    this.throwLayer.reset();
     this.pendingLocomotion = null;
     this.transition = null;
     this.slide = null;
-    this.holdAt = null;
-    this.releaseAt = null;
     this.gestureLatch = null;
     this.action = null;
     const id = selectDeath(input);
@@ -563,9 +454,8 @@ export class CharacterAnimator {
   endDeath(): void {
     if (!this.dead) return;
     this.dead = false;
+    this.throwLayer.reset();
     this.transition = null;
-    this.holdAt = null;
-    this.releaseAt = null;
     this.gestureLatch = null;
     this.action = null;
     this.pendingLocomotion = null;
@@ -586,6 +476,8 @@ export class CharacterAnimator {
 
   update(dt: number): void {
     if (dt > 0) this.mixer.update(dt);
+    // After the mixer, which has just posed every bone: the throw takes the upper body over it.
+    this.throwLayer.apply();
   }
 
   dispose(): void {
@@ -596,8 +488,6 @@ export class CharacterAnimator {
     this.active = null;
     this.transition = null;
     this.slide = null;
-    this.holdAt = null;
-    this.releaseAt = null;
     this.action = null;
   }
 
@@ -649,17 +539,6 @@ export class CharacterAnimator {
     this.active = next;
     return next;
   }
-}
-
-/** The grenade is in the hand and the arm has not started its swing: drawn, or cooking. */
-function armCocked(input: ActorAnimationInput): boolean {
-  return input.throwing && (input.throwPhase === 'READY' || input.throwPhase === 'COOKING');
-}
-
-/** What is left of a throw clip after the hand has opened, over the simulation's follow-through. */
-function fitFollowThrough(action: THREE.AnimationAction): void {
-  const remaining = action.getClip().duration - action.time;
-  if (remaining > 0) fitToSeconds(action, THROW_FOLLOW_THROUGH, remaining);
 }
 
 /**

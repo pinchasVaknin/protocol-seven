@@ -328,7 +328,12 @@ simulation gives the release and the follow-through. The animation never keeps a
 point is measured, not chosen: the right hand is furthest behind the hips at **0.508** of
 `Idle_Throw`, **0.577** of `Crouch_Idle_Throw` and **0.608** of `Walk_Throw` (Echo, through the
 real import path), and one constant at 0.55 covers the three — the spread is under two tenths of
-a second on a pose about to be thrown out of.
+a second on a pose about to be thrown out of. *(2026-09-28, the human's bug 1: the hold played the
+whole body, so a held grenade froze the legs mid-wind-up and every step or jump restarted it. The
+throw is an upper-body layer now — `ThrowLayer`, over whatever locomotion the legs have — with the
+grenade at the chest (0.25 of the standing and kneeling throws, 0.44 of the walking one), a 0.25 s
+draw-back to the furthest-back frame for a cook, and the swing to each clip's release frame on the
+tick the grenade leaves. Still no clock of its own: every stage is the replicated phase.)*
 
 **Two defects the live run found and the unit tests could not.** Both were in the jump, and both
 were invisible to a test of the policy because they were about *when a clip ends*:

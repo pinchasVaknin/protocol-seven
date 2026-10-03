@@ -10,6 +10,7 @@ import {
   selectGroundTransition,
   selectLocomotion,
   selectStanceTransition,
+  selectThrowClip,
 } from './AnimationSelector';
 import { CHARACTER_DEFINITIONS, type CharacterAnimationId } from './CharacterCatalog';
 
@@ -122,21 +123,17 @@ describe('the stance transition follows the weapon', () => {
 });
 
 describe('selectGesture', () => {
-  it('picks the throw for the pose the body is in', () => {
-    expect(selectGesture(input({ throwing: true }), STILL)).toBe('throwStand');
-    expect(selectGesture(input({ throwing: true }), WALKING)).toBe('throwWalk');
-    expect(selectGesture(input({ throwing: true, stance: 'CROUCH' }), STILL)).toBe('throwCrouch');
-  });
-
-  it('draws nothing for a throw the library cannot pose', () => {
-    // Crouch-walking while throwing: the body keeps its loop rather than popping into a kneel.
-    expect(selectGesture(input({ throwing: true, stance: 'CROUCH' }), WALKING)).toBeNull();
+  it('never owns the body for a throw — that is the upper-body layer', () => {
+    // The whole-body throw froze the legs for as long as a grenade was held (bug 1, 2026-09-28).
+    expect(selectGesture(input({ throwing: true }), STILL)).toBeNull();
+    expect(selectGesture(input({ throwing: true }), WALKING)).toBeNull();
+    expect(selectGesture(input({ throwing: true, stance: 'CROUCH' }), STILL)).toBeNull();
   });
 
   it('puts the throw ahead of the knife, as the simulation does', () => {
     // `ClientMatch` refuses a swing while the thrower is busy, so a body with both bits up is
     // cooking a grenade and the swing it is drawn taking would be one that never happened.
-    expect(selectGesture(input({ throwing: true, meleeing: true }), STILL)).toBe('throwStand');
+    expect(selectGesture(input({ throwing: true, meleeing: true }), STILL)).toBeNull();
   });
 
   it('swings standing only', () => {
@@ -149,6 +146,17 @@ describe('selectGesture', () => {
   it('is null when the body is doing neither', () => {
     expect(selectGesture(input(), STILL)).toBeNull();
     expect(selectGesture(input({ reloading: true, reloadSeconds: 2 }), STILL)).toBeNull();
+  });
+});
+
+describe('selectThrowClip', () => {
+  it('poses the upper body from the throw the torso is in, over any legs', () => {
+    expect(selectThrowClip(input({ throwing: true }), STILL)).toBe('throwStand');
+    expect(selectThrowClip(input({ throwing: true }), WALKING)).toBe('throwWalk');
+    expect(selectThrowClip(input({ throwing: true }), RUNNING)).toBe('throwWalk');
+    expect(selectThrowClip(input({ throwing: true, stance: 'CROUCH' }), STILL)).toBe('throwCrouch');
+    // A crouch-walk has a throw now: the legs are the crouch walk's, the arms the kneeling throw's.
+    expect(selectThrowClip(input({ throwing: true, stance: 'CROUCH' }), WALKING)).toBe('throwCrouch');
   });
 });
 

@@ -305,10 +305,11 @@ function slot(id: CharacterAnimationId, kind: ClipKind, first: string, ...rest: 
  *   delivered alongside them stay in `incoming/` — they are drops from an authored ledge height
  *   carrying 1.5–1.7 m of root travel, and under the root lock the body would be drawn a metre
  *   above its own feet.
- * - The three throws and the melee are one-shots keyed on `throwing` and `meleeing`, the two bits
- *   protocol 20 widened `EFlag` to carry. The throw is **held** rather than fitted: a cook has no
- *   fixed length, so the clip stops at `THROW_HOLD_FRACTION` while the hand is on the grenade and
- *   runs out at its authored speed once the simulation says it has gone.
+ * - The melee is a one-shot keyed on `meleeing`, fitted to the swing. The three throws are not
+ *   played by the mixer at all since 2026-09-28: `ThrowLayer` samples their **upper-body** tracks
+ *   over whatever the legs are doing, at a time of its own driven by the replicated throw phase —
+ *   the grenade held at the chest, the arm drawn back for a cook, the swing to the release frame on
+ *   the tick the grenade leaves. Played whole, a held grenade froze the legs mid-wind-up.
  * - **The pistol family**, admitted here after two milestones in `incoming/` (M13 decision 11).
  *   Six slots, and what makes six safe where fifteen were wanted is in `rigLayoutFor`: the poses
  *   the family does not cover — the crouch walk and run, the reloads, the relaxed loops, the

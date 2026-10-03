@@ -74,10 +74,9 @@ export interface ActorAnimationInput {
   /**
    * A grenade is in the hand rather than a weapon (protocol 20).
    *
-   * `ThrowController.busy` for a local body, `EFlag.Throwing` for a replicated one. The throw
-   * clip is *held* while this is true and released when it clears, so the sim keeps the only
-   * clock over the cook — see `CharacterAnimator.setLocomotion`. A bot never throws, so a bot's
-   * is always false.
+   * `ThrowController.busy` for a local body, `EFlag.Throwing` for a replicated one. While it is
+   * true the upper body is the throw's (`ThrowLayer`), posed from `throwPhase` below, so the sim
+   * keeps the only clock over the cook. A bot never throws, so a bot's is always false.
    */
   readonly throwing: boolean;
   /**

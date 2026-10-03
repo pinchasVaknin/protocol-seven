@@ -80,6 +80,19 @@ const STARVATION_GAIN_MS = 6;
  */
 const STARVATION_DECAY_MS = 0.15;
 
+/**
+ * How much of the way to the lead the link asks for the lead in use moves per update (part 5).
+ *
+ * The same quarter the offset is eased by, for the same reason. The lead is half the window's mean
+ * RTT plus twice its mean deviation, recomputed at every ping, and one slow round trip moves both:
+ * a spike sample could push the target tick several ticks on at once, and a client that finds its
+ * target suddenly several ticks away is a client that thinks it has stalled. The playtest suspected
+ * exactly this behind resyncs on frames that were themselves fine. Eased, a change of several ticks
+ * arrives a tick at a time over a few hundred milliseconds — updated at every ping and every
+ * snapshot's starvation report, so about twenty-four times a second.
+ */
+const LEAD_EASE = 0.25;
+
 export class ClockSync {
   /** Smoothed round-trip time, ms. */
   rttMs = 0;
@@ -106,6 +119,9 @@ export class ClockSync {
 
   /** True once at least one round trip has completed. */
   synced = false;
+
+  /** The lead in use, eased toward the one the link asks for; negative until the first. See `LEAD_EASE`. */
+  private leadEasedMs = -1;
 
   private readonly rtts = new Float64Array(WINDOW);
   private readonly offsets = new Float64Array(WINDOW);
@@ -199,8 +215,13 @@ export class ClockSync {
     return Math.ceil(this.leadMs() / (DT * 1000));
   }
 
-  /** How far ahead of the server this client is running, in ms. */
+  /** How far ahead of the server this client is running, in ms. Eased; see `LEAD_EASE`. */
   leadMs(): number {
+    return this.leadEasedMs < 0 ? this.wantedLeadMs() : this.leadEasedMs;
+  }
+
+  /** The lead the link asks for right now: half a round trip and the jitter buffer. */
+  wantedLeadMs(): number {
     return this.rttMs * 0.5 + this.marginMs();
   }
 
@@ -223,10 +244,11 @@ export class ClockSync {
     if (count > 0) {
       this.adaptiveMs += count * STARVATION_GAIN_MS;
       if (this.adaptiveMs > MAX_MARGIN_MS) this.adaptiveMs = MAX_MARGIN_MS;
-      return;
+    } else {
+      this.adaptiveMs -= STARVATION_DECAY_MS;
+      if (this.adaptiveMs < 0) this.adaptiveMs = 0;
     }
-    this.adaptiveMs -= STARVATION_DECAY_MS;
-    if (this.adaptiveMs < 0) this.adaptiveMs = 0;
+    this.easeLead();
   }
 
   /** The server's current tick, as best this client can tell. For the debug panel. */
@@ -257,6 +279,13 @@ export class ClockSync {
     this.offsetMs = 0;
     this.seeded = false;
     this.adaptiveMs = 0;
+    this.leadEasedMs = -1;
+  }
+
+  /** Move the lead in use a quarter of the way to the one wanted; the first is taken whole. */
+  private easeLead(): void {
+    const wanted = this.wantedLeadMs();
+    this.leadEasedMs = this.leadEasedMs < 0 ? wanted : this.leadEasedMs + (wanted - this.leadEasedMs) * LEAD_EASE;
   }
 
   private recompute(): void {
@@ -297,5 +326,6 @@ export class ClockSync {
     } else {
       this.offsetMs += (bestOffset - this.offsetMs) * 0.25;
     }
+    this.easeLead();
   }
 }

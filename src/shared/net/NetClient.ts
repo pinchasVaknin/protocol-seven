@@ -190,8 +190,11 @@ export interface SkirmishSink {
    */
   readonly onScoreboard?: ((rows: readonly ReplicatedScoreRow[]) => void) | undefined;
   /** Grenades in flight and smoke on the ground (M11 Gate B, §8.24). Broadcast, not filtered. */
-  /** The §7 mode-state hash for `tick`. Compare against your own; see `ModeStateHash`. */
-  readonly onStateHash?: ((tick: number, hash: number) => void) | undefined;
+  /**
+   * The §7 mode-state hash for `tick`, and its four parts. Compare against your own; see
+   * `ModeStateHash` and `hashModeStateSections`.
+   */
+  readonly onStateHash?: ((tick: number, hash: number, sections: readonly number[]) => void) | undefined;
   readonly onProjectiles?:
     | ((projectiles: readonly ProjectileState[], smoke: readonly SmokeState[]) => void)
     | undefined;
@@ -229,13 +232,35 @@ export interface NetClientStats {
   /** Snapshots the server sent that never arrived, inferred from id gaps. */
   snapshotsLost: number;
   lossPct: number;
+  /**
+   * Times this client fell more than `RESYNC_TICKS` behind its clock and jumped, discarding the
+   * backlog and the prediction ring (part 5); and frames on which it owed more than a frame's
+   * budget and caught up over several instead. The first is the one a player feels.
+   */
+  resyncs: number;
+  catchUps: number;
 }
 
 /** Ping cadence. Four a second is plenty to track a link and costs 13 bytes each. */
 const PING_INTERVAL_MS = 250;
 
-/** Most ticks simulated in one catch-up. Matches S4.1's cap for the same reason. */
-const MAX_CATCHUP_STEPS = 5;
+/** Most ticks simulated in one frame. Matches S4.1's cap for the same reason. */
+const MAX_STEPS_PER_FRAME = 5;
+
+/**
+ * How far behind the clock the client may fall and still catch up rather than jump (part 5).
+ *
+ * This was the per-frame cap as well — five ticks, 83 ms — so any frame that long threw the
+ * backlog away: the prediction ring reset, the commands for those ticks were never sent and the
+ * server repeated the last one in their place. The note above it was written for a tab put away
+ * for a minute, and it fired on every stutter: the playtest counted resyncs of 6–14 ticks a few
+ * times a match, 62–67 after each first-draw stall on entering a world, and up to 37 on a bad link.
+ *
+ * Twenty ticks is a third of a second. Under it the debt is paid at the frame budget — five a
+ * frame, so twenty is cleared in four frames — with the player's real input and the prediction
+ * intact; over it the client is a backgrounded tab or a real freeze, and jumping is still right.
+ */
+const RESYNC_TICKS = 20;
 
 export class NetClient {
   state: NetClientState = 'idle';
@@ -342,6 +367,8 @@ export class NetClient {
     bytesOutPerSecond: 0,
     snapshotsLost: 0,
     lossPct: 0,
+    resyncs: 0,
+    catchUps: 0,
   };
 
   /** The tick this client is currently simulating. Derived, never incremented (S4.11). */
@@ -717,7 +744,7 @@ export class NetClient {
         this.deps.skirmish?.onProjectiles?.(msg.projectiles, msg.smoke);
         return;
       case 'stateHash':
-        this.deps.skirmish?.onStateHash?.(msg.tick, msg.hash);
+        this.deps.skirmish?.onStateHash?.(msg.tick, msg.hash, msg.sections);
         return;
       case 'reject':
         this.state = 'rejected';
@@ -1021,10 +1048,11 @@ export class NetClient {
    * Advance to the tick the clock says we should be on.
    *
    * Bounded, exactly as S4.1 bounds the render loop: a client that alt-tabbed for a minute
-   * owes 3,600 ticks and running them would freeze the tab for seconds. Past the cap the
+   * owes 3,600 ticks and running them would freeze the tab for seconds. Past `RESYNC_TICKS` the
    * client resynchronises to the clock's target rather than grinding through the backlog —
    * the server has already simulated those ticks with repeated commands, and the next
-   * snapshot corrects whatever that produced.
+   * snapshot corrects whatever that produced. Under it, the debt is paid `MAX_STEPS_PER_FRAME`
+   * at a time, over as many frames as it takes.
    */
   private stepSimulation(): number {
     const target = this.clock.targetTick();
@@ -1033,15 +1061,17 @@ export class NetClient {
     if (this.currentTick === 0) this.currentTick = target;
 
     const owed = target - this.currentTick;
-    if (owed > MAX_CATCHUP_STEPS) {
+    if (owed > RESYNC_TICKS) {
       log.warn(`${owed} ticks behind the server clock; resynchronising.`);
       this.currentTick = target;
       this.prediction.reset();
+      this.stats.resyncs++;
       return 0;
     }
+    if (owed > MAX_STEPS_PER_FRAME) this.stats.catchUps++;
 
     let steps = 0;
-    while (this.currentTick < target && steps < MAX_CATCHUP_STEPS) {
+    while (this.currentTick < target && steps < MAX_STEPS_PER_FRAME) {
       const cmd = this.neutralise(this.deps.sample(this.currentTick));
       this.controller.weaponSpeedScale = this.deps.moveScale?.(cmd) ?? 1;
       this.controller.step(cmd);

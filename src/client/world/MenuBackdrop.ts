@@ -8,6 +8,7 @@ import type { LaneDef, MapDef, Vec3Lit } from '../../shared/world/maps/types';
 import { loadMapCollision } from '../../shared/world/MapLoader';
 import { bakeNavmesh } from '../../shared/world/NavBake';
 import type { ProceduralTextures } from '../engine/ProceduralTextures';
+import { gpuWarmup } from '../engine/GpuWarmup';
 import type { NavGrid } from '../../shared/world/Navmesh';
 import type { CharacterAssetService } from '../characters/CharacterAssetService';
 import { MapBuildQueue } from './MapBuildQueue';
@@ -328,6 +329,8 @@ export class MenuBackdrop {
     this.map = built;
     scene.add(built.root);
     applyAmbient(scene, built.def);
+    // A new light setup for everything in the scene: prepared before it is first drawn.
+    gpuWarmup.requestScene();
     const particulateDef = built.def.particulate;
     this.particulate = particulateDef === undefined ? null : new Particulate(particulateDef);
     if (this.particulate !== null) built.root.add(this.particulate.points);

@@ -17,6 +17,13 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v26 (2026-10-03, the human): **where a hash disagrees, not only that it does.** `StateHash`
+ * carries the four part hashes after the whole one — flow, zones, tags, bomb, `MODE_STATE_SECTIONS`
+ * in that order, sixteen bytes — so a confirmed mismatch names the channel it lives in and prints
+ * this side's values for it. The whole hash is unchanged and still decides; the parts only say
+ * where to look. The version moves because the layout did: a v25 server's frame is sixteen bytes
+ * short, the decoder rejects it as overrun, and the check would go quiet without saying why.
+ *
  * v25 (2026-09-28, the human): **the mortar's map, on the command.** `Btn.Targeting` (bit 18) is set
  * on every command a client samples while its targeting map is up, and the server suspends the
  * rifle on it as the client does. Not a byte added — the buttons were always a `u32` — but the
@@ -204,7 +211,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 25;
+export const PROTOCOL_VERSION = 26;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

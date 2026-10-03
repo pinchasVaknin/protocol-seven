@@ -25,6 +25,7 @@ import { Handover } from './Handover';
 import type { MatchHarness } from './MatchHarness';
 import { simulateXp, simulationToLines } from '../../shared/meta/XpSimulator';
 import { cssHex, palette } from '../ui/Palette';
+import { gpuWarmup } from '../engine/GpuWarmup';
 
 /**
  * `window.__p7`, the console surface the acceptance measurements are read from.
@@ -158,6 +159,8 @@ export function installConsoleApi(game: Game, harness: Harness, matchHarness: Ma
     handover,
     /** Frame-time p50/p95/p99/worst plus the whole buffer, as JSON. */
     frameReport: () => handover.frameReport(),
+    /** Part 5: how many frames were held for a shader compile, and how long the last one took. */
+    gpuWarmup: () => gpuWarmup.report(),
     /** Input latency, in milliseconds and in frames. Needs a live match. */
     latencyReport: () => handover.latencyReport(),
     /** Drive the per-tick sim path and watch the heap, with a control. Needs a live match. */

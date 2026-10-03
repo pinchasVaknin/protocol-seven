@@ -1,6 +1,7 @@
 import { logger } from '../core/Log';
 import type { MatchFlow } from '../modes/MatchFlow';
 import { phaseAt, type SnapshotHeader } from '../net/Messages';
+import { describeModeStateSection, MODE_STATE_SECTIONS, type ModeStateFacts } from './ModeStateHash';
 
 const log = logger('divergence');
 
@@ -99,6 +100,13 @@ export interface DivergenceRecord {
   readonly server: number | string;
 }
 
+/** The parts of a mode-state hash on both sides, and this side's facts. See `hashModeStateSections`. */
+export interface HashParts {
+  readonly facts: ModeStateFacts;
+  readonly mine: readonly number[];
+  readonly server: readonly number[];
+}
+
 /** Consecutive disagreeing samples before a discrete mismatch is believed. See the header. */
 const CONFIRM_SAMPLES = 4;
 
@@ -153,7 +161,7 @@ export class DivergenceChecker {
     }
   }
 
-  private compare(tick: number, field: string, client: number | string, server: number | string): void {
+  private compare(tick: number, field: string, client: number | string, server: number | string, detail = ''): void {
     if (client === server) {
       // Agreement clears the streak. A mismatch has to be *consecutive* to be believed —
       // otherwise an in-flight score update counts toward a divergence that never existed.
@@ -171,7 +179,7 @@ export class DivergenceChecker {
     this.records.push(record);
     log.error(
       `DIVERGENCE on tick ${tick}: ${field} — client says ${client}, server says ${server}. ` +
-        `Confirmed across ${CONFIRM_SAMPLES} consecutive snapshots.`,
+        `Confirmed across ${CONFIRM_SAMPLES} consecutive snapshots.${detail}`,
     );
   }
 
@@ -188,9 +196,22 @@ export class DivergenceChecker {
    * Counted in `hashSamples` rather than `samples`: the two arrive on different channels, and a
    * denominator that mixes them cannot answer either question.
    */
-  checkHash(tick: number, client: number, server: number): void {
+  checkHash(tick: number, client: number, server: number, parts: HashParts | null = null): void {
     this.hashSamples++;
-    this.compare(tick, 'modeStateHash', client, server);
+    let detail = '';
+    if (parts !== null && client !== server) {
+      // Which channel (part 5): the part hashes that disagree, each with this client's values.
+      // The server's values are not on the wire — sixteen bytes say *where*, and the log says
+      // what this side believed there, which is the half of the comparison that is missing.
+      const differing: string[] = [];
+      MODE_STATE_SECTIONS.forEach((section, i) => {
+        if ((parts.mine[i] ?? 0) !== (parts.server[i] ?? 0)) {
+          differing.push(`${section} (client: ${describeModeStateSection(parts.facts, section)})`);
+        }
+      });
+      detail = differing.length > 0 ? ` In ${differing.join('; ')}.` : ' In no part — the parts agree, so the overall hash disagrees with itself.';
+    }
+    this.compare(tick, 'modeStateHash', client, server, detail);
   }
 
   /** The one-line verdict the panel shows and the report quotes. */

@@ -727,8 +727,8 @@ export class Session {
     this.send(writeProjectiles(this.out, projectiles, smoke));
   }
 
-  sendStateHash(tick: number, hash: number): void {
-    this.send(writeStateHash(this.out, tick, hash));
+  sendStateHash(tick: number, hash: number, sections: readonly number[]): void {
+    this.send(writeStateHash(this.out, tick, hash, sections));
   }
 
   /**

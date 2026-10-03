@@ -30,6 +30,7 @@ import {
 import { ALL_EQUIPMENT, type EquipmentId } from '../../shared/equipment/EquipmentDefs';
 import {
   hashModeState,
+  hashModeStateSections,
   makeModeStateScratch,
   modeStateFacts,
   type ModeStateFacts,
@@ -171,6 +172,7 @@ export abstract class MatchInstance {
   private readonly boardScratch: ReplicatedScoreRow[] = [];
   /** Scratch for the §7 hash. Nothing on the per-tick send path allocates (S4.7). */
   private readonly hashScratch = makeModeStateScratch();
+  private readonly hashSections: number[] = [0, 0, 0, 0];
   private entityCount = 0;
 
   /** Milliseconds the last step took. Per-instance half of the §7 instance panel. */
@@ -749,9 +751,12 @@ export abstract class MatchInstance {
    */
   private sendStateHash(tick: number): void {
     if (this.seats.size === 0) return;
-    const hash = hashModeState(this.modeStateFacts());
+    const facts = this.modeStateFacts();
+    const hash = hashModeState(facts);
+    // The parts too, so a client that disagrees can say in which channel (part 5).
+    const sections = hashModeStateSections(facts, this.hashSections);
     for (const seat of this.seats.values()) {
-      if (!seat.session.closed) seat.session.sendStateHash(tick, hash);
+      if (!seat.session.closed) seat.session.sendStateHash(tick, hash, sections);
     }
   }
 

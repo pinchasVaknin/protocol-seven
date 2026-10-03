@@ -15,6 +15,7 @@ import { DebugSuite } from './debug/DebugSuite';
 import { DivergenceChecker } from '../shared/debug/DivergenceChecker';
 import {
   hashModeState,
+  hashModeStateSections,
   makeModeStateScratch,
   modeStateFacts,
 } from '../shared/debug/ModeStateHash';
@@ -242,6 +243,7 @@ export class MatchWorld {
   readonly divergence = new DivergenceChecker();
   /** Scratch for the §7 hash, so a per-snapshot comparison allocates nothing. */
   private readonly hashScratch = makeModeStateScratch();
+  private readonly hashSections: number[] = [0, 0, 0, 0];
   /** M8. Airborne dust or haze, or null on a map that authors none. */
   readonly particulate: Particulate | null;
   /**
@@ -538,11 +540,14 @@ export class MatchWorld {
        * after every one of those channels, which is what makes "what do you think tick N
        * looked like" a fair question rather than a guaranteed miss.
        */
-      net.onStateHash = (tick, hash) => {
-        const mine = hashModeState(
-          modeStateFacts(this.match.mode, this.match.flow, this.hashScratch),
-        );
-        this.divergence.checkHash(tick, mine, hash);
+      net.onStateHash = (tick, hash, sections) => {
+        const facts = modeStateFacts(this.match.mode, this.match.flow, this.hashScratch);
+        // The parts as well (part 5), so a confirmed mismatch says which channel it is in.
+        this.divergence.checkHash(tick, hashModeState(facts), hash, {
+          facts,
+          mine: hashModeStateSections(facts, this.hashSections),
+          server: sections,
+        });
       };
 
       /**

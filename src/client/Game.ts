@@ -38,6 +38,7 @@ import { CameraRig, type CameraDrive } from './engine/CameraRig';
 import { ProceduralAudio } from './engine/ProceduralAudio';
 import { ProceduralTextures } from './engine/ProceduralTextures';
 import { Renderer } from './engine/Renderer';
+import { gpuWarmup } from './engine/GpuWarmup';
 import { parseHarnessOptions } from './debug/BotHarness';
 import type { BotHarness } from './debug/BotHarness';
 import type { DebugSuite } from './debug/DebugSuite';
@@ -126,7 +127,11 @@ import {
   DEFAULT_EQUIPMENT_CONFIG,
   type EquipmentConfig,
 } from '../shared/equipment/EquipmentConfig';
-import { AR_DEFAULT, cloneWeaponDef, PISTOL_DEFAULT, type WeaponDef } from '../shared/weapons/WeaponDefs';
+import { ALL_WEAPONS, AR_DEFAULT, cloneWeaponDef, PISTOL_DEFAULT, type WeaponDef } from '../shared/weapons/WeaponDefs';
+import { ALL_EQUIPMENT } from '../shared/equipment/EquipmentDefs';
+import { STREAK_WEAPON_IDS } from '../shared/streaks/StreakWeapons';
+import { preloadSentry } from './streaks/SentryModel';
+import { preloadStation } from './world/PropModels';
 import { cloneViewmodelConfig, DEFAULT_VIEWMODEL_CONFIG, type ViewmodelConfig } from '../shared/weapons/ViewmodelConfig';
 import type { LoadedMap } from './world/MapRender';
 
@@ -596,6 +601,8 @@ export class Game {
       this.renderer.aspect,
       this.movementConfig.capsuleRadius,
     );
+    // Shaders and textures ahead of the frame that needs them (part 5). See `GpuWarmup`.
+    gpuWarmup.attach(this.renderer.three, this.scene, this.cameraRig.camera);
 
     this.screens = new GameScreens({
       host: uiHost,
@@ -1643,6 +1650,28 @@ export class Game {
     }
     void this.weaponAssets.preloadKnife().catch(() => undefined);
     void this.weaponAssets.preloadHands().catch(() => undefined);
+    this.warmWorldAssets();
+  }
+
+  /**
+   * The files the *world* draws, fetched while a screen is up (part 5).
+   *
+   * Every one of these used to be asked for by the frame that first needed it: a body's weapon
+   * when a bot carrying it appeared, the sentry and the station when a match began, a grenade when
+   * somebody threw one. So they landed in the opening seconds of a match, each with a first frame
+   * that compiled its programs — the stalls the playtest timed on entering the arena (the turret
+   * and three bodies' rifles) and on entering Depot (the station and two more). The menu is where
+   * there is time. Unlike the viewmodel's files above this is the whole arsenal, because the bots
+   * deal from all of it; the bodies' files are a quarter of a viewmodel's each, about nine
+   * megabytes for the fifteen, fetched once a version — the cache headers keep them after that.
+   * Each one is compiled for the scene's lights as it lands (`GpuWarmup.adopt`).
+   */
+  private warmWorldAssets(): void {
+    for (const def of ALL_WEAPONS) void this.weaponAssets.preloadLod(def.id).catch(() => undefined);
+    for (const id of STREAK_WEAPON_IDS) void this.weaponAssets.preloadLod(id).catch(() => undefined);
+    for (const def of ALL_EQUIPMENT) void this.weaponAssets.preloadEquipment(def.id).catch(() => undefined);
+    void preloadSentry();
+    void preloadStation();
   }
 
   // -- world ---------------------------------------------------------------
@@ -1772,6 +1801,9 @@ export class Game {
       buildProgress: () => this.buildQueue.progress,
       migrationWindows: () => this.migrationWindows,
     });
+    // A new map is a new light setup, and every program in the scene is compiled for one: the
+    // first frame of the world prepares them instead of stalling on them. See `GpuWarmup`.
+    gpuWarmup.requestScene();
 
     /**
      * The × asks; it does not decide (playtest round 4, B1).
@@ -2701,8 +2733,11 @@ export class Game {
        * neither drawn nor cleared holds the last frame of the previous match.
        */
       const backdropCam = this.backdrop.frame(dt, this.renderer.aspect, alpha);
-      if (backdropCam !== null) this.renderer.render(this.scene, backdropCam, null);
-      else this.renderer.clear();
+      if (backdropCam !== null) {
+        if (!gpuWarmup.hold(this.scene, backdropCam)) this.renderer.render(this.scene, backdropCam, null);
+      } else {
+        this.renderer.clear();
+      }
       return;
     }
 
@@ -2818,6 +2853,18 @@ export class Game {
      */
     const intro = this.introCamera.cameraFor(world, cam, this.renderer.aspect, dt);
     match.ui.hud.setIntro(intro !== null);
+    /**
+     * Everything above ran — the bodies were built and posed, the weapons put in their hands — and
+     * now, if the GPU has programs to compile for this scene, they are compiled instead of drawn
+     * (part 5). The canvas keeps the last picture for those few frames; the simulation and the
+     * network do not wait, which is the half of a stall that used to cost a resync. See `GpuWarmup`.
+     */
+    if (gpuWarmup.hold(this.scene, intro ?? takeover ?? cam, { scene: this.viewmodel.scene, camera: this.viewmodel.camera })) {
+      // Nothing drawn this frame; the debug overlay's own clock still runs.
+      world.debug.update(dt);
+      this.servicePendingTransitions();
+      return;
+    }
     if (intro !== null) {
       this.renderer.render(this.scene, intro, null);
     } else if (takeover !== null) {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { logger } from '../../shared/core/Log';
+import { gpuWarmup } from '../engine/GpuWarmup';
 import type { MapDef } from '../../shared/world/maps/types';
 
 const log = logger('PropModels');
@@ -42,36 +43,58 @@ export const STATION_SHAPE = 'ammoCrate';
  */
 export const MODELLED_PROP_SHAPES: ReadonlySet<string> = new Set([STATION_SHAPE]);
 
+/**
+ * The station's template, for the page rather than for one world (part 5).
+ *
+ * It was a field of each `PropModels`, which a world builds and disposes — so the file could only
+ * be asked for once a match had started, and arrived in the middle of one. Module-level like the
+ * sentry's, so the menu can fetch it (`Game.warmWeaponAssets`) and every world after finds it there.
+ */
+let stationTemplate: THREE.Object3D | null = null;
+let stationTask: Promise<void> | null = null;
+
+/**
+ * Fetch the station, once per page. Resolves either way: a station that fails to download leaves
+ * the boxes standing invisible, which resupplies exactly as it did and simply cannot be seen.
+ * Cleared on a failure so a later world tries again.
+ */
+export function preloadStation(): Promise<void> {
+  if (stationTemplate !== null) return Promise.resolve();
+  if (stationTask !== null) return stationTask;
+  const task = new GLTFLoader()
+    .loadAsync(STATION_URL)
+    .then((gltf) => {
+      // Shadows set as `addStations` sets them on every copy, so the programs compiled here are
+      // the ones a placed station draws with. See `GpuWarmup.adopt`.
+      gltf.scene.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      });
+      stationTemplate = gltf.scene;
+      void gpuWarmup.adopt(gltf.scene);
+      log.info('the resupply station is ready.');
+    })
+    .catch((error: unknown) => {
+      log.warn(`the resupply station did not load; its boxes stay invisible. ${String(error)}`);
+      stationTask = null;
+    });
+  stationTask = task;
+  return task;
+}
+
 export class PropModels {
-  private readonly loader = new GLTFLoader();
-  private station: THREE.Object3D | null = null;
-  private task: Promise<void> | null = null;
   private disposed = false;
 
   /** The station's template, or null while it has not arrived. */
   stationModel(): THREE.Object3D | null {
-    return this.disposed ? null : this.station;
+    return this.disposed ? null : stationTemplate;
   }
 
-  /**
-   * Fetch the station, once. Resolves either way: a station that fails to download leaves the
-   * boxes standing invisible, which resupplies exactly as it did and simply cannot be seen.
-   */
+  /** The page's fetch, joined. Resolves either way; see `preloadStation`. */
   preloadStation(): Promise<void> {
-    if (this.disposed || this.station !== null) return Promise.resolve();
-    if (this.task !== null) return this.task;
-    const task = this.loader
-      .loadAsync(STATION_URL)
-      .then((gltf) => {
-        if (this.disposed) return;
-        this.station = gltf.scene;
-        log.info('the resupply station is ready.');
-      })
-      .catch((error: unknown) => {
-        log.warn(`the resupply station did not load; its boxes stay invisible. ${String(error)}`);
-      });
-    this.task = task;
-    return task;
+    return this.disposed ? Promise.resolve() : preloadStation();
   }
 
   /**
@@ -103,9 +126,8 @@ export class PropModels {
     return n;
   }
 
+  /** The world is going; the page's template stays for the next one. */
   dispose(): void {
     this.disposed = true;
-    this.station = null;
-    this.task = null;
   }
 }

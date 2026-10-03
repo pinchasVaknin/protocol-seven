@@ -308,7 +308,7 @@ export class WsServer {
         res.end('upgrade required\n');
         return;
       }
-      this.serveStatic(root, req.method ?? 'GET', req.url ?? '/', res);
+      this.serveStatic(root, req.method ?? 'GET', req.url ?? '/', req.headers['if-none-match'], res);
     });
 
     this.wss = new WebSocketServer({
@@ -354,15 +354,21 @@ export class WsServer {
    * Serve one file out of the built client.
    *
    * Deliberately small: this exists to put the game on one origin, not to be a web server.
-   * No caching policy beyond a long max-age on hashed assets, no compression (Vite's output is
-   * already minified and a managed host's edge will gzip it), no directory listing.
+   * No compression (Vite's output is already minified and a managed host's edge will gzip it),
+   * no directory listing. The caching is `staticCacheControl` plus an `ETag`, and that is all.
    *
    * **The traversal guard is the part that matters.** The path comes off the wire, so it is
    * decoded, normalised and then checked to still sit under the root — a prefix test on the
    * resolved absolute path, which `..` cannot survive. Anything that fails is a 403 rather
    * than a 404: the two are different facts and only one of them is worth looking at in a log.
    */
-  private serveStatic(root: string, method: string, url: string, res: ServerResponse): void {
+  private serveStatic(
+    root: string,
+    method: string,
+    url: string,
+    ifNoneMatch: string | undefined,
+    res: ServerResponse,
+  ): void {
     if (method !== 'GET' && method !== 'HEAD') {
       res.writeHead(405, { allow: 'GET, HEAD' });
       res.end();
@@ -393,10 +399,12 @@ export class WsServer {
     }
 
     let size = 0;
+    let modifiedMs = 0;
     try {
       const stat = statSync(file);
       if (!stat.isFile()) throw new Error('not a file');
       size = stat.size;
+      modifiedMs = stat.mtimeMs;
     } catch {
       res.writeHead(404, { 'content-type': 'text/plain' });
       res.end('not found\n');
@@ -413,15 +421,23 @@ export class WsServer {
      * check — but the *assets* would, and discovering that at deploy time is the avoidable
      * afternoon S4.9 talks about.
      */
+    const query = url.split('#')[0]?.split('?')[1] ?? '';
+    const caching = {
+      'access-control-allow-origin': '*',
+      'cache-control': staticCacheControl(wantsIndex ? 'index.html' : pathname, query),
+      etag: staticEtag(size, modifiedMs),
+    };
+    // Unchanged since the browser last fetched it: the headers and no body. This is what turns
+    // `no-cache` from "download it again" into "ask, and get two hundred bytes back".
+    if (etagMatches(ifNoneMatch, caching.etag)) {
+      res.writeHead(304, caching);
+      res.end();
+      return;
+    }
     res.writeHead(200, {
       'content-type': contentTypeFor(file),
       'content-length': String(size),
-      'access-control-allow-origin': '*',
-      // Vite fingerprints everything under /assets/, so those are immutable. The entry
-      // document must not be, or a deploy would never reach anybody's browser.
-      'cache-control': file.includes(`${sep}assets${sep}`)
-        ? 'public, max-age=31536000, immutable'
-        : 'no-cache',
+      ...caching,
     });
     if (method === 'HEAD') {
       res.end();
@@ -518,8 +534,51 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
+  '.glb': 'model/gltf-binary',
 };
 
 function contentTypeFor(file: string): string {
   return CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream';
+}
+
+const IMMUTABLE = 'public, max-age=31536000, immutable';
+
+/**
+ * How long a browser may keep a file this server sent, by its URL (part 5).
+ *
+ * Two kinds of URL name content that can never change, and both are kept for a year without
+ * asking again:
+ *
+ * - **`/assets/`**, which Vite fingerprints — a changed file is a different name.
+ * - **`/models/` with a `?v=`**, the weapon and character GLBs. Their catalogues put a release
+ *   string on every URL (`WEAPON_ASSET_VERSION`, `CHARACTER_VERSION`) for exactly this, and a
+ *   republished model ships with a new string, so the old URL still means the old bytes. These
+ *   are the heaviest things the game downloads, megabytes each, and under `no-cache` without a
+ *   validator every match a player started fetched every one of them again.
+ *
+ * Everything else is `no-cache` — kept, but asked about each time, and with the `ETag` below a
+ * question costs a 304 rather than the file. The entry document must be in that set or a deploy
+ * would never reach anybody's browser, and so must a model with no version on its URL: nothing
+ * would change the name when its bytes did.
+ */
+export function staticCacheControl(pathname: string, query: string): string {
+  const first = pathname.replace(/^[/\\]+/, '').split(/[/\\]/)[0];
+  if (first === 'assets') return IMMUTABLE;
+  if (first === 'models' && /(?:^|&)v=[^&]/.test(query)) return IMMUTABLE;
+  return 'no-cache';
+}
+
+/** A weak validator from the file's size and modification time. Weak: no byte is hashed. */
+function staticEtag(size: number, modifiedMs: number): string {
+  return `W/"${size.toString(16)}-${Math.floor(modifiedMs).toString(16)}"`;
+}
+
+/** Whether `If-None-Match` names this validator — a list, or `*` (RFC 9110 §13.1.2). */
+function etagMatches(header: string | undefined, etag: string): boolean {
+  if (header === undefined) return false;
+  const bare = etag.replace(/^W\//, '');
+  return header.split(',').some((tag) => {
+    const t = tag.trim();
+    return t === '*' || t.replace(/^W\//, '') === bare;
+  });
 }

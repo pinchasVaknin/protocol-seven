@@ -1,4 +1,5 @@
 import { logger } from '../../shared/core/Log';
+import { gpuWarmup } from '../engine/GpuWarmup';
 import { FactoryCharacterAvatarProvider, type CharacterAvatarProvider } from './CharacterAvatarProvider';
 import { CharacterAvatarFactory } from './CharacterAvatarFactory';
 import type { CharacterDefinition } from './CharacterCatalog';
@@ -40,6 +41,14 @@ export class CharacterAssetService {
     this.statuses.set(key, 'loading');
     const task = this.repository.preload(definition).then((assets) => {
       if (this.disposed) throw new Error('Character asset service was disposed while assets were loading.');
+      // Shadows set as `CharacterSkin` sets them on every body, so the programs compiled here are
+      // the ones a body draws with; then onto the GPU before the first body does. See `GpuWarmup`.
+      assets.skinTemplate.traverse((node) => {
+        if ((node as { isMesh?: boolean }).isMesh !== true) return;
+        node.castShadow = true;
+        node.receiveShadow = true;
+      });
+      void gpuWarmup.adopt(assets.skinTemplate);
       this.factories.set(key, new CharacterAvatarFactory(assets));
       this.statuses.set(key, 'ready');
       log.info(`GLB character template "${assets.definition.id}" is ready.`);

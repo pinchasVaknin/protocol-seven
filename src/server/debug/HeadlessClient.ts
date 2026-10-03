@@ -30,7 +30,13 @@ import { PlayerController } from '../../shared/player/PlayerController';
 import { findMap } from '../../shared/modes/ModeRegistry';
 import { loadMapCollision } from '../../shared/world/MapLoader';
 import { STREAK_DEFS } from '../../shared/streaks/StreakDefs';
-import { hashModeState, type ModeStateFacts } from '../../shared/debug/ModeStateHash';
+import {
+  describeModeStateSection,
+  hashModeState,
+  hashModeStateSections,
+  MODE_STATE_SECTIONS,
+  type ModeStateFacts,
+} from '../../shared/debug/ModeStateHash';
 import {
   NO_SPECTATOR_TARGET,
   pickSpectatorTarget,
@@ -462,6 +468,8 @@ export interface HeadlessClientReport {
   readonly hashSamples: number;
   readonly hashMismatches: number;
   readonly firstMismatchTick: number;
+  /** Per confirmed mismatch: which parts of the hash disagreed, with this client's values (part 5). */
+  readonly mismatchParts: readonly string[];
   /**
    * Snapshot frames on which some other body was flagged mid-throw or mid-swing (protocol 20).
    *
@@ -736,6 +744,8 @@ export class HeadlessClient {
   private hashMismatches = 0;
   private hashMismatchStreak = 0;
   private firstMismatchTick = -1;
+  /** One line per confirmed mismatch: the parts that disagreed and this client's values for them. */
+  private readonly mismatchParts: string[] = [];
   /** The replicated mode state, exactly as decoded. Hashed against the server's own. */
   private repZones: readonly ObjectiveState[] = [];
   private repTags: readonly TagInfo[] = [];
@@ -1072,13 +1082,14 @@ export class HeadlessClient {
          * behind on *something*, and a comparator that reports the first disagreement it sees
          * reports one on every kill and teaches its reader to ignore it.
          */
-        onStateHash: (tick, hash) => {
+        onStateHash: (tick, hash, sections) => {
           this.hashSamples++;
           // Counted separately once this client has come back from a drop (round 4, F8): a
           // returning client is exactly the case §4.18's discard list is about, and folding its
           // samples into the run total would let a match's worth of clean frames bury them.
           if (this.returned) this.hashSamplesAfterReturn++;
-          const mine = hashModeState(this.localModeFacts());
+          const facts = this.localModeFacts();
+          const mine = hashModeState(facts);
           if (mine === hash) {
             this.hashMismatchStreak = 0;
             return;
@@ -1089,6 +1100,12 @@ export class HeadlessClient {
           this.hashMismatches++;
           if (this.returned) this.hashMismatchesAfterReturn++;
           if (this.firstMismatchTick < 0) this.firstMismatchTick = tick;
+          // Which part (part 5), with this client's values for it — the line a person reads.
+          const parts = hashModeStateSections(facts, []);
+          const differing = MODE_STATE_SECTIONS.filter((_, i) => parts[i] !== sections[i]);
+          this.mismatchParts.push(
+            `tick ${tick}: ${differing.map((s) => `${s} (client: ${describeModeStateSection(facts, s)})`).join('; ') || 'no part'}`,
+          );
         },
         onScoreboard: (rows) => {
           this.scoreboardFrames++;
@@ -1802,6 +1819,7 @@ export class HeadlessClient {
       hashSamples: this.hashSamples,
       hashMismatches: this.hashMismatches,
       firstMismatchTick: this.firstMismatchTick,
+      mismatchParts: this.mismatchParts,
       projectileFrames: this.projectileFrames,
       remoteProjectiles: this.remoteSerials.size,
       ownProjectileSeen: this.ownProjectileSeen,

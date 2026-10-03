@@ -135,6 +135,74 @@ export function hashModeState(f: ModeStateFacts): number {
   return h >>> 0;
 }
 
+/**
+ * The hash in four parts, so a mismatch can say **where** (part 5, the S&D report).
+ *
+ * The playtest got a confirmed `modeStateHash` divergence at the start of a Search & Destroy round
+ * and could not tie it to anything: the hash said *when* and nothing at all about *what*, and the
+ * channels it pointed back to are a dozen fields wide. Each part hashes one channel's worth of the
+ * facts, in the order `hashModeState` mixes them, and they ride the same message — sixteen bytes —
+ * so the client can name the part that disagrees and print its own values for it.
+ */
+export const MODE_STATE_SECTIONS = ['flow', 'zones', 'tags', 'bomb'] as const;
+export type ModeStateSection = (typeof MODE_STATE_SECTIONS)[number];
+
+/** Write the four part hashes of `f` into `out`, in `MODE_STATE_SECTIONS` order. */
+export function hashModeStateSections(f: ModeStateFacts, out: number[]): number[] {
+  let flow = FNV_OFFSET >>> 0;
+  flow = mix(flow, f.scoreA);
+  flow = mix(flow, f.scoreB);
+  flow = mix(flow, f.round);
+  flow = mix(flow, f.phase);
+
+  let zones = mix(FNV_OFFSET >>> 0, f.zones.length);
+  for (const z of f.zones) {
+    zones = mix(zones, z.owner);
+    zones = mix(zones, z.capturing);
+    zones = mix(zones, z.progress);
+    zones = mix(zones, z.countA);
+    zones = mix(zones, z.countB);
+  }
+
+  let tags = mix(FNV_OFFSET >>> 0, f.tagIds.length);
+  for (const id of f.tagIds) tags = mix(tags, id);
+
+  let bomb = mix(FNV_OFFSET >>> 0, f.bomb === null ? 0 : 1);
+  if (f.bomb !== null) {
+    bomb = mix(bomb, f.bomb.state);
+    bomb = mix(bomb, f.bomb.carrierId);
+    bomb = mix(bomb, f.bomb.attackers);
+    bomb = mix(bomb, f.bomb.plantedSite);
+    bomb = mix(bomb, f.bomb.timerCs);
+    bomb = mix(bomb, f.bomb.interactProgress);
+    bomb = mix(bomb, f.bomb.interactEntity);
+  }
+
+  out.length = 4;
+  out[0] = flow >>> 0;
+  out[1] = zones >>> 0;
+  out[2] = tags >>> 0;
+  out[3] = bomb >>> 0;
+  return out;
+}
+
+/** The facts of one part, as a short line for a divergence log. */
+export function describeModeStateSection(f: ModeStateFacts, section: ModeStateSection): string {
+  switch (section) {
+    case 'flow':
+      return `score ${f.scoreA}-${f.scoreB}, round ${f.round}, phase ${f.phase}`;
+    case 'zones':
+      return f.zones.map((z) => `[${z.owner}/${z.capturing} ${z.progress} ${z.countA}:${z.countB}]`).join(' ') || 'none';
+    case 'tags':
+      return `${f.tagIds.length}: ${f.tagIds.join(',')}`;
+    case 'bomb':
+      return f.bomb === null
+        ? 'none'
+        : `state ${f.bomb.state}, carrier ${f.bomb.carrierId}, attackers ${f.bomb.attackers}, site ${f.bomb.plantedSite}, ` +
+            `timer ${f.bomb.timerCs}cs, interact ${f.bomb.interactProgress} by ${f.bomb.interactEntity}`;
+  }
+}
+
 // -- building the facts, once, for both runtimes ------------------------------
 
 /**

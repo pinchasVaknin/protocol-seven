@@ -166,7 +166,7 @@ export class NetSession {
    * message arrives last in the instance's tick, after every channel describing that tick, so
    * by the time this fires the client's mode holds its complete answer.
    */
-  onStateHash: ((tick: number, hash: number) => void) | null = null;
+  onStateHash: ((tick: number, hash: number, sections: readonly number[]) => void) | null = null;
 
   /**
    * The most recent state hash off the wire, waiting for the state it describes to be applied.
@@ -174,7 +174,22 @@ export class NetSession {
    * The latest, not a queue: `update()` applies the newest header and nothing older, so the
    * newest hash is the only one there will ever be an answer for. See the sink above.
    */
-  private pendingHash: { tick: number; hash: number } | null = null;
+  private pendingHash: { tick: number; hash: number; sections: readonly number[] } | null = null;
+
+  /**
+   * The server has moved this connection to another instance, and this session's world is
+   * on its way out (part 5).
+   *
+   * Set by a `NewMatch` or a `Migrated` and never cleared: the world that owns this session is
+   * torn down and the next one builds a fresh session. Until then — a frame on the fast path,
+   * the whole loading screen on the slow one — `update()` keeps running, because the socket has
+   * to, and every frame it was comparing the *new* instance's state hash against the *old*
+   * world's mode. That is the playtest's S&D record verbatim: the arena's mode, no bomb,
+   * against Search & Destroy's first four hashes, confirmed once and never again because the
+   * checker is per world and the new world's agreed from its first sample. A question about a
+   * match this world is not in has no answer here, so it is not asked.
+   */
+  private retired = false;
 
   /**
    * Where replicated objective state lands (M11 Gate B, §6.8).
@@ -240,6 +255,7 @@ export class NetSession {
         // A rotation reassigns entity ids, so the identity has to move with it or every
         // filter downstream starts testing against the seat we held in the previous match.
         deps.identity.adopt(welcome.entityId);
+        this.retire();
         deps.onNewMatch?.(welcome);
       },
       skirmish: {
@@ -268,7 +284,7 @@ export class NetSession {
           this.onScoreboard?.(rows);
           deps.skirmish?.onScoreboard?.(rows);
         },
-        onStateHash: (tick, hash) => {
+        onStateHash: (tick, hash, sections) => {
           /*
            * Held, not compared. The comparison happens in `update()` — see `pendingHash`.
            *
@@ -286,8 +302,8 @@ export class NetSession {
            * every join is the flaky probe standing lesson 6 warns about, and it would have been
            * the second thing in this session to cry wolf about a value nothing had written yet.
            */
-          this.pendingHash = { tick, hash };
-          deps.skirmish?.onStateHash?.(tick, hash);
+          this.pendingHash = { tick, hash, sections };
+          deps.skirmish?.onStateHash?.(tick, hash, sections);
         },
         onMigrated: (welcome) => {
           // Same reason as `onNewMatch` above, and it has to happen here as well: a migration
@@ -295,6 +311,7 @@ export class NetSession {
           // the seat we held in the arena makes every "was that me?" test in the presentation
           // layer wrong for the whole live match.
           deps.identity.adopt(welcome.entityId);
+          this.retire();
           deps.skirmish?.onMigrated?.(welcome);
         },
       },
@@ -465,6 +482,12 @@ export class NetSession {
     this.client.disconnect(reason);
   }
 
+  /** Stop answering for state from an instance this world is not in. See `retired`. */
+  private retire(): void {
+    this.retired = true;
+    this.pendingHash = null;
+  }
+
   /**
    * Let go of the connection without closing it (M10, playtest round 2).
    *
@@ -526,11 +549,12 @@ export class NetSession {
       // §7's divergence checker, sampled once per applied snapshot. Both of these run *after*
       // `onMatchState` and that is the whole of their correctness: the client's answer to
       // "what did this tick look like" is only its answer once the tick has been applied.
-      this.onAuthoritativeState?.(h);
+      // Neither runs once the server has moved us on — see `retired`.
+      if (!this.retired) this.onAuthoritativeState?.(h);
       const hash = this.pendingHash;
-      if (hash !== null && this.client.synchronised) {
+      if (hash !== null && this.client.synchronised && !this.retired) {
         this.pendingHash = null;
-        this.onStateHash?.(hash.tick, hash.hash);
+        this.onStateHash?.(hash.tick, hash.hash, hash.sections);
       }
     }
 

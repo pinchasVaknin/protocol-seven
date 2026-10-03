@@ -877,11 +877,15 @@ export function writeProjectiles(
   return w.bytes();
 }
 
-/** The §7 mode-state hash, and the tick it describes. */
-export function writeStateHash(w: ByteWriter, tick: number, hash: number): Uint8Array {
+/**
+ * The §7 mode-state hash, the tick it describes, and its four parts (v26) — see
+ * `hashModeStateSections`: the parts are what let a mismatch name the channel it is in.
+ */
+export function writeStateHash(w: ByteWriter, tick: number, hash: number, sections: readonly number[]): Uint8Array {
   head(w, MsgS.StateHash);
   w.i32(tick);
   w.u32(hash);
+  for (let i = 0; i < 4; i++) w.u32(sections[i] ?? 0);
   return w.bytes();
 }
 
@@ -1258,7 +1262,7 @@ export type Decoded =
   | { kind: 'objectives'; states: readonly ObjectiveState[] }
   | { kind: 'tags'; tags: readonly TagInfo[] }
   | { kind: 'streaks'; view: StreakView }
-  | { kind: 'stateHash'; tick: number; hash: number }
+  | { kind: 'stateHash'; tick: number; hash: number; sections: number[] }
   | {
       kind: 'projectiles';
       projectiles: readonly ProjectileState[];
@@ -1667,7 +1671,8 @@ export function decodeHeader(r: ByteReader): Decoded {
     case MsgS.StateHash: {
       const tick = r.i32();
       const hash = r.u32();
-      return r.overran ? BAD : { kind: 'stateHash', tick, hash };
+      const sections = [r.u32(), r.u32(), r.u32(), r.u32()];
+      return r.overran ? BAD : { kind: 'stateHash', tick, hash, sections };
     }
     case MsgS.Reject: {
       const code = r.u8v();

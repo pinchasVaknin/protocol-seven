@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { logger } from '../../shared/core/Log';
+import { gpuWarmup } from '../engine/GpuWarmup';
 import {
   ATTACHMENT_PART_IDS,
   ATTACHMENT_PART_OWN_SOCKETS,
@@ -165,6 +166,8 @@ export class WeaponAssetService {
         throw new Error(`LOD file "${weaponId}" has no root with socket_grip and socket_support.`);
       }
       this.lods.set(weaponId, { weaponId, scene: root, gripAnchor: grip.position.clone(), supportAnchor: support.position.clone() });
+      // Drawn in the bodies' hands in the world; compiled for its lights before the first one is.
+      void gpuWarmup.adopt(root);
     });
     this.lodTasks.set(weaponId, task);
     void task.then(
@@ -205,6 +208,8 @@ export class WeaponAssetService {
         throw new Error(`Hands file has no root named "${HANDS_ASSET_ID}" with the bones ${missing.join(', ')}.`);
       }
       this.handsScene = root;
+      // The viewmodel's own scene: the next frame compiles it before drawing it.
+      gpuWarmup.requestScene();
       log.info(`GLB hands are ready (${WEAPON_ASSET_VERSION}).`);
     });
     this.handsTask = task;
@@ -241,6 +246,8 @@ export class WeaponAssetService {
         throw new Error('Knife file has no root named "knife" with a "body" group.');
       }
       this.knifeScene = root;
+      // In the viewmodel and in the bodies' hands: both, before either draws it.
+      void gpuWarmup.adopt(root);
       log.info(`GLB knife is ready (${WEAPON_ASSET_VERSION}).`);
     });
     this.knifeTask = task;
@@ -289,6 +296,7 @@ export class WeaponAssetService {
         if (node !== undefined) sockets[name] = node.position.clone();
       }
       this.shieldTemplate = { scene: root, sockets };
+      void gpuWarmup.adopt(root);
       log.info(`GLB shield is ready (${WEAPON_ASSET_VERSION}).`);
     });
     this.shieldTask = task;
@@ -344,6 +352,8 @@ export class WeaponAssetService {
         if (node !== undefined) sockets[name] = node.position.clone();
       }
       this.equipment_.set(equipmentId, { equipmentId, scene: root, sockets });
+      // Thrown, and held by the bodies that throw it, in the world; and in the viewmodel.
+      void gpuWarmup.adopt(root);
       log.info(`GLB equipment "${equipmentId}" is ready (${WEAPON_ASSET_VERSION}).`);
     });
     this.equipmentTasks.set(equipmentId, task);
@@ -404,6 +414,8 @@ export class WeaponAssetService {
             throw error;
           }
           this.templates.set(weaponId, template);
+          // The viewmodel's file: swapped in on the next frame, which compiles it first.
+          gpuWarmup.requestScene();
         });
     const task = Promise.all([weaponTask, this.preloadPack()]).then(() => {
       this.statuses.set(weaponId, 'ready');

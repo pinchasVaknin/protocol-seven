@@ -1290,6 +1290,8 @@ function reportFlow(input: FlowReportInput): number {
     log.info(
       `${r.name}: entity ${r.entityId}, match ${r.matchId}, ${r.migrations} migration(s), ` +
         `${r.mispredictions}/${r.comparisons} mispredictions (p50 ${r.mispredictionP50}m, p99 ${r.mispredictionP99}m), ` +
+        // Part 5: jumps that threw the backlog away, and debts paid over several frames instead.
+        `${r.stats.resyncs} resync(s)/${r.stats.catchUps} catch-up frame(s), ` +
         `spawn window ${r.spawnWindowMispredictions}, ` +
         `objectives ${r.objectiveUpdates} upd/${r.objectivesOwned} owned, ` +
         modeStateLine(r) +
@@ -1493,6 +1495,8 @@ function reportFlow(input: FlowReportInput): number {
   const hashSamples = reports.reduce((sum, r) => sum + r.hashSamples, 0);
   if (mismatches > 0) {
     problems.push(`${mismatches} confirmed mode-state divergence(s) across ${hashSamples} samples`);
+    // Where each one was (part 5): the parts of the hash that disagreed, and the client's values.
+    for (const r of reports) for (const line of r.mismatchParts) log.warn(`${r.name} divergence — ${line}`);
   } else if (hashSamples === 0) {
     // A zero that means "never looked" reads identically to a zero that means "never differed",
     // and only one of them is a pass.

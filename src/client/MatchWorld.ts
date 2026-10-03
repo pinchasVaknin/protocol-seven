@@ -38,7 +38,7 @@ import { PlayerController } from '../shared/player/PlayerController';
 import type { ViewmodelLayer } from './player/Viewmodel';
 import type { ViewmodelConfig } from '../shared/weapons/ViewmodelConfig';
 import { heldMoveScale, type WeaponDef } from '../shared/weapons/WeaponDefs';
-import type { InputCommand } from '../shared/core/InputCommand';
+import { Btn, type InputCommand } from '../shared/core/InputCommand';
 import type { WelcomeInfo } from '../shared/net/Messages';
 import { LocalIdentity } from '../shared/combat/LocalIdentity';
 import type { BrowserLink } from './net/BrowserLink';
@@ -653,7 +653,9 @@ export class MatchWorld {
     if (this.match.isPlayerDead || this.match.inputSuppressed) {
       return input.sampleSpectating(tick, nowMsValue);
     }
-    return input.sample(tick, nowMsValue);
+    // The mortar's map is the client's, and the server has to be told it is up or it reads the
+    // click that confirms a mark as a trigger pull (2026-09-28). See `Btn.Targeting`.
+    return input.sample(tick, nowMsValue, this.match.targeting ? Btn.Targeting : 0);
   }
 
   /**

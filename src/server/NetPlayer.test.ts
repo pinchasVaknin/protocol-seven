@@ -106,6 +106,25 @@ describe('a connected player’s rifle', () => {
     expect(r.shots()).toBe(0);
   });
 
+  it('does not fire the click that confirms a mortar mark, nor the rest of that click', () => {
+    const r = rig();
+    // The map is up: the command says so, and the fire button is a mark, not a trigger pull.
+    r.hold(Btn.Targeting | Btn.Fire, 3);
+    // The map closed on the confirm, and the click is still held for a few ticks after it.
+    r.hold(Btn.Fire, 20);
+    expect(r.shots()).toBe(0);
+    // Let go, and the rifle — lowered while the map was up — comes back up and fires again.
+    r.hold(0, 60);
+    r.hold(Btn.Fire, 30);
+    expect(r.shots()).toBeGreaterThan(0);
+  });
+
+  it('does not fire, aim or reload while the map is up, however long the trigger is held', () => {
+    const r = rig();
+    r.hold(Btn.Targeting | Btn.Fire | Btn.Ads, 120);
+    expect(r.shots()).toBe(0);
+  });
+
   it('does not fire through a knife swing', () => {
     const r = rig();
     r.hold(Btn.Melee | Btn.Fire);

@@ -314,6 +314,7 @@ export class WeaponSystem {
     this.residualYaw = 0;
     this.residualPitch = 0;
     this.prevButtons = 0;
+    this.triggerHeldOff = false;
     this.tracerCounter = 0;
     this.lastPellets.count = 0;
     this.lastPellets.hits = 0;
@@ -355,8 +356,9 @@ export class WeaponSystem {
    *
    * `fireBlocked` says "the hands are busy" — the weapon is still in them, it simply cannot
    * be fired this instant. This says something stronger: the player is flying a Chopper
-   * Gunner, so the trigger, the sights and the reload key all belong to something else and
-   * none of them should reach the rifle standing on the ground.
+   * Gunner, or has the mortar's targeting map up (2026-09-28, `Btn.Targeting`), so the trigger,
+   * the sights and the reload key all belong to something else and none of them should reach
+   * the rifle.
    *
    * It is a separate flag rather than a wider `fireBlocked` because the two have different
    * answers for ADS. A grenade cook leaves the sights available; a camera takeover must
@@ -364,6 +366,19 @@ export class WeaponSystem {
    * takes the crosshair off the gunship's screen.
    */
   suspended = false;
+
+  /**
+   * The fire button went down while the weapon was suspended and has not come up since
+   * (2026-09-28).
+   *
+   * The click that confirms a mortar mark closes the map on its first tick and is still held on
+   * the next few, and the trigger that was firing a gunship's cannon is still held on the tick the
+   * gunship comes down. Neither is a pull of the rifle's trigger, and both used to be one: the map
+   * closing handed the rifle a held trigger, which an automatic fires. So a trigger held through a
+   * suspension stays dead until it is let go — the same rule in both runtimes, because both step
+   * this class.
+   */
+  private triggerHeldOff = false;
 
   step(cmd: InputCommand, sim: PlayerSim): void {
     copySnapshot(this.curr, this.prev);
@@ -389,11 +404,13 @@ export class WeaponSystem {
     const swapLower = this.inventory.step();
 
     const wi = this.input;
-    // `fireBlocked` is set by whatever currently owns the hands — right now that is only
-    // the grenade throw. Applied to the *input* rather than to the weapon, so a blocked
-    // trigger behaves exactly like a trigger nobody pulled: no dry-fire click, no auto
-    // reload, and releasing during the block does not queue a shot for when it lifts.
-    const blocked = this.fireBlocked || this.suspended;
+    if (!isDown(buttons, Btn.Fire)) this.triggerHeldOff = false;
+    else if (this.suspended) this.triggerHeldOff = true;
+    // `fireBlocked` is set by whatever currently owns the hands — a grenade or the knife.
+    // Applied to the *input* rather than to the weapon, so a blocked trigger behaves exactly
+    // like a trigger nobody pulled: no dry-fire click, no auto reload, and releasing during the
+    // block does not queue a shot for when it lifts.
+    const blocked = this.fireBlocked || this.suspended || this.triggerHeldOff;
     wi.fireHeld = !blocked && isDown(buttons, Btn.Fire);
     wi.firePressed = !blocked && justPressed(buttons, prevButtons, Btn.Fire);
     // `suspended` takes the sights too, which `fireBlocked` deliberately does not. See the

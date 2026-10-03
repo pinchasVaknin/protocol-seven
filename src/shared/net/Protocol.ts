@@ -17,6 +17,12 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v25 (2026-09-28, the human): **the mortar's map, on the command.** `Btn.Targeting` (bit 18) is set
+ * on every command a client samples while its targeting map is up, and the server suspends the
+ * rifle on it as the client does. Not a byte added — the buttons were always a `u32` — but the
+ * server's mask was a literal eighteen bits wide and would have dropped it at the door, and a v24
+ * server reading this client's commands would fire the click that confirms a mark, which is the bug.
+ *
  * v24 (2026-09-28, the human): **what is in the hand that throws.** `EntitySnapshot` gains
  * `heldEquipment` and `throwPhase` under one new delta bit, two bytes on the snapshots where either
  * moved and nothing on the rest. `EFlag.Throwing` said a grenade was out and nothing more, so every
@@ -198,7 +204,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 24;
+export const PROTOCOL_VERSION = 25;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

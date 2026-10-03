@@ -91,9 +91,26 @@ export const Btn = {
    * than in an input handler.
    */
   Melee: 1 << 17,
+
+  /**
+   * The mortar's targeting map is open (2026-09-28). Not a key: the client sets it on every
+   * command it samples while the map has the input, so the server knows what the client does —
+   * that the fire button is confirming a mark, not pulling the rifle's trigger. Until this bit the
+   * server could not tell, and the click that confirmed a mortar strike was also a round or two
+   * from a rifle the player was not holding. `NetPlayer` suspends the weapon on it, the way
+   * `ClientMatch` does for the same map; see `WeaponSystem.suspended`.
+   */
+  Targeting: 1 << 18,
 } as const;
 
 export type ButtonBit = (typeof Btn)[keyof typeof Btn];
+
+/**
+ * Every bit a command may carry: the union of `Btn`, so the server's mask cannot fall behind a new
+ * one. It was a literal (`0x0003_ffff`, "Melee is 1 << 17"), and a literal is how a bit added later
+ * would have been dropped at the door with nothing to say so.
+ */
+export const LIVE_BUTTONS: number = Object.values(Btn).reduce((mask, bit) => mask | bit, 0);
 
 export function isDown(buttons: number, bit: ButtonBit): boolean {
   return (buttons & bit) !== 0;

@@ -802,10 +802,11 @@ export class ServerMatch extends Disposable {
    * What it reads instead is the input, which is authoritative: `Btn.Melee` arrived in a command
    * this player signed, and the rising edge of it is the frame they asked to swing. The timer runs
    * on the shared `MELEE_SWING_SECONDS`, so the pose lasts exactly as long as the swing the client
-   * is running. It does not reproduce the client's gates (a knife is refused there while a grenade
-   * is in the hand, while the mortar screen is open and while the gunship has the camera), and the
-   * cost of not reproducing them is bounded and stated: in those cases a watcher sees one swing
-   * animation for a swing that dealt nothing. Nothing else in the match can observe this field.
+   * is running. It reproduces the client's three gates, all of which it holds now (2026-09-28): a
+   * knife is refused while a grenade is in the hand (`handBusy`), while the gunship has the camera
+   * (`flyingChopper`) and while the mortar's map is up (`Btn.Targeting`, in the same command). It
+   * used to reproduce none, and a watcher saw a swing for every one the client had refused.
+   * Nothing else in the match can observe this field.
    *
    * Driven from the command the body just consumed, for the reason `stepThrowers` gives.
    */
@@ -814,7 +815,12 @@ export class ServerMatch extends Disposable {
       const cmd = player.lastCommand;
       if (cmd === null) continue;
       const buttons = player.alive ? cmd.buttons : 0;
-      const pressed = isDown(buttons, Btn.Melee) && !isDown(player.meleePrevButtons, Btn.Melee);
+      const pressed =
+        isDown(buttons, Btn.Melee) &&
+        !isDown(player.meleePrevButtons, Btn.Melee) &&
+        !player.handBusy &&
+        !player.flyingChopper &&
+        !isDown(buttons, Btn.Targeting);
       player.meleePrevButtons = buttons;
       // A corpse is not swinging, and a swing that survived a respawn would be drawn on the
       // next life — the same reason `ThrowController.step` takes `alive`.
@@ -992,9 +998,10 @@ export class ServerMatch extends Disposable {
      * `ClientMatch` has set it since post-M8 — for its own copy. The server never did, so a
      * networked gunner holding the trigger in the gunship was also firing the rifle standing on
      * the ground, for real. Found beside the grenade leak `NetPlayer.advance` closes, and the same
-     * shape: a rule written into one runtime. Last tick's streak state, as the client reads it.
+     * shape: a rule written into one runtime. Last tick's streak state, as the client reads it;
+     * `NetPlayer.advance` joins it to the command's own `Btn.Targeting` for the mortar's map.
      */
-    player.weapons.suspended = this.streaks.activeChopperFor(player.entityId) !== null;
+    player.flyingChopper = this.streaks.activeChopperFor(player.entityId) !== null;
     const lagMs = this.viewLag(player.entityId);
     this.rewind.begin(player.entityId, tickIndex, lagMs);
     try {

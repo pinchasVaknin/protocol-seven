@@ -422,8 +422,11 @@ export class Input {
   /**
    * Produce the command for `tickIndex`. Called exactly once per sim tick.
    * Zero allocation: the returned object is a reused ring slot.
+   *
+   * `stateBits` are bits that are not keys but the match's state at the moment of sampling —
+   * `Btn.Targeting` while the mortar's map is up — ORed in so they travel in the same command.
    */
-  sample(tickIndex: number, nowMs: number): InputCommand {
+  sample(tickIndex: number, nowMs: number, stateBits = 0): InputCommand {
     // M8: the movement axes come out of the same bitfield everything else does, so a
     // rebound "forward" travels the identical path a default one does (see `Keybinds`).
     const bits = this.liveBits(nowMs);
@@ -450,7 +453,7 @@ export class Input {
     cmd.pitch = this.pitchRad;
     // The local movement bits are masked off: they are the sampler's business and the sim
     // has no bit assignments up there.
-    cmd.buttons = bits & WIRE_BITS;
+    cmd.buttons = (bits & WIRE_BITS) | stateBits;
     cmd.sampledAtMs = nowMs;
     return cmd;
   }

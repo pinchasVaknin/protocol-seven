@@ -9,7 +9,7 @@ import {
 import type { DamageSystem } from '../shared/combat/DamageSystem';
 import { HitboxRig, HUMANOID_RIG, rigLayoutFor } from '../shared/combat/HitboxRig';
 import type { GameBus } from '../shared/core/Events';
-import type { InputCommand } from '../shared/core/InputCommand';
+import { Btn, isDown, type InputCommand } from '../shared/core/InputCommand';
 import { DT } from '../shared/core/Loop';
 import type { EquipmentId } from '../shared/equipment/EquipmentDefs';
 import type { ThrowPhase } from '../shared/equipment/ThrowController';
@@ -112,6 +112,13 @@ export class NetPlayer implements Combatant {
    */
   heldEquipment: EquipmentId | null = null;
   throwPhase: ThrowPhase = 'IDLE';
+
+  /**
+   * This player is flying a Chopper Gunner, as last tick's authoritative streaks have it. Written
+   * by `ServerMatch.stepPlayer`; read in `advance`, beside the command's own `Btn.Targeting`, to
+   * suspend the rifle — see `WeaponSystem.suspended`.
+   */
+  flyingChopper = false;
 
   /**
    * Seconds left of the knife swing this body is **drawn** taking (protocol 20).
@@ -472,6 +479,9 @@ export class NetPlayer implements Combatant {
      * cover the first tick of each — the same function the client calls, so the two cannot differ.
      */
     this.weapons.fireBlocked = handsOffWeapon(cmd.buttons, prevButtons, this.handBusy, this.meleeSeconds > 0);
+    // Not with the rifle at all: in a gunship, or with the mortar's map up — the command says so
+    // (`Btn.Targeting`), because the map is the client's and the click on it is a mark, not a shot.
+    this.weapons.suspended = this.flyingChopper || isDown(cmd.buttons, Btn.Targeting);
     this.weapons.step(cmd, sim);
 
     // The unrecovered half of a recoil kick is a real aim change. On a client it goes into

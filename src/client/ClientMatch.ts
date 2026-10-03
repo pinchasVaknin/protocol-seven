@@ -1173,6 +1173,11 @@ export class Match {
     return this.playerDead;
   }
 
+  /** The mortar's targeting map has the input: what `Btn.Targeting` tells the server. */
+  get targeting(): boolean {
+    return this.mortarOverlay.isOpen;
+  }
+
   /**
    * The side the server put this client on; `PLAYER_TEAM` in single-player.
    *
@@ -1917,9 +1922,19 @@ export class Match {
       this.equipment.thrower.busy,
       this.melee.busy,
     );
-    this.weapons.suspended = flyingChopper;
+    /**
+     * In the gunship, or with the mortar's map up, the rifle is not the player's (2026-09-28).
+     *
+     * The map used to skip the weapon's step outright. That kept the rifle quiet here and nowhere
+     * else — the server never knew the map was up, and fired the confirming click as a round — and
+     * it froze the weapon's own record of the trigger, so the map closing under a held click handed
+     * the rifle a fresh press. The map is `Btn.Targeting` on the command now, read here exactly as
+     * `NetPlayer` reads it, and the weapon steps suspended: no trigger, no sights, no reload, and a
+     * trigger held through it stays dead until it is let go (`WeaponSystem.triggerHeldOff`).
+     */
+    this.weapons.suspended = flyingChopper || isDown(cmd.buttons, Btn.Targeting);
 
-    if (!this.playerDead && !mortarOpen) {
+    if (!this.playerDead) {
       const sim = this.deps.player.sim;
       this.weapons.step(cmd, sim);
 

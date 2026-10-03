@@ -1,4 +1,4 @@
-import type { MutableInputCommand } from '../../shared/core/InputCommand';
+import { LIVE_BUTTONS, type MutableInputCommand } from '../../shared/core/InputCommand';
 import { MAX_TICK_SKEW } from '../../shared/net/Protocol';
 
 /**
@@ -128,9 +128,9 @@ export function validateCommand(cmd: MutableInputCommand, currentTick: number): 
     cmd.moveZ *= inv;
   }
 
-  // Buttons is a bitfield; bits above the highest defined one drive nothing, and masking
-  // costs less than validating. `Btn.Melee` is 1 << 17, so 18 bits are live.
-  cmd.buttons = cmd.buttons & 0x0003_ffff;
+  // Buttons is a bitfield; bits no `Btn` names drive nothing, and masking costs less than
+  // validating. The mask is `Btn`'s own union, so a bit added there is never dropped here.
+  cmd.buttons = cmd.buttons & LIVE_BUTTONS;
   cmd.seq = cmd.seq >>> 0;
   cmd.tickIndex = cmd.tickIndex | 0;
 

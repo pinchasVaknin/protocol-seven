@@ -45,8 +45,11 @@ export interface GameScreensDeps {
   readonly serverConfigured: () => boolean;
   /** The callsign's writer — the profile panel's field (R2.2), where the menu's header's was. */
   readonly onDisplayName: (name: string) => void;
-  /** The menu's Create-a-Class button. The only door into the editor (round 4, B8). */
-  readonly onLoadout: () => void;
+  /**
+   * Create-a-Class: the main menu's button on the five classes, the testbed plate's on the
+   * range's own (`range`). The menu's two doors are the only ones into the editor (round 4, B8).
+   */
+  readonly onLoadout: (range: boolean) => void;
   /** M8. Open the settings screen from the menu or the pause screen. */
   readonly onSettings: () => void;
   /** The editor's one action: persist and go back to the menu (round 4, B5). */
@@ -66,8 +69,6 @@ export interface GameScreensDeps {
   readonly onExitSummary: () => void;
 
   readonly pauseStatusLine: () => string;
-  /** Whether the selected mode lifts unlock gates (the Shooting Range does). */
-  readonly unrestricted: () => boolean;
   /**
    * Anisotropy for the editor's weapon preview (round 4, F15).
    *
@@ -108,7 +109,6 @@ export class GameScreens {
       profile: deps.profile,
       onSaveAndExit: deps.onLoadoutSaveAndExit,
       anisotropy: deps.anisotropy,
-      unrestricted: deps.unrestricted,
       characterAssets: deps.characterAssets,
       weaponAssets: deps.weaponAssets,
       serverConfigured: deps.serverConfigured,

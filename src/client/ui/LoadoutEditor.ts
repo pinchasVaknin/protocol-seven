@@ -108,8 +108,6 @@ export interface LoadoutEditorDeps {
   readonly profile: Profile;
   /** The one way out. `Game` transitions to MENU; the state's exit handler flushes the save. */
   readonly onSaveAndExit: () => void;
-  /** True in the Shooting Range, where every gate is lifted. */
-  readonly unrestricted: () => boolean;
   /** Texture anisotropy for the weapon preview and the held weapon. See `GameScreensDeps.anisotropy`. */
   readonly anisotropy: () => number;
   /** The skins, for the stage. The same service the match draws bodies from. */
@@ -238,6 +236,8 @@ export class LoadoutEditor {
   private skinsOpen = false;
 
   private slotIndex = 0;
+  /** Editing the range's class, where every gate is lifted, rather than one of the five. See `show`. */
+  private range = false;
   /**
    * The open category and tab, or null when the list shows the categories. `snapshot` is the
    * class as it was when the category opened, for CANCEL.
@@ -316,7 +316,17 @@ export class LoadoutEditor {
     this.paint();
   }
 
-  show(): void {
+  /**
+   * Open the editor on the five classes, or — `range` — on the Shooting Range's own (2026-10-03).
+   *
+   * The caller says which, because only the caller knows which door was used. It used to be
+   * read off the menu's mode selection, which outlives the page it was made on: a player who had
+   * visited the testbed and gone back to the main menu got CREATE A CLASS on the range's hidden
+   * slot, edited a class there, pressed PLAY and found the change nowhere (playtest, 2026-09-28).
+   * The main menu's door is the five classes, always; the testbed plate's is the range's.
+   */
+  show(range = false): void {
+    this.range = range;
     this.slotIndex = this.deps.profile.equippedIndex;
     this.open = null;
     this.page = 0;
@@ -383,7 +393,7 @@ export class LoadoutEditor {
    * be trampled by an experiment (M7 playtest).
    */
   private get slot(): LoadoutSlot {
-    if (this.deps.unrestricted()) return this.deps.profile.rangeLoadout();
+    if (this.range) return this.deps.profile.rangeLoadout();
     const found = this.deps.profile.loadouts[this.slotIndex];
     if (found === undefined) throw new Error(`Loadout slot ${this.slotIndex} does not exist`);
     return found;
@@ -439,7 +449,7 @@ export class LoadoutEditor {
   private place(): ScreenPlace {
     return {
       title: 'CREATE A CLASS',
-      subtitle: this.deps.unrestricted()
+      subtitle: this.range
         ? 'SHOOTING RANGE — ALL CONTENT UNLOCKED, NO PROGRESS BANKED'
         : 'CUSTOMISE YOUR LOADOUT',
     };
@@ -931,7 +941,7 @@ export class LoadoutEditor {
 
   private optionsFor(list: ListKind): HTMLElement[] {
     const unlocks = this.deps.profile.unlocks;
-    const free = this.deps.unrestricted();
+    const free = this.range;
     const out: HTMLElement[] = [];
 
     switch (list.kind) {
@@ -1306,7 +1316,7 @@ export class LoadoutEditor {
   // -- state ---------------------------------------------------------------------
 
   private edit(mutate: (slot: LoadoutSlot) => void): void {
-    if (this.deps.unrestricted()) {
+    if (this.range) {
       mutate(this.deps.profile.rangeLoadout());
       this.deps.profile.flush();
     } else {

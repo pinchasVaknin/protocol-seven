@@ -94,8 +94,12 @@ export interface MenuDeps {
   readonly profile: Profile;
   /** The callsign's writer, for the panel's field (§6.1: written on every keystroke, never a gate). */
   readonly onDisplayName: (name: string) => void;
-  /** M6: enter the `LOADOUT` state. */
-  readonly onLoadout: () => void;
+  /**
+   * M6: enter the `LOADOUT` state — on the five classes from the main page, or on the range's
+   * own from the testbed plate (`range`). The door decides, not the selection; see
+   * `LoadoutEditor.show`.
+   */
+  readonly onLoadout: (range: boolean) => void;
   /** M8: enter the `SETTINGS` state. */
   readonly onSettings: () => void;
   /** A code typed on the menu (M19, playtest 4). The same door the pause screen's field uses. */
@@ -224,9 +228,12 @@ export class Menus {
     this.frame.replaceChildren(makeLockup(), subtitle(headline), body, foot);
   }
 
-  /** Open the front end at its main page. */
-  show(): void {
-    this.page = 'MAIN';
+  /**
+   * Open the front end at its main page, or at Play Solo — where the range's class editor was
+   * opened from, and so where it goes back to.
+   */
+  show(page: Page = 'MAIN'): void {
+    this.page = page;
     this.screen.hidden = false;
     this.panel.close();
     this.paint();
@@ -366,7 +373,7 @@ export class Menus {
       this.page = 'PLAY';
       this.paint();
     });
-    const loadout = this.navButton('CREATE A CLASS', GLYPH.loadout, () => this.deps.onLoadout());
+    const loadout = this.navButton('CREATE A CLASS', GLYPH.loadout, () => this.deps.onLoadout(false));
     const settings = this.navButton('SETTINGS', GLYPH.settings, () => this.deps.onSettings());
 
     nav.append(multiplayer, solo, loadout, settings, this.codeForm);
@@ -406,6 +413,7 @@ export class Menus {
         this.paint();
       },
       onLaunch: () => this.deps.onLaunch(),
+      onRangeClass: () => this.deps.onLoadout(true),
       onBack: () => this.back(),
     });
     stage.appendChild(root);

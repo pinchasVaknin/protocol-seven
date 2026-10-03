@@ -411,6 +411,16 @@ export class Game {
   private rotating = false;
 
   /**
+   * Which class the editor opens on: the range's, from the testbed plate, or the five, from the
+   * main menu. Set by the door that was used, never by the mode selection — see
+   * `LoadoutEditor.show` for the playtest report that read it off the selection.
+   */
+  private loadoutRange = false;
+
+  /** The menu page the next MENU entry opens at. Play Solo once, after the range's editor. */
+  private menuReturnPage: 'MAIN' | 'PLAY' = 'MAIN';
+
+  /**
    * Keeps the connection alive while the tab is hidden (M10).
    *
    * `requestAnimationFrame` is **completely suspended** in a background tab — not throttled,
@@ -624,7 +634,10 @@ export class Game {
       onPlayMultiplayer: () => void this.playMultiplayer(),
       serverConfigured: () => isServerConfigured(window.location.search),
       onDisplayName: (name) => this.profile.patchSettings({ callsign: name }),
-      onLoadout: () => this.transitionTo('LOADOUT'),
+      onLoadout: (range) => {
+        this.loadoutRange = range;
+        this.transitionTo('LOADOUT');
+      },
       onSettings: () => this.transitionTo('SETTINGS'),
       onLoadoutSaveAndExit: () => this.transitionTo('MENU'),
       onQuitToMenu: () => this.transitionTo('MENU'),
@@ -634,7 +647,6 @@ export class Game {
       onLeaveSummary: () => this.leaveSummary(),
       onExitSummary: () => this.exitSummary(),
       pauseStatusLine: () => this.pauseStatusLine(),
-      unrestricted: () => findMode(this.selection.modeId).unrestricted,
       anisotropy: () => this.textures.anisotropy,
       characterAssets: this.characterAssets,
       weaponAssets: this.weaponAssets,
@@ -943,7 +955,8 @@ export class Game {
 
     this.states.set('MENU', {
       enter: () => {
-        this.screens.menus.show();
+        this.screens.menus.show(this.menuReturnPage);
+        this.menuReturnPage = 'MAIN';
         this.input.clearHeld();
         /**
          * The map behind the menu (M15, A3; rolled since M17, C2): one of the real maps at
@@ -972,7 +985,7 @@ export class Game {
     this.states.set('LOADOUT', {
       enter: () => {
         this.input.clearHeld();
-        this.screens.loadoutEditor.show();
+        this.screens.loadoutEditor.show(this.loadoutRange);
       },
       /**
        * One exit, one destination, and the save happens here (playtest round 4, B5).
@@ -990,6 +1003,9 @@ export class Game {
       exit: () => {
         this.screens.loadoutEditor.hide();
         this.profile.flush();
+        // Back to the page the editor was opened from: the range's class is the testbed
+        // plate's, so it returns to Play Solo; the five classes return to the main page.
+        this.menuReturnPage = this.loadoutRange ? 'PLAY' : 'MAIN';
       },
     });
 

@@ -46,6 +46,8 @@ export interface PlaySoloDeps {
   readonly onPickDifficulty: (difficulty: BotDifficulty) => void;
   /** Start the match as the selection stands. */
   readonly onLaunch: () => void;
+  /** Open Create-a-Class on the range's own class — the testbed plate's second door. */
+  readonly onRangeClass: () => void;
   /** Leave the page for the main menu, the selection kept. */
   readonly onBack: () => void;
 }
@@ -306,7 +308,23 @@ function paintRight(map: MapEntry, modeEntry: ModeEntry, deps: PlaySoloDeps): HT
     if (testbedEntry !== undefined) deps.onPickMap(testbedEntry.id);
     deps.onLaunch();
   });
-  top.append(titles, enter);
+  /**
+   * The range's class, edited from the range's own plate (2026-10-03).
+   *
+   * The testbed has a class of its own, everything unlocked, so nothing tried there follows the
+   * player into a match. Its editor used to be the main menu's CREATE A CLASS whenever the last
+   * mode picked here was the range — which is how a player who had visited the testbed edited a
+   * class nobody would ever play. The main menu's door is the five classes now, and this is
+   * the range's.
+   */
+  const rangeClass = document.createElement('button');
+  rangeClass.type = 'button';
+  rangeClass.className = 'op-cta op-cta--quiet ps-testbed__class';
+  const rc = document.createElement('span');
+  rc.textContent = 'RANGE CLASS';
+  rangeClass.appendChild(rc);
+  rangeClass.addEventListener('click', () => deps.onRangeClass());
+  top.append(titles, rangeClass, enter);
   const note = document.createElement('div');
   note.className = 'ps-testbed__note';
   note.appendChild(makeIconSvg(INFO, '0 0 24 24', 'ps-testbed__info'));

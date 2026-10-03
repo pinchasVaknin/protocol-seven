@@ -289,9 +289,15 @@ export function cheatTag(s: HudSurfaceState): string {
  * rule in this file reads which instance the client is seated in. Threading the whole record
  * through `MatchHud` to carry one boolean would put `matchId` into a state object built for
  * something else.
+ *
+ * **And none while a ballot is open** (2026-10-03). The ballot is what the room is waiting for,
+ * and it says so in its own words — VOTE — MODE, the options, the clock — so a WAITING over the
+ * crosshair is the same message twice. In a narrow window it was worse than redundant: the
+ * ballot's column comes in over the centre and the caption sat underneath its list (playtest,
+ * 596×696). `ballotOpen` is the arena's broadcast phase, MODE_VOTE or MAP_VOTE.
  */
-export function matchCaption(phase: MatchPhase, inWarmupArena: boolean): string {
-  if (inWarmupArena) return 'WAITING';
+export function matchCaption(phase: MatchPhase, inWarmupArena: boolean, ballotOpen = false): string {
+  if (inWarmupArena) return ballotOpen ? '' : 'WAITING';
   switch (phase) {
     case 'WARMUP':
       return 'GET READY';

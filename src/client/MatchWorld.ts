@@ -44,7 +44,7 @@ import type { WelcomeInfo } from '../shared/net/Messages';
 import { LocalIdentity } from '../shared/combat/LocalIdentity';
 import type { BrowserLink } from './net/BrowserLink';
 import type { SkirmishSink } from '../shared/net/NetClient';
-import { isArenaInstance, ownerFromCode, type NetLoadout } from '../shared/net/Skirmish';
+import { isArenaInstance, ownerFromCode, VotePhase, type NetLoadout } from '../shared/net/Skirmish';
 import { resolveDisplayName } from '../shared/net/UrlFlags';
 import { NetSession } from './net/NetSession';
 import { logger } from '../shared/core/Log';
@@ -418,6 +418,11 @@ export class MatchWorld {
        * instance they are actually in, both times, without anything having to be reset.
        */
       warmupArena: server !== null && isArenaInstance(server.welcome.matchId),
+      // The arena's last broadcast, the same one the vote overlay draws from.
+      ballotOpen: () => {
+        const vote = this.net?.lastVote;
+        return vote != null && (vote.phase === VotePhase.MODE_VOTE || vote.phase === VotePhase.MAP_VOTE);
+      },
     });
 
     /**

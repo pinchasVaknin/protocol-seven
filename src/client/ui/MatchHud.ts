@@ -65,6 +65,9 @@ export interface MatchHudDeps {
    */
   readonly warmupArena: boolean;
 
+  /** Whether the arena's ballot is open — the caption gives way to it. See `matchCaption`. */
+  readonly ballotOpen: () => boolean;
+
   /**
    * The camera, for the two bearing indicators (P9 follow-up).
    *
@@ -190,7 +193,7 @@ export class MatchHud extends Disposable {
      * `WAITING · 5` and count toward nothing. See `captionHasCountdown`.
      */
     banner.phaseSeconds = captionHasCountdown(this.deps.warmupArena) ? flow.phaseSecondsRemaining : 0;
-    banner.phaseLabel = matchCaption(flow.currentPhase, this.deps.warmupArena);
+    banner.phaseLabel = matchCaption(flow.currentPhase, this.deps.warmupArena, this.deps.ballotOpen());
     /**
      * The brief, under it, and this is its **one writer** too (F10).
      *

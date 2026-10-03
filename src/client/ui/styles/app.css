@@ -3878,7 +3878,12 @@ body.op-locked #viewport {
   /* Right-hand side, clear of the crosshair and above the killfeed. */
   top: 12%;
   right: var(--s-6);
-  width: 320px;
+  /*
+   * Never over the minimap's column (2026-10-03): the map is 168px wide at the left gutter, so
+   * the ballot takes what is left of the window beside it, one gutter apart, up to its 320px.
+   * Fixed at 320 it reached the map in any window under ~540px wide.
+   */
+  width: min(320px, calc(100vw - 168px - 3 * var(--s-6)));
   display: flex;
   flex-direction: column;
   gap: var(--s-2);

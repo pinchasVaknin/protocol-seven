@@ -1399,10 +1399,17 @@
 /**
  * The aim warning (playtest round 5, B8).
  *
- * Above centre, where `.hud-cheat` is below it, because both can be up at once and they say
- * opposite things — one that a rule has been relaxed for you, the other that the game is not
- * reading your mouse. `--c-bad` rather than the cheat tag's warning amber, for the same reason:
- * this is not a state you chose.
+ * Under the crosshair, clear of the three bars that live there (cook, reload, breath — the
+ * lowest ends 48px down), and well above `.hud-cheat` at the foot, because both can be up at
+ * once and they say opposite things — one that a rule has been relaxed for you, the other that
+ * the game is not reading your mouse. `--c-bad` rather than the cheat tag's warning amber, for
+ * the same reason: this is not a state you chose.
+ *
+ * It used to sit at 18% from the top, and in a narrow window that is where the corners close in:
+ * the line is one nowrap run of ~450px, and at 596×696 it cut across the minimap and the ballot's
+ * first option (playtest, 2026-09-28). The top of the screen is the crowded band — the score
+ * banner, the alive strip, the objective banner, the minimap, the ballot, the killfeed — and the
+ * middle under the crosshair is the one band nothing else claims.
  *
  * A `--on` class rather than `[hidden]`, which is B13 and cost two rounds: the UA stylesheet's
  * `[hidden] { display: none }` sits at the lowest specificity there is, and the `display` here
@@ -1411,7 +1418,7 @@
 .hud-aim {
   position: absolute;
   left: 50%;
-  top: 18%;
+  top: calc(50% + 64px);
   transform: translateX(-50%);
   opacity: 0;
   visibility: hidden;

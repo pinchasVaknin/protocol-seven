@@ -265,6 +265,9 @@ export interface MatchDeps {
    */
   readonly warmupArena?: boolean;
 
+  /** Whether the arena's ballot is open, for the caption over the crosshair. Absent offline. */
+  readonly ballotOpen?: () => boolean;
+
   /**
    * Ask the server to spend a streak (M11 Gate B, §8.22).
    *
@@ -829,6 +832,7 @@ export class Match {
       teamSize: deps.map.teamSize,
       freeForAll: deps.mode.freeForAll === true,
       warmupArena: deps.warmupArena === true,
+      ballotOpen: () => deps.ballotOpen?.() === true,
       cameraRig: deps.cameraRig,
     });
     this.weaponAudio = new WeaponAudio(deps.audio);

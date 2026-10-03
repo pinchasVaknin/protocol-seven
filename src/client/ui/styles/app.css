@@ -3656,8 +3656,9 @@ body.op-locked #viewport {
   gap: 2px var(--s-4);
   margin: var(--s-2) 0;
   font-size: var(--t-micro);
-  /* Fourteen rows on a panel that does not scroll: the list is a table, not prose, so it is
-     set tighter than the body rhythm. That is the slack the fifteenth source will need. */
+  /* Fourteen rows a page on a panel that does not scroll: the list is a table, not prose, so it
+     is set tighter than the body rhythm. A fifteenth source is a second page (`CREDITS_PER_PAGE`
+     in Settings.ts), not a taller list. */
   line-height: 1.4;
   color: var(--c-text-dim);
 }
@@ -3700,6 +3701,14 @@ body.op-locked #viewport {
   color: var(--c-accent);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* The credits' pager, in the section head: Create-a-Class's control, sized to a heading line
+   rather than to a list's head, so the head does not grow for it. */
+.st-pager .lo-arrow {
+  width: 28px;
+  height: 28px;
+  font-size: var(--t-body);
 }
 
 /* ---- the side column ---- */

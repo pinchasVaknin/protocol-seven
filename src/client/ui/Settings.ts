@@ -184,6 +184,19 @@ const CREDITS_INTRO =
   'All of them have been modified for PROTOCOL SEVEN — retopologised, re-scaled and re-textured to fit the game.';
 
 /**
+ * Credits on one page of INFO (2026-10-04).
+ *
+ * The panel's middle row is 608 tall, and INFO has to stand in it beside PROGRESS without
+ * crossing the foot's rule. Fourteen rows is what that holds: 14 × 21.6 for the list, with the
+ * section head, the two notes and PROGRESS around it. The list was fourteen sources when this
+ * screen was built and is twenty-eight now — the sentry, the station's three crates, the
+ * streak weapons, the equipment — and at twenty-eight it ran 300 px past the rule and 80–110
+ * past the frame. So it is paged, the way Create-a-Class pages a list longer than its column:
+ * every credit is on a page, none is cut short, and the thirtieth adds a page, not a pixel.
+ */
+const CREDITS_PER_PAGE = 14;
+
+/**
  * One credited source: who made it, under what licence, and which of the game's things it is.
  *
  * The title and the licence are links because CC-BY asks for both — the material and the deed
@@ -240,6 +253,8 @@ export class Settings {
   private notice = '';
   /** Whether the reset-progress button is one click from doing it. Cleared on `show` and on a category change. */
   private resetArmed = false;
+  /** The page of credits INFO is showing. Back to the first on entering the screen or a category. */
+  private creditsPage = 0;
 
   constructor(deps: SettingsDeps) {
     this.deps = deps;
@@ -272,6 +287,7 @@ export class Settings {
     this.capturing = null;
     this.notice = '';
     this.resetArmed = false;
+    this.creditsPage = 0;
     this.draft = cloneSettings(this.deps.read());
     this.panel.close();
     this.paint();
@@ -372,6 +388,7 @@ export class Settings {
         this.stopCapture();
         this.tab = def.id;
         this.resetArmed = false;
+        this.creditsPage = 0;
         this.paint();
       });
       rail.appendChild(b);
@@ -595,7 +612,12 @@ export class Settings {
    */
   private paintInfo(host: HTMLElement): void {
     host.classList.add('st-main--tight');
+    const entries: readonly CreditEntry[] = [...MODEL_CREDITS, CHARACTER_CREDIT];
+    const pages = Math.max(1, Math.ceil(entries.length / CREDITS_PER_PAGE));
+    this.creditsPage = Math.min(this.creditsPage, pages - 1);
+
     const credits = this.section('CREDITS');
+    credits.querySelector('.st-sec__head')?.appendChild(this.creditsPager(pages));
     const intro = document.createElement('p');
     intro.className = 'st-note';
     intro.textContent = CREDITS_INTRO;
@@ -603,8 +625,8 @@ export class Settings {
 
     const list = document.createElement('div');
     list.className = 'st-credits';
-    for (const entry of MODEL_CREDITS) creditRow(list, entry);
-    creditRow(list, CHARACTER_CREDIT);
+    const first = this.creditsPage * CREDITS_PER_PAGE;
+    for (const entry of entries.slice(first, first + CREDITS_PER_PAGE)) creditRow(list, entry);
     credits.appendChild(list);
 
     const note = document.createElement('p');
@@ -643,6 +665,38 @@ export class Settings {
     progress.appendChild(wrap);
 
     host.append(credits, progress);
+  }
+
+  /**
+   * The credits' page arrows and count, at the right end of the section's head — the same
+   * control Create-a-Class pages its lists with (`lo-pager`). Absent when one page holds them.
+   */
+  private creditsPager(pages: number): HTMLElement {
+    const pager = document.createElement('div');
+    pager.className = 'lo-pager st-pager';
+    pager.hidden = pages <= 1;
+    const arrow = (text: string, label: string, to: number): HTMLButtonElement => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'lo-arrow';
+      b.textContent = text;
+      b.setAttribute('aria-label', label);
+      b.disabled = to < 0 || to >= pages;
+      b.addEventListener('click', () => {
+        this.creditsPage = to;
+        this.paint();
+      });
+      return b;
+    };
+    const count = document.createElement('span');
+    count.className = 'lo-pager__count op-label';
+    count.textContent = `${this.creditsPage + 1} / ${pages}`;
+    pager.append(
+      arrow('‹', 'Previous page of credits', this.creditsPage - 1),
+      count,
+      arrow('›', 'Next page of credits', this.creditsPage + 1),
+    );
+    return pager;
   }
 
   private bindingRow(action: ActionDef, bindings: BindingMap): HTMLElement {

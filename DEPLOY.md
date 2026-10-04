@@ -119,6 +119,7 @@ All optional; every one has a working default. Full list in `src/server/Config.t
 | `PLAY_SECONDS` | `120` | Free play between ballots. |
 | `STATIC_DIR` | `dist` | Empty string serves no client. |
 | `METRICS_SECONDS` | `30` | Structured metrics into the Render log. |
+| `IDLE_KICK_SECONDS` | `300` | A player who sends no real input for this long is warned, then disconnected, and their seat goes to whoever is waiting. Pings and standing still do not count as input. `0` turns it off. |
 | `CHEATS_ENABLED` | *(off)* | `1` honours the F14 cheat codes that change the simulation — god mode, invisibility, free cam, and thirty kills into the killstreak balance. **Leave it unset in production.** Off, the server refuses each one and tells the player why. It does not gate `DEBUG666`, which opens the client's own overlay and touches nothing the server owns. The boot line says `CHEAT CODES ENABLED` while it is set. |
 
 ## Verifying a deploy

@@ -231,6 +231,7 @@ background while you are still playing, so the transition into the match has no 
 | `MAX_CONNECTIONS_PER_IP` | 4 | Sockets from one address; an IPv6 /64 is one address |
 | `MAX_CONNECTIONS` | 64 | Sockets from everybody together |
 | `ALLOWED_ORIGINS` | *(empty)* | Exact origins, comma-separated, whose pages may open a socket besides this server's own and loopback. A page from anywhere else is refused at the upgrade with a 403 |
+| `IDLE_KICK_SECONDS` | 300 | A seated player who sends no real input — no movement, no button, no turn of the view, no vote or class — for this long is warned 30 s before and then disconnected, and the seat is not held. The client does not dial back in after it. 0 turns it off |
 
 Shortening the vote timings is supported and is a **diagnostic setting, not a tuning knob** —
 see `DEBUG.md` for why a harness that shortens a timer can shorten past the bug it exists to

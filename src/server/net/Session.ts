@@ -40,8 +40,10 @@ import {
 } from '../../shared/net/Skirmish';
 import type { BombInfo, TagInfo } from '../../shared/modes/GameMode';
 import {
+  BYE_IDLE,
   CLIENT_TIMEOUT_MS,
   HANDSHAKE_TIMEOUT_MS,
+  IDLE_WARNING_MS,
   MAX_SERVER_FRAME_BYTES,
   PROTOCOL_VERSION,
   RejectCode,
@@ -179,6 +181,17 @@ export interface SessionEvents {
    */
   readonly onCheatRequest: (session: Session, code: string) => void;
 }
+
+export interface SessionOptions {
+  /**
+   * Disconnect a seated player after this long without real input, ms; 0 or absent for never
+   * (security audit S6). The server passes `IDLE_KICK_SECONDS`.
+   */
+  readonly idleKickMs?: number | undefined;
+}
+
+/** A view turned by less than this between commands, radians, is a held view. */
+const VIEW_STILL_RAD = 1e-3;
 
 /** Snapshot ids kept per client so a late ack can still be used as a delta baseline. */
 export const BASELINE_HISTORY = 32;
@@ -353,13 +366,32 @@ export class Session {
   private rttSamples = 0;
   private lastPingAtMs = 0;
 
+  /**
+   * When this player last did something a person does (security audit 2026-10-04, S6).
+   *
+   * Not `link.lastRecvMs`: a client sends a command every tick and a ping four times a second
+   * whether or not anybody is at the keyboard, so the link is never quiet. What counts is a
+   * command that moves, presses something or turns the view, and a class, a vote, a streak or a
+   * code — the things only a person sends. A ping, a ready report and a standing-still command
+   * do not.
+   */
+  private lastActivityMs: number;
+  private idleWarned = false;
+  /** The view angles of the last command seen, to tell a turned view from a held one. */
+  private lastYaw = Number.NaN;
+  private lastPitch = Number.NaN;
+  private readonly idleKickMs: number;
+
   constructor(
     link: INetLink,
     private readonly events: SessionEvents,
     private readonly serverTick: () => number,
+    options: SessionOptions = {},
   ) {
     this.link = link;
     this.openedMs = nowMs();
+    this.lastActivityMs = this.openedMs;
+    this.idleKickMs = options.idleKickMs ?? 0;
     this.playerId = nextPlayerId++;
   }
 
@@ -454,7 +486,47 @@ export class Session {
     }
     if (now - this.link.lastRecvMs > CLIENT_TIMEOUT_MS) {
       this.close('timeout');
+      return;
     }
+    this.checkIdle(now);
+  }
+
+  /**
+   * Free the seat of a player who has stopped playing (security audit 2026-10-04, S6).
+   *
+   * Warned once, `IDLE_WARNING_MS` before, with a notice; any real input clears the warning and
+   * the clock. Then closed as `'left'` — the seat is not held for a reconnect, because nobody
+   * lost a connection — with `BYE_IDLE` as the reason, which is the one `Bye` the client does not
+   * dial back in after.
+   */
+  private checkIdle(now: number): void {
+    if (this.state !== 'live' || this.idleKickMs <= 0) return;
+    const idle = now - this.lastActivityMs;
+    if (idle >= this.idleKickMs) {
+      log.info(`${this.displayName} (${this.link.remoteAddress}) idle for ${Math.round(idle / 1000)}s — disconnecting.`);
+      this.close(BYE_IDLE, 'left');
+      return;
+    }
+    if (!this.idleWarned && idle >= this.idleKickMs - IDLE_WARNING_MS) {
+      this.idleWarned = true;
+      this.notice(`No input for a while — you will be disconnected in ${Math.round(IDLE_WARNING_MS / 1000)} seconds.`);
+    }
+  }
+
+  private noteActivity(): void {
+    this.lastActivityMs = nowMs();
+    this.idleWarned = false;
+  }
+
+  /** Whether a command is a person playing: moving, pressing, or turning the view. */
+  private isActive(cmd: MutableInputCommand): boolean {
+    const turned =
+      Number.isNaN(this.lastYaw) ||
+      Math.abs(cmd.yaw - this.lastYaw) > VIEW_STILL_RAD ||
+      Math.abs(cmd.pitch - this.lastPitch) > VIEW_STILL_RAD;
+    this.lastYaw = cmd.yaw;
+    this.lastPitch = cmd.pitch;
+    return turned || cmd.moveX !== 0 || cmd.moveZ !== 0 || cmd.buttons !== 0;
   }
 
   /** Send a pre-encoded frame. Snapshots and event batches come through here. */
@@ -501,6 +573,7 @@ export class Session {
           this.refuse(Reject.OutOfOrder, 'loadout before hello');
           return;
         }
+        this.noteActivity();
         if (!this.budgets.loadout.take(nowMs())) {
           // The newest replaces anything already held — see `heldLoadout`.
           this.heldLoadout = msg.loadout;
@@ -515,6 +588,7 @@ export class Session {
           this.refuse(Reject.OutOfOrder, 'vote before hello');
           return;
         }
+        this.noteActivity();
         if (!this.budgets.vote.take(nowMs())) {
           this.heldVote = { phase: msg.phase, option: msg.option };
           this.overBudget('vote');
@@ -539,6 +613,7 @@ export class Session {
           this.refuse(Reject.OutOfOrder, 'streak before hello');
           return;
         }
+        this.noteActivity();
         // A request, not state: one over budget is dropped, and the player presses again.
         if (!this.budgets.streak.take(nowMs())) {
           this.overBudget('streak');
@@ -560,6 +635,7 @@ export class Session {
         // answered here. §4.16's boundary validation is about *shape*, and the decoder has
         // already bounded the only thing with a shape. The cheat budget is what stops somebody
         // typing codes at it in a loop — every answer is a frame back, and a refusal a log line.
+        this.noteActivity();
         if (!this.budgets.cheat.take(nowMs())) {
           this.overBudget('cheat');
           return;
@@ -688,6 +764,7 @@ export class Session {
         // ordinary on a real link. Only structural damage to the frame closes the connection.
         continue;
       }
+      if (this.isActive(this.cmd)) this.noteActivity();
       if (player.input.accept(this.cmd, tick)) this.commandsAccepted++;
     }
   }

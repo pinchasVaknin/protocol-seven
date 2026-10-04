@@ -292,6 +292,8 @@ export class Server {
         onCheatRequest: (s, code) => this.onCheatRequest(s, code),
       },
       () => this.loop.currentTick,
+      // Security audit S6: an idle seat is freed. See `Session.checkIdle`.
+      { idleKickMs: this.cfg.idleKickSeconds * 1000 },
     );
     this.sessions.push(session);
   }

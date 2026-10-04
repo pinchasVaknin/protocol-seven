@@ -1,6 +1,6 @@
 import { isBotDifficulty, type BotDifficulty } from '../shared/ai/DifficultyTiers';
 import { NET_PERFECT, parseConditions, type NetConditions } from '../shared/net/NetSim';
-import { MAX_CONNECTIONS, MAX_CONNECTIONS_PER_IP } from '../shared/net/Protocol';
+import { IDLE_KICK_MS, MAX_CONNECTIONS, MAX_CONNECTIONS_PER_IP } from '../shared/net/Protocol';
 import { VOTE_CYCLE_CONFIG, type VoteCycleConfig } from '../shared/net/Skirmish';
 
 /**
@@ -205,6 +205,11 @@ export interface ServerConfig {
    * deployment, where the page and the socket share a host and nothing needs listing.
    */
   readonly allowedOrigins: readonly string[];
+  /**
+   * `IDLE_KICK_SECONDS`: a seated player who sends no real input for this long is disconnected,
+   * and their seat is not held (security audit S6). Defaults to 300; 0 turns it off.
+   */
+  readonly idleKickSeconds: number;
 }
 
 export function loadConfig(env: Record<string, string | undefined>): ServerConfig {
@@ -258,6 +263,7 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
     maxConnections: intOr(env['MAX_CONNECTIONS'], MAX_CONNECTIONS, 1, 10_000),
     maxConnectionsPerIp: intOr(env['MAX_CONNECTIONS_PER_IP'], MAX_CONNECTIONS_PER_IP, 1, 1000),
     allowedOrigins: listOr(env['ALLOWED_ORIGINS'], []),
+    idleKickSeconds: intOr(env['IDLE_KICK_SECONDS'], IDLE_KICK_MS / 1000, 0, 86_400),
   };
 }
 
@@ -289,6 +295,7 @@ export function describeConfig(cfg: ServerConfig): string {
     `${cfg.maxConnections} sockets (${cfg.maxConnectionsPerIp} per address, by ` +
     `${cfg.clientIpHeader === '' ? 'the peer' : `the ${cfg.clientIpHeader} header`})` +
     (cfg.allowedOrigins.length > 0 ? `, origins ${cfg.allowedOrigins.join(' ')}` : '') +
+    (cfg.idleKickSeconds > 0 ? `, idle seats freed after ${cfg.idleKickSeconds}s` : ', IDLE KICK OFF') +
     (cfg.faultInjection ? ', FAULT INJECTION ON' : '') +
     // Same shape and the same reason as fault injection: a diagnostic left on in production is
     // something an operator has to be able to see without reading the environment back.

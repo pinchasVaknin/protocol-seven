@@ -21,6 +21,7 @@ import { DEG2RAD } from '../shared/core/MathUtil';
 import { Rng } from '../shared/core/Rng';
 import { LocalBotTransport, type ICommandQueue } from '../shared/net/Transport';
 import { foreignServerHost, isServerConfigured, multiplayerJoinOptions } from './net/JoinOptions';
+import { BYE_IDLE } from '../shared/net/Protocol';
 import { handshake, HandshakeError, type HandshakeOptions } from './net/Handshake';
 import { logger } from '../shared/core/Log';
 import type { SummaryInfo, WelcomeInfo } from '../shared/net/Messages';
@@ -2676,6 +2677,21 @@ export class Game {
       }
       if (net.state === 'disconnected') {
         netLog.warn(`connection ended: ${net.client.closeReason}`);
+        /**
+         * Freed for inactivity (security audit S6): the server's decision about the player, not
+         * a lost connection, so it is **not** dialled back — a reconnect would seat the idle tab
+         * again and repeat this at the next timeout. Said on screen, then the menu, the same way a
+         * failed join is.
+         */
+        if (net.client.closeReason === BYE_IDLE) {
+          this.reconnectToken = null;
+          this.transitionTo('MENU');
+          this.screens.menus.showBoot('DISCONNECTED FOR INACTIVITY');
+          window.setTimeout(() => {
+            if (this.state === 'MENU') this.screens.menus.show();
+          }, 4000);
+          return;
+        }
         if (!this.tryReconnect()) this.transitionTo('MENU');
       }
       return;

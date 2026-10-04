@@ -467,6 +467,30 @@ export const CLIENT_TIMEOUT_MS = 10_000;
 export const HANDSHAKE_TIMEOUT_MS = 5_000;
 
 /**
+ * How long a seated player may send no real input before the seat is freed, ms (security audit
+ * 2026-10-04, S6). `IDLE_KICK_SECONDS` overrides it on the server; 0 turns it off.
+ *
+ * A client that only pings is connected for ever, and ten seats is a small room to hold with
+ * abandoned tabs. Five minutes is far past any real pause — a debrief, a ballot, a death — and
+ * short enough that a room fills back up.
+ */
+export const IDLE_KICK_MS = 300_000;
+
+/** How long before the disconnect the player is warned, ms. */
+export const IDLE_WARNING_MS = 30_000;
+
+/**
+ * The `Bye` reason an idle disconnect is sent with, and the one the client must not dial back
+ * in after (S6).
+ *
+ * A string the two halves agree on, as `#rw` is, rather than a new field: every other `Bye` from
+ * the server is a lost connection the client is right to retry, and this is the one that is the
+ * server's decision about the player. Without it the client's reconnect would put the idle tab
+ * straight back into a seat, and five minutes later do it again.
+ */
+export const BYE_IDLE = 'idle';
+
+/**
  * The reconnect token's length, bytes (M11 Gate B, playtest round 4, F8).
  *
  * **This is a capability, and the whole of its security is that it cannot be guessed.** Anyone

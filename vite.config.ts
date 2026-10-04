@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { defineConfig } from 'vite';
+import { readFileSync, rmSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { defineConfig, type Plugin } from 'vite';
 
 /**
  * The server address, injected at build time (M10, S4.9).
@@ -59,6 +60,38 @@ export default defineConfig({
   oxc: { decorator: { legacy: true } },
   build: {
     target: 'es2022',
-    sourcemap: true,
+    /**
+     * No source maps in the build that ships (security audit 2026-10-04, S5).
+     *
+     * A map is the whole TypeScript source with every comment, served beside the bundle — it is
+     * what made the deployed game readable as source in anybody's DevTools. The dev server maps
+     * everything regardless, so development loses nothing, and `serve.js` refuses a `.map` even
+     * if a build writes one.
+     */
+    sourcemap: false,
   },
+  plugins: [dropDevOnlyPublicFiles()],
 });
+
+/**
+ * Folders of `public/` that the dev server serves and the build must not ship (S5).
+ *
+ * `verify/` holds the acceptance scripts DEBUG.md loads with `fetch(...).then(eval)` against the
+ * dev server. Vite copies all of `public/` into every build, so they were on the deployed game too,
+ * where the Content-Security-Policy refuses the `eval` anyway. Removed from `dist/` once the build
+ * has written it; `public/` and the dev server are untouched.
+ */
+function dropDevOnlyPublicFiles(): Plugin {
+  const devOnly = ['verify'];
+  let outDir = 'dist';
+  return {
+    name: 'protocol-seven:drop-dev-only-public-files',
+    apply: 'build',
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir);
+    },
+    closeBundle() {
+      for (const dir of devOnly) rmSync(resolve(outDir, dir), { recursive: true, force: true });
+    },
+  };
+}

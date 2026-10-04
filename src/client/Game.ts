@@ -44,6 +44,7 @@ import type { BotHarness } from './debug/BotHarness';
 import type { DebugSuite } from './debug/DebugSuite';
 import { FrameStats } from './debug/FrameStats';
 import { installConsoleApi } from './debug/ConsoleApi';
+import { consoleApiWanted } from './debug/ConsoleGate';
 import { Harness } from './debug/Harness';
 import { MatchHarness } from './debug/MatchHarness';
 import { Speedometer } from './debug/Speedometer';
@@ -906,7 +907,10 @@ export class Game {
         // focused yet would hang forever.
         this.loop.start();
         this.transport.open();
-        installConsoleApi(this, this.harness, this.matchHarness);
+        // Development, `?debug=1` or the bot harness only — see `consoleApiWanted`.
+        if (consoleApiWanted(window.location.search, import.meta.env.DEV)) {
+          installConsoleApi(this, this.harness, this.matchHarness);
+        }
         window.setTimeout(() => {
           /**
            * The device gate (playtest round 5, F1).

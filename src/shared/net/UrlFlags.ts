@@ -93,6 +93,17 @@ export const URL_FLAGS: readonly UrlFlag[] = [
     syntax: '`?net=250,40,5`',
     effect: 'Latency, jitter, loss — explicitly',
   },
+  {
+    key: 'debug',
+    syntax: '`?debug=1`',
+    /**
+     * The console API on a deployed build (security audit 2026-10-04, S5).
+     *
+     * `window.__p7` used to be on every build. It is on the dev server always, and on a deployed
+     * one only when asked for — see `consoleApiWanted` for why that is worth anything at all.
+     */
+    effect: 'Install the `window.__p7` console API on a deployed build (`npm run dev` always has it)',
+  },
 ];
 
 /**

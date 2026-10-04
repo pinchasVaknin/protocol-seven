@@ -92,7 +92,9 @@ it falls back to the console. **Reset** restores the shipped defaults.
 
 ## Console API
 
-`window.__p7` is installed once the world is built.
+`window.__p7` is installed once the world is built — under `npm run dev` always, and on a
+deployed build only with `?debug=1` (or `?harness`). It used to be on every build; a production
+page no longer hands the whole `Game` to whoever opens the console (security audit 2026-10-04).
 
 ```js
 __p7.report()            // full harness report: speeds, slide rules, movement bound
@@ -126,7 +128,8 @@ A policy is `(tick, player, cmd) => void` and writes into a reused mutable comma
 ### Reproducible verification scripts
 
 Three scripts under `public/verify/` reproduce the M1 acceptance measurements. They run
-against the live build:
+against the dev server (`npm run dev`) — `vite build` leaves `verify/` out of `dist/`, and the
+deployed build's Content-Security-Policy would refuse the `eval` anyway:
 
 ```js
 fetch('/verify/collision.js').then(r => r.text()).then(eval)  // 14 clipping / stance cases

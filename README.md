@@ -139,6 +139,7 @@ disabled with the reason on it and the game boots into single-player exactly as 
 | `?net=100` | Add 100 ms round trip *on top of* the real link |
 | `?net=bad` | The 100 ms ±30 ms jitter, 2% loss preset |
 | `?net=250,40,5` | Latency, jitter, loss — explicitly |
+| `?debug=1` | Install the `window.__p7` console API on a deployed build (`npm run dev` always has it) |
 
 **F1** opens the overlay; the **Network**, **Prediction** and **Rewind** sections are the M10
 read-outs. If prediction is working, `Mispredictions` reads `0` at any latency — the number

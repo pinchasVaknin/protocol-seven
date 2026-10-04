@@ -12,7 +12,7 @@
  * inside each frame, which is the same pressure DevTools CPU throttling applies.
  */
 (async () => {
-  const g = window.__operator.game;
+  const g = window.__p7.game;
   const loop = g.loop;
   const p = g.player;
   const input = g.input;

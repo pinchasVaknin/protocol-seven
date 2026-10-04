@@ -1,5 +1,5 @@
 (() => {
-  const g = window.__operator.game;
+  const g = window.__p7.game;
   const p = g.player;
   const world = g.map.collision;
   const cfg = g.movementConfig;

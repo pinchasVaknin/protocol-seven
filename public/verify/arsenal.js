@@ -30,7 +30,7 @@
  *   __verifyArsenal.results            // everything measured so far, stashed
  */
 (() => {
-  const api = window.__operator;
+  const api = window.__p7;
   const game = api.game;
 
   const results = {};

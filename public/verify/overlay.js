@@ -7,7 +7,7 @@
  * rather than being quietly counted as passing.
  */
 (async () => {
-  const g = window.__operator.game;
+  const g = window.__p7.game;
   const loop = g.loop;
   const p = g.player;
   const input = g.input;

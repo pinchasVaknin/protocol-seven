@@ -3,7 +3,7 @@
  * are being produced.
  *
  * Everything that is purely a property of the simulation is measured by
- * `__operator.weaponHarness` instead — see verify/report.js. What is left here needs the
+ * `__p7.weaponHarness` instead — see verify/report.js. What is left here needs the
  * render callback to run, because it is about the *presentation* path: the hitmarker
  * appearing, the input-latency probe closing its loop, and sixty seconds of continuous
  * fire not growing a pool or dropping a frame.
@@ -14,7 +14,7 @@
  * what calls `frame()` changes.
  */
 (async () => {
-  const g = window.__operator.game;
+  const g = window.__p7.game;
   const loop = g.loop;
   const input = g.input;
   const player = g.player;
@@ -193,7 +193,7 @@
     // The substituted frame source does not run at exactly 60 Hz, so express latency
     // against the frames that actually happened as well as against a nominal 16.7 ms.
     // Only the first is meaningful as "how many frames behind the input is the picture".
-    const stats = window.__operator.stats();
+    const stats = window.__p7.stats();
     stats.recompute();
     const measuredFrameMs = stats.p50 > 1 ? stats.p50 : 1000 / 60;
 
@@ -221,7 +221,7 @@
   // ---- criterion 6: 60 s of continuous fire --------------------------------
   {
     takeTheLine();
-    const stats = window.__operator.stats();
+    const stats = window.__p7.stats();
     const audio = g.audio;
     const fx = match.fx;
     const w = match.weapons.weapon;

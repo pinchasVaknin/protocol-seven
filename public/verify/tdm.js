@@ -19,7 +19,7 @@
  *   __verifyTdm.lanes()              // criterion 3
  */
 (() => {
-  const api = window.__operator;
+  const api = window.__p7;
   const game = api.game;
 
   /**

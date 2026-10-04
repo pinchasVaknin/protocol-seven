@@ -54,7 +54,7 @@
   }
 
   function ctx() {
-    const g = window.__operator.game;
+    const g = window.__p7.game;
     return {
       g,
       match: g.match,

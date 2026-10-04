@@ -14,8 +14,8 @@
  * a live world, and they say so rather than reporting a false pass.
  */
 (() => {
-  const api = window.__operator;
-  if (api === undefined) throw new Error('__operator is not installed; boot the game first.');
+  const api = window.__p7;
+  if (api === undefined) throw new Error('__p7 is not installed; boot the game first (npm run dev, or ?debug=1 on a build).');
 
   const results = {};
   const log = (...args) => console.info(...args);

@@ -139,6 +139,16 @@ describe('the tracker', () => {
     expect(tracker.relevant(100, ctx(), viewer, body(2, 5, 5, 'B'))).toBe(false);
   });
 
+  it('keeps a body that hurt the viewer for the linger from the hit, seen or not (R9)', () => {
+    const tracker = new RelevanceTracker();
+    const viewer = body(1, -5, 0, 'A');
+    const hidden = body(2, 5, 5, 'B');
+    expect(tracker.relevant(0, ctx(), viewer, hidden)).toBe(false);
+    tracker.reveal(2, 1000);
+    expect(tracker.relevant(1000 + LINGER_MS - 1, ctx(), viewer, hidden)).toBe(true);
+    expect(tracker.relevant(1000 + LINGER_MS + 1, ctx(), viewer, hidden)).toBe(false);
+  });
+
   it('lets a dead spectator see whatever any living teammate sees', () => {
     const tracker = new RelevanceTracker();
     const blind = body(3, -5, -5, 'A');

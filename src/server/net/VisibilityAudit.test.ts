@@ -94,4 +94,44 @@ describe('SeatAudit', () => {
     expect(stats.appearances).toBe(1);
     expect(stats.lateWakes).toBe(0);
   });
+
+  it('counts a hit from a dormant shooter, and R9 waking it by the next snapshot', () => {
+    const view = new SeatView();
+    const audit = new SeatAudit();
+    const stats = emptyAuditStats();
+    const viewer = body(1, 0, 0, 'A');
+    // Behind the wall: dormant to the viewer.
+    const shooter = body(2, 20, 6, 'B');
+    run(view, audit, stats, 0, 500, [viewer, shooter]);
+    audit.noteHurt(view, 2, stats);
+    view.reveal(2, 500);
+    run(view, audit, stats, 550, 550, [viewer, shooter]);
+    expect(stats.hurtTotal).toBe(1);
+    expect(stats.hurtFromDormant).toBe(1);
+    expect(stats.hurtStillDormant).toBe(0);
+  });
+
+  it('counts the shooter still dormant when nothing woke it — what a missing R9 looks like', () => {
+    const view = new SeatView();
+    const audit = new SeatAudit();
+    const stats = emptyAuditStats();
+    const viewer = body(1, 0, 0, 'A');
+    const shooter = body(2, 20, 6, 'B');
+    run(view, audit, stats, 0, 500, [viewer, shooter]);
+    audit.noteHurt(view, 2, stats);
+    // The hit killed the viewer: still graded, because the death report wants the killer too.
+    viewer.flags &= ~EFlag.Alive;
+    run(view, audit, stats, 550, 550, [viewer, shooter]);
+    expect(stats.hurtStillDormant).toBe(1);
+  });
+
+  it('does not count a hit from a shooter the viewer could already see', () => {
+    const view = new SeatView();
+    const audit = new SeatAudit();
+    const stats = emptyAuditStats();
+    run(view, audit, stats, 0, 500, [body(1, 0, 0, 'A'), body(2, 20, 0, 'B')]);
+    audit.noteHurt(view, 2, stats);
+    expect(stats.hurtTotal).toBe(1);
+    expect(stats.hurtFromDormant).toBe(0);
+  });
 });

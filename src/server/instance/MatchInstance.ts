@@ -1,6 +1,7 @@
 import type { Bot } from '../../shared/ai/Bot';
 import { Cheat } from '../../shared/cheats/Cheats';
 import { nowMs } from '../../shared/core/Clock';
+import { EV } from '../../shared/core/Events';
 import { Btn, isDown } from '../../shared/core/InputCommand';
 import { logger } from '../../shared/core/Log';
 import {
@@ -165,6 +166,8 @@ export abstract class MatchInstance {
   relevanceDormant = 0;
   /** Phase 1's own proof, when a harness turns it on (`enableVisibilityAudit`). */
   private readonly audits = new Map<number, SeatAudit>();
+  /** The R9 subscription on the match's bus. */
+  private readonly offHurt: () => void;
 
   private readonly header: SnapshotHeader = makeSnapshotHeader();
   private readonly entities: EntitySnapshot[] = [];
@@ -211,6 +214,17 @@ export abstract class MatchInstance {
       if (seat === null) return 0;
       return seat.session.rttMs * 0.5 + deps.interpolationDelayMs;
     };
+
+    // R9 (anti-wallhack phase 2, part 1): whoever hurts a seat is told to it for the linger, so the
+    // client has a body to point the hit-direction chevron at. Not a sentry's round — `sourceId` is
+    // then the owner, who may be anywhere, and revealing them would be a leak pointing the wrong way.
+    this.offHurt = this.match.bus.on(EV.DamageDealt, (p) => {
+      if (p.autonomous || p.sourceId === p.targetId) return;
+      const view = this.views.get(p.targetId);
+      if (view === undefined) return;
+      this.audits.get(p.targetId)?.noteHurt(view, p.sourceId, visibilityAuditTotals);
+      view.reveal(p.sourceId, nowMs());
+    });
   }
 
   get state(): InstanceStateId {
@@ -887,6 +901,7 @@ export abstract class MatchInstance {
    */
   dispose(): void {
     this.match.viewLagMsFor = null;
+    this.offHurt();
     this.match.dispose();
     this.encoders.clear();
     this.seats.clear();

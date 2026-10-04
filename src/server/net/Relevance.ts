@@ -22,7 +22,9 @@ import type { CollisionWorld } from '../../shared/world/CollisionWorld';
  *   take them; the head and the eye as if standing. So nobody rounds a corner, or stands up behind
  *   cover, faster than the data;
  * - **R6** relevant at any time in the last `LINGER_MS`, which stops flicker at the edge of a
- *   doorway and covers a lost snapshot.
+ *   doorway and covers a lost snapshot;
+ * - **R9** it hurt the viewer within the last `LINGER_MS` (`RelevanceTracker.reveal`) — the
+ *   hit-direction chevron needs the shooter's body, and gives away its bearing regardless.
  *
  * R8 (free cam sees everything) and `Unseen` (never relevant to anyone else) are decisions about
  * cheats and live with the caller, which knows who holds what; R7 (a dead spectator sees what its
@@ -254,6 +256,14 @@ export class RelevanceTracker {
       }
     }
     return this.settle(nowMs, target.entityId, found, -1);
+  }
+
+  /**
+   * R9: relevant from `nowMs` for the linger, whatever the rays say — `target` just hurt this
+   * viewer, and the hit-direction chevron is about to point at it anyway.
+   */
+  reveal(entityId: number, nowMs: number): void {
+    this.until.set(entityId, Math.max(this.until.get(entityId) ?? -Infinity, nowMs + LINGER_MS));
   }
 
   forget(entityId: number): void {

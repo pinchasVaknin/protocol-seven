@@ -121,6 +121,20 @@ export class SeatView {
     }
   }
 
+  /**
+   * R9, the hurt-by rule (anti-wallhack phase 2, part 1): a body that has just hurt this seat is
+   * relevant to it for the linger, seen or not.
+   *
+   * The client points its hit-direction chevron at the shooter's body, and a dormant body has no
+   * place to point at — so with culling alone, a round through a wall or from a shooter whose eye
+   * line was blocked hurt the player from nowhere. The chevron tells the player the bearing anyway;
+   * this tells the client the body. Only bodies already in this seat's world: an id the seat has
+   * never been sent is nothing to reveal.
+   */
+  reveal(entityId: number, nowMs: number): void {
+    if (this.present.has(entityId)) this.tracker.reveal(entityId, nowMs);
+  }
+
   private put(e: EntitySnapshot): void {
     this.list[this.count++] = e;
   }

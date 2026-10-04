@@ -6,8 +6,9 @@ instead, what that costs, how it is proved, and which decisions were the human's
 
 **Phase 1 is built** (2026-10-04) — snapshots are culled per seat; see *Phase 1, as built* below,
 which records where the build departed from this design and what it measured. **Phase 2, the
-event stream, is not**: `Fired`, `Damage`, `Footstep` and `Pose` still go to every client with
-positions, so until it lands a modified client can still place a body that moves or shoots.
+event stream, is being built** (see *Phase 2* below): until it lands, `Fired`, `Damage`, `Footstep`
+and `Pose` still go to every client with positions, so a modified client can still place a body
+that moves or shoots.
 
 ---
 
@@ -69,6 +70,7 @@ viewer when any rule holds:
 | R6 | **Linger**: relevant at any time in the last 0.5 s | Stops flicker at the edge of a doorway and covers a lost snapshot |
 | R7 | **Spectating**: a dead viewer in a one-life mode gets the union of its living teammates' relevant sets | The client picks which teammate to follow (`ClientMatch.spectatorTargetId`) and may switch at any frame |
 | R8 | **Cheats on this seat** (`Cheat.NoClip`, free cam) | A server running cheats already gave the player everything |
+| R9 | **Hurt by**: the target damaged the viewer within the last 0.5 s (not a sentry's round) | The hit-direction chevron and the death report's distance need the shooter's body, and the chevron gives its bearing away regardless. Added in phase 2 — see below |
 
 And one rule that removes rather than adds: an entity holding `Cheat.Unseen` is **never** relevant
 to anyone but itself. Today `writePlayer` sends its full state to every client like anybody else's
@@ -211,17 +213,52 @@ that on Render's half CPU. Most of it is the hidden pairs, which test every ray 
 the first optimisation if it ever matters is evaluating those at 10 Hz with a look-ahead one
 snapshot longer.
 
+## Phase 2, as built
+
+Decisions E1–E4, taken by the human on 2026-10-04, each as recommended, revise this design:
+
+- **E1 replaces R5's snapshot half (and D3).** Every sound event carries its own position, and the
+  client places the sound from it, not from the body — so hearing a body is no reason to send it.
+  Hearing filters the *events* only; it makes nobody relevant.
+- **E2:** an enemy's footsteps, jumps and landings are sent within **12 m** (S6.3's radius, and the
+  bots'). The client's footstep curve runs to 26 m, so steps between 12 and 26 m — at 9% down to
+  4% of full level — are no longer heard.
+- **E3 replaces D5.** An enemy's health already follows visibility: a dormant record freezes it
+  where it was last seen, and the plate over a visible enemy shows what any player sees. What
+  still leaked is `killerHealth` on every `Killed`; it goes to the victim only.
+- **E4:** smoke as an occluder moves to phase 3.
+
+**Part 1 — R9, the hurt-by rule.** Phase 1 broke the hit-direction chevron: `ClientMatch.bodyAt`
+returns nothing for a dormant body, so a round from a shooter the player was not told about — a
+wallbang, an eye line blocked where the muzzle's was not — hurt from nowhere, and the death report
+lost the killer's distance. Now the instance hears `damage.dealt` and reveals the source to the
+target's seat (`SeatView.reveal`) for the linger, so the next snapshot carries it awake; the client
+waits up to `WAKE_WAIT_MS` (300 ms) for that snapshot before pointing the chevron or measuring the
+distance (`client/net/WakeWait`), because the damage rides the event frame of its own tick and the
+snapshot that wakes the shooter can be a snapshot interval behind it. A sentry's round reveals
+nobody: its `sourceId` is the owner, who may be anywhere. The audit counts hits from a shooter the
+seat had dormant, and fails the flow if one is still dormant in the next snapshot.
+
+Measured on FOUNDRY, three headless players and ten bots, 120 s: 48 hits on players with no added
+latency and 36 on the bad profile, **none** from a dormant shooter — bots do not shoot through
+walls, so with them the case is rare, and R9 is there for the players who do. Late appearances
+in these runs and two 60 s ones were 0–1.3% (phase 1's: 2.7–5.5%) — R9 lengthens the linger on
+whoever is shooting, which may be part of it; the two were not measured apart. Hard misses: 0.
+In the browser, a chevron for a shooter that woke 134 ms after its hit appeared on the frame it
+woke, and chevrons for awake shooters appeared at once as before (43 of 43).
+
 ## Phases
 
 1. **Entities — built.** Per-recipient relevance (R1–R4, R6, R7, R8, `Unseen`), `EFlag.Dormant`,
    the client honouring it. Protocol 28. Tests 1, 3 and 4.
-2. **Events and the rest.** Per-recipient events (D2), the hearing rule R5, smoke as
-   an occluder, enemy health minimised (D5). Test 2.
-3. **Only if the cost asks for it.** The baked visibility set.
+2. **Events and the rest — being built.** R9; per-recipient events (D2) filtered by hearing (E1,
+   E2, D4); `killerHealth` to the victim only (E3); the S&D bomb's carrier. Test 2.
+3. **Smoke** as an occluder (E4), and only if the cost asks for it, the baked visibility set.
 
 ## Decisions
 
-All five taken by the human on 2026-10-04, each as recommended. They are binding on the build.
+All taken by the human on 2026-10-04, each as recommended — D1–D5 with the design, E1–E4 before
+phase 2 was built. They are binding on the build.
 
 | | Question | Decided |
 |---|---|---|
@@ -229,4 +266,8 @@ All five taken by the human on 2026-10-04, each as recommended. They are binding
 | D2 | A suppressed shot from a body nobody can see: send the terminus only, or nothing? | **Terminus only** — the impact and the decal are real, and they reveal nothing the victim's damage event does not |
 | D3 | Accept that bodies within hearing range are sent? | **Yes** — the alternative is silent footsteps, which is a different game |
 | D4 | Crouch-walking and Dead Silence are silent to bots today but their footsteps reach every human. Make them silent to humans too (not sent to enemies)? | **Yes** — it is what the perk says it does, and it removes a leak |
-| D5 | Hide an enemy's exact health from the other team? | **Yes**, phase 2 — alive or dead only |
+| D5 | Hide an enemy's exact health from the other team? | **Yes**, phase 2 — alive or dead only. *Revised by E3* |
+| E1 | Make a body relevant because it can be heard (R5), or filter only the sound events? | **Events only** — each carries its own position. *Revises D3* |
+| E2 | An enemy's footsteps, jumps and landings: within 12 m, or the client's 26 m curve? | **12 m** — the game's rule and the bots' |
+| E3 | Hide an enemy's health altogether (the plate over a visible enemy goes), or let it follow visibility? | **Follow visibility**, and `killerHealth` to the victim only. *Revises D5* |
+| E4 | Smoke as an occluder in phase 2? | **No** — phase 3; the server cannot foresee a cloud thinning, so bodies would pop out of it |

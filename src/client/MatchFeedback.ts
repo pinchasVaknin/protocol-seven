@@ -18,6 +18,7 @@ import type { Hud } from './ui/Hud';
 import type { WeaponAudio } from './weapons/WeaponAudio';
 import { anyWeaponDef } from '../shared/weapons/AnyWeapon';
 import { Disposable } from '../shared/core/Disposable';
+import { WakeWait } from './net/WakeWait';
 
 /**
  * Everything that *presents* a shot, in one place.
@@ -110,6 +111,9 @@ interface PendingNumber {
 
 const NUMBER_QUEUE = 8;
 
+/** Chevrons waiting for their shooter's body — as many as the HUD shows at once. */
+const CHEVRON_WAIT = 4;
+
 /** Reusable position record for "where did that sound come from". Zero allocation. */
 const sourceAt = { x: 0, y: 0, z: 0 };
 
@@ -121,6 +125,8 @@ export class MatchFeedback extends Disposable {
   private readonly numberQueue: PendingNumber[] = [];
   private readonly projectScratch = new THREE.Vector3();
   private numberCount = 0;
+  /** Shooters the chevron is waiting on: dormant when their round landed. See `WakeWait`. */
+  private readonly chevronWait = new WakeWait(CHEVRON_WAIT);
 
   constructor(deps: FeedbackDeps) {
     super();
@@ -135,6 +141,7 @@ export class MatchFeedback extends Disposable {
    * Render pass. Damage numbers need the camera to project, and the camera only exists here.
    */
   render(camera: THREE.PerspectiveCamera): void {
+    if (this.chevronWait.size > 0) this.chevronWait.poll(performance.now(), this.pointChevron);
     this.flushDamageNumbers(camera);
     if (!this.shotSinceRender) return;
     this.shotSinceRender = false;
@@ -333,8 +340,16 @@ export class MatchFeedback extends Disposable {
     const severity = Math.min(1, amount / Math.max(max * 0.3, 1));
     this.deps.cameraRig.shake.add(0.08 + severity * 0.16);
 
+    if (this.deps.identity.is(sourceId)) return;
+    // A shooter this client was not told about wakes in the next snapshot (R9); until it does
+    // there is nothing to point at, so the chevron waits for it rather than not appearing.
+    if (!this.pointChevron(sourceId)) this.chevronWait.add(sourceId, performance.now());
+  }
+
+  /** Point a hit-direction chevron at `sourceId`'s body. False when there is no body to point at. */
+  private readonly pointChevron = (sourceId: number): boolean => {
     const shooter = this.deps.bodyAt(sourceId);
-    if (shooter === null) return;
+    if (shooter === null) return false;
     /**
      * The bearing, from the one projection (P9 follow-up).
      *
@@ -358,7 +373,8 @@ export class MatchFeedback extends Disposable {
       hitScreenScratch,
     );
     this.deps.hud.showHitDirection(hitScreenScratch.bearingRad);
-  }
+    return true;
+  };
 
   /**
    * Where an entity's weapon sounds should come from. The player's own mechanical noises sit at

@@ -31,6 +31,7 @@ import type { EquipmentConfig } from '../shared/equipment/EquipmentConfig';
 import { EquipmentSystem } from '../shared/equipment/EquipmentSystem';
 import { MatchEquipment } from './MatchEquipment';
 import { MatchFeedback, type BodyPose } from './MatchFeedback';
+import { WAKE_WAIT_MS } from './net/WakeWait';
 import { MatchMeta } from './MatchMeta';
 import { MatchObjectives } from './MatchObjectives';
 import { MortarOverlay } from './ui/MortarOverlay';
@@ -488,6 +489,9 @@ export class Match {
   private deathSubscription: (() => void) | null = null;
   /** F9's panel content, latched on the local player's death and cleared on their next spawn. */
   private deathReport: DeathReport | null = null;
+  /** Who killed the local player, and when — for a distance the kill's own frame could not measure. */
+  private deathKillerId = -1;
+  private deathAtMs = 0;
   private roundResetSubscription: (() => void) | null = null;
 
   private active = false;
@@ -873,6 +877,8 @@ export class Match {
     this.deathSubscription = deps.bus.on(EV.EntityKilled, (p) => {
       if (p.targetId !== this.localId) return;
       this.deathReport = this.buildDeathReport(p.sourceId, p.weaponId, p.zone, p.killerHealth);
+      this.deathKillerId = p.sourceId;
+      this.deathAtMs = performance.now();
     });
 
     // The mesh follows the inventory. `weapon.swapped` fires at the hand-over, which is the
@@ -1307,6 +1313,23 @@ export class Match {
       killerHealth,
       headshot: zone === 'head',
     };
+  }
+
+  /**
+   * The killer's distance, once there is a body to measure to (anti-wallhack phase 2, part 1).
+   *
+   * A killer this client was not told about is dormant when the kill arrives, and wakes in the
+   * next snapshot (R9) — so a report built on the kill's own frame said nothing about distance.
+   * Measured again each frame for `WAKE_WAIT_MS`, then left as it is.
+   */
+  private settleDeathDistance(): void {
+    const report = this.deathReport;
+    if (report === null || report.distanceM >= 0) return;
+    if (performance.now() - this.deathAtMs > WAKE_WAIT_MS) return;
+    const body = this.bodyAt(this.deathKillerId);
+    if (body === null) return;
+    const sim = this.deps.player.sim;
+    this.deathReport = { ...report, distanceM: Math.hypot(body.x - sim.x, body.y - sim.y, body.z - sim.z) };
   }
 
   private bodyAt(entityId: number): Readonly<BodyPose> | null {
@@ -2885,6 +2908,7 @@ export class Match {
     state.awaitingRound = this.playerDead && !this.flow.respawnAllowed(this.localId);
     // Only while dead: a report that outlived the body it describes would be a panel telling a
     // living player how they died a minute ago (round 5, F9).
+    if (this.playerDead) this.settleDeathDistance();
     state.deathReport = this.playerDead ? this.deathReport : null;
     this.fillTacticalState();
     this.fillStreakHud();

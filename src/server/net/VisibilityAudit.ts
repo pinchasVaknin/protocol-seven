@@ -18,7 +18,11 @@ import type { SeatView } from './SeatView';
  *   client draws behind the server (half the round trip plus the interpolation delay): the client
  *   has not yet drawn the moment it came into view, so it appears late on screen. Counted once per
  *   appearance, not per snapshot. A respawn of either end in that window is not counted — a body
- *   that spawns in view appears however it is sent.
+ *   that spawns in view appears however it is sent;
+ * - **hurt from dormant** — the seat was hit by a body its last snapshot sent dormant (a round
+ *   through a wall, a shooter whose eye line was blocked): how often the client's chevron has to
+ *   wait for R9's wake. **Still dormant** — such a shooter dormant again in the very next snapshot:
+ *   R9 failed and the chevron has nothing to point at. Must be zero.
  *
  * Off unless a harness turns it on: it costs a line test per pair on top of culling's own, and
  * nothing in a match reads it.
@@ -57,6 +61,12 @@ export interface VisibilityAuditStats {
   lateAcrossLevels: number;
   /** Late wakes where either body moved faster than sprint speed (a slide, a tac-sprint). */
   lateFast: number;
+  /** Hits on a seat from another body (not a sentry), for the denominator. */
+  hurtTotal: number;
+  /** Of those, from a body its last snapshot sent dormant. */
+  hurtFromDormant: number;
+  /** Of those, the shooter was dormant in the next snapshot too. Must be zero (R9). */
+  hurtStillDormant: number;
 }
 
 export function emptyAuditStats(): VisibilityAuditStats {
@@ -74,6 +84,9 @@ export function emptyAuditStats(): VisibilityAuditStats {
     lateByPoint: [0, 0, 0, 0, 0],
     lateAcrossLevels: 0,
     lateFast: 0,
+    hurtTotal: 0,
+    hurtFromDormant: 0,
+    hurtStillDormant: 0,
   };
 }
 
@@ -89,8 +102,26 @@ export class SeatAudit {
   private readonly spawnSerial = new Map<number, number>();
   private readonly spawnedAt = new Map<number, number>();
   private readonly wasVisible = new Set<number>();
+  /** Shooters that hurt this seat from dormancy since the last snapshot. */
+  private readonly hurtBy = new Set<number>();
   private readonly hit = makeRayHit();
   private startedMs = -1;
+
+  /**
+   * The seat was just hurt by `sourceId`. `view` still holds the snapshot last sent, so this is
+   * what the client knew at the moment of the hit.
+   */
+  noteHurt(view: SeatView, sourceId: number, out: VisibilityAuditStats): void {
+    for (let i = 0; i < view.count; i++) {
+      const rec = view.list[i];
+      if (rec === undefined || rec.entityId !== sourceId) continue;
+      out.hurtTotal++;
+      if ((rec.flags & EFlag.Dormant) === 0) return;
+      out.hurtFromDormant++;
+      this.hurtBy.add(sourceId);
+      return;
+    }
+  }
 
   observe(
     nowMs: number,
@@ -112,6 +143,17 @@ export class SeatAudit {
       if (last !== undefined && last !== e.spawnSerial) this.spawnedAt.set(e.entityId, nowMs);
       this.spawnSerial.set(e.entityId, e.spawnSerial);
     }
+
+    // R9's check comes before the viewer's own life: the hit that hurt it may have killed it, and
+    // the death report wants the killer's place as much as the chevron does.
+    if (this.hurtBy.size > 0) {
+      for (let i = 0; i < view.count; i++) {
+        const rec = view.list[i];
+        if (rec !== undefined && this.hurtBy.has(rec.entityId) && (rec.flags & EFlag.Dormant) !== 0) out.hurtStillDormant++;
+      }
+      this.hurtBy.clear();
+    }
+
     if (viewer === null || !isAlive(viewer)) return;
     // A seat that has just appeared — a join, a migration — has everything in view "new" at once.
     // That is arriving, not culling; the first draw delay of a seat's life is not graded.

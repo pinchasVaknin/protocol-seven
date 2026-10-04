@@ -3,7 +3,7 @@ import { EFlag, makeEntitySnapshot, type EntitySnapshot } from '../../shared/net
 import { DEFAULT_MOVEMENT_CONFIG } from '../../shared/player/MovementConfig';
 import { ColliderSet } from '../../shared/world/ColliderSet';
 import { CollisionWorld } from '../../shared/world/CollisionWorld';
-import type { RelevanceContext } from './Relevance';
+import { LINGER_MS, type RelevanceContext } from './Relevance';
 import { SeatView, writeDormant } from './SeatView';
 
 /**
@@ -120,6 +120,32 @@ describe('a seat\'s entity list', () => {
     const own = new SeatView();
     own.build(0, 1, [corpse, teammate, body(2, 5, 0, 'B')], 3, CTX, false, false, NOBODY_HIDDEN);
     expect(dormant(listed(own).get(2))).toBe(true);
+  });
+
+  it('sends a body that just hurt the seat for the linger, wall or not (R9) — but never an Unseen one', () => {
+    const view = new SeatView();
+    const viewer = body(1, -5, 0, 'A');
+    const shooter = body(3, 5, 5, 'B');
+    view.build(0, 1, [viewer, shooter], 2, CTX, false, false, NOBODY_HIDDEN);
+    expect(dormant(listed(view).get(3))).toBe(true);
+    view.reveal(3, 100);
+    view.build(150, 1, [viewer, shooter], 2, CTX, false, false, NOBODY_HIDDEN);
+    expect(listed(view).get(3)).toBe(shooter);
+    view.build(100 + LINGER_MS + 1, 1, [viewer, shooter], 2, CTX, false, false, NOBODY_HIDDEN);
+    expect(dormant(listed(view).get(3))).toBe(true);
+
+    view.reveal(3, 2000);
+    view.build(2050, 1, [viewer, shooter], 2, CTX, false, false, (id) => id === 3);
+    expect(dormant(listed(view).get(3))).toBe(true);
+  });
+
+  it('reveals nobody it has never been sent', () => {
+    const view = new SeatView();
+    const viewer = body(1, -5, 0, 'A');
+    view.build(0, 1, [viewer], 1, CTX, false, false, NOBODY_HIDDEN);
+    view.reveal(3, 0);
+    view.build(50, 1, [viewer, body(3, 5, 5, 'B')], 2, CTX, false, false, NOBODY_HIDDEN);
+    expect(dormant(listed(view).get(3))).toBe(true);
   });
 
   it('forgets a body that left, so its id is clean for whoever is handed it next', () => {

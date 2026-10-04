@@ -1568,6 +1568,15 @@ function reportFlow(input: FlowReportInput): number {
           `${audit.lateAcrossLevels} across levels (>1.5 m), ${audit.lateFast} faster than sprint.`,
       );
     }
+    // R9 (phase 2, part 1): a hit from a body the seat was not told about wakes it for the next
+    // snapshot, so the chevron has somewhere to point. How often it is needed, and whether it held.
+    log.info(
+      `hurt-by: ${audit.hurtTotal} hit(s) on a player, ${audit.hurtFromDormant} from a shooter it had dormant, ` +
+        `${audit.hurtStillDormant} still dormant a snapshot later (must be 0).`,
+    );
+    if (audit.hurtStillDormant > 0) {
+      problems.push(`${audit.hurtStillDormant} shooter(s) stayed dormant to the player they hurt`);
+    }
     if (audit.hardMisses > 0) {
       problems.push(`${audit.hardMisses} body(ies) in plain view were sent dormant`);
     }

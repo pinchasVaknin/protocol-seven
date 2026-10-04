@@ -162,16 +162,47 @@ class GpuWarmup {
   }
 }
 
-function compile(renderer: THREE.WebGLRenderer, root: THREE.Object3D, camera: THREE.Camera, scene: THREE.Scene): Promise<void> {
+/** The longest `compile` waits for the GPU to report a program linked before it stops asking. */
+export const COMPILE_GIVE_UP_MS = 10_000;
+
+/** What `compile` uses of a renderer. */
+export type Compiler = Pick<THREE.WebGLRenderer, 'compile' | 'properties' | 'extensions'>;
+
+/**
+ * `WebGLRenderer.compileAsync`, with the wait done here instead of by three.js.
+ *
+ * Its wait polls every material it compiled, every 10 ms, for `currentProgram.isReady()` — and a
+ * material disposed in the meantime has had its properties removed, so `currentProgram` is
+ * undefined and the poll throws inside a `setTimeout`, where nobody can catch it, and its promise
+ * never settles (r185). Materials are disposed during a wait whenever a scene is torn down
+ * mid-compile: a reconnect, a map change, an avatar replacing its placeholder. Here a disposed
+ * material is simply not waited for — nothing will draw it. And the wait ends after
+ * `COMPILE_GIVE_UP_MS` whatever the GPU says: a lost context never reports a program linked, and
+ * whatever is left compiles in the first frame that draws it, as before warm-up existed.
+ */
+export function compile(renderer: Compiler, root: THREE.Object3D, camera: THREE.Camera, scene: THREE.Scene): Promise<void> {
+  let waiting: Set<THREE.Material>;
   try {
-    return renderer.compileAsync(root, camera, scene).then(
-      () => undefined,
-      (error: unknown) => log.warn(`compile failed; the first frame will compile instead. ${String(error)}`),
-    );
+    waiting = renderer.compile(root, camera, scene);
   } catch (error) {
     log.warn(`compile failed; the first frame will compile instead. ${String(error)}`);
     return Promise.resolve();
   }
+  const startedMs = performance.now();
+  return new Promise((resolve) => {
+    const check = (): void => {
+      for (const material of waiting) {
+        const program = (renderer.properties.get(material) as { currentProgram?: { isReady(): boolean } }).currentProgram;
+        if (program === undefined || program.isReady()) waiting.delete(material);
+      }
+      if (waiting.size === 0 || performance.now() - startedMs > COMPILE_GIVE_UP_MS) resolve();
+      else setTimeout(check, 10);
+    };
+    // As three.js does: at once when the GPU can report progress; without the extension every
+    // program reports ready, and the answer waits a turn.
+    if (renderer.extensions.has('KHR_parallel_shader_compile')) check();
+    else setTimeout(check, 10);
+  });
 }
 
 /**

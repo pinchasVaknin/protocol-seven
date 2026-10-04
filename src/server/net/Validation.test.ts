@@ -1,6 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { Btn, LIVE_BUTTONS, type MutableInputCommand } from '../../shared/core/InputCommand';
-import { Reject, validateCommand } from './Validation';
+import { Reject, TokenBucket, validateCommand } from './Validation';
+
+describe('TokenBucket', () => {
+  it('allows the burst at once and refuses the next', () => {
+    const b = new TokenBucket(3, 1);
+    expect([b.take(0), b.take(0), b.take(0), b.take(0)]).toEqual([true, true, true, false]);
+  });
+
+  it('refills at its rate, and never past the burst', () => {
+    const b = new TokenBucket(2, 2);
+    b.take(0);
+    b.take(0);
+    expect(b.take(400)).toBe(false); // 0.8 of a token
+    expect(b.take(500)).toBe(true); // 1.0
+    // A long silence refills to the burst, not beyond it.
+    expect([b.take(60_000), b.take(60_000), b.take(60_000)]).toEqual([true, true, false]);
+  });
+
+  it('earns nothing from a clock that steps backwards', () => {
+    const b = new TokenBucket(1, 1);
+    b.take(10_000);
+    expect(b.take(0)).toBe(false);
+    expect(b.take(500)).toBe(false);
+  });
+});
 
 /**
  * The buttons mask at the server's door (2026-09-28).

@@ -121,6 +121,8 @@ export class Server {
   private bootReport: BootBakeReport | null = null;
   private lastMetricsMs = 0;
   private lastVoteBroadcastTick = -1;
+  /** A vote changed since the last broadcast. See `onVote`. */
+  private voteChanged = false;
   private stopping = false;
 
   /** Total ms across every instance for the most recent tick. §8.28's number. */
@@ -510,13 +512,13 @@ export class Server {
     if (def === undefined) {
       // A kind index outside the table is malformed rather than merely wrong, and §4.16 puts
       // the response to malformed input at the boundary: count it, drop it, never throw.
-      log.warn(`${session.displayName} asked for streak kind ${kind}, which does not exist.`);
+      session.warn(`${session.displayName} asked for streak kind ${kind}, which does not exist.`);
       return;
     }
 
     const streaks = instance.match.streaks;
     if (!streaks.pricesFor(player.entityId).some((p) => p.id === def.id)) {
-      log.warn(`${session.displayName} asked for ${def.id}, which is not in their class.`);
+      session.warn(`${session.displayName} asked for ${def.id}, which is not in their class.`);
       return;
     }
 
@@ -574,7 +576,7 @@ export class Server {
       return;
     }
     if (!this.cfg.cheatsEnabled) {
-      log.warn(`${session.displayName} typed a cheat code and this server has cheats disabled.`);
+      session.warn(`${session.displayName} typed a cheat code and this server has cheats disabled.`);
       session.sendCheats(CheatOutcome.RefusedDisabled, session.cheats.mask);
       return;
     }
@@ -623,7 +625,7 @@ export class Server {
        * than asserted: §4.16 answers a frame that makes no sense at the boundary, and the type
        * system knowing it cannot happen is not the same as the socket knowing.
        */
-      log.warn(`${session.displayName} sent a client-side code to the server. Refused.`);
+      session.warn(`${session.displayName} sent a client-side code to the server. Refused.`);
       session.sendCheats(CheatOutcome.RefusedUnknown, session.cheats.mask);
       return;
     }
@@ -699,7 +701,7 @@ export class Server {
     if (clean === null) {
       // Never a disconnect: a class the server cannot read is a client one build ahead or
       // behind, and the M10 defaults are a working game.
-      log.warn(`${session.displayName} sent an unusable loadout; keeping the previous one.`);
+      session.warn(`${session.displayName} sent an unusable loadout; keeping the previous one.`);
       return;
     }
     if (corrected.length > 0) session.noteCorrectedClass(corrected);
@@ -749,20 +751,29 @@ export class Server {
   }
 
   private onVote(session: Session, phase: number, option: number): void {
+    const before = this.voteCycle.voteOf(session.playerId);
     const accepted = this.voteCycle.castVote(session.playerId, phase, option);
     if (!accepted) {
       // §8.6 requires a vote outside its window to be demonstrably rejected. Logged rather
       // than answered: the tally not moving is the client's feedback, and a reply would be a
       // message a hostile client could make the server send at will.
-      log.warn(
+      session.warn(
         `${session.displayName} voted ${option} in phase ${phase}; ` +
           `the server is in phase ${this.voteCycle.phase} — rejected.`,
       );
       return;
     }
-    // Broadcast immediately so the voter sees their own vote land rather than waiting up to a
-    // quarter of a second for the next scheduled tally.
-    this.broadcastVoteState();
+    /**
+     * Sent this tick, so the voter sees their own vote land rather than waiting up to a quarter
+     * of a second for the next scheduled tally — but **once per tick, and only for a change**
+     * (security audit S3).
+     *
+     * This used to broadcast from here, per vote, to every seat in the arena. A vote is legal to
+     * repeat and to change, so one client sending the same vote in a loop made the server send
+     * that many frames to every other player: an amplifier with a fan-out of the room. The
+     * flag is drained by `broadcastVoteStatePeriodically` later in the same tick.
+     */
+    if (option !== before) this.voteChanged = true;
   }
 
   private onReady(session: Session, matchId: number): void {
@@ -1282,7 +1293,9 @@ export class Server {
    */
   private broadcastVoteStatePeriodically(tickIndex: number): void {
     const everyTicks = Math.round(60 / VOTE_BROADCAST_HZ);
-    if (tickIndex - this.lastVoteBroadcastTick < everyTicks) return;
+    // A vote that changed this tick goes out now, and counts as the scheduled one.
+    if (!this.voteChanged && tickIndex - this.lastVoteBroadcastTick < everyTicks) return;
+    this.voteChanged = false;
     this.lastVoteBroadcastTick = tickIndex;
     this.broadcastVoteState();
   }

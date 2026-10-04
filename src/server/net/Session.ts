@@ -49,7 +49,16 @@ import {
 import { ByteReader, ByteWriter } from '../../shared/net/Wire';
 import type { INetLink } from '../../shared/net/Transport';
 import type { NetPlayer } from '../NetPlayer';
-import { Reject, RejectCounters, validateCommand, type RejectReason } from './Validation';
+import {
+  MESSAGE_BUDGETS,
+  Reject,
+  RejectCounters,
+  TokenBucket,
+  validateCommand,
+  WARN_BUDGET,
+  type BudgetedMessage,
+  type RejectReason,
+} from './Validation';
 
 const log = logger('session');
 
@@ -305,6 +314,38 @@ export class Session {
   commandsRejected = 0;
   commandsAccepted = 0;
 
+  /** Messages over their kind's budget — dropped, or held for later (security audit S3). */
+  messagesThrottled = 0;
+
+  /**
+   * One budget per kind of message that does work (security audit 2026-10-04, S3).
+   *
+   * See `MESSAGE_BUDGETS` for the numbers. Per session, so one connection spending its budget
+   * costs nobody else theirs.
+   */
+  private readonly budgets: Record<BudgetedMessage, TokenBucket> = {
+    loadout: bucket(MESSAGE_BUDGETS.loadout),
+    vote: bucket(MESSAGE_BUDGETS.vote),
+    streak: bucket(MESSAGE_BUDGETS.streak),
+    ready: bucket(MESSAGE_BUDGETS.ready),
+    cheat: bucket(MESSAGE_BUDGETS.cheat),
+  };
+
+  /**
+   * The newest class and vote that arrived over budget, applied when the budget allows.
+   *
+   * Held rather than dropped because both are *state*, and the last one is the one the player
+   * meant. A dropped class would leave the client predicting with the class it chose while the
+   * server simulated the one before — the divergence Tier 1 #20 exists to prevent — and a dropped
+   * vote would count a choice the player had already changed. Holding the newest is free: a
+   * newer one replaces it, so a flood costs one stored message, not a queue.
+   */
+  private heldLoadout: NetLoadout | null = null;
+  private heldVote: { readonly phase: number; readonly option: number } | null = null;
+
+  private readonly warnBudget = new TokenBucket(WARN_BUDGET.burst, WARN_BUDGET.perSecond);
+  private warningsSuppressed = 0;
+
   private readonly openedMs: number;
   private readonly cmd: MutableInputCommand = blankCommand();
   private readonly reader = new ByteReader(new Uint8Array(0));
@@ -352,6 +393,28 @@ export class Session {
      */
     if (this.state === 'closed') return;
     this.link.poll((bytes) => this.handleFrame(bytes));
+    this.releaseHeld();
+  }
+
+  /**
+   * Apply a held class or vote once its budget has refilled (S3).
+   *
+   * After the drain, so a held message is never applied ahead of a newer one that arrived in
+   * the same tick — that one replaced it on the way in.
+   */
+  private releaseHeld(): void {
+    if (this.state !== 'live') return;
+    const now = nowMs();
+    const loadout = this.heldLoadout;
+    if (loadout !== null && this.budgets.loadout.take(now)) {
+      this.heldLoadout = null;
+      this.events.onLoadout(this, loadout);
+    }
+    const vote = this.heldVote;
+    if (vote !== null && this.budgets.vote.take(now)) {
+      this.heldVote = null;
+      this.events.onVote(this, vote.phase, vote.option);
+    }
   }
 
   /**
@@ -438,6 +501,13 @@ export class Session {
           this.refuse(Reject.OutOfOrder, 'loadout before hello');
           return;
         }
+        if (!this.budgets.loadout.take(nowMs())) {
+          // The newest replaces anything already held — see `heldLoadout`.
+          this.heldLoadout = msg.loadout;
+          this.overBudget('loadout');
+          return;
+        }
+        this.heldLoadout = null;
         this.events.onLoadout(this, msg.loadout);
         return;
       case 'vote':
@@ -445,6 +515,12 @@ export class Session {
           this.refuse(Reject.OutOfOrder, 'vote before hello');
           return;
         }
+        if (!this.budgets.vote.take(nowMs())) {
+          this.heldVote = { phase: msg.phase, option: msg.option };
+          this.overBudget('vote');
+          return;
+        }
+        this.heldVote = null;
         this.events.onVote(this, msg.phase, msg.option);
         return;
       case 'ready':
@@ -452,11 +528,20 @@ export class Session {
           this.refuse(Reject.OutOfOrder, 'ready before hello');
           return;
         }
+        if (!this.budgets.ready.take(nowMs())) {
+          this.overBudget('ready');
+          return;
+        }
         this.events.onReady(this, msg.matchId);
         return;
       case 'streakRequest':
         if (this.state !== 'live') {
           this.refuse(Reject.OutOfOrder, 'streak before hello');
+          return;
+        }
+        // A request, not state: one over budget is dropped, and the player presses again.
+        if (!this.budgets.streak.take(nowMs())) {
+          this.overBudget('streak');
           return;
         }
         // Not validated here beyond the ordering. Whether this player has actually earned the
@@ -473,8 +558,12 @@ export class Session {
         // Whether the code exists, whether this server honours it and whether there is a seat
         // to apply it to are all questions about the server's own state, so none of them is
         // answered here. §4.16's boundary validation is about *shape*, and the decoder has
-        // already bounded the only thing with a shape. The link's `MAX_MESSAGES_PER_SEC` is
-        // what stops somebody typing codes at it in a loop.
+        // already bounded the only thing with a shape. The cheat budget is what stops somebody
+        // typing codes at it in a loop — every answer is a frame back, and a refusal a log line.
+        if (!this.budgets.cheat.take(nowMs())) {
+          this.overBudget('cheat');
+          return;
+        }
         this.events.onCheatRequest(this, msg.code);
         return;
       case 'bad':
@@ -666,10 +755,37 @@ export class Session {
    * line here names the connection that was modified.
    */
   noteCorrectedClass(corrected: readonly string[]): void {
-    log.warn(
+    this.warn(
       `${this.displayName} (${this.link.remoteAddress}) sent a class no shipped client produces; ` +
         `corrected: ${corrected.join(' · ')}`,
     );
+  }
+
+  /**
+   * A warning about something this connection did, within its budget (security audit S3).
+   *
+   * For every warning a client can provoke *without being disconnected* — a refused vote, a
+   * streak it does not hold, a code on a server with cheats off. A line that closes the
+   * connection is written once by construction and does not need this.
+   *
+   * Suppressed lines are counted and the count rides on the next line that is written, so the
+   * log says how much it is not showing.
+   */
+  warn(text: string): void {
+    if (!this.warnBudget.take(nowMs())) {
+      this.warningsSuppressed++;
+      return;
+    }
+    const suppressed = this.warningsSuppressed;
+    this.warningsSuppressed = 0;
+    log.warn(suppressed === 0 ? text : `${text} (+${suppressed} earlier warning(s) from this connection suppressed)`);
+  }
+
+  /** A message over its kind's budget: counted, and a warning within the warning budget. */
+  private overBudget(kind: BudgetedMessage): void {
+    this.rejects.note(Reject.RateLimit);
+    this.messagesThrottled++;
+    this.warn(`${this.displayName} (${this.link.remoteAddress}) is over the ${kind} message budget.`);
   }
 
   /** A short line for the player. Allocation failed, migration failed, the arena was rebuilt. */
@@ -774,6 +890,10 @@ export class Session {
   viewLagTicks(interpolationDelayMs: number): number {
     return Math.round((this.rttMs * 0.5 + interpolationDelayMs) / (DT * 1000));
   }
+}
+
+function bucket(budget: { readonly burst: number; readonly perSecond: number }): TokenBucket {
+  return new TokenBucket(budget.burst, budget.perSecond);
 }
 
 function blankCommand(): MutableInputCommand {

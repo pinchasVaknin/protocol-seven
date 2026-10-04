@@ -174,6 +174,78 @@ export class RateLimiter {
   }
 }
 
+/**
+ * A budget for one kind of message: a burst, then a steady rate (security audit 2026-10-04, S3).
+ *
+ * `RateLimiter` above bounds *how many frames* arrive, and that is bandwidth. It does not bound
+ * what a frame costs once it is in, and the messages differ by orders of magnitude: a command is
+ * a slot write, a class is a validation, a `resolveLoadout` and a log line, and a vote was a
+ * broadcast to every seat. 240 of any of them a second is within the link's limit, so each
+ * kind that does work gets a budget of its own.
+ *
+ * A token bucket rather than a window because the two numbers mean different things here: the
+ * burst is what a human does in a moment (pressing 1, 2, 3 on the class selector), the rate is
+ * what a human sustains, and a window has only one of them.
+ */
+export class TokenBucket {
+  private tokens: number;
+  private lastMs = Number.NaN;
+
+  constructor(
+    private readonly burst: number,
+    private readonly perSecond: number,
+  ) {
+    this.tokens = burst;
+  }
+
+  /** Spend one token if there is one. False means over budget; nothing is spent. */
+  take(nowMs: number): boolean {
+    this.refill(nowMs);
+    if (this.tokens < 1) return false;
+    this.tokens -= 1;
+    return true;
+  }
+
+  private refill(nowMs: number): void {
+    if (Number.isFinite(this.lastMs)) {
+      // Clamped at zero: a clock that steps backwards earns nothing rather than draining.
+      const elapsedMs = Math.max(0, nowMs - this.lastMs);
+      this.tokens = Math.min(this.burst, this.tokens + (elapsedMs * this.perSecond) / 1000);
+    }
+    this.lastMs = nowMs;
+  }
+}
+
+/**
+ * The per-kind budgets (S3). Each is generous to a person and small to a loop.
+ *
+ * - **Class**: the quick selector is one key per class, so three at once is a burst a hand
+ *   makes; one a second after that. Excess is *held*, not dropped — see `Session` — so the class
+ *   the player ends on is always the one the server simulates.
+ * - **Vote**: a click per option, changeable inside the window. Held the same way.
+ * - **Streak**: a key per streak. The headless client asks twice a second; a person less.
+ * - **Ready** is once per match, and **cheat** is typed by hand.
+ */
+export const MESSAGE_BUDGETS = {
+  loadout: { burst: 3, perSecond: 1 },
+  vote: { burst: 4, perSecond: 2 },
+  streak: { burst: 6, perSecond: 3 },
+  ready: { burst: 3, perSecond: 1 },
+  cheat: { burst: 3, perSecond: 1 },
+} as const;
+
+export type BudgetedMessage = keyof typeof MESSAGE_BUDGETS;
+
+/**
+ * Warning lines per connection: ten at once, then one every five seconds.
+ *
+ * A warning that a client can provoke without being disconnected is a line per message, and a
+ * client can send 240 messages a second — into a log the operator pays to keep and has to read.
+ * What is suppressed is counted and reported on the next line that is written, so the log still
+ * says how much was missed.
+ */
+export const WARN_BUDGET = { burst: 10, perSecond: 0.2 } as const;
+
 /** Running tally of rejections by reason, for the server metrics (S7). */
 export class RejectCounters {
   private readonly counts = new Int32Array(16);

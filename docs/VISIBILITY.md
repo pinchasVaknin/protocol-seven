@@ -22,7 +22,7 @@ it to every client. Four of its events carry positions:
 
 | Event | Carries | What a modified client gets |
 |---|---|---|
-| `Fired` | muzzle origin and the round's terminus | every shooter's position — **suppressed ones too**: whether a shot pings the minimap is decided on the receiving client, so the origin is on the wire either way. (It is also decided wrongly: `NetSession` reads `minimapPing` off the *base* weapon def, which a suppressor never touched, so online a suppressed shot pings every enemy's minimap. A gameplay bug to fix beside this work — the server knows the resolved def.) |
+| `Fired` | muzzle origin and the round's terminus | every shooter's position — **suppressed ones too**: the ping itself is right since protocol v27 (the server carries the resolved weapon's answer, so a suppressed shot no longer pings), but the origin of every shot is on the wire either way |
 | `Damage` | the hit position, source and target | where fights are, map-wide |
 | `Footstep` | the stepping body's position | every moving body, through any wall. Crouch-walking and Dead Silence are silent to *bots* (`BotDirector`) but the event still reaches every human client |
 | `Pose` | jump and land positions | the same |
@@ -107,7 +107,7 @@ with its fields **frozen at their last relevant values** — never updated while
 about it moves on the wire — and the client keeps the actor and its avatar but hides it and stops
 interpolating it. When it wakes, the client **resets** its interpolation buffer and places it at
 the new state, so it never slides across the map from where it was last seen. Costs a protocol
-bump (27) and a few bytes per dormant entity per full snapshot; a delta for an unchanged dormant
+bump (28 at the time of writing; 27 carried the suppressor fix) and a few bytes per dormant entity per full snapshot; a delta for an unchanged dormant
 entity is nothing.
 
 Either way the entity list becomes **per recipient**. Today it is built once and shared; the encoder
@@ -170,14 +170,16 @@ the core**, before any of these:
 ## Phases
 
 1. **Entities.** Per-recipient relevance (R1–R4, R6, R8, `Unseen`), `EFlag.Dormant`, the client
-   honouring it. Protocol 27. Tests 1, 3 and 4.
+   honouring it. The next protocol version. Tests 1, 3 and 4.
 2. **Events and the rest.** Per-recipient events (D2), the hearing rule R5, spectating R7, smoke as
    an occluder, enemy health minimised (D5). Test 2.
 3. **Only if the cost asks for it.** The baked visibility set.
 
-## Decisions for the human
+## Decisions
 
-| | Question | Recommendation |
+All five taken by the human on 2026-10-04, each as recommended. They are binding on the build.
+
+| | Question | Decided |
 |---|---|---|
 | D1 | Remove culled entities, or mark them dormant? | **Dormant** — no avatar rebuilds, no pop-in from an empty buffer |
 | D2 | A suppressed shot from a body nobody can see: send the terminus only, or nothing? | **Terminus only** — the impact and the decal are real, and they reveal nothing the victim's damage event does not |

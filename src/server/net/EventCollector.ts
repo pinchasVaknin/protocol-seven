@@ -82,6 +82,9 @@ export class EventCollector {
         // The count, not the bit (protocol v14, round 5 B5). A client's accuracy column is
         // built from this event and nothing else, so it has to carry what actually connected.
         fired.pelletsHit = hitsFrom(p);
+        // The resolved weapon's answer, suppressor and all (v27). The receiving client cannot know
+        // what is on the shooter's gun; see `FiredEvent.minimapPing`.
+        fired.minimapPing = p.minimapPing;
         this.write(() => writeFired(this.writer, fired));
       }),
     );
@@ -221,6 +224,7 @@ const fired: FiredEvent = {
   material: 0,
   tracer: false,
   pelletsHit: 0,
+  minimapPing: true,
 };
 const damage: DamageEvent = {
   sourceId: 0,

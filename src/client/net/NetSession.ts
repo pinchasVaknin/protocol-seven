@@ -357,7 +357,9 @@ export class NetSession {
           evFired.pellets = def.pellets;
           evFired.pelletsHit = e.pelletsHit;
           evFired.hitTarget = hitsFrom(evFired) > 0;
-          evFired.minimapPing = def.minimapPing;
+          // The server's answer for the gun as fitted, not the base def's (protocol v27): a
+          // suppressor is an attachment, and the base def has never had one.
+          evFired.minimapPing = e.minimapPing;
           this.deps.bus.emit(EV.WeaponFired, evFired);
 
           /**

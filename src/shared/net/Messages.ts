@@ -149,6 +149,16 @@ export interface FiredEvent {
    * Six bits of the byte the tracer flag already occupies, so it costs nothing.
    */
   pelletsHit: number;
+  /**
+   * Whether this shot shows on the enemy's minimap (protocol v27, 2026-10-04).
+   *
+   * The **resolved** weapon's answer — a suppressor sets it false — carried by the server, which
+   * is the only side that knows what is on the shooter's gun. The client used to read it off
+   * `WEAPON_DEFS[weaponIndex]`, the *base* def no attachment has touched, so online every
+   * suppressed shot pinged every enemy's minimap and the SUPPRESSOR's whole benefit was gone.
+   * Bit 7 of the tracer byte, set when the shot is silent, so a zero means what it always meant.
+   */
+  minimapPing: boolean;
 }
 
 export interface DamageEvent {
@@ -1059,8 +1069,9 @@ export function writeFired(w: ByteWriter, e: FiredEvent): void {
   w.i16(quantPos(e.endY));
   w.i16(quantPos(e.endZ));
   w.u8v(e.material);
-  // Bit 0 is the tracer; the rest is the connected count, which `MAX_PELLETS` bounds at 16.
-  w.u8v((e.tracer ? 1 : 0) | (e.pelletsHit << 1));
+  // Bit 0 is the tracer, bits 1-6 the connected count (`MAX_PELLETS` bounds it at 16), and bit 7
+  // set for a shot that does not ping the minimap (v27).
+  w.u8v((e.tracer ? 1 : 0) | ((e.pelletsHit & 0x3f) << 1) | (e.minimapPing ? 0 : 0x80));
 }
 
 export function writeDamage(w: ByteWriter, e: DamageEvent): void {
@@ -1795,7 +1806,8 @@ export function readEvents(r: ByteReader, count: number, sink: EventSink): boole
         e.material = r.u8v();
         const bits = r.u8v();
         e.tracer = (bits & 1) !== 0;
-        e.pelletsHit = bits >>> 1;
+        e.pelletsHit = (bits >>> 1) & 0x3f;
+        e.minimapPing = (bits & 0x80) === 0;
         if (r.overran) return false;
         sink.onFired?.(e);
         break;
@@ -1876,6 +1888,7 @@ const firedScratch: FiredEvent = {
   material: 0,
   tracer: false,
   pelletsHit: 0,
+  minimapPing: true,
 };
 const damageScratch: DamageEvent = {
   sourceId: 0,

@@ -17,6 +17,12 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v27 (2026-10-04, the human): **a suppressed shot is silent online.** `FiredEvent` sets bit 7 of
+ * its tracer byte when the shooter's *resolved* weapon does not ping the minimap. The client read
+ * the answer off the base def by weapon index, and a suppressor is an attachment the base def has
+ * never had — so every suppressed shot pinged every enemy's minimap. The bit was free, but its
+ * meaning is new: a v26 client would ping for every shot regardless, so the version moves.
+ *
  * v26 (2026-10-03, the human): **where a hash disagrees, not only that it does.** `StateHash`
  * carries the four part hashes after the whole one — flow, zones, tags, bomb, `MODE_STATE_SECTIONS`
  * in that order, sixteen bytes — so a confirmed mismatch names the channel it lives in and prints
@@ -211,7 +217,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 26;
+export const PROTOCOL_VERSION = 27;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_WEAPONS } from '../weapons/WeaponDefs';
 import { STREAK_WEAPON_IDS } from '../streaks/StreakWeapons';
-import { readEvents, writeDamage, writeKilled, type DamageEvent, type KilledEvent } from './Messages';
+import {
+  readEvents,
+  writeDamage,
+  writeFired,
+  writeKilled,
+  type DamageEvent,
+  type FiredEvent,
+  type KilledEvent,
+} from './Messages';
 import { weaponIdAt, weaponIndexOf } from './Snapshot';
 import { ByteReader, ByteWriter } from './Wire';
 
@@ -114,5 +122,56 @@ describe('the wire weapon table', () => {
     let index = -1;
     readEvents(r, 1, { onKilled: (got) => void (index = got.weaponIndex) });
     expect(weaponIdAt(index)).toBe('streak_sentry');
+  });
+});
+
+/**
+ * Protocol v27: whether a shot pings the minimap rides bit 7 of the byte the tracer and the
+ * connected count already share. A wrong mask here would read a suppressed shot as eight more
+ * pellets, or a sixteen-pellet hit as silent.
+ */
+describe('the fired message', () => {
+  const base: FiredEvent = {
+    sourceId: 4,
+    weaponIndex: 2,
+    x: 1,
+    y: 1.5,
+    z: -2,
+    endX: 10,
+    endY: 1.2,
+    endZ: 7.5,
+    material: 3,
+    tracer: false,
+    pelletsHit: 0,
+    minimapPing: true,
+  };
+
+  function roundTripFired(e: FiredEvent): FiredEvent {
+    const w = new ByteWriter(64);
+    writeFired(w, e);
+    let seen: FiredEvent | null = null;
+    const ok = readEvents(new ByteReader(w.bytes()), 1, {
+      onFired: (got) => {
+        seen = { ...got };
+      },
+    });
+    expect(ok).toBe(true);
+    if (seen === null) throw new Error('no fired event decoded');
+    return seen;
+  }
+
+  it('round-trips the minimap ping beside every tracer and pellet count the byte holds', () => {
+    for (const minimapPing of [true, false]) {
+      for (const tracer of [false, true]) {
+        for (const pelletsHit of [0, 1, 8, 16]) {
+          const got = roundTripFired({ ...base, minimapPing, tracer, pelletsHit });
+          expect({ minimapPing: got.minimapPing, tracer: got.tracer, pelletsHit: got.pelletsHit }).toEqual({
+            minimapPing,
+            tracer,
+            pelletsHit,
+          });
+        }
+      }
+    }
   });
 });

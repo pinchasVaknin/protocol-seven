@@ -1,9 +1,13 @@
 # PROTOCOL SEVEN — Server-side visibility
 
-A design, not yet built. Security audit 2026-10-04, finding S4: every client is told where every
-player is, so a modified client can draw enemies through walls. This document says what leaks
-today, what the server should send instead, what that costs, how to prove it works, and which
-decisions are the human's. Nothing here has been implemented.
+Security audit 2026-10-04, finding S4: every client was told where every player is, so a modified
+client could draw enemies through walls. This document says what leaked, what the server sends
+instead, what that costs, how it is proved, and which decisions were the human's.
+
+**Phase 1 is built** (2026-10-04) — snapshots are culled per seat; see *Phase 1, as built* below,
+which records where the build departed from this design and what it measured. **Phase 2, the
+event stream, is not**: `Fired`, `Damage`, `Footstep` and `Pose` still go to every client with
+positions, so until it lands a modified client can still place a body that moves or shoots.
 
 ---
 
@@ -167,11 +171,51 @@ the core**, before any of these:
 4. **Cost**: the metrics line already reports per-instance step time; compare before and after on
    the skirmish harness with a full room.
 
+## Phase 1, as built
+
+`server/net/Relevance.ts` (the rules), `server/net/SeatView.ts` (each seat's list and its frozen
+records), `MatchInstance.sendSnapshots` (per seat), `EFlag.Dormant` (protocol 28), and the client's
+`NetClient` reset, `RemoteActor.dormant` and `BotRenderer`. Where it departs from the design above:
+
+- **R7 moved into phase 1** (P1). Without it a dead spectator in Search & Destroy would have seen
+  only what its own corpse could, and the spectator camera would have watched empty corridors.
+- **R4 reaches sideways, not only along the velocity.** The first build extrapolated velocities and
+  the audit found what that misses: a body standing still behind a corner that starts to move.
+  Both ends are now also tested displaced across the line of sight by sprint speed × the
+  look-ahead (or the body's own speed, if faster), and the head and the eye are measured as if
+  standing, so a crouched body behind low cover is sent before it stands.
+- **The feet are among the displaced points.** With head and chest alone, 34 of 40 late wakes on
+  FOUNDRY were bodies that came into view feet-first — under a catwalk, past a ledge's lip.
+- **Dormant records keep alive and death live.** The design froze everything; the HUD's alive strip
+  counts living enemies from the alive flag, and a death is public in the killfeed anyway.
+- **`Unseen` is now invisible to humans** (P2), not only to bots.
+
+**Measured** with the skirmish harness's audit (`VisibilityAudit.ts`; every flow run reports it),
+FOUNDRY, TDM, three headless players and ten bots, one 60 s match:
+
+| Link | Enemy records sent dormant | Bodies coming into view | Late | Worst | Cost per seat-snapshot |
+|---|---|---|---|---|---|
+| none | 59% | 152 | 8 (5.3%) | 108 ms | 195 µs |
+| 100 ms | 51% | 219 | 6 (2.7%) | 61 ms | 200 µs |
+| 100 ±30 ms, 2% loss | 51% | 185 | 5 (2.7%) | 113 ms | 252 µs |
+
+*Hard misses* — a body in plain view sent dormant — were **0** in every run. A *late* appearance is
+a body that came into view having been relevant for less than the client draws behind the server,
+so it appears on screen up to that much late; what is left is slivers (a foot, a shoulder) and
+bodies moving between levels or faster than sprint. The flow fails above 15% (a look-ahead that has
+stopped working makes nearly every appearance late) and on any hard miss.
+
+**Cost**: ~0.2 ms per seat per snapshot on the development machine — at 20 Hz, ~4 ms a second per
+human seat; a full live match of ten humans is ~40 ms a second here, roughly three to four times
+that on Render's half CPU. Most of it is the hidden pairs, which test every ray before giving up;
+the first optimisation if it ever matters is evaluating those at 10 Hz with a look-ahead one
+snapshot longer.
+
 ## Phases
 
-1. **Entities.** Per-recipient relevance (R1–R4, R6, R8, `Unseen`), `EFlag.Dormant`, the client
-   honouring it. The next protocol version. Tests 1, 3 and 4.
-2. **Events and the rest.** Per-recipient events (D2), the hearing rule R5, spectating R7, smoke as
+1. **Entities — built.** Per-recipient relevance (R1–R4, R6, R7, R8, `Unseen`), `EFlag.Dormant`,
+   the client honouring it. Protocol 28. Tests 1, 3 and 4.
+2. **Events and the rest.** Per-recipient events (D2), the hearing rule R5, smoke as
    an occluder, enemy health minimised (D5). Test 2.
 3. **Only if the cost asks for it.** The baked visibility set.
 

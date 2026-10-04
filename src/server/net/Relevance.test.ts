@@ -87,6 +87,28 @@ describe('relevance in a room with one wall and one doorway', () => {
     expect(relevant(ctx(0.4), viewerRunning, target)).toBe(true);
   });
 
+  it('shows an enemy standing still behind the corner before it can step out — the audit\'s case', () => {
+    // At z = 2.5 nothing of it is in the doorway's line from x = -5, and it is not moving, so its
+    // velocity predicts nothing. Sprinting sideways for 0.25 s puts it at z = 0.8: in the doorway.
+    const waiting = body(2, 5, 2.5, 'B');
+    expect(relevant(ctx(0), viewer, waiting)).toBe(false);
+    expect(relevant(ctx(0.25), viewer, waiting)).toBe(true);
+  });
+
+  it('shows a crouched enemy behind low cover, which can stand up faster than a snapshot', () => {
+    const set = new ColliderSet(4);
+    set.add({ x: 0, y: -1, z: 0 }, { x: 60, y: 2, z: 60 }, 0, 0, 0, 'floor');
+    // Waist-high cover, 1.4 m, across the whole room.
+    set.add({ x: 0, y: 0.7, z: 0 }, { x: 0.3, y: 1.4, z: 40 }, 0, 0, 0, 'concrete');
+    const low = new CollisionWorld(set, { min: { x: -30, y: -8, z: -30 }, max: { x: 30, y: 24, z: 30 } }, 4);
+    low.configure(DEFAULT_MOVEMENT_CONFIG.maxSlopeDeg, DEFAULT_MOVEMENT_CONFIG.collisionSkin);
+    const crouched = body(2, 5, 0, 'B');
+    crouched.heightScale = DEFAULT_MOVEMENT_CONFIG.crouchHeight / DEFAULT_MOVEMENT_CONFIG.standHeight;
+    // Its crouched head is below the cover's top on the line from a standing eye; standing, it
+    // would not be. The rule asks about the head it could have.
+    expect(relevant(ctx(0, false, low), viewer, crouched)).toBe(true);
+  });
+
   it(`always shows a body within ${NEAR_RADIUS_M} m, wall or not`, () => {
     expect(relevant(ctx(), body(1, -2, -5, 'A'), body(2, 2, -5, 'B'))).toBe(true);
   });

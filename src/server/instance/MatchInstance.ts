@@ -58,6 +58,7 @@ import type { ReclaimedSeat, ServerMatch } from '../Match';
 import type { NetPlayer } from '../NetPlayer';
 import type { Session } from '../net/Session';
 import { SeatView } from '../net/SeatView';
+import { SeatAudit, visibilityAuditEnabled, visibilityAuditTotals } from '../net/VisibilityAudit';
 import { SnapshotEncoder } from '../net/SnapshotEncoder';
 import { InstanceClock } from './InstanceClock';
 
@@ -162,6 +163,8 @@ export abstract class MatchInstance {
   relevanceMs = 0;
   relevanceEnemies = 0;
   relevanceDormant = 0;
+  /** Phase 1's own proof, when a harness turns it on (`enableVisibilityAudit`). */
+  private readonly audits = new Map<number, SeatAudit>();
 
   private readonly header: SnapshotHeader = makeSnapshotHeader();
   private readonly entities: EntitySnapshot[] = [];
@@ -288,6 +291,7 @@ export abstract class MatchInstance {
     this.encoders.set(player.entityId, new SnapshotEncoder());
     // A new view has no memory, so this seat starts out told about nobody it cannot see.
     this.views.set(player.entityId, new SeatView());
+    if (visibilityAuditEnabled()) this.audits.set(player.entityId, new SeatAudit());
     // A new encoder has no baseline, so the next snapshot to this client is a full one. Reset
     // the acks with it, or the encoder would be asked to delta against a snapshot id that
     // belonged to the instance this player just left.
@@ -313,6 +317,7 @@ export abstract class MatchInstance {
     this.releaseEntity(seat.player.entityId, cause);
     this.encoders.delete(seat.player.entityId);
     this.views.delete(seat.player.entityId);
+    this.audits.delete(seat.player.entityId);
     /**
      * The cheat entitlements go with the seat, and F14 got this wrong (round 4, and the fix).
      *
@@ -442,6 +447,21 @@ export abstract class MatchInstance {
     this.entityCount = n;
   }
 
+  /**
+   * Relevance's cost and effect since the last call, for the metrics line (anti-wallhack phase 1):
+   * ms spent deciding, and the share of enemy records that went out dormant.
+   */
+  takeRelevanceStats(): { readonly ms: number; readonly dormantPct: number } {
+    const out = {
+      ms: this.relevanceMs,
+      dormantPct: this.relevanceEnemies === 0 ? 0 : Math.round((100 * this.relevanceDormant) / this.relevanceEnemies),
+    };
+    this.relevanceMs = 0;
+    this.relevanceEnemies = 0;
+    this.relevanceDormant = 0;
+    return out;
+  }
+
   private sendSnapshots(tickIndex: number): void {
     const flow = this.match.flow;
     const mode = this.match.mode;
@@ -466,24 +486,39 @@ export abstract class MatchInstance {
        * trip, the interpolation delay and one snapshot interval — so a body that will round a
        * corner inside that window is sent before it does.
        */
+      const drawDelayMs = session.rttMs * 0.5 + this.deps.interpolationDelayMs;
+      const ctx = { world: this.match.world, freeForAll, lookAheadSec: (drawDelayMs + snapshotMs) / 1000 };
       const t0 = nowMs();
       view.build(
         now,
         player.entityId,
         this.entities,
         this.entityCount,
-        {
-          world: this.match.world,
-          freeForAll,
-          lookAheadSec: (session.rttMs * 0.5 + this.deps.interpolationDelayMs + snapshotMs) / 1000,
-        },
+        ctx,
         session.cheats.has(Cheat.NoClip),
         oneLife && !player.alive,
         (entityId) => this.seatByEntity(entityId)?.session.cheats.has(Cheat.Unseen) === true,
       );
-      this.relevanceMs += nowMs() - t0;
+      const spent = nowMs() - t0;
+      this.relevanceMs += spent;
       this.relevanceEnemies += view.enemies;
       this.relevanceDormant += view.dormantSent;
+      if (visibilityAuditEnabled()) {
+        visibilityAuditTotals.seatSnapshots++;
+        visibilityAuditTotals.relevanceMs += spent;
+        visibilityAuditTotals.enemyRecords += view.enemies;
+        visibilityAuditTotals.dormantRecords += view.dormantSent;
+      }
+      this.audits.get(player.entityId)?.observe(
+        now,
+        view,
+        player.entityId,
+        this.entities,
+        this.entityCount,
+        ctx,
+        drawDelayMs,
+        visibilityAuditTotals,
+      );
 
       const h = this.header;
       h.serverTick = tickIndex;

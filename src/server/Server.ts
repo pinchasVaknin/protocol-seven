@@ -1437,14 +1437,21 @@ export class Server {
       // and is the number that decides the real concurrency cap (§8.28).
       totalStepMs: round(this.totalStepMs),
       meanTotalStepMs: round(this.meanTotalStepMs),
-      instances: this.instances.map((i) => ({
-        id: i.id,
-        state: i.state,
-        players: i.playerCount,
-        bots: i.botCount,
-        stepMs: round(i.lastStepMs),
-        meanStepMs: round(i.meanStepMs),
-      })),
+      instances: this.instances.map((i) => {
+        // Anti-wallhack phase 1: what deciding who sees whom cost over this window, and how much
+        // of the enemy roster it kept off the wire.
+        const relevance = i.takeRelevanceStats();
+        return {
+          id: i.id,
+          state: i.state,
+          players: i.playerCount,
+          bots: i.botCount,
+          stepMs: round(i.lastStepMs),
+          meanStepMs: round(i.meanStepMs),
+          relevanceMs: round(relevance.ms),
+          dormantPct: relevance.dormantPct,
+        };
+      }),
       vote: {
         cycle: this.voteCycle.cycle,
         phase: this.voteCycle.phase,

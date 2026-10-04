@@ -24,6 +24,16 @@ import type { MatchInstance } from './instance/MatchInstance';
 import { installServerLogging, metric } from './log';
 import { nodeClock } from './NodeClock';
 import { Server } from './Server';
+import { enableVisibilityAudit, visibilityAuditTotals } from './net/VisibilityAudit';
+
+/**
+ * The share of bodies coming into view that may wake late before the flow fails (anti-wallhack
+ * phase 1). Measured 2026-10-04 on FOUNDRY, TDM: 5.3% with no added latency, 2.7% at 100 ms and on
+ * the bad profile — slivers, a foot or a shoulder, up to one draw delay late. A look-ahead that has
+ * stopped working makes nearly every appearance late, so this sits far above the one and far below
+ * the other.
+ */
+const LATE_APPEARANCE_LIMIT_PCT = 15;
 
 const log = logger('skirmish');
 
@@ -368,6 +378,8 @@ async function main(): Promise<number> {
     );
   }
 
+  // Anti-wallhack phase 1: every flow run grades the server's own culling. See `VisibilityAudit`.
+  enableVisibilityAudit();
   const server = new Server(cfg);
 
   /**
@@ -1522,6 +1534,50 @@ function reportFlow(input: FlowReportInput): number {
       `spectator: ${specPicks} target selection(s) while dead — ` +
         `${specSelf} self, ${specEnemy} enemy, ${specDead} dead (all must be 0).`,
     );
+  }
+
+  /**
+   * Anti-wallhack phase 1's proof (docs/VISIBILITY.md, "Proving it").
+   *
+   * A hard miss is a body in plain view that this snapshot sent dormant — culling hiding what a
+   * player could see — and it blocks. A late wake is a body sent, but relevant for less than the
+   * client draws behind the server, so it appears late on screen: reported, with the worst
+   * shortfall, because it is the number the look-ahead is tuned against.
+   */
+  const audit = visibilityAuditTotals;
+  if (audit.pairs === 0) {
+    problems.push('the visibility audit observed no enemy pairs — it is not running');
+  } else {
+    const latePct = audit.appearances === 0 ? 0 : (100 * audit.lateWakes) / audit.appearances;
+    log.info(
+      `visibility: ${audit.pairs} enemy pair-snapshot(s) beyond 6 m, ${audit.visible} visible; ` +
+        `${audit.hardMisses} hard miss(es) (must be 0); ${audit.appearances} body(ies) came into view, ` +
+        `${audit.lateWakes} of them late (${latePct.toFixed(1)}%), worst ${Math.round(audit.worstShortfallMs)} ms short.`,
+    );
+    const perSeat = audit.seatSnapshots === 0 ? 0 : (1000 * audit.relevanceMs) / audit.seatSnapshots;
+    const dormantPct = audit.enemyRecords === 0 ? 0 : (100 * audit.dormantRecords) / audit.enemyRecords;
+    log.info(
+      `culling: ${dormantPct.toFixed(0)}% of enemy records sent dormant; ` +
+        `${Math.round(audit.relevanceMs)} ms deciding over ${audit.seatSnapshots} seat-snapshot(s), ` +
+        `${perSeat.toFixed(0)} µs each.`,
+    );
+    if (audit.lateWakes > 0) {
+      const [head, chest, feet, s1, s2] = audit.lateByPoint;
+      log.info(
+        `late wakes first seen by head ${head}, chest ${chest}, feet ${feet}, shoulder ${(s1 ?? 0) + (s2 ?? 0)}; ` +
+          `${audit.lateAcrossLevels} across levels (>1.5 m), ${audit.lateFast} faster than sprint.`,
+      );
+    }
+    if (audit.hardMisses > 0) {
+      problems.push(`${audit.hardMisses} body(ies) in plain view were sent dormant`);
+    }
+    // The threshold is set from measurement — see docs/VISIBILITY.md, "Phase 1, as built".
+    if (latePct > LATE_APPEARANCE_LIMIT_PCT) {
+      problems.push(
+        `${latePct.toFixed(1)}% of bodies coming into view woke late ` +
+          `(the look-ahead is failing above ${LATE_APPEARANCE_LIMIT_PCT}%)`,
+      );
+    }
   }
 
   /**

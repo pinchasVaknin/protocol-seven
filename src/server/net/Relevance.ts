@@ -17,8 +17,10 @@ import type { CollisionWorld } from '../../shared/world/CollisionWorld';
  * - **R1** the viewer itself, or a teammate (no teammates in free-for-all);
  * - **R2** within `NEAR_RADIUS_M`;
  * - **R3/R4** a clear line from the viewer's eye to one of five points on the body — head,
- *   chest, feet and both shoulders — tested from where both are now *and* from where each will be
- *   after `lookAheadSec` at its current velocity, so nobody rounds a corner faster than the data;
+ *   chest, feet and both shoulders — tested from where both are now, from where either could be
+ *   after `lookAheadSec` moving sideways at up to sprint speed, and from where their velocities
+ *   take them; the head and the eye as if standing. So nobody rounds a corner, or stands up behind
+ *   cover, faster than the data;
  * - **R6** relevant at any time in the last `LINGER_MS`, which stops flicker at the edge of a
  *   doorway and covers a lost snapshot.
  *
@@ -52,21 +54,64 @@ const EYE_BELOW_TOP_M = 0.15;
 /** Half the shoulders' width, metres, for the two side points. */
 const SHOULDER_HALF_M = 0.25;
 
-/** The five points on a body, as fractions of its height (the shoulders share the chest's). */
+/**
+ * How far a body may get in the look-ahead, per second, whatever its velocity says now — sprint
+ * speed (part 3, measured). Extrapolating the current velocity misses the case that matters most:
+ * a body standing still behind a corner that starts to move. The audit caught it as late wakes —
+ * 0.65% of visible pairs, each a full draw delay short — so both ends are also tested displaced
+ * sideways by this reach, which is what moving round a corner is, and a body faster than this
+ * (tac-sprint, a slide) reaches as far as its own speed takes it.
+ */
+const REACH_SPEED = DEFAULT_MOVEMENT_CONFIG.sprintSpeed;
+
+/**
+ * The five points on a body: head, chest, feet and the two shoulders, as fractions of its height.
+ * The head is measured on a **standing** body even when it crouches, and so is a viewer's eye — a
+ * crouched player behind low cover can stand up faster than any snapshot can say so.
+ */
+const HEAD = 0;
+const CHEST = 1;
+const FEET = 2;
 const POINT_HEIGHTS = [0.92, 0.6, 0.12, 0.72, 0.72] as const;
 const POINT_SIDE = [0, 0, 0, 1, -1] as const;
-const POINTS = POINT_HEIGHTS.length;
 
-/** Rays one pair can cost at most: two eye positions × two body positions × five points. */
-export const MAX_RAYS_PER_PAIR = 2 * 2 * POINTS;
+/**
+ * Every ray a pair may cost, in the order they are tried: `[eye side, body side, point, ahead]`.
+ * Side is -1, 0 or +1 times the reach across the line of sight; `ahead` moves both ends along
+ * their velocities instead. The five points now-to-now first, then the displaced ends on head,
+ * chest and feet, then the velocity look-ahead. The feet are among the displaced points because
+ * the audit found them first: 34 of 40 late wakes on FOUNDRY were a body that came into view
+ * feet-first, under a catwalk or past the lip of a ledge, and with head and chest alone the reach
+ * never saw them coming.
+ */
+const RAYS: ReadonlyArray<readonly [number, number, number, boolean]> = (() => {
+  const out: Array<[number, number, number, boolean]> = [];
+  for (let p = 0; p < POINT_HEIGHTS.length; p++) out.push([0, 0, p, false]);
+  for (const eye of [0, 1, -1]) {
+    for (const body of [0, 1, -1]) {
+      if (eye === 0 && body === 0) continue;
+      out.push([eye, body, HEAD, false], [eye, body, CHEST, false], [eye, body, FEET, false]);
+    }
+  }
+  out.push([0, 0, HEAD, true], [0, 0, CHEST, true]);
+  return out;
+})();
+
+/** Rays one pair can cost at most. */
+export const MAX_RAYS_PER_PAIR = RAYS.length;
 
 function bodyHeight(e: EntitySnapshot): number {
   return DEFAULT_MOVEMENT_CONFIG.standHeight * (e.heightScale > 0 ? e.heightScale : 1);
 }
 
+/** The height a body could have by the time the client draws it: its own, or standing. */
+function reachableHeight(e: EntitySnapshot): number {
+  return Math.max(bodyHeight(e), DEFAULT_MOVEMENT_CONFIG.standHeight);
+}
+
 /** Where a body's eye is, from its record — the same derivation for a player and a bot. */
 export function eyeY(e: EntitySnapshot): number {
-  return e.y + bodyHeight(e) - EYE_BELOW_TOP_M;
+  return e.y + reachableHeight(e) - EYE_BELOW_TOP_M;
 }
 
 export function teamOf(e: EntitySnapshot): 'A' | 'B' {
@@ -97,12 +142,15 @@ export function clearLine(
   const vdz = viewer.vz * t;
   const tdx = target.vx * t;
   const tdz = target.vz * t;
-  const viewerMoves = Math.hypot(vdx, vdz) > STILL_M;
-  const targetMoves = Math.hypot(tdx, tdz) > STILL_M;
+  const moving = Math.hypot(vdx, vdz) > STILL_M || Math.hypot(tdx, tdz) > STILL_M;
+  const viewerReach = Math.max(Math.hypot(viewer.vx, viewer.vz), REACH_SPEED) * t;
+  const targetReach = Math.max(Math.hypot(target.vx, target.vz), REACH_SPEED) * t;
+  const reaching = viewerReach > STILL_M || targetReach > STILL_M;
 
   const ey = eyeY(viewer);
   const h = bodyHeight(target);
-  // The shoulders lie across the line of sight, so they are offset along its perpendicular.
+  const headY = target.y + reachableHeight(target) * (POINT_HEIGHTS[HEAD] ?? 0.92);
+  // Shoulders and reach both lie across the line of sight, along its perpendicular.
   let px = -(target.z - viewer.z);
   let pz = target.x - viewer.x;
   const plen = Math.hypot(px, pz);
@@ -115,17 +163,17 @@ export function clearLine(
   }
 
   const test = (index: number): boolean => {
-    const eyeAhead = Math.floor(index / (2 * POINTS)) === 1;
-    const bodyAhead = Math.floor(index / POINTS) % 2 === 1;
-    if (eyeAhead && !viewerMoves) return false;
-    if (bodyAhead && !targetMoves) return false;
-    const point = index % POINTS;
-    const ex = viewer.x + (eyeAhead ? vdx : 0);
-    const ez = viewer.z + (eyeAhead ? vdz : 0);
-    const side = (POINT_SIDE[point] ?? 0) * SHOULDER_HALF_M;
-    const bx = target.x + (bodyAhead ? tdx : 0) + px * side;
-    const bz = target.z + (bodyAhead ? tdz : 0) + pz * side;
-    const by = target.y + h * (POINT_HEIGHTS[point] ?? 0.6);
+    const ray = RAYS[index];
+    if (ray === undefined) return false;
+    const [eyeSide, bodySide, point, ahead] = ray;
+    if (ahead && !moving) return false;
+    if ((eyeSide !== 0 || bodySide !== 0) && !reaching) return false;
+    const ex = viewer.x + (ahead ? vdx : 0) + px * eyeSide * viewerReach;
+    const ez = viewer.z + (ahead ? vdz : 0) + pz * eyeSide * viewerReach;
+    const side = (POINT_SIDE[point] ?? 0) * SHOULDER_HALF_M + bodySide * targetReach;
+    const bx = target.x + (ahead ? tdx : 0) + px * side;
+    const bz = target.z + (ahead ? tdz : 0) + pz * side;
+    const by = point === HEAD ? headY : target.y + h * (POINT_HEIGHTS[point] ?? 0.6);
     return world.segmentClear(ex, ey, ez, bx, by, bz, hit);
   };
 

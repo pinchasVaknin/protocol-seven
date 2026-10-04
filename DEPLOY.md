@@ -161,6 +161,6 @@ and join once: the `joined as entity` line in the log should show a public addre
 
 **What the server cannot hold, by design.** Progression lives in the browser, so a player can
 field a weapon they have not unlocked (README, *A note on progression*). And every client is sent
-every player's position, so a modified client can draw them through walls; closing that is
-server-side visibility culling, which is planned work rather than a setting — the design is
-`docs/VISIBILITY.md`.
+every player's position, so a modified client could draw them through walls. Snapshots are now
+culled per player (`docs/VISIBILITY.md`, phase 1): a body you cannot see is sent frozen and hidden.
+The event stream — shots, footsteps, hits — still carries positions to everybody until phase 2.

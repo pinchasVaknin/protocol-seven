@@ -1,17 +1,27 @@
 import {
   createServer as createHttpServer,
+  type IncomingMessage,
   type Server as HttpServer,
   type ServerResponse,
 } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
+import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
+import {
+  addressKey,
+  isInternalAddress,
+  normaliseIp,
+  originAllowed,
+  resolveClientIp,
+} from './ClientAddress';
 import { nowMs } from '../../shared/core/Clock';
 import { logger } from '../../shared/core/Log';
 import { NetSim, NET_PERFECT, type NetConditions } from '../../shared/net/NetSim';
 import {
   MAX_CLIENT_FRAME_BYTES,
+  MAX_CONNECTIONS,
   MAX_CONNECTIONS_PER_IP,
   MAX_MESSAGES_PER_SEC,
 } from '../../shared/net/Protocol';
@@ -34,7 +44,11 @@ const log = logger('net');
  *   and never allocated by us.
  * - Text frames rejected outright. The protocol is binary; a text frame is either a probe or
  *   a broken client, and either way there is nothing to do with it.
- * - Connections per IP capped, so one host cannot occupy every seat.
+ * - A page this server did not serve refused at the upgrade (`ClientAddress.originAllowed`).
+ * - Connections per address capped, so one host cannot occupy every seat — the *visitor's*
+ *   address behind a platform proxy, and an IPv6 /64 as one address
+ *   (`ClientAddress.resolveClientIp`, `addressKey`).
+ * - Connections in total capped, so no number of addresses can make the process hold more.
  * - Messages per second capped per connection, so a flood costs the flooder a socket.
  * - Nothing from an exception path ever reaches a client. Close codes and short reasons only.
  *
@@ -62,6 +76,22 @@ export interface WsServerOptions {
    * It stays a cap in every case — only *which* cap is configurable.
    */
   readonly maxConnectionsPerIp?: number | undefined;
+  /**
+   * Sockets open at once, from everybody together (security audit S6). Past it a connection is
+   * refused with the same close a per-address refusal gets. Defaults to `MAX_CONNECTIONS`.
+   *
+   * The per-address cap alone bounds one host, not the process: every handshaking socket is a
+   * link, a session and a slot in the per-tick drain, and enough addresses could open them
+   * without limit.
+   */
+  readonly maxConnections?: number | undefined;
+  /**
+   * The request header the platform's proxy writes the visitor's address into (S2), or '' to
+   * count by the socket's peer. See `ClientAddress.resolveClientIp` for when it is believed.
+   */
+  readonly clientIpHeader?: string | undefined;
+  /** Origins besides this server's own and loopback that may open a socket (S7). Exact. */
+  readonly allowedOrigins?: readonly string[] | undefined;
   /**
    * Directory of built client files to serve over the same port, or undefined for none.
    *
@@ -256,7 +286,13 @@ export interface WsSocketLike {
 export class WsServer {
   private readonly wss: WebSocketServer;
   private readonly http: HttpServer;
+  /** Open sockets per `addressKey` — an address, or an IPv6 /64. */
   private readonly perIp = new Map<string, number>();
+  /** Open sockets in total. */
+  private open = 0;
+  /** Upgrades refused for their `Origin` since boot (S7). */
+  originRefusals = 0;
+  private warnedNoClientIp = false;
   /** Absolute path of the built client, or null when this port serves only the socket. */
   private staticRoot: string | null = null;
   readonly secure: boolean;
@@ -312,7 +348,9 @@ export class WsServer {
     });
 
     this.wss = new WebSocketServer({
-      server: this.http,
+      // The upgrade is ours to accept (below), so a page this server does not serve is refused
+      // before a WebSocket exists for it.
+      noServer: true,
       // The library refuses anything larger before allocating it. This is the first and
       // cheapest of the S4.16 limits and the only one that costs us nothing at all.
       maxPayload: MAX_CLIENT_FRAME_BYTES,
@@ -322,11 +360,36 @@ export class WsServer {
       clientTracking: false,
     });
 
+    const allowedOrigins = opts.allowedOrigins ?? [];
+    this.http.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      // A socket error during the handshake is the client's network, and must not reach the
+      // process as an unhandled 'error'. `ws` takes the socket over once the upgrade completes.
+      socket.on('error', () => socket.destroy());
+      if (!originAllowed(req.headers.origin, req.headers.host, allowedOrigins)) {
+        this.originRefusals++;
+        // Once per process at warn: a site embedding the game is worth one line, not one per
+        // visitor. The count is in the metrics.
+        if (this.originRefusals === 1) {
+          log.warn(`refused a socket from origin ${JSON.stringify(req.headers.origin)} — not this server's page (ALLOWED_ORIGINS).`);
+        }
+        socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+        return;
+      }
+      this.wss.handleUpgrade(req, socket, head, (ws) => this.wss.emit('connection', ws, req));
+    });
+
     this.wss.on('connection', (socket, req) => {
-      const ip = normaliseIp(req.socket.remoteAddress ?? 'unknown');
-      const open = this.perIp.get(ip) ?? 0;
-      if (open >= (this.opts.maxConnectionsPerIp ?? MAX_CONNECTIONS_PER_IP)) {
-        log.warn(`refusing ${ip}: ${open} connections already open`);
+      const ip = this.clientIp(req);
+      const key = addressKey(ip);
+      const open = this.perIp.get(key) ?? 0;
+      const refusal =
+        this.open >= (this.opts.maxConnections ?? MAX_CONNECTIONS)
+          ? `${this.open} connections open in total`
+          : open >= (this.opts.maxConnectionsPerIp ?? MAX_CONNECTIONS_PER_IP)
+            ? `${open} connections already open from ${key}`
+            : null;
+      if (refusal !== null) {
+        log.warn(`refusing ${ip}: ${refusal}`);
         try {
           socket.close(1013, 'too many connections');
         } catch {
@@ -334,11 +397,13 @@ export class WsServer {
         }
         return;
       }
-      this.perIp.set(ip, open + 1);
+      this.open++;
+      this.perIp.set(key, open + 1);
       socket.on('close', () => {
-        const n = (this.perIp.get(ip) ?? 1) - 1;
-        if (n <= 0) this.perIp.delete(ip);
-        else this.perIp.set(ip, n);
+        this.open--;
+        const n = (this.perIp.get(key) ?? 1) - 1;
+        if (n <= 0) this.perIp.delete(key);
+        else this.perIp.set(key, n);
       });
 
       const link = new WsLink(socket, ip, this.opts.conditions ?? NET_PERFECT);
@@ -348,6 +413,27 @@ export class WsServer {
     this.wss.on('error', (err: Error) => {
       log.error(`listener error: ${err.message}`);
     });
+  }
+
+  /**
+   * The visitor's address for this upgrade (S2). See `ClientAddress.resolveClientIp`.
+   *
+   * A configured header that is missing from a proxied request means every player is being
+   * counted as the proxy again — the failure this exists to fix, arriving silently — so it is
+   * said once, at warn, naming the header and the peer.
+   */
+  private clientIp(req: IncomingMessage): string {
+    const peer = req.socket.remoteAddress ?? 'unknown';
+    const header = this.opts.clientIpHeader ?? '';
+    const ip = resolveClientIp(peer, req.headers, header);
+    if (header !== '' && !this.warnedNoClientIp && ip === normaliseIp(peer) && isInternalAddress(ip)) {
+      this.warnedNoClientIp = true;
+      log.warn(
+        `CLIENT_IP_HEADER is "${header}", but a connection through the proxy at ${ip} did not carry ` +
+          'a usable one — connections are being counted by the proxy address.',
+      );
+    }
+    return ip;
   }
 
   /**
@@ -448,6 +534,12 @@ export class WsServer {
     stream.pipe(res);
   }
 
+  /** The port actually bound — the one the OS chose when `port` was 0. */
+  get port(): number {
+    const address = this.http.address();
+    return typeof address === 'object' && address !== null ? address.port : this.opts.port;
+  }
+
   listen(): Promise<void> {
     return new Promise((resolve, reject) => {
       const onError = (err: Error): void => {
@@ -471,16 +563,6 @@ export class WsServer {
       });
     });
   }
-}
-
-/**
- * IPv4-mapped IPv6 (`::ffff:1.2.3.4`) collapsed to the v4 form.
- *
- * Without this the same host counts twice against the per-IP cap depending on how it
- * connected, which makes the limit unreliable in exactly the case it exists for.
- */
-function normaliseIp(addr: string): string {
-  return addr.startsWith('::ffff:') ? addr.slice(7) : addr;
 }
 
 /** Whatever `ws` handed us, as bytes, or null if it is not something we can read. */

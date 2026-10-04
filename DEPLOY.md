@@ -30,7 +30,7 @@ git push -u origin main
    | Start Command | `npm start` |
    | Instance Type | `Free` |
 
-### 3. Add one environment variable
+### 3. Add the environment variables
 
 Under **Environment**, add:
 
@@ -38,6 +38,7 @@ Under **Environment**, add:
 |---|---|---|
 | `VITE_SERVER_URL` | `1` | "Connect to whatever origin served this page." Read at **build** time and baked into the client. |
 | `NODE_VERSION` | `22` | The build targets Node 22. |
+| `CLIENT_IP_HEADER` | `cf-connecting-ip` | Who the player is. Every request reaches the process from Render's own proxy, so without this the per-address connection cap counts every player as the proxy: a fifth player is refused, and four sockets from anybody lock everybody out. Cloudflare, in front of Render, writes the visitor's address into this header and refuses a forged one. The boot line says `by the cf-connecting-ip header` while it is in force. |
 
 **Do not set `PORT`.** Render sets it, and the server reads it (`src/server/Config.ts`).
 
@@ -63,7 +64,7 @@ URL Render gives you (`https://your-app.onrender.com`) and press **Play Multipla
 | Dynamic port binding | Already correct — `PORT` with an `8080` fallback, and the host binds `0.0.0.0`. |
 | Client connection URL | Already derived from `window.location`, including the `ws:`→`wss:` upgrade on an HTTPS page. **Changed:** a build-time `VITE_SERVER_URL` of `1` now means "this origin", which it did not before — it would have tried to open `wss://1/ws`. |
 | Build / start scripts | **Added.** `build` now produces *both* halves; `start` runs the server. `engines` pins Node ≥ 22. |
-| CORS | Not applicable on one origin, and **`Access-Control-Allow-Origin: *`** is sent on static files anyway, so splitting the client onto a CDN later does not become an afternoon. WebSocket is exempt from the same-origin policy and `ws` performs no origin check. |
+| CORS | Not applicable on one origin, and **`Access-Control-Allow-Origin: *`** is sent on static files anyway, so splitting the client onto a CDN later does not become an afternoon. WebSocket is exempt from the same-origin policy, so the server checks the socket's `Origin` itself (security audit 2026-10-04): this server's own page, loopback, and `ALLOWED_ORIGINS` may connect, and a page from any other site is refused at the upgrade. A client moved to a CDN needs its origin listed there. |
 
 The one structural change: **the server now serves the client** (`WsServer.staticDir`,
 default `dist`). Set `STATIC_DIR=` (empty) to turn that off — which is the right answer behind

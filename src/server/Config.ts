@@ -1,5 +1,6 @@
 import { isBotDifficulty, type BotDifficulty } from '../shared/ai/DifficultyTiers';
 import { NET_PERFECT, parseConditions, type NetConditions } from '../shared/net/NetSim';
+import { MAX_CONNECTIONS, MAX_CONNECTIONS_PER_IP } from '../shared/net/Protocol';
 import { VOTE_CYCLE_CONFIG, type VoteCycleConfig } from '../shared/net/Skirmish';
 
 /**
@@ -180,6 +181,30 @@ export interface ServerConfig {
    * left it set should find out in the first three lines rather than from a scoreboard.
    */
   readonly cheatsEnabled: boolean;
+
+  // -- the door (security audit 2026-10-04, part 3) ------------------------------------------
+
+  /**
+   * `CLIENT_IP_HEADER`: the request header a platform's proxy writes the visitor's address into,
+   * lower-cased; empty to count connections by the socket's peer.
+   *
+   * **Render: `cf-connecting-ip`** (set in `render.yaml`). Every request there arrives from
+   * Render's own proxy, so without it the per-address cap counts the proxy rather than the
+   * player. Believed only from a private or loopback peer — see `ClientAddress.resolveClientIp`.
+   * Behind nginx or Caddy on the same host, whichever header that proxy sets (`x-real-ip`).
+   * Leave it empty when the process faces the internet directly.
+   */
+  readonly clientIpHeader: string;
+  /** `MAX_CONNECTIONS`: sockets open at once from everybody. Defaults to 64. */
+  readonly maxConnections: number;
+  /** `MAX_CONNECTIONS_PER_IP`: sockets from one address (an IPv6 /64). Defaults to 4. */
+  readonly maxConnectionsPerIp: number;
+  /**
+   * `ALLOWED_ORIGINS`: comma-separated exact origins (`https://play.example.com`) whose pages may
+   * open a socket here besides this server's own and loopback. Empty for the one-origin
+   * deployment, where the page and the socket share a host and nothing needs listing.
+   */
+  readonly allowedOrigins: readonly string[];
 }
 
 export function loadConfig(env: Record<string, string | undefined>): ServerConfig {
@@ -228,6 +253,11 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
     },
     matchRoundSeconds: intOr(env['MATCH_ROUND_SECONDS'], 0, 0, 3600),
     cheatsEnabled: (env['CHEATS_ENABLED'] ?? '') === '1',
+    // Security audit 2026-10-04, part 3. See the fields' own notes above.
+    clientIpHeader: (env['CLIENT_IP_HEADER'] ?? '').trim().toLowerCase(),
+    maxConnections: intOr(env['MAX_CONNECTIONS'], MAX_CONNECTIONS, 1, 10_000),
+    maxConnectionsPerIp: intOr(env['MAX_CONNECTIONS_PER_IP'], MAX_CONNECTIONS_PER_IP, 1, 1000),
+    allowedOrigins: listOr(env['ALLOWED_ORIGINS'], []),
   };
 }
 
@@ -253,7 +283,12 @@ export function describeConfig(cfg: ServerConfig): string {
     `arena with ${cfg.warmupBots} bots at ${cfg.botDifficulty}, seed ${cfg.seed}, ` +
     `${cfg.snapshotHz} Hz snapshots, ` +
     `${cfg.interpolationDelayMs}ms interpolation, ` +
-    `${cfg.readyTimeoutMs}ms ready timeout, ${cfg.summaryHoldSeconds}s summary hold` +
+    `${cfg.readyTimeoutMs}ms ready timeout, ${cfg.summaryHoldSeconds}s summary hold, ` +
+    // Which address the per-address cap counts is the one fact about the door a deploy most
+    // needs to see: on Render, "the peer" means every player is counted as the proxy.
+    `${cfg.maxConnections} sockets (${cfg.maxConnectionsPerIp} per address, by ` +
+    `${cfg.clientIpHeader === '' ? 'the peer' : `the ${cfg.clientIpHeader} header`})` +
+    (cfg.allowedOrigins.length > 0 ? `, origins ${cfg.allowedOrigins.join(' ')}` : '') +
     (cfg.faultInjection ? ', FAULT INJECTION ON' : '') +
     // Same shape and the same reason as fault injection: a diagnostic left on in production is
     // something an operator has to be able to see without reading the environment back.

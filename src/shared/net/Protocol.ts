@@ -445,8 +445,17 @@ export const MAX_COMMANDS_PER_BATCH = 16;
  */
 export const COMMAND_REDUNDANCY = 4;
 
-/** Simultaneous connections from one IP. */
+/** Simultaneous connections from one IP — the visitor's, and an IPv6 /64 as one. */
 export const MAX_CONNECTIONS_PER_IP = 4;
+
+/**
+ * Simultaneous connections from everybody (security audit 2026-10-04, S6).
+ *
+ * Two instances of `MAX_PLAYERS` seats is twenty players; the rest is room for handshakes,
+ * reconnects inside their grace and spectators. Generous to a full server, and a ceiling on what
+ * any number of addresses can make the process hold.
+ */
+export const MAX_CONNECTIONS = 64;
 
 /** Players in a match (S4.9: one match instance, 10 connected clients). */
 export const MAX_PLAYERS = 10;

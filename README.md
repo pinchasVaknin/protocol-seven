@@ -220,6 +220,10 @@ background while you are still playing, so the transition into the match has no 
 | `READY_TIMEOUT_MS` | 20000 | How long a slow client's background build is waited on before the match starts without it. Paired with the client's per-frame build budget — see `MapBuildQueue` |
 | `SUMMARY_HOLD_SECONDS` | 30 | How long the post-match debrief is held before everybody returns |
 | `FAULT_INJECTION` | off | Diagnostic only. Lets the allocator be made to stall and fail |
+| `CLIENT_IP_HEADER` | *(empty)* | The header a proxy in front writes the visitor's address into — `cf-connecting-ip` on Render, `x-real-ip` behind the Caddy layout below. Empty counts connections by the socket's own peer, which behind any proxy is the proxy. Believed only from a private or loopback peer |
+| `MAX_CONNECTIONS_PER_IP` | 4 | Sockets from one address; an IPv6 /64 is one address |
+| `MAX_CONNECTIONS` | 64 | Sockets from everybody together |
+| `ALLOWED_ORIGINS` | *(empty)* | Exact origins, comma-separated, whose pages may open a socket besides this server's own and loopback. A page from anywhere else is refused at the upgrade with a 403 |
 
 Shortening the vote timings is supported and is a **diagnostic setting, not a tuning knob** —
 see `DEBUG.md` for why a harness that shortens a timer can shorten past the bug it exists to
@@ -237,13 +241,16 @@ served over HTTPS the server must be `wss://`, and there is no way around it. Tw
 play.example.com {
     root * /opt/protocol-seven/dist
     file_server
-    reverse_proxy /ws localhost:8080
+    reverse_proxy /ws localhost:8080 {
+        header_up X-Real-IP {remote_host}
+    }
 }
 ```
 
 With that layout the client needs no configuration at all: `?server=1` resolves to the page's
 own origin and `/ws` reaches the server. Leave `TLS_CERT` and `TLS_KEY` blank and `HOST` on
-loopback.
+loopback, and set `CLIENT_IP_HEADER=x-real-ip` — every connection reaches the process from
+Caddy on loopback, and without the header the per-address cap counts every player as one.
 
 **Or terminate in Node** — set `TLS_CERT` and `TLS_KEY` to PEM paths and bind a public
 interface. Simpler to reason about, but the certificate renewal is then yours to arrange.
@@ -256,10 +263,12 @@ That is a deliberate consequence of having no accounts, and it is written down h
 than left to be discovered.
 
 **It also means a player can edit their own unlocks.** The save is a JSON blob in their own
-browser; nothing stops anybody opening the console and granting themselves level 55. From M11
-the server accepts whatever class a client sends and validates only that the ids are *real* —
-`sanitiseNetLoadout` checks a weapon exists, and deliberately cannot check whether the player
-earned it, because the server has no profile to check against.
+browser; nothing stops anybody opening the console and granting themselves level 55. The server
+validates that every id in a class is *real* and that the class has a legal *shape* — one perk
+per tier, a primary in the secondary slot only with OVERKILL, each grenade in its own slot, each
+streak on one key (`shared/meta/LoadoutRules.ts`, the same rules the editor's sanitiser ends
+with). It deliberately cannot check whether the player *earned* any of it, because the server
+has no profile to check against.
 
 This is a **known and accepted trade**, not an oversight:
 

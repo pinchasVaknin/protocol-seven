@@ -208,6 +208,11 @@ export class Server {
       conditions: cfg.conditions,
       // One origin for the page and the socket. See `WsServerOptions.staticDir`.
       staticDir: cfg.staticDir,
+      // The door (security audit, part 3). See the fields on `ServerConfig`.
+      clientIpHeader: cfg.clientIpHeader,
+      maxConnections: cfg.maxConnections,
+      maxConnectionsPerIp: cfg.maxConnectionsPerIp,
+      allowedOrigins: cfg.allowedOrigins,
       onConnection: (link) => this.accept(link),
     });
   }

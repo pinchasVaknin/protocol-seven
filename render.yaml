@@ -36,4 +36,12 @@ services:
       # has 512 MB and half a CPU, so this is not the knob to raise first.
       - key: WARMUP_BOTS
         value: "3"
+      # Who the player is (security audit 2026-10-04, part 3). Every request reaches the process
+      # from Render's own proxy, so the socket's address is the proxy's, and the per-address
+      # connection cap counted every player behind it as one. Cloudflare, in front of Render,
+      # writes the visitor's address into this header on every request and refuses a forged one;
+      # the server believes it only from a private or loopback peer. The boot line says
+      # "by the cf-connecting-ip header" while it is in force.
+      - key: CLIENT_IP_HEADER
+        value: cf-connecting-ip
       # PORT is set by Render itself and read by src/server/Config.ts. Do not set it here.

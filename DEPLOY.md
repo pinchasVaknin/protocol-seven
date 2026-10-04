@@ -162,4 +162,5 @@ and join once: the `joined as entity` line in the log should show a public addre
 **What the server cannot hold, by design.** Progression lives in the browser, so a player can
 field a weapon they have not unlocked (README, *A note on progression*). And every client is sent
 every player's position, so a modified client can draw them through walls; closing that is
-server-side visibility culling, which is planned work rather than a setting.
+server-side visibility culling, which is planned work rather than a setting — the design is
+`docs/VISIBILITY.md`.

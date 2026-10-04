@@ -1,6 +1,13 @@
 import { EQUIPMENT_DEFS, type EquipmentId } from '../equipment/EquipmentDefs';
 import { CAMOS, type CamoId } from '../meta/Camos';
 import { FIELD_UPGRADES, type FieldUpgradeId } from '../meta/FieldUpgrades';
+import {
+  enforceLoadoutStructure,
+  FALLBACK_LETHAL,
+  FALLBACK_TACTICAL,
+  PERK_SLOT_COUNT,
+  STREAK_SLOT_COUNT,
+} from '../meta/LoadoutRules';
 import type { LoadoutSlot, WeaponLoadout } from '../meta/Loadouts';
 import type { GameModeId } from '../modes/GameMode';
 import { MAPS, MODES } from '../modes/ModeRegistry';
@@ -471,9 +478,6 @@ export interface NetLoadout {
 
 /** Caps, so a hostile client cannot make the server allocate on its say-so (S4.16). */
 const MAX_ATTACHMENTS_PER_WEAPON = 5;
-/** Perk slots on a class: one per tier. Named for the slot count, not the tier list. */
-const PERK_SLOTS = 3;
-const STREAK_SLOTS = 3;
 
 /**
  * A local `LoadoutSlot`, flattened to the ids that cross the wire (Tier 1 #20, rule 1).
@@ -518,24 +522,34 @@ export function toNetLoadout(slot: LoadoutSlot): NetLoadout {
  * rediscover: it affects only the cosmetic question of which gun is in their hands, every gun
  * is balanced against every other, and the alternative is the server-side account database
  * §9 puts out of scope.
+ *
+ * ## What it does check, beyond the ids
+ *
+ * **The shape** (security audit 2026-10-04, S1). Real ids are not enough: three copies of one
+ * perk is three real ids, and `resolvePerkState` multiplies them. `enforceLoadoutStructure` is
+ * the same function the client's sanitiser ends with, so this refuses exactly what the editor
+ * cannot produce and nothing it can. Whatever it corrected is appended to `losses`, which the
+ * caller logs: a correction here is a class no shipped client sends.
  */
-export function sanitiseNetLoadout(raw: NetLoadout | null): LoadoutSlot | null {
+export function sanitiseNetLoadout(raw: NetLoadout | null, losses: string[] = []): LoadoutSlot | null {
   if (raw === null) return null;
 
   const primary = sanitiseWeapon(raw.primary);
   const secondary = sanitiseWeapon(raw.secondary);
   if (primary === null || secondary === null) return null;
 
-  return {
+  const slot: LoadoutSlot = {
     name: sanitiseText(raw.name, 24) || 'CUSTOM',
     primary,
     secondary,
-    lethal: pick<EquipmentId>(raw.lethal, EQUIPMENT_IDS, 'frag'),
-    tactical: pick<EquipmentId>(raw.tactical, EQUIPMENT_IDS, 'flashbang'),
-    perks: fixedLength<PerkId>(raw.perks, PERK_SLOTS, LEGAL_PERK_IDS),
+    lethal: pick<EquipmentId>(raw.lethal, EQUIPMENT_IDS, FALLBACK_LETHAL),
+    tactical: pick<EquipmentId>(raw.tactical, EQUIPMENT_IDS, FALLBACK_TACTICAL),
+    perks: fixedLength<PerkId>(raw.perks, PERK_SLOT_COUNT, LEGAL_PERK_IDS),
     fieldUpgrade: pick<FieldUpgradeId>(raw.fieldUpgrade, FIELD_UPGRADE_IDS, 'munitions'),
-    streaks: fixedLength<StreakId>(raw.streaks, STREAK_SLOTS, STREAK_IDS),
+    streaks: fixedLength<StreakId>(raw.streaks, STREAK_SLOT_COUNT, STREAK_IDS),
   };
+  enforceLoadoutStructure(slot, losses);
+  return slot;
 }
 
 function sanitiseWeapon(raw: NetWeaponLoadout | null | undefined): WeaponLoadout | null {

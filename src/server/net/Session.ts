@@ -536,7 +536,9 @@ export class Session {
      * Never throws and never refuses the connection: an unreadable class from a client one
      * build out of step falls back to the server defaults, which is a working game.
      */
-    this.loadout = sanitiseNetLoadout(loadout);
+    const corrected: string[] = [];
+    this.loadout = sanitiseNetLoadout(loadout, corrected);
+    if (corrected.length > 0) this.noteCorrectedClass(corrected);
     // The body, before the seat for the same reason: `writePlayer` reads it off the entity.
     this.characterIndex = skinIndex < SKIN_IDS.length ? skinIndex : NO_SKIN_INDEX;
 
@@ -652,6 +654,22 @@ export class Session {
    */
   sendSeat(info: WelcomeInfo): void {
     this.send(writeWelcome(this.out, info, this.reconnectToken));
+  }
+
+  /**
+   * A class arrived in a shape the editor cannot produce, and was corrected (security audit
+   * 2026-10-04, S1).
+   *
+   * Logged, never answered and never a disconnect: the corrected class is a working one, and
+   * the player sees it in their hands. The line is for the operator — the client's own
+   * sanitiser runs the same rules before it sends, so no shipped client reaches this, and a
+   * line here names the connection that was modified.
+   */
+  noteCorrectedClass(corrected: readonly string[]): void {
+    log.warn(
+      `${this.displayName} (${this.link.remoteAddress}) sent a class no shipped client produces; ` +
+        `corrected: ${corrected.join(' · ')}`,
+    );
   }
 
   /** A short line for the player. Allocation failed, migration failed, the arena was rebuilt. */

@@ -5,6 +5,12 @@ import { requireWeapon, WEAPON_DEFS, type WeaponDef } from '../weapons/WeaponDef
 import { CAMO_IDS, CAMO_PREREQUISITES, type CamoId } from './Camos';
 import { camoRequirementOf } from './Challenges';
 import { fieldUpgradeDef, FIELD_UPGRADE_IDS, type FieldUpgradeId } from './FieldUpgrades';
+import {
+  attachmentFits,
+  enforceLoadoutStructure,
+  FALLBACK_PRIMARY,
+  FALLBACK_SECONDARY,
+} from './LoadoutRules';
 import type { LoadoutSlot } from './Loadouts';
 import type { SaveV2, WeaponSaveData } from './SaveData';
 
@@ -395,12 +401,10 @@ export function sanitiseLoadout(slot: LoadoutSlot, unlocks: UnlockState, losses:
     const def = requireWeapon(entry.weaponId);
     const kept: AttachmentId[] = [];
     for (const id of entry.attachments) {
-      if (!fitsWeapon(def, id)) {
-        losses.push(`${label} ${which}: ${attachmentDef(id).name} does not fit ${def.name}; removed`);
-        changed = true;
-        continue;
-      }
-      if (!unlocks.attachmentUnlocked(def.id, id)) {
+      // An attachment the weapon cannot carry is kept here and removed by the structure pass
+      // below, with that reason: asking whether it is *earned* on this weapon would report the
+      // wrong one.
+      if (attachmentFits(def, id) && !unlocks.attachmentUnlocked(def.id, id)) {
         losses.push(
           `${label} ${which}: ${attachmentDef(id).name} not yet earned on ${def.name} ` +
             `(${unlocks.attachmentRequirement(def.id, id)}); removed`,
@@ -410,19 +414,7 @@ export function sanitiseLoadout(slot: LoadoutSlot, unlocks: UnlockState, losses:
       }
       kept.push(id);
     }
-    // One attachment per slot. A save naming two optics is not something the editor can
-    // produce, and honouring it would let a hand-edit stack the same multiplier twice.
-    const bySlot = new Set<string>();
-    entry.attachments = kept.filter((id) => {
-      const key = attachmentDef(id).slot;
-      if (bySlot.has(key)) {
-        losses.push(`${label} ${which}: two attachments in the ${key} slot; kept the first`);
-        changed = true;
-        return false;
-      }
-      bySlot.add(key);
-      return true;
-    });
+    entry.attachments = kept;
     if (entry.camo !== null && !unlocks.camoUnlocked(entry.weaponId, entry.camo)) {
       losses.push(`${label} ${which}: camo "${entry.camo}" not earned on ${entry.weaponId}; cleared`);
       entry.camo = null;
@@ -432,16 +424,6 @@ export function sanitiseLoadout(slot: LoadoutSlot, unlocks: UnlockState, losses:
 
   fixWeapon('primary');
   fixWeapon('secondary');
-
-  // Overkill is the one rule that makes the secondary slot's *class* legal or not.
-  const hasOverkill = slot.perks.includes('overkill');
-  const secondary = requireWeapon(slot.secondary.weaponId);
-  if (secondary.slot === 'primary' && !hasOverkill) {
-    losses.push(`${label}: ${secondary.name} in the secondary slot needs OVERKILL; reverted`);
-    slot.secondary.weaponId = FALLBACK_SECONDARY;
-    slot.secondary.attachments = [];
-    changed = true;
-  }
 
   if (!unlocks.equipmentUnlocked(slot.lethal)) {
     losses.push(`${label}: lethal "${slot.lethal}" is locked; reverted to frag`);
@@ -468,12 +450,18 @@ export function sanitiseLoadout(slot: LoadoutSlot, unlocks: UnlockState, losses:
     changed = true;
   }
 
+  /**
+   * Then the shape, which no profile can change (security audit 2026-10-04, S1).
+   *
+   * **Last**, and the order is a fix as well as a choice: OVERKILL was read here *before* the
+   * perk loop above, so a class whose OVERKILL was locked kept its primary in the secondary
+   * slot with the permission already gone. The server runs the same function over everything
+   * a client sends, so this is also what keeps the two sides agreeing on what the class is.
+   */
+  if (enforceLoadoutStructure(slot, losses)) changed = true;
+
   return changed;
 }
-
-/** What a locked slot falls back to. Both are `unlockLevel` 1 and cannot themselves fail. */
-const FALLBACK_PRIMARY = 'ar_carbine';
-const FALLBACK_SECONDARY = 'pistol_talon';
 
 /**
  * The writes `grantEverything` needs. `Profile` satisfies it structurally.

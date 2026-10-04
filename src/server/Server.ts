@@ -694,13 +694,15 @@ export class Server {
    * at any point during warmup is the class carried into the match.
    */
   private onLoadout(session: Session, raw: Parameters<typeof sanitiseNetLoadout>[0]): void {
-    const clean = sanitiseNetLoadout(raw);
+    const corrected: string[] = [];
+    const clean = sanitiseNetLoadout(raw, corrected);
     if (clean === null) {
       // Never a disconnect: a class the server cannot read is a client one build ahead or
       // behind, and the M10 defaults are a working game.
       log.warn(`${session.displayName} sent an unusable loadout; keeping the previous one.`);
       return;
     }
+    if (corrected.length > 0) session.noteCorrectedClass(corrected);
     session.loadout = clean;
 
     /**

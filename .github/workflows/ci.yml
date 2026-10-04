@@ -15,6 +15,13 @@ on:
     branches: ['**']
   pull_request:
 
+# Security audit 2026-10-04, S11. The job reads the repository and nothing else: no write to the
+# code, the releases, the packages or the PRs. Without this block the GITHUB_TOKEN gets the
+# repository's default, which on an older repository is read and write to everything — and the
+# job runs `npm ci`, i.e. install scripts from the whole dependency tree.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -27,6 +34,13 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      # S11. What ships to players and runs on the server is `three` and `ws`; a known high or
+      # critical advisory in either, or in anything they pull in, fails the build here rather
+      # than reaching a deploy. The dev tools (vite, vitest, typescript) never leave the build
+      # machine and are left out, so an advisory in a test runner does not block a release.
+      - name: Dependency audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Target boundaries (shared/ must load in Node)
         run: npm run check:boundaries

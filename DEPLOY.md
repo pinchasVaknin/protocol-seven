@@ -133,3 +133,33 @@ Then open the site and press Play Multiplayer. If the button is greyed out with 
 address configured", `VITE_SERVER_URL` was not set **at build time** — add it and trigger a
 manual redeploy, because the value is compiled into the client bundle rather than read at
 runtime.
+
+## Security checklist
+
+What the security audit of 2026-10-04 left for the operator, because no code can do it.
+
+**The accounts are the server.** Render deploys whatever reaches `main`, so whoever can push to
+the GitHub repository — or sign in to Render — can run code on the server. Turn on two-factor
+authentication on both, and keep push access to `main` to yourself.
+
+**After every deploy, read the first lines of the log.** Any setting that is wrong for real players
+is written there as its own warning, each starting `UNSAFE FOR PRODUCTION:` — cheats on, fault
+injection, rewind off, simulated network conditions, the idle kick off, or Render without
+`CLIENT_IP_HEADER`. The live service should have none. The `listening —` line then says how
+connections are counted: `by the cf-connecting-ip header` on Render, never `by the peer`.
+
+**Then check from outside:**
+
+```bash
+curl -sI https://your-app.onrender.com/ | grep -i -E "content-security|nosniff|strict-transport"
+curl -s -o /dev/null -w "%{http_code}
+" https://your-app.onrender.com/assets/x.js.map   # 404
+```
+
+and join once: the `joined as entity` line in the log should show a public address, not
+`127.0.0.1` or `10.x`.
+
+**What the server cannot hold, by design.** Progression lives in the browser, so a player can
+field a weapon they have not unlocked (README, *A note on progression*). And every client is sent
+every player's position, so a modified client can draw them through walls; closing that is
+server-side visibility culling, which is planned work rather than a setting.

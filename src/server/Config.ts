@@ -267,6 +267,47 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
   };
 }
 
+/**
+ * Settings that are wrong for a server real players use, one sentence each (security audit
+ * 2026-10-04, S13).
+ *
+ * Every one is a legitimate diagnostic or a deliberate choice somewhere — the harnesses set half of
+ * them on purpose — so none refuses to boot. What they had in common was that a production server
+ * running with one said so, if at all, in a clause of a long info line. `serve.ts` writes each of
+ * these as its own warning at boot, before the listener opens, prefixed so a log search finds them.
+ *
+ * `env` is read for one fact `ServerConfig` does not carry: whether this is Render, which sets
+ * `RENDER=true` on every service. There, an empty `CLIENT_IP_HEADER` means every player is counted
+ * as Render's proxy (part 3), and a service created by hand from the dashboard does not read the
+ * `render.yaml` that sets it.
+ */
+export function productionHazards(cfg: ServerConfig, env: Record<string, string | undefined>): string[] {
+  const out: string[] = [];
+  if (cfg.cheatsEnabled) {
+    out.push('CHEATS_ENABLED=1 — any player can type god mode, invisibility, free cam and thirty free kills.');
+  }
+  if (cfg.faultInjection) {
+    out.push('FAULT_INJECTION=1 — the match allocator can be made to stall and fail.');
+  }
+  if (cfg.rewindDisabled) {
+    out.push('REWIND_DISABLED=1 — lag compensation is off; every shot is judged against where targets are now.');
+  }
+  if (cfg.conditions.latencyMs > 0 || cfg.conditions.jitterMs > 0 || cfg.conditions.lossPct > 0) {
+    out.push('NET_SIM is set — every player is given artificial latency, jitter or loss.');
+  }
+  if (cfg.idleKickSeconds === 0) {
+    out.push('IDLE_KICK_SECONDS=0 — an abandoned tab keeps its seat for as long as it stays open.');
+  }
+  if ((env['RENDER'] ?? '') === 'true' && cfg.clientIpHeader === '') {
+    out.push(
+      "running on Render without CLIENT_IP_HEADER — every player is counted as Render's proxy, so " +
+        'the per-address cap refuses real players and four sockets lock everybody out. Set ' +
+        'CLIENT_IP_HEADER=cf-connecting-ip.',
+    );
+  }
+  return out;
+}
+
 /** Whether any timing knob has been turned down. Reported by every harness run. */
 export function usesShortenedTimings(cfg: ServerConfig): boolean {
   return (

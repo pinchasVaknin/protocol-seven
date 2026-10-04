@@ -2,7 +2,7 @@ import { installClock } from '../shared/core/Clock';
 import { logger } from '../shared/core/Log';
 import { describeConditions } from '../shared/net/NetSim';
 import { PROTOCOL_VERSION } from '../shared/net/Protocol';
-import { loadConfig } from './Config';
+import { loadConfig, productionHazards } from './Config';
 import { Server } from './Server';
 import { installServerLogging, metric } from './log';
 import { nodeClock } from './NodeClock';
@@ -36,6 +36,13 @@ async function main(): Promise<number> {
   if (!isIdle(cfg.conditions)) {
     log.warn(`NET_SIM active on every outbound link: ${describeConditions(cfg.conditions)}`);
   }
+  /**
+   * One warning per setting that is wrong for real players (security audit S13), before the
+   * listener opens. Each is a deliberate choice somewhere, so none stops the boot; each is a line
+   * of its own with the same prefix, so it cannot hide in the long description below.
+   */
+  const hazards = productionHazards(cfg, process.env);
+  for (const hazard of hazards) log.warn(`UNSAFE FOR PRODUCTION: ${hazard}`);
 
   metric('server', 'boot', {
     node: process.version,
@@ -52,6 +59,8 @@ async function main(): Promise<number> {
     faultInjection: cfg.faultInjection,
     tls: cfg.tlsCertPath !== undefined,
     netSim: describeConditions(cfg.conditions),
+    // The same list as the warnings, as data, for a log search or an alert to count.
+    hazards,
   });
 
   /**

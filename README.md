@@ -131,6 +131,12 @@ would throw every visitor straight into a socket and put Play Solo behind a disc
 Without an address configured at all — no `?server=` and no `VITE_SERVER_URL` — the button is
 disabled with the reason on it and the game boots into single-player exactly as it did before.
 
+When `?server=` names a host other than the page's own, **PLAY says so** — `SERVER · host`
+under the button, in the warning colour — because anybody can send a link that points the game
+at somebody else's server, and the button used to look the same either way. Names are cleaned
+of direction overrides, zero-width and blank characters before anybody sees them, and a callsign
+already in use on the server becomes `NAME (2)`.
+
 | Flag | Effect |
 |---|---|
 | `?server=host:port` | Use that server when you press Play Multiplayer |

@@ -1,6 +1,8 @@
 import { nowMs } from '../shared/core/Clock';
 import { logger } from '../shared/core/Log';
 import type { VoteInfo } from '../shared/net/Messages';
+import { uniqueDisplayName } from '../shared/net/DisplayText';
+import { MAX_NAME_LENGTH } from '../shared/net/UrlFlags';
 // Importing this module is also what runs its boot-time check that both ballots name things
 // the registry actually has — see the bottom of `Skirmish.ts`.
 import {
@@ -327,6 +329,9 @@ export class Server {
    * when to begin.
    */
   private onJoin(session: Session, claim: Uint8Array | null): JoinResult | null {
+    // Before anything is seated, so the seat, the scoreboard row and every log line carry it.
+    session.displayName = this.uniqueDisplayName(session);
+
     /**
      * The token is minted here, before anything is seated.
      *
@@ -402,6 +407,26 @@ export class Server {
         this.sendPrepareIfBuilding(session);
       },
     };
+  }
+
+  /**
+   * A callsign no other connected player is using (security audit 2026-10-04, S9).
+   *
+   * Names are chosen by the client and nothing made them unique, so a player could join as the
+   * name already on the board and be indistinguishable from its owner in the killfeed, the
+   * scoreboard and the vote — and two people who simply picked the same callsign could not tell
+   * which row was theirs. The second one in becomes `NAME (2)`, the next `NAME (3)`, cut to fit
+   * `MAX_NAME_LENGTH`. Compared without case, because `alice` beside `ALICE` is the same
+   * impersonation. Server-wide rather than per instance: the name travels with the connection
+   * through every migration, so it has to be unique everywhere the connection can go.
+   */
+  private uniqueDisplayName(session: Session): string {
+    const taken: string[] = [];
+    for (const other of this.sessions) {
+      if (other === session || other.closed || other.displayName === '') continue;
+      taken.push(other.displayName);
+    }
+    return uniqueDisplayName(session.displayName, taken, MAX_NAME_LENGTH);
   }
 
   /**

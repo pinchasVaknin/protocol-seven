@@ -15,6 +15,7 @@ import { PERK_IDS as ALL_PERK_IDS, type PerkId } from '../perks/PerkDefs';
 import { STREAK_DEFS, type StreakId } from '../streaks/StreakDefs';
 import { ATTACHMENTS, type AttachmentId } from '../weapons/Attachments';
 import { WEAPON_DEFS } from '../weapons/WeaponDefs';
+import { cleanDisplayText } from './DisplayText';
 
 /**
  * The skirmish flow's vocabulary, shared by both runtimes (M11, §3).
@@ -539,7 +540,8 @@ export function sanitiseNetLoadout(raw: NetLoadout | null, losses: string[] = []
   if (primary === null || secondary === null) return null;
 
   const slot: LoadoutSlot = {
-    name: sanitiseText(raw.name, 24) || 'CUSTOM',
+    // A class name is drawn on other players' screens too, so it is held to the callsign's rules (S9).
+    name: cleanDisplayText(raw.name, 24) || 'CUSTOM',
     primary,
     secondary,
     lethal: pick<EquipmentId>(raw.lethal, EQUIPMENT_IDS, FALLBACK_LETHAL),
@@ -590,17 +592,6 @@ function pick<T extends string>(raw: string, legal: ReadonlySet<string>, fallbac
   return typeof raw === 'string' && legal.has(raw) ? (raw as T) : fallback;
 }
 
-function sanitiseText(raw: string, cap: number): string {
-  if (typeof raw !== 'string') return '';
-  let out = '';
-  for (const ch of raw) {
-    const code = ch.codePointAt(0) ?? 0;
-    if (code < 0x20 || code === 0x7f) continue;
-    out += ch;
-    if (out.length >= cap) break;
-  }
-  return out.trim();
-}
 
 /**
  * Legal ids, read straight off the registries rather than listed again here.

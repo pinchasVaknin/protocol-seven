@@ -20,7 +20,7 @@ import { makeSnapshot, type PlayerSnapshot } from '../shared/player/PlayerState'
 import { DEG2RAD } from '../shared/core/MathUtil';
 import { Rng } from '../shared/core/Rng';
 import { LocalBotTransport, type ICommandQueue } from '../shared/net/Transport';
-import { isServerConfigured, multiplayerJoinOptions } from './net/JoinOptions';
+import { foreignServerHost, isServerConfigured, multiplayerJoinOptions } from './net/JoinOptions';
 import { handshake, HandshakeError, type HandshakeOptions } from './net/Handshake';
 import { logger } from '../shared/core/Log';
 import type { SummaryInfo, WelcomeInfo } from '../shared/net/Messages';
@@ -634,6 +634,7 @@ export class Game {
       },
       onPlayMultiplayer: () => void this.playMultiplayer(),
       serverConfigured: () => isServerConfigured(window.location.search),
+      foreignServer: () => foreignServerHost(window.location.search, window.location.host),
       onDisplayName: (name) => this.profile.patchSettings({ callsign: name }),
       onLoadout: (range) => {
         this.loadoutRange = range;

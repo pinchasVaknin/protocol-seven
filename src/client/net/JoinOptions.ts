@@ -98,6 +98,35 @@ export function multiplayerJoinOptions(search: string, profileName: string): Han
 }
 
 /** See `parseJoinOptions`. The one place the "same origin" spellings are listed. */
+/**
+ * The host a `?server=` link sends PLAY to, when that is not this page's own (security audit
+ * 2026-10-04, S10). Null when there is no flag, when it means this origin, or when it names this
+ * same host.
+ *
+ * `?server=` is a documented flag and was kept (audit item 5), but on the deployed site it means a
+ * link can point the game at somebody else's server, and nothing on screen said so: the player
+ * pressed the same PLAY and was somewhere else. The menu prints this under the button instead.
+ * Only the flag counts — a build-time `VITE_SERVER_URL` is the operator's own choice, not a
+ * link's.
+ *
+ * `URL` gives the host back in ASCII, so an internationalised lookalike shows as its punycode
+ * (`xn--…`) rather than as the name it imitates. Unparseable text is shown as typed, cut short:
+ * it will not connect anywhere, and saying so beats hiding it.
+ */
+export function foreignServerHost(search: string, pageHost: string): string | null {
+  const params = new URLSearchParams(search);
+  const raw = params.get('server');
+  if (raw === null || meansThisOrigin(raw)) return null;
+  const spelled = raw.trim();
+  let host: string;
+  try {
+    host = new URL(spelled.includes('://') ? spelled.replace(/^ws/i, 'http') : `http://${spelled}`).host;
+  } catch {
+    return spelled.slice(0, 64);
+  }
+  return host === '' || host === pageHost.toLowerCase() ? null : host;
+}
+
 function meansThisOrigin(raw: string): boolean {
   const v = raw.trim();
   return v === '' || v === '1' || v === '/ws';

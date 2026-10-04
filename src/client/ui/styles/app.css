@@ -1000,7 +1000,22 @@ body.op-locked #viewport {
 }
 
 .op-nav__label {
+  min-width: 0;
   white-space: nowrap;
+}
+
+/* PLAY's second line when a ?server= link points it at another host (security audit 2026-10-04,
+   S10). In the warning colour, under the label, cut with an ellipsis rather than widening the
+   button: the host is the link's to choose and can be any length. */
+.op-nav__note {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: none;
+  color: var(--c-warn);
 }
 
 .op-nav__chevron {

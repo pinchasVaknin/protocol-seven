@@ -90,6 +90,11 @@ export interface MenuDeps {
   readonly onPlayMultiplayer: () => void;
   /** Whether an address is configured at all. False disables the button with a reason, and greys the card's dot. */
   readonly serverConfigured: () => boolean;
+  /**
+   * The host a `?server=` link points PLAY at when it is not this site's own, or null
+   * (security audit S10). See `JoinOptions.foreignServerHost`.
+   */
+  readonly foreignServer?: (() => string | null) | undefined;
   /** The player: the card reads it, the profile panel reads and writes it. */
   readonly profile: Profile;
   /** The callsign's writer, for the panel's field (§6.1: written on every keystroke, never a gate). */
@@ -368,6 +373,20 @@ export class Menus {
       // a reason rather than failing on click — an inert button is what §6.2 refuses.
       multiplayer.disabled = true;
       multiplayer.title = 'No server address configured — set VITE_SERVER_URL or ?server=';
+    }
+    /**
+     * Where PLAY goes, when a link has sent it somewhere other than this site (security audit
+     * S10). A `?server=` link is a documented flag, so a link can point the game at anybody's
+     * server, and until this the button looked exactly the same either way. `textContent`: the
+     * host is the link's text.
+     */
+    const foreign = multiplayer.disabled ? null : (this.deps.foreignServer?.() ?? null);
+    if (foreign !== null) {
+      const note = document.createElement('span');
+      note.className = 'op-nav__note';
+      note.textContent = `SERVER · ${foreign}`;
+      multiplayer.querySelector('.op-nav__label')?.append(note);
+      multiplayer.title = `This link points PLAY at ${foreign}, not at this site's own server.`;
     }
     const solo = this.navButton('PLAY SOLO', GLYPH.solo, () => {
       this.page = 'PLAY';

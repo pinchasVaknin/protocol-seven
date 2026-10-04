@@ -1,3 +1,5 @@
+import { cleanDisplayText } from './DisplayText';
+
 /**
  * Every query-string flag this client understands, declared once (playtest round 5, B9).
  *
@@ -162,25 +164,20 @@ const REWIND_DEBUG_SUFFIX = '#rw';
 /**
  * A display name safe to put on a scoreboard.
  *
- * Trimmed, capped and stripped of control characters. The server's copy is the one that
+ * Capped, and cleaned by `cleanDisplayText` — no controls, no direction overrides, no invisible
+ * or blank characters, no stacked marks (security audit S9). The server's copy is the one that
  * matters — a client is untrusted — but sending something sane costs nothing and means the
  * player sees the name they typed rather than the name the server had to cut down.
  *
  * `fallback` is what an empty or absent name resolves to, which is the only thing the two old
  * copies of this function disagreed about: the client returned `'OPERATOR'` and the server
- * returned `''` and left the substitution to its caller.
+ * returned `''` and left the substitution to its caller. A name that cleans down to nothing —
+ * all zero-widths, say — is an empty name and gets it too.
  */
 function sanitiseName(raw: string | null | undefined, fallback: string): string {
   if (raw === null || raw === undefined) return fallback;
-  let out = '';
-  for (const ch of raw) {
-    const code = ch.codePointAt(0) ?? 0;
-    if (code < 0x20 || code === 0x7f) continue;
-    out += ch;
-    if (out.length >= MAX_NAME_LENGTH) break;
-  }
-  const trimmed = out.trim();
-  return trimmed === '' ? fallback : trimmed;
+  const clean = cleanDisplayText(raw, MAX_NAME_LENGTH);
+  return clean === '' ? fallback : clean;
 }
 
 /**

@@ -43,6 +43,8 @@ export interface GameScreensDeps {
   /** M11 (§6.1): connect and drop into the warmup arena. */
   readonly onPlayMultiplayer: () => void;
   readonly serverConfigured: () => boolean;
+  /** A `?server=` host that is not this page's own, for PLAY to name (security audit S10). */
+  readonly foreignServer?: (() => string | null) | undefined;
   /** The callsign's writer — the profile panel's field (R2.2), where the menu's header's was. */
   readonly onDisplayName: (name: string) => void;
   /**
@@ -97,6 +99,7 @@ export class GameScreens {
       onLaunch: deps.onLaunch,
       onPlayMultiplayer: deps.onPlayMultiplayer,
       serverConfigured: deps.serverConfigured,
+      foreignServer: deps.foreignServer,
       profile: deps.profile,
       onDisplayName: deps.onDisplayName,
       onCheatCode: deps.onCheatCode,

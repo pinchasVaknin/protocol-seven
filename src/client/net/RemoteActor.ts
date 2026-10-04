@@ -109,6 +109,15 @@ export class RemoteActor implements RenderableActor {
     return (this.flags & EFlag.Alive) !== 0;
   }
 
+  /**
+   * The server is not telling this client where this body is (protocol 28, anti-wallhack phase 1).
+   * Everything about its place is frozen where it was last seen; it is not drawn, not named and
+   * not measured from. `participating` stays true to the body's life, which is public.
+   */
+  get dormant(): boolean {
+    return (this.flags & EFlag.Dormant) !== 0;
+  }
+
   get healthFraction(): number {
     const max = this.healthMax();
     if (!Number.isFinite(max) || max <= 0) return 0;

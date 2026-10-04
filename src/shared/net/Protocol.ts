@@ -17,6 +17,12 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v28 (2026-10-04, the human): **a body this viewer cannot see is dormant.** `EFlag.Dormant`, bit 11
+ * of the entity flags, set per recipient by the server's `SeatView` (anti-wallhack phase 1,
+ * docs/VISIBILITY.md): the record is frozen where the body was last relevant to this viewer and the
+ * client hides it. The field is the same sixteen bits; a v27 client would draw every dormant body
+ * standing where it was last seen, so the version moves.
+ *
  * v27 (2026-10-04, the human): **a suppressed shot is silent online.** `FiredEvent` sets bit 7 of
  * its tracer byte when the shooter's *resolved* weapon does not ping the minimap. The client read
  * the answer off the base def by weapon index, and a suppressor is an attachment the base def has
@@ -217,7 +223,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 27;
+export const PROTOCOL_VERSION = 28;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

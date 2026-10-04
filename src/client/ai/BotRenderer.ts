@@ -218,7 +218,10 @@ export class BotRenderer {
       // the last word on the frame. Only *those* bodies: the indicator hides itself on a death,
       // and a first version that wrote `visible = true` to every other actor here put a
       // nameplate and a health bar back over every corpse in the match.
-      if (this.hiddenFromSpectator(actor, x, y, z, camera)) {
+      // Dormant (protocol 28): the server is not saying where this body is, so neither it nor its
+      // nameplate is drawn — through the same switch as the spectator's lap, which keeps the
+      // avatar, so a body that comes back into view is not rebuilt from its asset.
+      if (actor.dormant === true || this.hiddenFromSpectator(actor, x, y, z, camera)) {
         mesh.setVisible(false);
         indicator.group.visible = false;
         this.hiddenNext.add(actor.entityId);

@@ -118,6 +118,11 @@ export interface RenderableActor {
   /** False while dead or not yet in the fight. Drives the initial fall pose. */
   readonly participating: boolean;
   /**
+   * A networked body this viewer cannot see (protocol 28): kept, with its avatar, and not drawn.
+   * Absent for a local bot, which the local player's own world can always place.
+   */
+  readonly dormant?: boolean;
+  /**
    * What this body is carrying, so the renderer can put it in their hands (round 5, F4).
    *
    * Not new state. A remote player's comes from `EntitySnapshot.weaponIndex`, which the

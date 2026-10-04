@@ -1323,6 +1323,8 @@ export class Match {
     if (actors !== undefined) {
       for (const actor of actors()) {
         if (actor.entityId !== entityId) continue;
+        // A dormant body's place is frozen, or a blank origin — not a place to measure from.
+        if (actor.dormant === true) return null;
         bodyScratch.x = actor.renderX(1);
         bodyScratch.y = actor.renderY(1);
         bodyScratch.z = actor.renderZ(1);

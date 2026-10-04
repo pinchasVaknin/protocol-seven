@@ -103,6 +103,16 @@ export const EFlag = {
    * nothing — the tenth of the sixteen bits v20 widened this field to.
    */
   Burning: 1 << 10,
+  /**
+   * This viewer cannot see this body (protocol 28, anti-wallhack phase 1; docs/VISIBILITY.md).
+   *
+   * Set per recipient by the server's `SeatView`. The record's position, view, stance, weapon and
+   * the rest are frozen at the last moment the body was relevant to this viewer — they do not
+   * move while this is set — and only the public facts (alive, dead, team, name) stay current. The
+   * client keeps the actor and its avatar, draws neither, and on the record that clears it starts
+   * the body's interpolation over from the new state rather than sliding it from the old one.
+   */
+  Dormant: 1 << 11,
 } as const;
 
 /** Which fields a delta carries. One bit per line of `writeEntity`. */

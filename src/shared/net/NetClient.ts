@@ -956,9 +956,18 @@ export class NetClient {
         interp = new EntityInterpolator();
         this.remotes.set(id, interp);
       }
+      const wasDormant = interp.sampleCount > 0 && (interp.latest.flags & EFlag.Dormant) !== 0;
       copyEntitySnapshot(interp.latest, this.entityScratch);
       readEntity(this.reader, this.entityScratch);
       if (this.reader.overran) return;
+
+      /**
+       * A body this client could not see has just come into view (protocol 28): start its
+       * interpolation over from here. The samples in the buffer are the frozen record — where it
+       * was the last time it was visible, perhaps seconds and a respawn ago — and blending from
+       * them would slide it across the map to where it actually is.
+       */
+      if (wasDormant && (this.entityScratch.flags & EFlag.Dormant) === 0) interp.reset();
 
       // Our own entity's spawn serial is how the client learns it has been put somewhere new.
       // Read before `push` so the flag is set for the *next* owner block, which is the one

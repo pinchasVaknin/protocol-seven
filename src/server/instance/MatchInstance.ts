@@ -1,4 +1,5 @@
 import type { Bot } from '../../shared/ai/Bot';
+import { Cheat } from '../../shared/cheats/Cheats';
 import { nowMs } from '../../shared/core/Clock';
 import { Btn, isDown } from '../../shared/core/InputCommand';
 import { logger } from '../../shared/core/Log';
@@ -56,6 +57,7 @@ import type { LoadoutSlot } from '../../shared/meta/Loadouts';
 import type { ReclaimedSeat, ServerMatch } from '../Match';
 import type { NetPlayer } from '../NetPlayer';
 import type { Session } from '../net/Session';
+import { SeatView } from '../net/SeatView';
 import { SnapshotEncoder } from '../net/SnapshotEncoder';
 import { InstanceClock } from './InstanceClock';
 
@@ -154,6 +156,12 @@ export abstract class MatchInstance {
   /** Sessions seated in this instance, keyed by the stable connection id. */
   protected readonly seats = new Map<number, Seat>();
   private readonly encoders = new Map<number, SnapshotEncoder>();
+  /** Each seat's own entity list — who it is told about (anti-wallhack phase 1). Keyed like `encoders`. */
+  private readonly views = new Map<number, SeatView>();
+  /** ms spent deciding relevance since the metrics last read it, and the enemy records it produced. */
+  relevanceMs = 0;
+  relevanceEnemies = 0;
+  relevanceDormant = 0;
 
   private readonly header: SnapshotHeader = makeSnapshotHeader();
   private readonly entities: EntitySnapshot[] = [];
@@ -278,6 +286,8 @@ export abstract class MatchInstance {
     if (player === null) return null;
     this.seats.set(session.playerId, { session, player });
     this.encoders.set(player.entityId, new SnapshotEncoder());
+    // A new view has no memory, so this seat starts out told about nobody it cannot see.
+    this.views.set(player.entityId, new SeatView());
     // A new encoder has no baseline, so the next snapshot to this client is a full one. Reset
     // the acks with it, or the encoder would be asked to delta against a snapshot id that
     // belonged to the instance this player just left.
@@ -302,6 +312,7 @@ export abstract class MatchInstance {
     if (seat === undefined) return;
     this.releaseEntity(seat.player.entityId, cause);
     this.encoders.delete(seat.player.entityId);
+    this.views.delete(seat.player.entityId);
     /**
      * The cheat entitlements go with the seat, and F14 got this wrong (round 4, and the fix).
      *
@@ -434,12 +445,45 @@ export abstract class MatchInstance {
   private sendSnapshots(tickIndex: number): void {
     const flow = this.match.flow;
     const mode = this.match.mode;
+    const now = nowMs();
+    const freeForAll = this.match.modeEntry.freeForAll === true;
+    // P1: only a one-life mode has a spectator, and only a spectator needs its team's eyes.
+    const oneLife = this.match.modeEntry.usesRoundReset === true;
+    const snapshotMs = 1000 / this.deps.snapshotHz;
 
     for (const seat of this.seats.values()) {
       const { session, player } = seat;
       if (session.closed) continue;
       const encoder = this.encoders.get(player.entityId);
       if (encoder === undefined) continue;
+      const view = this.views.get(player.entityId);
+      if (view === undefined) continue;
+
+      /**
+       * Who this seat is told about (anti-wallhack phase 1, docs/VISIBILITY.md).
+       *
+       * The look-ahead is how far behind the truth this client draws the world — half its round
+       * trip, the interpolation delay and one snapshot interval — so a body that will round a
+       * corner inside that window is sent before it does.
+       */
+      const t0 = nowMs();
+      view.build(
+        now,
+        player.entityId,
+        this.entities,
+        this.entityCount,
+        {
+          world: this.match.world,
+          freeForAll,
+          lookAheadSec: (session.rttMs * 0.5 + this.deps.interpolationDelayMs + snapshotMs) / 1000,
+        },
+        session.cheats.has(Cheat.NoClip),
+        oneLife && !player.alive,
+        (entityId) => this.seatByEntity(entityId)?.session.cheats.has(Cheat.Unseen) === true,
+      );
+      this.relevanceMs += nowMs() - t0;
+      this.relevanceEnemies += view.enemies;
+      this.relevanceDormant += view.dormantSent;
 
       const h = this.header;
       h.serverTick = tickIndex;
@@ -462,8 +506,8 @@ export abstract class MatchInstance {
         // against a prediction rather than drawn, and quantisation error in a comparison is
         // indistinguishable from a misprediction.
         player.simState,
-        this.entities,
-        this.entityCount,
+        view.list,
+        view.count,
         // F14: replicated as state, once per snapshot, so no dropped frame can leave the two
         // sides disagreeing about whether a wall stops this player. See `writeSnapshotOwner`.
         session.cheats.mask,

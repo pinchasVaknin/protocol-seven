@@ -2120,6 +2120,9 @@ export class HeadlessClient {
     for (const [id, interp] of this.net.remotes) {
       if (id === this.net.entityId) continue;
       if ((interp.latest.flags & EFlag.Alive) === 0) continue;
+      // Protocol 28: a body this client cannot see is not a target. Before it, this picked the
+      // nearest enemy through any wall — the harness was the one client with a wallhack.
+      if ((interp.latest.flags & EFlag.Dormant) !== 0) continue;
       interp.sample(renderMs, this.pose);
       const dx = this.pose.x - sim.x;
       const dz = this.pose.z - sim.z;

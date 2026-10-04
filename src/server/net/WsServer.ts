@@ -329,6 +329,9 @@ export class WsServer {
     }
 
     this.http.on('request', (req, res) => {
+      // On every response this process writes, the 404s and refusals included (security audit
+      // S8). Set before anything is written: `writeHead` below merges with them.
+      for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
       // Liveness, for a managed host's health check. Answered before anything touches the
       // disk so it stays true even if the static root is missing.
       if (req.url === '/healthz') {
@@ -475,6 +478,21 @@ export class WsServer {
     // A bare path, or one with no extension, is the app itself: this is a single-page client
     // and every route it has is served by the same document.
     const wantsIndex = pathname === '/' || pathname.endsWith('/') || extname(pathname) === '';
+
+    /**
+     * Never a source map (security audit S5).
+     *
+     * A map is the whole TypeScript source with every comment, and the build that ships is the
+     * one place it must not be read from. `vite.config.ts` stops writing them; this is the
+     * second layer, for a build that writes one anyway. A 404 like any missing file — a 403
+     * would say there is something here worth asking for.
+     */
+    if (!wantsIndex && extname(pathname).toLowerCase() === '.map') {
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      res.end('not found\n');
+      return;
+    }
+
     const relative = wantsIndex ? 'index.html' : normalize(pathname).replace(/^[/\\]+/, '');
     const file = resolve(root, relative);
     if (file !== root && !file.startsWith(root + sep)) {
@@ -498,18 +516,17 @@ export class WsServer {
     }
 
     /**
-     * `Access-Control-Allow-Origin: *` on a same-origin deployment is redundant, and it is
-     * here anyway (deployment item 4).
+     * No `Access-Control-Allow-Origin` (security audit S8).
      *
-     * It costs one header and it removes a whole class of confusing failure for anyone who
-     * later splits the client onto a CDN or a second hostname: the socket has no CORS to
-     * satisfy — WebSocket is exempt from the same-origin policy and `ws` performs no origin
-     * check — but the *assets* would, and discovering that at deploy time is the avoidable
-     * afternoon S4.9 talks about.
+     * It was `*`, on every file, so that splitting the client onto a CDN later would not fail
+     * on CORS (deployment item 4). On the one-origin deployment it allowed nothing the game
+     * needs and let every other site read the GLBs — megabytes each, on this service's
+     * bandwidth. `Cross-Origin-Resource-Policy: same-origin` in `SECURITY_HEADERS` closes the
+     * no-CORS half. A client moved to a CDN is the day to send the CDN's origin here, and to
+     * list it in `ALLOWED_ORIGINS` for the socket.
      */
     const query = url.split('#')[0]?.split('?')[1] ?? '';
     const caching = {
-      'access-control-allow-origin': '*',
       'cache-control': staticCacheControl(wantsIndex ? 'index.html' : pathname, query),
       etag: staticEtag(size, modifiedMs),
     };
@@ -594,12 +611,73 @@ function errText(err: unknown): string {
 }
 
 /**
+ * The headers on every HTTP response (security audit 2026-10-04, S8).
+ *
+ * The policy is the client as it is built, measured rather than assumed: the entry document is
+ * one module script and one stylesheet from `/assets/`, there is no inline script or style and
+ * no `innerHTML` anywhere in `src/`, nothing calls `eval`, and there are no fonts, audio files or
+ * workers to load. What it does need beyond its own origin:
+ *
+ * - **`img-src` `data:` and `blob:`** — the camo swatches and the character thumbnails are canvas
+ *   `toDataURL`s, and GLTFLoader hands a model's embedded textures to the image decoder as
+ *   `blob:` URLs.
+ * - **`connect-src` `blob:` and `data:`** — GLTFLoader's `ImageBitmapLoader` *fetches* that
+ *   `blob:` URL rather than loading it as an image.
+ * - **`connect-src` `ws:` and `wss:`** to any host — `?server=` is a documented flag that points
+ *   the client at another server, and the decision on it (audit item 5) was to keep it. Every
+ *   `fetch` and XHR is still held to this origin.
+ *
+ * And what the rest close:
+ *
+ * - **`frame-ancestors 'none'`** and `X-Frame-Options` for older browsers: the game cannot be
+ *   framed inside somebody else's page, which is how a click on their page becomes a click on
+ *   ours.
+ * - **`nosniff`**: a file is what its content type says, never what the browser guesses.
+ * - **`Cross-Origin-Resource-Policy: same-origin`**: another site cannot embed these files, the
+ *   GLBs least of all. With the `Access-Control-Allow-Origin: *` gone, it cannot read them
+ *   either.
+ * - **`Cross-Origin-Opener-Policy`**: a page this one opens (the credits' links) cannot reach
+ *   back into it.
+ * - **`Strict-Transport-Security`**: once a browser has reached the game over HTTPS it will not
+ *   be talked back down to HTTP. Ignored on plain HTTP, so local development is untouched.
+ * - **`Referrer-Policy: no-referrer`** and a `Permissions-Policy` that turns off what a game
+ *   never asks for — camera, microphone, location, payment, USB. Fullscreen and pointer lock are
+ *   not listed, so they stay as they were.
+ *
+ * The Vite dev server sends none of this; only the build that ships is held to it.
+ */
+export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  'content-security-policy': [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self'",
+    "img-src 'self' data: blob:",
+    "connect-src 'self' ws: wss: blob: data:",
+    "font-src 'self'",
+    "media-src 'self'",
+    "worker-src 'self'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join('; '),
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'cross-origin-resource-policy': 'same-origin',
+  'cross-origin-opener-policy': 'same-origin',
+  'strict-transport-security': 'max-age=15552000',
+  'referrer-policy': 'no-referrer',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+};
+
+/**
  * Content type by extension, for the handful the client actually ships.
  *
- * A table rather than a dependency: the built client is HTML, JS, CSS, a source map and
- * whatever `public/` holds. Anything unrecognised is served as a byte stream, which is the
- * honest answer and lets the browser decide — the one thing that must never happen is a
- * script served as `text/plain`, and every extension that could be a script is listed.
+ * A table rather than a dependency: the built client is HTML, JS, CSS and whatever `public/`
+ * holds. Anything unrecognised is served as a byte stream, which is the honest answer — and
+ * with `nosniff` in `SECURITY_HEADERS` the browser no longer guesses past it. The one thing that
+ * must never happen is a script served as `text/plain`, and every extension that could be a
+ * script is listed. A source map is not served at all (see `serveStatic`).
  */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.html': 'text/html; charset=utf-8',
@@ -607,7 +685,6 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
-  '.map': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',

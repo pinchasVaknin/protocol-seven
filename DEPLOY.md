@@ -64,7 +64,7 @@ URL Render gives you (`https://your-app.onrender.com`) and press **Play Multipla
 | Dynamic port binding | Already correct — `PORT` with an `8080` fallback, and the host binds `0.0.0.0`. |
 | Client connection URL | Already derived from `window.location`, including the `ws:`→`wss:` upgrade on an HTTPS page. **Changed:** a build-time `VITE_SERVER_URL` of `1` now means "this origin", which it did not before — it would have tried to open `wss://1/ws`. |
 | Build / start scripts | **Added.** `build` now produces *both* halves; `start` runs the server. `engines` pins Node ≥ 22. |
-| CORS | Not applicable on one origin, and **`Access-Control-Allow-Origin: *`** is sent on static files anyway, so splitting the client onto a CDN later does not become an afternoon. WebSocket is exempt from the same-origin policy, so the server checks the socket's `Origin` itself (security audit 2026-10-04): this server's own page, loopback, and `ALLOWED_ORIGINS` may connect, and a page from any other site is refused at the upgrade. A client moved to a CDN needs its origin listed there. |
+| CORS | Not applicable on one origin. **No `Access-Control-Allow-Origin` is sent** (security audit 2026-10-04): it was `*`, which let any site read the GLBs on this service's bandwidth, and `Cross-Origin-Resource-Policy: same-origin` now stops other sites embedding them as well. Splitting the client onto a CDN is the day to send the CDN's origin back. WebSocket is exempt from the same-origin policy, so the server checks the socket's `Origin` itself (security audit 2026-10-04): this server's own page, loopback, and `ALLOWED_ORIGINS` may connect, and a page from any other site is refused at the upgrade. A client moved to a CDN needs its origin listed there. |
 
 The one structural change: **the server now serves the client** (`WsServer.staticDir`,
 default `dist`). Set `STATIC_DIR=` (empty) to turn that off — which is the right answer behind
@@ -72,6 +72,25 @@ a reverse proxy that is already serving the client itself, and is how the bare-m
 in `deploy/` still works.
 
 ---
+
+## What every response carries
+
+Every HTTP response from `serve.js` carries a fixed set of security headers — a
+`Content-Security-Policy` that runs only this origin's scripts and refuses to be framed,
+`nosniff`, `Cross-Origin-Resource-Policy` and `-Opener-Policy`, `Strict-Transport-Security`,
+`Referrer-Policy` and a `Permissions-Policy`. The list and the reason for each line is
+`SECURITY_HEADERS` in `src/server/net/WsServer.ts`. A source map is never served, even if a build
+leaves one in `dist/`.
+
+To check a deploy:
+
+```bash
+curl -sI https://your-app.onrender.com/ | grep -i -E "content-security|nosniff|strict-transport"
+```
+
+If the game ever stops loading something after a change — a font, a worker, a texture from a new
+place — the browser console says which directive refused it, and that directive is the one line to
+widen.
 
 ## Things worth knowing about the free tier
 

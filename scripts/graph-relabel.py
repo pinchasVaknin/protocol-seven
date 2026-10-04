@@ -101,6 +101,18 @@ def main():
                 labels[cid] = current.get(cid) or f"Community {cid}"
                 left.append((cid, labels[cid], len(communities[cid])))
 
+    # Generated names can collide as well: graphify calls a community after its hub
+    # node's label, so two classes whose constructors are hubs give two communities
+    # ".constructor" (2026-10-04, three of them). A curated name is never changed
+    # here; a generated one that anybody else also holds gets its id appended, which
+    # is still an honest generated name and now says which community it is.
+    generated = {cid: size for cid, _, size in left}
+    counts = Counter(labels.values())
+    for cid in sorted(generated):
+        if counts[labels[cid]] > 1:
+            labels[cid] = f"{labels[cid]} (#{cid})"
+    left = [(cid, labels[cid], size) for cid, size in generated.items()]
+
     clashes = [n for n, c in Counter(labels.values()).items() if c > 1]
     if clashes:
         sys.exit(f"could not resolve shared names, refusing to write: {clashes}")

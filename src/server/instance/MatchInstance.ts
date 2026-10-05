@@ -37,6 +37,7 @@ import {
   modeStateFacts,
   type ModeStateFacts,
 } from '../../shared/debug/ModeStateHash';
+import type { BombInfo, MutableBombInfo } from '../../shared/modes/GameMode';
 import { CarePackage } from '../../shared/streaks/CarePackage';
 import { ChopperGunner } from '../../shared/streaks/ChopperGunner';
 import type { Killstreak } from '../../shared/streaks/KillstreakBase';
@@ -174,6 +175,19 @@ export abstract class MatchInstance {
   /** `Unseen`: a body relevant to, and heard by, nobody but itself. */
   private readonly unseen = (entityId: number): boolean =>
     this.seatByEntity(entityId)?.session.cheats.has(Cheat.Unseen) === true;
+  /** A carried bomb as a seat that does not see its carrier is sent it. See `sendBomb`. */
+  private readonly bombScratch: MutableBombInfo = {
+    state: 'CARRIED',
+    carrierId: -1,
+    attackers: 'A',
+    x: 0,
+    y: 0,
+    z: 0,
+    secondsLeft: 0,
+    interactFraction: 0,
+    interactEntity: -1,
+    plantedSiteIndex: -1,
+  };
   /** Reused per seat per tick by `sendEvents`. Nothing on the send path allocates (S4.7). */
   private readonly seatContext: SeatContext = {
     viewerId: -1,
@@ -690,11 +704,37 @@ export abstract class MatchInstance {
    * decide a round wrongly."* On a networked client it does not drift — `onTick` never runs, so
    * it does not move at all.
    */
+  /**
+   * S&D's bomb, per seat (anti-wallhack phase 2, part 4).
+   *
+   * Carried, the bomb's place is its carrier's place, and it used to go to every seat every
+   * snapshot — the attackers' bomb carrier on every defender's wire, through any wall. The client
+   * draws no arrow to a carried bomb for exactly that reason (`MatchObjectives`), but the
+   * coordinates arrived regardless. Now a seat that does not have the carrier awake is sent the
+   * bomb where its own snapshot says the carrier is — the dormant record, frozen where it was last
+   * seen, or the origin if it never was — and the client hides a bomb whose carrier it does not
+   * see. On the floor or planted, the bomb is a public object and goes as it is.
+   */
   private sendBomb(): void {
     const info = this.match.mode.bombInfo;
     if (info === null) return;
+    const carried = info.state === 'CARRIED' && info.carrierId >= 0;
     for (const seat of this.seats.values()) {
-      if (!seat.session.closed) seat.session.sendBomb(info);
+      const { session, player } = seat;
+      if (session.closed) continue;
+      const view = this.views.get(player.entityId);
+      let out: BombInfo = info;
+      if (carried && view !== undefined && !view.awake.has(info.carrierId) && !session.cheats.has(Cheat.NoClip)) {
+        const known = view.recordOf(info.carrierId);
+        const hidden = this.bombScratch;
+        Object.assign(hidden, info);
+        hidden.x = known?.x ?? 0;
+        hidden.y = known?.y ?? 0;
+        hidden.z = known?.z ?? 0;
+        out = hidden;
+      }
+      session.sendBomb(out);
+      if (view !== undefined) this.audits.get(player.entityId)?.observeBomb(out, info, view, visibilityAuditTotals);
     }
   }
 

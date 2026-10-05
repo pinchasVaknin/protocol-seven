@@ -145,6 +145,15 @@ export class SeatView {
     if (this.present.has(entityId)) this.tracker.reveal(entityId, nowMs);
   }
 
+  /** The record the last list sent for `entityId` — live or dormant — or null if it sent none. */
+  recordOf(entityId: number): EntitySnapshot | null {
+    for (let i = 0; i < this.count; i++) {
+      const e = this.list[i];
+      if (e !== undefined && e.entityId === entityId) return e;
+    }
+    return null;
+  }
+
   private put(e: EntitySnapshot): void {
     this.list[this.count++] = e;
   }

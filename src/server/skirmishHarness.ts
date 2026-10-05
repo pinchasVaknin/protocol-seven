@@ -1608,6 +1608,14 @@ function reportFlow(input: FlowReportInput): number {
     }
     if (audit.eventsMissing > 0) problems.push(`${audit.eventsMissing} shot/hit/kill event(s) were not sent as due`);
     if (audit.eventLeaks > 0) problems.push(`${audit.eventLeaks} shot/hit/kill event(s) leaked a position or a health`);
+    // And the S&D bomb (part 4): a carried bomb is its carrier's place.
+    if (audit.bombCarried > 0) {
+      log.info(
+        `bomb: ${audit.bombCarried} carried-bomb send(s) per player, ${audit.bombCarrierUnseen} with the carrier unseen; ` +
+          `${audit.bombLeaks} placed the unseen carrier (must be 0).`,
+      );
+    }
+    if (audit.bombLeaks > 0) problems.push(`${audit.bombLeaks} bomb send(s) placed a carrier the player could not see`);
     if (audit.hardMisses > 0) {
       problems.push(`${audit.hardMisses} body(ies) in plain view were sent dormant`);
     }

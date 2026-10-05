@@ -7,8 +7,9 @@ instead, what that costs, how it is proved, and which decisions were the human's
 **Phase 1 is built** (2026-10-04) — snapshots are culled per seat; see *Phase 1, as built* below,
 which records where the build departed from this design and what it measured. **Phase 2, the
 event stream, is being built** (see *Phase 2* below): footsteps, jumps and landings reach only the
-players who could hear them, and shots, hits and kills only in the form each player may have them
-(protocol 29). What is left of phase 2 is the S&D bomb's carrier.
+players who could hear them, shots, hits and kills only in the form each player may have them
+(protocol 29), and the S&D bomb only where each player's own snapshot puts its carrier. What is
+left is the write-up: the residual leaks and the deploy checklist.
 
 ---
 
@@ -315,6 +316,44 @@ more. In the browser: 398 shots in the arena, the 3 from dormant shooters all un
 hits between others, none on a dormant target; two kills of others with the killer's health zero,
 and the player's own death with it (200, "HP LEFT" and 23 m on the death report); an `Impact`
 through the client's sink emits the impact facing the player and no shot.
+
+**Part 4 — the S&D bomb.** Carried, the bomb's place is its carrier's place, and `MsgS.Bomb` sent
+it to every seat every snapshot: the attackers' carrier on every defender's wire, through any
+wall. The client already drew no HUD arrow to a carried bomb for exactly that reason
+(`MatchObjectives`), but the coordinates arrived regardless. Now `MatchInstance.sendBomb` gives a
+seat that does not have the carrier awake the bomb where *its own snapshot* puts the carrier — the
+dormant record, frozen where it was last seen (`SeatView.recordOf`), or the origin if it never was
+— and the client hides a carried bomb whose carrier is dormant (`MatchObjectivesDeps.dormant`).
+On the floor or planted the bomb is a public object, and goes as it is. No protocol change: the
+message is the same, with a position the seat already had.
+
+The audit's `observeBomb` holds every carried-bomb send against the seat's last snapshot: a carrier
+it had dormant must not be placed anywhere but its record. Measured on Search & Destroy, 120 s:
+3393 carried-bomb sends per player, 1561 with the carrier unseen; on the bad profile 2478 and
+1353 — none placed the carrier. In the browser on DUNES: 929 frames with the bomb on a carrier the
+player had dormant, never drawn, and in the place its frozen record holds; 90 on a carrier in view
+(the sides had swapped), always drawn, on the carrier; 488 on the floor, always drawn.
+
+### What is still on the wire
+
+Phase 2 closes the channels the audit found. What a modified client is still sent, by design or
+for now:
+
+- **Everything inside 6 m (R2) and everything in view** — the point of the game; an aimbot is out
+  of scope.
+- **A teammate's everything** (R1), and a dead S&D spectator gets its living team's view (R7).
+- **The 0.5 s linger and the look-ahead** (R4, R6): a body that has just gone behind a wall, or is
+  about to come round one, is sent for that long. A cheat sees round a corner by about a draw
+  delay — the price of no pop-in.
+- **Enemy sounds within 12 m** (E2), each with its position: hearing is the game's rule, and the
+  sound carries its place.
+- **An unsuppressed shot's muzzle**, map-wide: the minimap pings it for every enemy by design.
+- **A suppressed shot's impact**, map-wide (D2): where the round landed, not where it came from.
+- **Grenades and other projectiles in flight** (`MsgS.Projectiles`) go to everybody; the first
+  sample of a throw is near the thrower. Not culled: it needs a look-ahead of its own.
+- **Kill-feed lines**, public; and the HUD's "PLANT IN PROGRESS" to the defenders, which says that
+  a plant is running but not where.
+- **Smoke does not hide anything yet** (E4, phase 3).
 
 ## Phases
 

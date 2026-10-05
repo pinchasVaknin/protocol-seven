@@ -111,6 +111,11 @@ export interface MatchObjectivesDeps {
   readonly scene: THREE.Scene;
   readonly mode: GameMode;
   readonly localTeam: BotTeam;
+  /**
+   * Whether this client is not told where a body is — dormant, anti-wallhack phase 1. Absent
+   * offline, where every body is known.
+   */
+  readonly dormant?: (entityId: number) => boolean;
 }
 
 interface FlagVisual {
@@ -607,8 +612,13 @@ export class MatchObjectives extends Disposable {
      */
     if (!planted) {
       const carried = mode.bomb === 'CARRIED';
-      this.bomb.visible = carried;
-      if (carried) {
+      /*
+       * Not on a carrier this client is not told about (anti-wallhack phase 2, part 4). The server
+       * sends such a bomb where the carrier was last seen — the place a dormant body is frozen at —
+       * and the body is not drawn there, so neither is what it carries.
+       */
+      this.bomb.visible = carried && !(mode.carrierId >= 0 && this.deps.dormant?.(mode.carrierId) === true);
+      if (this.bomb.visible) {
         const held = mode.carrierId >= 0;
         this.bomb.position.set(mode.bombX, mode.bombY + (held ? CARRY_HEIGHT : 0), mode.bombZ);
         // Slowly turning on the floor so it reads as a pickup; steady in a carrier's hands.

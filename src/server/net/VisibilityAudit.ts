@@ -1,3 +1,4 @@
+import type { BombInfo } from '../../shared/modes/GameMode';
 import { decodeHeader, readEvents, Ev, type EventSink } from '../../shared/net/Messages';
 import { EFlag, type EntitySnapshot } from '../../shared/net/Snapshot';
 import { ByteReader } from '../../shared/net/Wire';
@@ -33,7 +34,9 @@ import type { SeatView } from './SeatView';
  *   is **missing**; one it could not hear and was sent is a **leak** — a position on the wire that
  *   the game never gave the player. Both must be zero;
  * - **shots, hits and kills** (test 2, part 3) — the same, against `SeatEvents`'s rules for them:
- *   see `observeEvents`. Missing and leaked must be zero.
+ *   see `observeEvents`. Missing and leaked must be zero;
+ * - **the bomb** (part 4) — a carried bomb sent to a seat whose snapshot has its carrier dormant
+ *   must be where that snapshot put the carrier, not where the carrier is. Leaks must be zero.
  *
  * Off unless a harness turns it on: it costs a line test per pair on top of culling's own, and
  * nothing in a match reads it.
@@ -97,6 +100,11 @@ export interface VisibilityAuditStats {
   eventsMissing: number;
   /** A shot, hit or kill (or a killer's health) the seat should not have had, and did. Must be zero. */
   eventLeaks: number;
+  /** S&D bomb sends while carried, per seat; of those, by a carrier the seat had dormant. */
+  bombCarried: number;
+  bombCarrierUnseen: number;
+  /** A carried bomb sent anywhere but where the seat's own snapshot put an unseen carrier. Must be zero. */
+  bombLeaks: number;
 }
 
 export function emptyAuditStats(): VisibilityAuditStats {
@@ -128,6 +136,9 @@ export function emptyAuditStats(): VisibilityAuditStats {
     hitsSent: 0,
     eventsMissing: 0,
     eventLeaks: 0,
+    bombCarried: 0,
+    bombCarrierUnseen: 0,
+    bombLeaks: 0,
   };
 }
 
@@ -275,6 +286,21 @@ export class SeatAudit {
     const impacts = this.got.filter((g) => g.kind === Ev.Impact).length;
     if (impacts < impactsDue) out.eventsMissing += impactsDue - impacts;
     if (impacts > impactsDue) out.eventLeaks += impacts - impactsDue;
+  }
+
+  /**
+   * One S&D bomb send: `sent` is what this seat was given, `truth` the mode's. A carrier the seat's
+   * last snapshot sent dormant must not be placed by the bomb anywhere but where that record is.
+   */
+  observeBomb(sent: BombInfo, truth: BombInfo, view: SeatView, out: VisibilityAuditStats): void {
+    if (truth.state !== 'CARRIED' || truth.carrierId < 0) return;
+    out.bombCarried++;
+    const rec = view.recordOf(truth.carrierId);
+    if (rec !== null && (rec.flags & EFlag.Dormant) === 0) return;
+    out.bombCarrierUnseen++;
+    const x = rec?.x ?? 0;
+    const z = rec?.z ?? 0;
+    if (Math.abs(sent.x - x) > 1e-3 || Math.abs(sent.z - z) > 1e-3) out.bombLeaks++;
   }
 
   /**

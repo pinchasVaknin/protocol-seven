@@ -5,6 +5,7 @@ import { ColliderSet } from '../../shared/world/ColliderSet';
 import { CollisionWorld } from '../../shared/world/CollisionWorld';
 import type { RelevanceContext } from './Relevance';
 import { SeatView } from './SeatView';
+import type { BombInfo } from '../../shared/modes/GameMode';
 import { emptyAuditStats, SeatAudit } from './VisibilityAudit';
 
 /**
@@ -133,5 +134,48 @@ describe('SeatAudit', () => {
     audit.noteHurt(view, 2, stats);
     expect(stats.hurtTotal).toBe(1);
     expect(stats.hurtFromDormant).toBe(0);
+  });
+
+  describe('the bomb', () => {
+    const bomb = (x: number, z: number, carrierId = 2): BombInfo => ({
+      state: 'CARRIED',
+      carrierId,
+      attackers: 'B',
+      x,
+      y: 0,
+      z,
+      secondsLeft: 0,
+      interactFraction: 0,
+      interactEntity: -1,
+      plantedSiteIndex: -1,
+    });
+    const seen = (): SeatView => {
+      const view = new SeatView();
+      // The carrier is first seen through the doorway, then walks behind the wall and goes dormant.
+      const viewer = body(1, 0, 0, 'A');
+      const carrier = body(2, 20, 0, 'B');
+      view.build(0, 1, [viewer, carrier], 2, CTX, false, false, NOBODY);
+      carrier.z = 6;
+      view.build(1000, 1, [viewer, carrier], 2, CTX, false, false, NOBODY);
+      return view;
+    };
+
+    it('passes a carried bomb sent where the seat last saw its unseen carrier', () => {
+      const stats = emptyAuditStats();
+      new SeatAudit().observeBomb(bomb(20, 0), bomb(20, 6), seen(), stats);
+      expect(stats).toMatchObject({ bombCarried: 1, bombCarrierUnseen: 1, bombLeaks: 0 });
+    });
+
+    it("catches the old send: the carrier's real place on a seat that cannot see it", () => {
+      const stats = emptyAuditStats();
+      new SeatAudit().observeBomb(bomb(20, 6), bomb(20, 6), seen(), stats);
+      expect(stats.bombLeaks).toBe(1);
+    });
+
+    it('ignores a bomb on the floor, which is public', () => {
+      const stats = emptyAuditStats();
+      new SeatAudit().observeBomb(bomb(20, 6, -1), bomb(20, 6, -1), seen(), stats);
+      expect(stats.bombCarried).toBe(0);
+    });
   });
 });

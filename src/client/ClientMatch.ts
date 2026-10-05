@@ -1058,6 +1058,7 @@ export class Match {
       scene: deps.scene,
       mode: this.mode,
       localTeam: this.localTeam,
+      dormant: (entityId) => this.isDormant(entityId),
     });
     this.mortarOverlay = new MortarOverlay({
       host: deps.uiHost,
@@ -1330,6 +1331,16 @@ export class Match {
     if (body === null) return;
     const sim = this.deps.player.sim;
     this.deathReport = { ...report, distanceM: Math.hypot(body.x - sim.x, body.y - sim.y, body.z - sim.z) };
+  }
+
+  /** A remote body this client is not told the place of (protocol 28). Never true offline. */
+  private isDormant(entityId: number): boolean {
+    const actors = this.deps.actors;
+    if (actors === undefined) return false;
+    for (const actor of actors()) {
+      if (actor.entityId === entityId) return actor.dormant === true;
+    }
+    return false;
   }
 
   private bodyAt(entityId: number): Readonly<BodyPose> | null {

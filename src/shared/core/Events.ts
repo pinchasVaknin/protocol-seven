@@ -1,12 +1,3 @@
-import type { BotTeam } from '../ai/Combatant';
-import type { BotTier } from '../ai/DifficultyTiers';
-import type { BotState } from '../ai/BotStates';
-import type { HitZone } from '../combat/HitboxRig';
-import type { GameStateId } from './GameStates';
-import type { StanceId } from '../player/Stance';
-import type { WeaponSlot } from '../weapons/WeaponDefs';
-import { EventBus } from './EventBus';
-
 /**
  * The game's event vocabulary.
  *
@@ -17,94 +8,20 @@ import { EventBus } from './EventBus';
  * declared-but-never-emitted event is a lie about what the game does.
  */
 
-export const EV = {
-  PlayerSpawned: 'player.spawned',
-  PlayerStanceChanged: 'player.stanceChanged',
-  PlayerJumped: 'player.jumped',
-  PlayerLanded: 'player.landed',
-  PlayerFootstep: 'player.footstep',
-  PlayerSlideStarted: 'player.slideStarted',
-  PlayerSlideEnded: 'player.slideEnded',
-  PlayerMantleStarted: 'player.mantleStarted',
-  PlayerMantleEnded: 'player.mantleEnded',
-  PlayerHealthChanged: 'player.healthChanged',
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { BotTeam } from '../ai/Combatant';
+import type { BotTier } from '../ai/DifficultyTiers';
+import type { BotState } from '../ai/BotStates';
+import type { HitZone } from '../combat/HitboxRig';
+import type { GameStateId } from './GameStates';
+import type { StanceId } from '../player/Stance';
+import type { WeaponSlot } from '../weapons/WeaponDefs';
+import { EventBus } from './EventBus';
+//#endregion
 
-  WeaponFired: 'weapon.fired',
-  WeaponDryFired: 'weapon.dryFired',
-  WeaponReloadStarted: 'weapon.reloadStarted',
-  WeaponReloadStep: 'weapon.reloadStep',
-  WeaponReloadFinished: 'weapon.reloadFinished',
-  WeaponAdsChanged: 'weapon.adsChanged',
-  WeaponAmmoChanged: 'weapon.ammoChanged',
-  /** M5: the active inventory slot changed hands. Fires at the hand-over, not the request. */
-  WeaponSwapped: 'weapon.swapped',
-  /**
-   * Post-M8: a knife came round, on the one tick the hitbox test ran.
-   *
-   * Emitted whether or not it connected, because a whiff is worth hearing too — the sound of
-   * a knife missing is most of what tells a player how close they came.
-   */
-  MeleeSwing: 'weapon.meleeSwing',
-
-  // M5: thrown equipment and the things it does to people (S6.3).
-  EquipmentThrown: 'equipment.thrown',
-  EquipmentBounced: 'equipment.bounced',
-  EquipmentArmed: 'equipment.armed',
-  EquipmentExploded: 'equipment.exploded',
-  EquipmentFlashed: 'equipment.flashed',
-  SmokeSpawned: 'equipment.smokeSpawned',
-
-  BulletImpact: 'bullet.impact',
-  DamageDealt: 'damage.dealt',
-  EntityKilled: 'entity.killed',
-
-  BotSpawned: 'bot.spawned',
-  BotStateChanged: 'bot.stateChanged',
-
-  // M4: the match, as opposed to the firefight.
-  MatchStarted: 'match.started',
-  MatchEnded: 'match.ended',
-  RoundStarted: 'round.started',
-  RoundEnded: 'round.ended',
-  SidesSwapped: 'match.sidesSwapped',
-  ScoreChanged: 'score.changed',
-  KillfeedEntry: 'killfeed.entry',
-  AnnouncerCue: 'announcer.cue',
-
-  // M6: progression. Only what M6 actually emits — a declared-but-never-emitted event is
-  // a lie about what the game does, which is the rule this map has followed since M1.
-  MetaXpAwarded: 'meta.xpAwarded',
-  MetaLevelUp: 'meta.levelUp',
-  MetaChallengeCompleted: 'meta.challengeCompleted',
-  MetaCamoUnlocked: 'meta.camoUnlocked',
-  MetaLoadoutChanged: 'meta.loadoutChanged',
-  PerkScavenged: 'perk.scavenged',
-  FieldUpgradeReady: 'fieldUpgrade.ready',
-  FieldUpgradeUsed: 'fieldUpgrade.used',
-
-  // M7: objectives and killstreaks. Same rule as every milestone before it — only what
-  // this milestone actually emits appears here.
-  ObjectiveCaptured: 'objective.captured',
-  ObjectiveProgress: 'objective.progress',
-  ObjectiveNeutralised: 'objective.neutralised',
-  BombPlanted: 'objective.bombPlanted',
-  BombDefused: 'objective.bombDefused',
-  BombExploded: 'objective.bombExploded',
-  TagDropped: 'objective.tagDropped',
-  TagCollected: 'objective.tagCollected',
-
-  StreakProgress: 'streak.progress',
-  StreakEarned: 'streak.earned',
-  StreakActivated: 'streak.activated',
-  StreakExpired: 'streak.expired',
-  StreakDestroyed: 'streak.destroyed',
-  CarePackageDropped: 'streak.carePackageDropped',
-  CarePackageClaimed: 'streak.carePackageClaimed',
-
-  GameStateChanged: 'game.stateChanged',
-  SettingsChanged: 'settings.changed',
-} as const;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * The announcer's whole vocabulary (S6.5).
  *
@@ -499,7 +416,102 @@ export type GameEvents = {
 };
 
 export type GameBus = EventBus<GameEvents>;
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+export const EV = {
+  PlayerSpawned: 'player.spawned',
+  PlayerStanceChanged: 'player.stanceChanged',
+  PlayerJumped: 'player.jumped',
+  PlayerLanded: 'player.landed',
+  PlayerFootstep: 'player.footstep',
+  PlayerSlideStarted: 'player.slideStarted',
+  PlayerSlideEnded: 'player.slideEnded',
+  PlayerMantleStarted: 'player.mantleStarted',
+  PlayerMantleEnded: 'player.mantleEnded',
+  PlayerHealthChanged: 'player.healthChanged',
+
+  WeaponFired: 'weapon.fired',
+  WeaponDryFired: 'weapon.dryFired',
+  WeaponReloadStarted: 'weapon.reloadStarted',
+  WeaponReloadStep: 'weapon.reloadStep',
+  WeaponReloadFinished: 'weapon.reloadFinished',
+  WeaponAdsChanged: 'weapon.adsChanged',
+  WeaponAmmoChanged: 'weapon.ammoChanged',
+  /** M5: the active inventory slot changed hands. Fires at the hand-over, not the request. */
+  WeaponSwapped: 'weapon.swapped',
+  /**
+   * Post-M8: a knife came round, on the one tick the hitbox test ran.
+   *
+   * Emitted whether or not it connected, because a whiff is worth hearing too — the sound of
+   * a knife missing is most of what tells a player how close they came.
+   */
+  MeleeSwing: 'weapon.meleeSwing',
+
+  // M5: thrown equipment and the things it does to people (S6.3).
+  EquipmentThrown: 'equipment.thrown',
+  EquipmentBounced: 'equipment.bounced',
+  EquipmentArmed: 'equipment.armed',
+  EquipmentExploded: 'equipment.exploded',
+  EquipmentFlashed: 'equipment.flashed',
+  SmokeSpawned: 'equipment.smokeSpawned',
+
+  BulletImpact: 'bullet.impact',
+  DamageDealt: 'damage.dealt',
+  EntityKilled: 'entity.killed',
+
+  BotSpawned: 'bot.spawned',
+  BotStateChanged: 'bot.stateChanged',
+
+  // M4: the match, as opposed to the firefight.
+  MatchStarted: 'match.started',
+  MatchEnded: 'match.ended',
+  RoundStarted: 'round.started',
+  RoundEnded: 'round.ended',
+  SidesSwapped: 'match.sidesSwapped',
+  ScoreChanged: 'score.changed',
+  KillfeedEntry: 'killfeed.entry',
+  AnnouncerCue: 'announcer.cue',
+
+  // M6: progression. Only what M6 actually emits — a declared-but-never-emitted event is
+  // a lie about what the game does, which is the rule this map has followed since M1.
+  MetaXpAwarded: 'meta.xpAwarded',
+  MetaLevelUp: 'meta.levelUp',
+  MetaChallengeCompleted: 'meta.challengeCompleted',
+  MetaCamoUnlocked: 'meta.camoUnlocked',
+  MetaLoadoutChanged: 'meta.loadoutChanged',
+  PerkScavenged: 'perk.scavenged',
+  FieldUpgradeReady: 'fieldUpgrade.ready',
+  FieldUpgradeUsed: 'fieldUpgrade.used',
+
+  // M7: objectives and killstreaks. Same rule as every milestone before it — only what
+  // this milestone actually emits appears here.
+  ObjectiveCaptured: 'objective.captured',
+  ObjectiveProgress: 'objective.progress',
+  ObjectiveNeutralised: 'objective.neutralised',
+  BombPlanted: 'objective.bombPlanted',
+  BombDefused: 'objective.bombDefused',
+  BombExploded: 'objective.bombExploded',
+  TagDropped: 'objective.tagDropped',
+  TagCollected: 'objective.tagCollected',
+
+  StreakProgress: 'streak.progress',
+  StreakEarned: 'streak.earned',
+  StreakActivated: 'streak.activated',
+  StreakExpired: 'streak.expired',
+  StreakDestroyed: 'streak.destroyed',
+  CarePackageDropped: 'streak.carePackageDropped',
+  CarePackageClaimed: 'streak.carePackageClaimed',
+
+  GameStateChanged: 'game.stateChanged',
+  SettingsChanged: 'settings.changed',
+} as const;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function createGameBus(): GameBus {
   return new EventBus<GameEvents>();
 }
+//#endregion

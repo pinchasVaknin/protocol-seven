@@ -15,6 +15,8 @@
  * headless run ends up quietly measuring the wrong thing for an hour.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface Clock {
   /**
    * Milliseconds since an arbitrary fixed origin. Monotonic: never goes backwards, never
@@ -22,9 +24,15 @@ export interface Clock {
    */
   nowMs(): number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 let installed: Clock | null = null;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** Install the runtime's clock. Called once, at boot, by the client and by the server. */
 export function installClock(clock: Clock): void {
   installed = clock;
@@ -39,3 +47,4 @@ export function nowMs(): number {
   }
   return installed.nowMs();
 }
+//#endregion

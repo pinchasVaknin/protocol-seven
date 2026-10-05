@@ -11,16 +11,20 @@
  *    needs to keep the data must copy it out.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type EventMap = Record<string, object>;
 
 type Listener<P> = (payload: P) => void;
+
 type Slot = Listener<never> | null;
+//#endregion
 
+// ======================================= CLASS EventBus ======================================= \\
+//#region Class EventBus
 export class EventBus<M extends EventMap> {
-  private readonly slots = new Map<keyof M, Slot[]>();
-  private readonly dirty = new Set<keyof M>();
-  private depth = 0;
-
+  // ========================================== STATIC ========================================== \\
+  //#region Static
   /**
    * Live subscriptions across **every bus in the process** (M11, §4.18, §8.13).
    *
@@ -40,7 +44,17 @@ export class EventBus<M extends EventMap> {
    * It can only be wrong in one direction, which is what makes it a better gate than heap.
    */
   static liveSubscriptions = 0;
+  //#endregion
 
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
+  private readonly slots = new Map<keyof M, Slot[]>();
+  private readonly dirty = new Set<keyof M>();
+  private depth = 0;
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Subscribe. Returns an unsubscribe function. */
   on<K extends keyof M>(type: K, listener: Listener<M[K]>): () => void {
     let list = this.slots.get(type);
@@ -102,9 +116,7 @@ export class EventBus<M extends EventMap> {
   listenerCount<K extends keyof M>(type: K): number {
     const list = this.slots.get(type);
     if (list === undefined) return 0;
-    let n = 0;
-    for (let i = 0; i < list.length; i++) if (list[i] !== null) n++;
-    return n;
+    return this.countLiveSlots(list);
   }
 
   /**
@@ -123,7 +135,7 @@ export class EventBus<M extends EventMap> {
   get subscriptionCount(): number {
     let n = 0;
     for (const list of this.slots.values()) {
-      for (let i = 0; i < list.length; i++) if (list[i] !== null) n++;
+      n += this.countLiveSlots(list);
     }
     return n;
   }
@@ -154,7 +166,10 @@ export class EventBus<M extends EventMap> {
     this.slots.clear();
     this.dirty.clear();
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private compact(): void {
     if (this.dirty.size === 0) return;
     for (const type of this.dirty) {
@@ -170,4 +185,19 @@ export class EventBus<M extends EventMap> {
     }
     this.dirty.clear();
   }
+
+  /**
+   * Live listeners in one slot list, skipping tombstones.
+   *
+   * Tests for null and not also undefined, which is what both callers tested before this
+   * was extracted: a slot is only ever a listener or a tombstone, and widening the test
+   * here would change what the leak gate counts.
+   */
+  private countLiveSlots(list: Slot[]): number {
+    let n = 0;
+    for (let i = 0; i < list.length; i++) if (list[i] !== null) n++;
+    return n;
+  }
+  //#endregion
 }
+//#endregion

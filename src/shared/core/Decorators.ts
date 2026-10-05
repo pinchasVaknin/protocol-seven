@@ -1,6 +1,3 @@
-import { nowMs } from './Clock';
-import { logger } from './Log';
-
 /**
  * Decorators for concerns that were being written out by hand (M14).
  *
@@ -27,8 +24,19 @@ import { logger } from './Log';
  *   to serve them.
  */
 
-const log = logger('timed');
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { nowMs } from './Clock';
+import { logger } from './Log';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('timed');
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * A method decorator that measures one call with the installed clock and reports it.
  *
@@ -62,3 +70,4 @@ export function timed(label: string) {
     return descriptor;
   };
 }
+//#endregion

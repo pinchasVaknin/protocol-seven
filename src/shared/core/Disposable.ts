@@ -1,3 +1,5 @@
+// ====================================== CLASS Disposable ====================================== \\
+//#region Class Disposable
 /**
  * An owner of subscriptions that end when it does (M14, Phase C, concern C2).
  *
@@ -39,8 +41,22 @@
  * mirrors every subscription, exactly as it did when the lines were written out by hand.
  */
 export abstract class Disposable {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly subscriptions: Array<() => void> = [];
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  /** Release every subscription taken through `own()`, in the order they were taken. */
+  dispose(): void {
+    for (const off of this.subscriptions) off();
+    this.subscriptions.length = 0;
+  }
+  //#endregion
+
+  // ==================================== PROTECTED METHODS ===================================== \\
+  //#region Protected Methods
   /**
    * Keep one or more unsubscribers for `dispose()` to call. Variadic because `push` was, and
    * one class (`MatchLedger`) takes its seven in a single call; the rest array is allocated at
@@ -49,10 +65,6 @@ export abstract class Disposable {
   protected own(...offs: Array<() => void>): void {
     for (const off of offs) this.subscriptions.push(off);
   }
-
-  /** Release every subscription taken through `own()`, in the order they were taken. */
-  dispose(): void {
-    for (const off of this.subscriptions) off();
-    this.subscriptions.length = 0;
-  }
+  //#endregion
 }
+//#endregion

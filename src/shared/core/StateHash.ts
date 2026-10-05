@@ -22,6 +22,8 @@
  * resisting an adversary.
  */
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
@@ -33,10 +35,18 @@ const FNV_PRIME = 0x01000193;
  */
 const scratch = new ArrayBuffer(8);
 const scratchView = new DataView(scratch);
+//#endregion
 
+// ===================================== CLASS StateHasher ====================================== \\
+//#region Class StateHasher
 export class StateHasher {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private h = FNV_OFFSET;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   reset(): void {
     this.h = FNV_OFFSET;
   }
@@ -90,4 +100,6 @@ export class StateHasher {
   get value(): number {
     return this.h >>> 0;
   }
+  //#endregion
 }
+//#endregion

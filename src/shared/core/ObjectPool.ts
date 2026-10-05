@@ -1,4 +1,10 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { logger } from './Log';
+//#endregion
+
+// ====================================== CLASS ObjectPool ====================================== \\
+//#region Class ObjectPool
 /**
  * Generic free-list pool.
  *
@@ -8,6 +14,8 @@ import { logger } from './Log';
  * allocating during play.
  */
 export class ObjectPool<T> {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly free: T[] = [];
   private readonly factory: () => T;
   private readonly reset: (item: T) => void;
@@ -15,7 +23,10 @@ export class ObjectPool<T> {
   private liveCount = 0;
   private highWater = 0;
   private grewAt = -1;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(factory: () => T, reset: (item: T) => void, initialSize: number, private readonly label = 'pool') {
     this.factory = factory;
     this.reset = reset;
@@ -25,7 +36,10 @@ export class ObjectPool<T> {
     }
     this.highWater = initialSize;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   acquire(): T {
     const item = this.free.pop();
     this.liveCount++;
@@ -64,4 +78,6 @@ export class ObjectPool<T> {
   get peak(): number {
     return this.highWater;
   }
+  //#endregion
 }
+//#endregion

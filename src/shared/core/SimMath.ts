@@ -41,6 +41,22 @@
  * is not simulation state and nobody replays it.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+export interface AccuracyReport {
+  /** Samples compared. */
+  readonly samples: number;
+  /** Largest difference from the platform's own function, in units in the last place. */
+  readonly maxUlpSin: number;
+  readonly maxUlpCos: number;
+  /** Largest absolute difference. */
+  readonly maxAbsSin: number;
+  readonly maxAbsCos: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const PI = Math.PI;
 const TWO_OVER_PI = 2 / PI;
 
@@ -70,38 +86,11 @@ const C4 = -2.75573143513906633035e-7;
 const C5 = 2.08757232129817482790e-9;
 const C6 = -1.13596475577881948265e-11;
 
-/** sin on [-π/4, π/4]. */
-function kernelSin(x: number): number {
-  const z = x * x;
-  const r = S2 + z * (S3 + z * (S4 + z * (S5 + z * S6)));
-  return x + x * z * (S1 + z * r);
-}
-
-/** cos on [-π/4, π/4]. */
-function kernelCos(x: number): number {
-  const z = x * x;
-  const r = z * (C1 + z * (C2 + z * (C3 + z * (C4 + z * (C5 + z * C6)))));
-  // Written as fdlibm writes it: the 0.5*z term is split out so the cancellation near
-  // |x| ~ π/4 happens between two exactly representable pieces.
-  const hz = 0.5 * z;
-  const w = 1 - hz;
-  return w + (1 - w - hz + z * r);
-}
-
-/**
- * Reduce `x` to `r` in [-π/4, π/4] and return the quadrant `n & 3`.
- *
- * The reduced value is written to `reduced` rather than returned as a pair, because S4.7
- * bans allocation in the per-tick path and this is squarely in it.
- */
 const reduced = { r: 0 };
+//#endregion
 
-function reduce(x: number): number {
-  const n = Math.round(x * TWO_OVER_PI);
-  reduced.r = x - n * PIO2_HI - n * PIO2_LO;
-  return n & 3;
-}
-
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Deterministic sine. Same bits in every conformant engine.
  *
@@ -146,17 +135,6 @@ export function simTan(x: number): number {
   return c === 0 ? NaN : simSin(x) / c;
 }
 
-export interface AccuracyReport {
-  /** Samples compared. */
-  readonly samples: number;
-  /** Largest difference from the platform's own function, in units in the last place. */
-  readonly maxUlpSin: number;
-  readonly maxUlpCos: number;
-  /** Largest absolute difference. */
-  readonly maxAbsSin: number;
-  readonly maxAbsCos: number;
-}
-
 /**
  * Compare against the host's `Math.sin`/`Math.cos` over the range a match uses.
  *
@@ -198,6 +176,39 @@ export function verifyAgainstNative(samples = 200000, span = 64): AccuracyReport
     maxAbsCos,
   };
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** sin on [-π/4, π/4]. */
+function kernelSin(x: number): number {
+  const z = x * x;
+  const r = S2 + z * (S3 + z * (S4 + z * (S5 + z * S6)));
+  return x + x * z * (S1 + z * r);
+}
+
+/** cos on [-π/4, π/4]. */
+function kernelCos(x: number): number {
+  const z = x * x;
+  const r = z * (C1 + z * (C2 + z * (C3 + z * (C4 + z * (C5 + z * C6)))));
+  // Written as fdlibm writes it: the 0.5*z term is split out so the cancellation near
+  // |x| ~ π/4 happens between two exactly representable pieces.
+  const hz = 0.5 * z;
+  const w = 1 - hz;
+  return w + (1 - w - hz + z * r);
+}
+
+/**
+ * Reduce `x` to `r` in [-π/4, π/4] and return the quadrant `n & 3`.
+ *
+ * The reduced value is written to `reduced` rather than returned as a pair, because S4.7
+ * bans allocation in the per-tick path and this is squarely in it.
+ */
+function reduce(x: number): number {
+  const n = Math.round(x * TWO_OVER_PI);
+  reduced.r = x - n * PIO2_HI - n * PIO2_LO;
+  return n & 3;
+}
 
 /** The gap between `v` and the next representable double. */
 function ulp(v: number): number {
@@ -206,3 +217,4 @@ function ulp(v: number): number {
   const exp = Math.floor(Math.log2(a));
   return Math.pow(2, exp - 52);
 }
+//#endregion

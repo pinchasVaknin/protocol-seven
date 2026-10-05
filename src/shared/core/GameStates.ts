@@ -5,6 +5,8 @@
  * a circular import.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type GameStateId =
   | 'BOOT'
   | 'MENU'
@@ -13,7 +15,10 @@ export type GameStateId =
   | 'MATCH'
   | 'PAUSED'
   | 'SUMMARY';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * BOOT -> MENU -> MATCH -> SUMMARY, with LOADOUT and SETTINGS hanging off the menu, plus
  * the back-edges that a real front end needs. M1 only ever walked
@@ -60,8 +65,11 @@ const LEGAL_TRANSITIONS: Readonly<Record<GameStateId, readonly GameStateId[]>> =
    */
   SUMMARY: ['MENU', 'MATCH'],
 };
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function isLegalGameTransition(from: GameStateId, to: GameStateId): boolean {
   return LEGAL_TRANSITIONS[from].includes(to);
 }
-
+//#endregion

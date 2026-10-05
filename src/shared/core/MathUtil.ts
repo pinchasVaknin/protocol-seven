@@ -1,9 +1,14 @@
 /** Small numeric helpers. No allocation; everything takes and returns primitives. */
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const TAU = Math.PI * 2;
 export const DEG2RAD = Math.PI / 180;
 export const RAD2DEG = 180 / Math.PI;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
@@ -57,8 +62,6 @@ export function wrapAngle(a: number): number {
  * ends with one of them fixed and the other not.
  */
 export function shortestAngle(from: number, to: number): number {
-  let d = (to - from) % TAU;
-  if (d > Math.PI) d -= TAU;
-  if (d <= -Math.PI) d += TAU;
-  return d;
+  return angleDelta(from, to);
 }
+//#endregion

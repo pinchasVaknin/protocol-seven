@@ -124,3 +124,99 @@ describe('EventBus', () => {
     expect(bus.listenerCount('pong')).toBe(0);
   });
 });
+
+/**
+ * The two diagnostic counters, added as characterization before `listenerCount` and
+ * `subscriptionCount` were given a shared tombstone-skipping helper (refactor A1).
+ *
+ * The distinction these pin is tombstone timing: `off` nulls a slot and only compacts once the
+ * outermost dispatch unwinds, so a listener removed *from inside* a handler is still occupying a
+ * slot when the counters run — and must already be invisible to them.
+ */
+describe('listenerCount', () => {
+  it('is zero for a type nobody ever subscribed to', () => {
+    const bus = new EventBus<Events>();
+    expect(bus.listenerCount('ping')).toBe(0);
+  });
+
+  it('counts the live listeners of one type only', () => {
+    const bus = new EventBus<Events>();
+    bus.on('ping', () => undefined);
+    bus.on('ping', () => undefined);
+    bus.on('pong', () => undefined);
+
+    expect(bus.listenerCount('ping')).toBe(2);
+    expect(bus.listenerCount('pong')).toBe(1);
+  });
+
+  it('drops back as listeners unsubscribe', () => {
+    const bus = new EventBus<Events>();
+    const off = bus.on('ping', () => undefined);
+    bus.on('ping', () => undefined);
+
+    off();
+
+    expect(bus.listenerCount('ping')).toBe(1);
+  });
+
+  it('does not count a tombstone left by an unsubscribe inside a dispatch', () => {
+    const bus = new EventBus<Events>();
+    const counts: number[] = [];
+    const off = bus.on('ping', () => {
+      off();
+      counts.push(bus.listenerCount('ping'));
+    });
+    bus.on('ping', () => undefined);
+
+    bus.emit('ping', { n: 1 });
+
+    expect(counts).toEqual([1]);
+    expect(bus.listenerCount('ping')).toBe(1);
+  });
+});
+
+describe('subscriptionCount and subscribedTypes', () => {
+  it('both start at zero', () => {
+    const bus = new EventBus<Events>();
+
+    expect(bus.subscriptionCount).toBe(0);
+    expect(bus.subscribedTypes).toBe(0);
+  });
+
+  it('count listeners and types independently', () => {
+    const bus = new EventBus<Events>();
+    bus.on('ping', () => undefined);
+    bus.on('ping', () => undefined);
+    bus.on('pong', () => undefined);
+
+    expect(bus.subscriptionCount).toBe(3);
+    expect(bus.subscribedTypes).toBe(2);
+  });
+
+  it('a type whose last listener left stops being counted', () => {
+    const bus = new EventBus<Events>();
+    bus.on('ping', () => undefined);
+    const off = bus.on('pong', () => undefined);
+
+    off();
+
+    expect(bus.subscriptionCount).toBe(1);
+    expect(bus.subscribedTypes).toBe(1);
+  });
+
+  it('skip tombstones, so a mid-dispatch removal is invisible to both at once', () => {
+    const bus = new EventBus<Events>();
+    const seen: Array<{ subs: number; types: number }> = [];
+    bus.on('pong', () => undefined);
+    const off = bus.on('ping', () => {
+      off();
+      seen.push({ subs: bus.subscriptionCount, types: bus.subscribedTypes });
+    });
+
+    bus.emit('ping', { n: 1 });
+
+    expect(seen).toEqual([{ subs: 1, types: 1 }]);
+    expect(bus.subscriptionCount).toBe(1);
+    expect(bus.subscribedTypes).toBe(1);
+  });
+});

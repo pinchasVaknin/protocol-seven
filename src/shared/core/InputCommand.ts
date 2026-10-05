@@ -1,3 +1,5 @@
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * The input seam (brief S4.2).
  *
@@ -26,6 +28,23 @@ export interface InputCommand {
   readonly sampledAtMs: number;
 }
 
+export type ButtonBit = (typeof Btn)[keyof typeof Btn];
+
+/** Writable view of a command. Only the sampler and the transport touch this. */
+export interface MutableInputCommand {
+  seq: number;
+  tickIndex: number;
+  moveX: number;
+  moveZ: number;
+  yaw: number;
+  pitch: number;
+  buttons: number;
+  sampledAtMs: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Button bits. Only bits that are actually bound and consumed exist. */
 export const Btn = {
   Jump: 1 << 0,
@@ -103,80 +122,12 @@ export const Btn = {
   Targeting: 1 << 18,
 } as const;
 
-export type ButtonBit = (typeof Btn)[keyof typeof Btn];
-
 /**
  * Every bit a command may carry: the union of `Btn`, so the server's mask cannot fall behind a new
  * one. It was a literal (`0x0003_ffff`, "Melee is 1 << 17"), and a literal is how a bit added later
  * would have been dropped at the door with nothing to say so.
  */
 export const LIVE_BUTTONS: number = Object.values(Btn).reduce((mask, bit) => mask | bit, 0);
-
-export function isDown(buttons: number, bit: ButtonBit): boolean {
-  return (buttons & bit) !== 0;
-}
-
-export function justPressed(buttons: number, prevButtons: number, bit: ButtonBit): boolean {
-  return (buttons & bit) !== 0 && (prevButtons & bit) === 0;
-}
-
-export function justReleased(buttons: number, prevButtons: number, bit: ButtonBit): boolean {
-  return (buttons & bit) === 0 && (prevButtons & bit) !== 0;
-}
-
-/** Writable view of a command. Only the sampler and the transport touch this. */
-export interface MutableInputCommand {
-  seq: number;
-  tickIndex: number;
-  moveX: number;
-  moveZ: number;
-  yaw: number;
-  pitch: number;
-  buttons: number;
-  sampledAtMs: number;
-}
-
-export function copyCommand(src: InputCommand, dst: MutableInputCommand): void {
-  dst.seq = src.seq;
-  dst.tickIndex = src.tickIndex;
-  dst.moveX = src.moveX;
-  dst.moveZ = src.moveZ;
-  dst.yaw = src.yaw;
-  dst.pitch = src.pitch;
-  dst.buttons = src.buttons;
-  dst.sampledAtMs = src.sampledAtMs;
-}
-
-function makeCommand(): MutableInputCommand {
-  return { seq: 0, tickIndex: 0, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, sampledAtMs: 0 };
-}
-
-/**
- * Fixed ring of command records.
- *
- * Commands are conceptually immutable, but allocating one per tick would violate
- * the zero-allocation sim rule (S4.7). Instead a ring of backing records is reused;
- * consumers only ever see the readonly `InputCommand` view. A slot stays valid for
- * `capacity` ticks, which at 60 Hz is over two seconds — far longer than any
- * consumer holds one.
- */
-export class CommandRing {
-  private readonly buf: MutableInputCommand[] = [];
-  private head = 0;
-
-  constructor(readonly capacity: number) {
-    if (capacity < 2) throw new Error('CommandRing capacity must be >= 2');
-    for (let i = 0; i < capacity; i++) this.buf.push(makeCommand());
-  }
-
-  /** Claim the next slot for writing. */
-  next(): MutableInputCommand {
-    const slot = this.buf[this.head];
-    if (slot === undefined) throw new Error('CommandRing corrupted');
-    this.head = (this.head + 1) % this.capacity;
-    return slot;
-  }
-}
 
 /** The zero command: what the sim consumes when no input is available. */
 export const NULL_COMMAND: InputCommand = Object.freeze({
@@ -189,3 +140,76 @@ export const NULL_COMMAND: InputCommand = Object.freeze({
   buttons: 0,
   sampledAtMs: 0,
 });
+//#endregion
+
+// ===================================== CLASS CommandRing ====================================== \\
+//#region Class CommandRing
+/**
+ * Fixed ring of command records.
+ *
+ * Commands are conceptually immutable, but allocating one per tick would violate
+ * the zero-allocation sim rule (S4.7). Instead a ring of backing records is reused;
+ * consumers only ever see the readonly `InputCommand` view. A slot stays valid for
+ * `capacity` ticks, which at 60 Hz is over two seconds — far longer than any
+ * consumer holds one.
+ */
+export class CommandRing {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
+  private readonly buf: MutableInputCommand[] = [];
+  private head = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  constructor(readonly capacity: number) {
+    if (capacity < 2) throw new Error('CommandRing capacity must be >= 2');
+    for (let i = 0; i < capacity; i++) this.buf.push(makeCommand());
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  /** Claim the next slot for writing. */
+  next(): MutableInputCommand {
+    const slot = this.buf[this.head];
+    if (slot === undefined) throw new Error('CommandRing corrupted');
+    this.head = (this.head + 1) % this.capacity;
+    return slot;
+  }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function isDown(buttons: number, bit: ButtonBit): boolean {
+  return (buttons & bit) !== 0;
+}
+
+export function justPressed(buttons: number, prevButtons: number, bit: ButtonBit): boolean {
+  return (buttons & bit) !== 0 && (prevButtons & bit) === 0;
+}
+
+export function justReleased(buttons: number, prevButtons: number, bit: ButtonBit): boolean {
+  return (buttons & bit) === 0 && (prevButtons & bit) !== 0;
+}
+
+export function copyCommand(src: InputCommand, dst: MutableInputCommand): void {
+  dst.seq = src.seq;
+  dst.tickIndex = src.tickIndex;
+  dst.moveX = src.moveX;
+  dst.moveZ = src.moveZ;
+  dst.yaw = src.yaw;
+  dst.pitch = src.pitch;
+  dst.buttons = src.buttons;
+  dst.sampledAtMs = src.sampledAtMs;
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function makeCommand(): MutableInputCommand {
+  return { seq: 0, tickIndex: 0, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, sampledAtMs: 0 };
+}
+//#endregion

@@ -1,3 +1,5 @@
+// ========================================= CLASS Rng ========================================== \\
+//#region Class Rng
 /**
  * Seeded deterministic RNG (xorshift128).
  *
@@ -6,15 +8,23 @@
  * server-authoritative path.
  */
 export class Rng {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private s0 = 0;
   private s1 = 0;
   private s2 = 0;
   private s3 = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(seed: number) {
     this.reseed(seed);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Re-key the generator. Any 32-bit integer works, including 0. */
   reseed(seed: number): void {
     // splitmix32 expansion so that low-entropy seeds (0, 1, 2...) still produce
@@ -88,8 +98,12 @@ export class Rng {
     this.s2 = (src[2] ?? 0) >>> 0;
     this.s3 = (src[3] ?? 0) >>> 0;
   }
+  //#endregion
 }
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * A seed derived from the identity of an event rather than from a stream (M10, S4.14).
  *
@@ -126,3 +140,4 @@ export function eventSeed(salt: number, tickIndex: number, entityId: number, ind
   z = Math.imul(z ^ (z >>> 15), 0x735a2d97) >>> 0;
   return (z ^ (z >>> 15)) >>> 0;
 }
+//#endregion

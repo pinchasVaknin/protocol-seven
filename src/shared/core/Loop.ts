@@ -12,19 +12,8 @@
  * catch-up cap and the discard rule are one implementation rather than two that drift.
  */
 
-export const SIM_HZ = 60;
-/** The simulation timestep. Exactly 1/60. This is a constant everywhere downstream. */
-export const DT = 1 / 60;
-
-/** Hard cap on catch-up work per frame. Beyond this the backlog is discarded. */
-export const MAX_STEPS_PER_FRAME = 5;
-
-/**
- * A frame longer than this (alt-tab, breakpoint, GC pause) is treated as a stall:
- * the wall-clock gap is not owed to the simulation.
- */
-const MAX_FRAME_SECONDS = 0.25;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface FrameSample {
   /** Wall-clock time between this frame and the previous one, ms. */
   frameMs: number;
@@ -48,7 +37,27 @@ export interface LoopHandlers {
   /** Called once per frame after render, with reused stats. Do not retain. */
   onFrame?: (sample: FrameSample) => void;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+export const SIM_HZ = 60;
+
+/** The simulation timestep. Exactly 1/60. This is a constant everywhere downstream. */
+export const DT = 1 / 60;
+
+/** Hard cap on catch-up work per frame. Beyond this the backlog is discarded. */
+export const MAX_STEPS_PER_FRAME = 5;
+
+/**
+ * A frame longer than this (alt-tab, breakpoint, GC pause) is treated as a stall:
+ * the wall-clock gap is not owed to the simulation.
+ */
+const MAX_FRAME_SECONDS = 0.25;
+//#endregion
+
+// =================================== CLASS TickAccumulator ==================================== \\
+//#region Class TickAccumulator
 /**
  * Turns elapsed wall-clock time into a whole number of fixed simulation steps.
  *
@@ -60,6 +69,8 @@ export interface LoopHandlers {
  * disagree about what tick it is.
  */
 export class TickAccumulator {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private accumulator = 0;
   private tickIndex_ = 0;
   private starved_ = false;
@@ -79,7 +90,10 @@ export class TickAccumulator {
    * extra ticks are discarded as a backlog the moment the multiplier exceeds 5.
    */
   maxStepsPerFrame = MAX_STEPS_PER_FRAME;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get currentTick(): number {
     return this.tickIndex_;
   }
@@ -136,4 +150,6 @@ export class TickAccumulator {
   nextTick(): number {
     return this.tickIndex_++;
   }
+  //#endregion
 }
+//#endregion

@@ -24,9 +24,9 @@
  * The server replaces it with a structured sink at boot.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-
-const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
 export interface LogSink {
   /**
@@ -52,34 +52,6 @@ interface ConsoleLike {
   log?: (message: string) => void;
 }
 
-const hostConsole = (globalThis as { console?: ConsoleLike }).console;
-
-const consoleSink: LogSink = {
-  log(level: LogLevel, tag: string, message: string): void {
-    if (hostConsole === undefined) return;
-    const line = `[${tag}] ${message}`;
-    const fn = hostConsole[level] ?? hostConsole.log;
-    fn?.call(hostConsole, line);
-  },
-};
-
-let sink: LogSink = consoleSink;
-let minLevel: LogLevel = 'debug';
-
-/** Replace the sink. The server installs a structured one at boot. */
-export function installLogSink(next: LogSink): void {
-  sink = next;
-}
-
-/** Drop anything below `level`. A ten-minute soak does not want every debug line. */
-export function setLogLevel(level: LogLevel): void {
-  minLevel = level;
-}
-
-function enabled(level: LogLevel): boolean {
-  return LOG_LEVELS.indexOf(level) >= LOG_LEVELS.indexOf(minLevel);
-}
-
 /**
  * A logger bound to one subsystem.
  *
@@ -92,20 +64,66 @@ export interface Logger {
   warn(message: string): void;
   error(message: string): void;
 }
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
+
+const hostConsole = (globalThis as { console?: ConsoleLike }).console;
+
+const consoleSink: LogSink = {
+  log(level: LogLevel, tag: string, message: string): void {
+    if (hostConsole === undefined) return;
+    const line = `[${tag}] ${message}`;
+    const fn = hostConsole[level] ?? hostConsole.log;
+    fn?.call(hostConsole, line);
+  },
+};
+
+let sink: LogSink = consoleSink;
+
+let minLevel: LogLevel = 'debug';
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** Replace the sink. The server installs a structured one at boot. */
+export function installLogSink(next: LogSink): void {
+  sink = next;
+}
+
+/** Drop anything below `level`. A ten-minute soak does not want every debug line. */
+export function setLogLevel(level: LogLevel): void {
+  minLevel = level;
+}
 
 export function logger(tag: string): Logger {
   return {
     debug(message: string): void {
-      if (enabled('debug')) sink.log('debug', tag, message);
+      logIfEnabled('debug', tag, message);
     },
     info(message: string): void {
-      if (enabled('info')) sink.log('info', tag, message);
+      logIfEnabled('info', tag, message);
     },
     warn(message: string): void {
-      if (enabled('warn')) sink.log('warn', tag, message);
+      logIfEnabled('warn', tag, message);
     },
     error(message: string): void {
-      if (enabled('error')) sink.log('error', tag, message);
+      logIfEnabled('error', tag, message);
     },
   };
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function enabled(level: LogLevel): boolean {
+  return LOG_LEVELS.indexOf(level) >= LOG_LEVELS.indexOf(minLevel);
+}
+
+/** The level gate and the dispatch, which every method of every Logger shares. */
+function logIfEnabled(level: LogLevel, tag: string, message: string): void {
+  if (enabled(level)) sink.log(level, tag, message);
+}
+//#endregion

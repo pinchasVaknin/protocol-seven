@@ -1,5 +1,3 @@
-import { Btn } from './InputCommand';
-
 /**
  * The bindable actions and the table that maps physical inputs onto them (brief S6.3).
  *
@@ -44,14 +42,13 @@ import { Btn } from './InputCommand';
  * project and there is no second convention for the two to disagree about.
  */
 
-/** Bits above the wire bitfield, consumed by the sampler and never sent. */
-export const LocalBtn = {
-  Forward: 1 << 24,
-  Back: 1 << 25,
-  Left: 1 << 26,
-  Right: 1 << 27,
-} as const;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { Btn } from './InputCommand';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type ActionId =
   | 'moveForward'
   | 'moveBack'
@@ -87,6 +84,20 @@ export interface ActionDef {
   /** Default physical inputs. Two, where M1-M7 shipped an alternative.  */
   readonly defaults: readonly string[];
 }
+
+/** How a binding is stored: action id to the physical inputs bound to it. */
+export type BindingMap = Partial<Record<ActionId, string[]>>;
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Bits above the wire bitfield, consumed by the sampler and never sent. */
+export const LocalBtn = {
+  Forward: 1 << 24,
+  Back: 1 << 25,
+  Left: 1 << 26,
+  Right: 1 << 27,
+} as const;
 
 /**
  * Every bindable action, in the order the settings screen shows them.
@@ -130,15 +141,29 @@ export const ACTIONS: readonly ActionDef[] = [
   { id: 'scoreboard', label: 'Scoreboard', group: 'Interface', bit: Btn.Scoreboard, defaults: ['Tab'] },
 ];
 
-/** How a binding is stored: action id to the physical inputs bound to it. */
-export type BindingMap = Partial<Record<ActionId, string[]>>;
+/**
+ * Inputs whose label is the whole string rather than a prefix rule: the wheel and the six
+ * left/right modifiers.
+ *
+ * Consulted before the prefix families. Nothing in here starts with Mouse, Key, Digit,
+ * Numpad or Arrow, so an input resolves to the same label whichever of the two is tried
+ * first — which is what makes one table cheaper to read than the chain it replaced without
+ * being a different function.
+ */
+const EXACT_INPUT_LABELS: Readonly<Record<string, string>> = {
+  WheelUp: 'Wheel up',
+  WheelDown: 'Wheel down',
+  ControlLeft: 'L Ctrl',
+  ControlRight: 'R Ctrl',
+  ShiftLeft: 'L Shift',
+  ShiftRight: 'R Shift',
+  AltLeft: 'L Alt',
+  AltRight: 'R Alt',
+};
+//#endregion
 
-export function defaultBindings(): BindingMap {
-  const out: BindingMap = {};
-  for (const a of ACTIONS) out[a.id] = [...a.defaults];
-  return out;
-}
-
+// ======================================= CLASS Keybinds ======================================= \\
+//#region Class Keybinds
 /**
  * The compiled form: physical input to the bits it contributes.
  *
@@ -147,13 +172,21 @@ export function defaultBindings(): BindingMap {
  * was a hard-coded array.
  */
 export class Keybinds {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly byInput = new Map<string, number>();
   private bindings: BindingMap = defaultBindings();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(bindings?: BindingMap) {
     this.set(bindings ?? defaultBindings());
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Replace the whole table and recompile. */
   set(bindings: BindingMap): void {
     this.bindings = normaliseBindings(bindings);
@@ -236,11 +269,16 @@ export class Keybinds {
     for (const input of this.byInput.keys()) if (!isPointerInput(input)) out.push(input);
     return out;
   }
+  //#endregion
 }
+//#endregion
 
-/** Mouse buttons and wheel share the code namespace; this is how they are told apart. */
-function isPointerInput(input: string): boolean {
-  return input.startsWith('Mouse') || input === 'WheelUp' || input === 'WheelDown';
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function defaultBindings(): BindingMap {
+  const out: BindingMap = {};
+  for (const a of ACTIONS) out[a.id] = [...a.defaults];
+  return out;
 }
 
 export function mouseInput(button: number): string {
@@ -249,29 +287,10 @@ export function mouseInput(button: number): string {
 
 /** Human-readable, for the settings list and the controls card. */
 export function inputLabel(input: string): string {
-  if (input === 'WheelUp') return 'Wheel up';
-  if (input === 'WheelDown') return 'Wheel down';
-  if (input.startsWith('Mouse')) {
-    // `MouseEvent.button` numbering, which is what `mouseInput` produces: 0 left, 1 middle,
-    // 2 right. M8 had 1 and 2 the other way round, so the settings screen advertised a
-    // binding the browser never delivers.
-    const n = Number(input.slice(5));
-    if (n === 0) return 'Left mouse';
-    if (n === 1) return 'Middle mouse';
-    if (n === 2) return 'Right mouse';
-    return `Mouse ${n + 1}`;
-  }
-  if (input.startsWith('Key')) return input.slice(3);
-  if (input.startsWith('Digit')) return input.slice(5);
-  if (input.startsWith('Numpad')) return `Num ${input.slice(6)}`;
-  if (input.startsWith('Arrow')) return `${input.slice(5)} arrow`;
-  if (input === 'ControlLeft') return 'L Ctrl';
-  if (input === 'ControlRight') return 'R Ctrl';
-  if (input === 'ShiftLeft') return 'L Shift';
-  if (input === 'ShiftRight') return 'R Shift';
-  if (input === 'AltLeft') return 'L Alt';
-  if (input === 'AltRight') return 'R Alt';
-  return input;
+  const exact = EXACT_INPUT_LABELS[input];
+  if (exact !== undefined) return exact;
+  if (input.startsWith('Mouse')) return mouseLabel(input);
+  return prefixedInputLabel(input) ?? input;
 }
 
 /**
@@ -301,3 +320,34 @@ export function normaliseBindings(raw: unknown): BindingMap {
   }
   return out;
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Mouse buttons and wheel share the code namespace; this is how they are told apart. */
+function isPointerInput(input: string): boolean {
+  return input.startsWith('Mouse') || input === 'WheelUp' || input === 'WheelDown';
+}
+
+/**
+ * `MouseEvent.button` numbering, which is what `mouseInput` produces: 0 left, 1 middle,
+ * 2 right. M8 had 1 and 2 the other way round, so the settings screen advertised a
+ * binding the browser never delivers.
+ */
+function mouseLabel(input: string): string {
+  const n = Number(input.slice(5));
+  if (n === 0) return 'Left mouse';
+  if (n === 1) return 'Middle mouse';
+  if (n === 2) return 'Right mouse';
+  return `Mouse ${n + 1}`;
+}
+
+/** A code whose label is its prefix rewritten, or null when no prefix family matches. */
+function prefixedInputLabel(input: string): string | null {
+  if (input.startsWith('Key')) return input.slice(3);
+  if (input.startsWith('Digit')) return input.slice(5);
+  if (input.startsWith('Numpad')) return `Num ${input.slice(6)}`;
+  if (input.startsWith('Arrow')) return `${input.slice(5)} arrow`;
+  return null;
+}
+//#endregion

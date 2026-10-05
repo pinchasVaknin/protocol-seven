@@ -1577,6 +1577,17 @@ function reportFlow(input: FlowReportInput): number {
     if (audit.hurtStillDormant > 0) {
       problems.push(`${audit.hurtStillDormant} shooter(s) stayed dormant to the player they hurt`);
     }
+    // Test 2 for sounds (phase 2, part 2): every enemy step, jump and landing against the frame
+    // each player was actually sent. A denominator of zero is a cut nobody exercised.
+    const soundPct = audit.enemySounds === 0 ? 0 : (100 * audit.enemySoundsSent) / audit.enemySounds;
+    log.info(
+      `sounds: ${audit.enemySounds} enemy footstep/jump/landing(s) per player, ${audit.enemySoundsSent} sent ` +
+        `(${soundPct.toFixed(0)}%, within 12 m and not silent); ${audit.soundsMissing} missing, ` +
+        `${audit.soundLeaks} leaked (both must be 0).`,
+    );
+    if (audit.enemySounds === 0) problems.push('the sound audit saw no enemy sounds — it is not running');
+    if (audit.soundsMissing > 0) problems.push(`${audit.soundsMissing} audible enemy sound(s) were not sent`);
+    if (audit.soundLeaks > 0) problems.push(`${audit.soundLeaks} inaudible enemy sound(s) were sent`);
     if (audit.hardMisses > 0) {
       problems.push(`${audit.hardMisses} body(ies) in plain view were sent dormant`);
     }

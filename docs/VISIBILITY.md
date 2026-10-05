@@ -6,9 +6,9 @@ instead, what that costs, how it is proved, and which decisions were the human's
 
 **Phase 1 is built** (2026-10-04) — snapshots are culled per seat; see *Phase 1, as built* below,
 which records where the build departed from this design and what it measured. **Phase 2, the
-event stream, is being built** (see *Phase 2* below): until it lands, `Fired`, `Damage`, `Footstep`
-and `Pose` still go to every client with positions, so a modified client can still place a body
-that moves or shoots.
+event stream, is being built** (see *Phase 2* below): footsteps, jumps and landings now reach only
+the players who could hear them, but until part 3 lands `Fired` and `Damage` still go to every
+client with positions, so a modified client can still place a body that shoots.
 
 ---
 
@@ -246,6 +246,35 @@ in these runs and two 60 s ones were 0–1.3% (phase 1's: 2.7–5.5%) — R9 len
 whoever is shooting, which may be part of it; the two were not measured apart. Hard misses: 0.
 In the browser, a chevron for a shooter that woke 134 ms after its hit appeared on the frame it
 woke, and chevrons for awake shooters appeared at once as before (43 of 43).
+
+**Part 2 — sounds per seat.** The event stream is no longer one frame for everybody.
+`EventCollector` still encodes each tick's events once, and records beside each its kind, the body
+it is about, where, whether an enemy may hear it at all, and its byte range; `SeatEvents` decides,
+per seat, which go out; the instance sends the shared frame to a seat that may have all of it, and
+otherwise a frame of its own, copied range by range into that seat's own writer (never a shared
+one — DEBUG.md's shared-writer bug). A footstep, jump or landing goes to: never its own body (the
+client plays its own from prediction); always a teammate; an enemy only within 12 m on the ground
+plane of where the seat listens (E2) — its body, or every living teammate for a dead S&D spectator
+(R7) — and never a crouched or sliding step or a Dead Silence one (D4, the same predicate the bots'
+hearing asks); never an `Unseen` body's; everything to a free cam. No protocol change: the frames
+are the same format, with fewer events in them. Shots, hits and kills still go to everybody until
+part 3.
+
+The audit's test 2 for sounds decodes the frame each seat was actually sent and holds it against
+every enemy sound of the tick, working out where the seat listens on its own: audible and not sent
+is *missing*, sent and not audible is a *leak*, and the flow fails on either.
+
+Measured, three headless players and ten bots, 120 s each:
+
+| Run | Enemy sounds per player | Sent | Missing | Leaked |
+|---|---|---|---|---|
+| Kill Confirmed, no added latency | 5401 | 123 (2%) | 0 | 0 |
+| Kill Confirmed, 100 ±30 ms, 2% loss | 5489 | 115 (2%) | 0 | 0 |
+| Search & Destroy, dead spectators listening through teammates | 3355 | 93 (3%) | 0 | 0 |
+
+So 97–98% of the enemy footsteps, jumps and landings that every client used to be sent no longer
+leave the server. In the browser, on DUNES in Search & Destroy: teammates' steps still arrived from
+up to 66 m, and no enemy step from beyond 12 m arrived; no errors.
 
 ## Phases
 

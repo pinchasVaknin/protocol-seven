@@ -460,6 +460,8 @@ export class ServerMatch extends Disposable {
     // Dead Silence, server-side. The client half has existed since M6 and decided nothing over
     // the network, because the bots that hear the footsteps live here and this hook was never set.
     this.bots.silentFootsteps = (entityId) => !this.perksOf(entityId).audibleFootsteps;
+    // And the same answer for the humans: a step the bots cannot hear is not sent to an enemy (D4).
+    this.outgoing.silentFootsteps = this.bots.silentFootsteps;
 
     /**
      * The six killstreaks, server-side (M11 Gate B, §6.8, §8.22).

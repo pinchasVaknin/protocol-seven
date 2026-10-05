@@ -58,6 +58,7 @@ import type { LoadoutSlot } from '../../shared/meta/Loadouts';
 import type { ReclaimedSeat, ServerMatch } from '../Match';
 import type { NetPlayer } from '../NetPlayer';
 import type { Session } from '../net/Session';
+import { SeatEvents } from '../net/SeatEvents';
 import { SeatView } from '../net/SeatView';
 import { SeatAudit, visibilityAuditEnabled, visibilityAuditTotals } from '../net/VisibilityAudit';
 import { SnapshotEncoder } from '../net/SnapshotEncoder';
@@ -168,6 +169,11 @@ export abstract class MatchInstance {
   private readonly audits = new Map<number, SeatAudit>();
   /** The R9 subscription on the match's bus. */
   private readonly offHurt: () => void;
+  /** Each seat's cut of the event stream (anti-wallhack phase 2). Keyed like `encoders`. */
+  private readonly seatEvents = new Map<number, SeatEvents>();
+  /** `Unseen`: a body relevant to, and heard by, nobody but itself. */
+  private readonly unseen = (entityId: number): boolean =>
+    this.seatByEntity(entityId)?.session.cheats.has(Cheat.Unseen) === true;
 
   private readonly header: SnapshotHeader = makeSnapshotHeader();
   private readonly entities: EntitySnapshot[] = [];
@@ -305,6 +311,7 @@ export abstract class MatchInstance {
     this.encoders.set(player.entityId, new SnapshotEncoder());
     // A new view has no memory, so this seat starts out told about nobody it cannot see.
     this.views.set(player.entityId, new SeatView());
+    this.seatEvents.set(player.entityId, new SeatEvents());
     if (visibilityAuditEnabled()) this.audits.set(player.entityId, new SeatAudit());
     // A new encoder has no baseline, so the next snapshot to this client is a full one. Reset
     // the acks with it, or the encoder would be asked to delta against a snapshot id that
@@ -331,6 +338,7 @@ export abstract class MatchInstance {
     this.releaseEntity(seat.player.entityId, cause);
     this.encoders.delete(seat.player.entityId);
     this.views.delete(seat.player.entityId);
+    this.seatEvents.delete(seat.player.entityId);
     this.audits.delete(seat.player.entityId);
     /**
      * The cheat entitlements go with the seat, and F14 got this wrong (round 4, and the fix).
@@ -511,7 +519,7 @@ export abstract class MatchInstance {
         ctx,
         session.cheats.has(Cheat.NoClip),
         oneLife && !player.alive,
-        (entityId) => this.seatByEntity(entityId)?.session.cheats.has(Cheat.Unseen) === true,
+        this.unseen,
       );
       const spent = nowMs() - t0;
       this.relevanceMs += spent;
@@ -864,12 +872,46 @@ export abstract class MatchInstance {
     return modeStateFacts(this.match.mode, this.match.flow, this.hashScratch);
   }
 
+  /**
+   * The tick's events, each seat its own cut (anti-wallhack phase 2, `SeatEvents`): the shared frame
+   * when the seat may have all of it, a frame of its own when not, nothing when nothing is left.
+   */
   private sendEvents(): void {
-    const frame = this.match.outgoing.finish();
+    const events = this.match.outgoing;
+    const frame = events.finish();
     if (frame === null) return;
+    const freeForAll = this.match.modeEntry.freeForAll === true;
+    const oneLife = this.match.modeEntry.usesRoundReset === true;
     for (const seat of this.seats.values()) {
-      if (seat.session.closed) continue;
-      seat.session.send(frame);
+      const { session, player } = seat;
+      if (session.closed) continue;
+      const cut = this.seatEvents.get(player.entityId);
+      if (cut === undefined) continue;
+      const spectating = oneLife && !player.alive;
+      const kept = cut.select(
+        events,
+        player.entityId,
+        this.entities,
+        this.entityCount,
+        freeForAll,
+        session.cheats.has(Cheat.NoClip),
+        spectating,
+        this.unseen,
+      );
+      const sent = kept === events.pending ? frame : kept === 0 ? null : events.frameFor(cut.keep, cut.writer);
+      if (sent !== null) session.send(sent);
+      this.audits.get(player.entityId)?.observeEvents(
+        sent,
+        events,
+        player.entityId,
+        this.entities,
+        this.entityCount,
+        freeForAll,
+        session.cheats.has(Cheat.NoClip),
+        spectating,
+        this.unseen,
+        visibilityAuditTotals,
+      );
     }
   }
 
@@ -904,6 +946,7 @@ export abstract class MatchInstance {
     this.offHurt();
     this.match.dispose();
     this.encoders.clear();
+    this.seatEvents.clear();
     this.seats.clear();
     // The pool is per instance and would otherwise be 64 live objects per destroyed match.
     this.entities.length = 0;

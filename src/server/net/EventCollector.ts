@@ -42,14 +42,44 @@ import { ByteWriter } from '../../shared/net/Wire';
  * would put eight events on the wire for one shotgun blast to produce marks nobody is looking
  * at. The one approximation this accepts: a shotgun's spread is drawn from the first pellet's
  * terminus, so the pattern on a wall is synthesised rather than exact.
+ *
+ * ## One frame, cut per seat
+ *
+ * The tick's events are encoded once, as they always were, and each is also *recorded*: its kind,
+ * the body it is about, where, and whether an enemy may hear it at all, with the byte range it
+ * occupies. A seat that may be told everything is sent the shared frame; any other is sent a frame
+ * built from the ranges it may have (`frameFor`) — which events those are is `SeatEvents`'s
+ * decision (anti-wallhack phase 2, docs/VISIBILITY.md).
  */
 
-/** One tick's worth of events, encoded once and sent to every client. */
+/** Events one tick can hold: the frame's count is a byte. */
+export const MAX_TICK_EVENTS = 255;
+
+/** One tick's worth of events, encoded once and cut per seat. */
 export class EventCollector {
   private readonly writer = new ByteWriter(MAX_SERVER_FRAME_BYTES);
   private count = 0;
   private open = false;
   private overflowNoted = false;
+
+  /** Event `i`'s kind (`Ev`). The records below are valid for `i < pending`, until `begin`. */
+  readonly kinds = new Uint8Array(MAX_TICK_EVENTS);
+  /** The body event `i` is about: the stepping, jumping or landing body, the shooter, the hurt or killed one. */
+  readonly subjects = new Int32Array(MAX_TICK_EVENTS);
+  /** Where on the ground: the step, the muzzle, the hit. */
+  readonly xs = new Float32Array(MAX_TICK_EVENTS);
+  readonly zs = new Float32Array(MAX_TICK_EVENTS);
+  /** 1 when no enemy may hear it: a crouched or sliding step, or a step with Dead Silence (D4). */
+  readonly muted = new Uint8Array(MAX_TICK_EVENTS);
+  /** Event `i`'s bytes in the shared frame are `[starts[i], ends[i])`. */
+  private readonly starts = new Uint32Array(MAX_TICK_EVENTS);
+  private readonly ends = new Uint32Array(MAX_TICK_EVENTS);
+
+  /**
+   * Dead Silence, asked per step. Installed by the match — the same predicate `BotDirector` asks,
+   * so a step the bots cannot hear is a step no enemy is sent (D4).
+   */
+  silentFootsteps: ((entityId: number) => boolean) | null = null;
 
   /** Events written this tick. Zero means there is nothing to send. */
   get pending(): number {
@@ -85,7 +115,7 @@ export class EventCollector {
         // The resolved weapon's answer, suppressor and all (v27). The receiving client cannot know
         // what is on the shooter's gun; see `FiredEvent.minimapPing`.
         fired.minimapPing = p.minimapPing;
-        this.write(() => writeFired(this.writer, fired));
+        this.write(Ev.Fired, p.sourceId, p.x, p.z, false, () => writeFired(this.writer, fired));
       }),
     );
 
@@ -109,7 +139,7 @@ export class EventCollector {
         damage.x = p.x;
         damage.y = p.y;
         damage.z = p.z;
-        this.write(() => writeDamage(this.writer, damage));
+        this.write(Ev.Damage, p.sourceId, p.x, p.z, false, () => writeDamage(this.writer, damage));
       }),
     );
 
@@ -121,7 +151,7 @@ export class EventCollector {
         killed.zone = p.zone;
         // Stamped by `DamageSystem` at the kill, not read off a body afterwards (round 5, F9).
         killed.killerHealth = p.killerHealth;
-        this.write(() => writeKilled(this.writer, killed));
+        this.write(Ev.Killed, p.targetId, 0, 0, false, () => writeKilled(this.writer, killed));
       }),
     );
 
@@ -134,7 +164,10 @@ export class EventCollector {
         footstep.material = p.material;
         footstep.heavy = p.heavy;
         footstep.quiet = p.quiet;
-        this.write(() => writeFootstep(this.writer, footstep));
+        // Crouch-walking and sliding are silent by design (S6.3), and Dead Silence is the perk that
+        // says so for every step — both already cut from the bots' hearing in `BotDirector`.
+        const muted = p.quiet || this.silentFootsteps?.(p.entityId) === true;
+        this.write(Ev.Footstep, p.entityId, p.x, p.z, muted, () => writeFootstep(this.writer, footstep));
       }),
     );
 
@@ -146,7 +179,7 @@ export class EventCollector {
         pose.z = p.z;
         pose.speed = p.horizontalSpeed;
         pose.material = 0;
-        this.write(() => writePose(this.writer, Ev.Jump, pose));
+        this.write(Ev.Jump, p.entityId, p.x, p.z, false, () => writePose(this.writer, Ev.Jump, pose));
       }),
     );
 
@@ -158,7 +191,7 @@ export class EventCollector {
         pose.z = p.z;
         pose.speed = p.impactSpeed;
         pose.material = p.material;
-        this.write(() => writePose(this.writer, Ev.Land, pose));
+        this.write(Ev.Land, p.entityId, p.x, p.z, false, () => writePose(this.writer, Ev.Land, pose));
       }),
     );
 
@@ -186,11 +219,29 @@ export class EventCollector {
     return finishEvents(this.writer, this.count);
   }
 
-  private write(fn: () => void): void {
+  /**
+   * A frame holding only the events `keep` marks (1), in order, encoded into `out` — the seat's
+   * own writer, never a shared one: a socket may still hold the last frame's bytes when the next
+   * seat's are written (DEBUG.md, the shared-writer bug). Call after `finish`.
+   */
+  frameFor(keep: Uint8Array, out: ByteWriter): Uint8Array {
+    out.reset();
+    beginEvents(out);
+    let n = 0;
+    for (let i = 0; i < this.count; i++) {
+      if (keep[i] !== 1) continue;
+      out.copyFrom(this.writer, this.starts[i] ?? 0, this.ends[i] ?? 0);
+      n++;
+    }
+    return finishEvents(out, n);
+  }
+
+  private write(kind: number, subject: number, x: number, z: number, muted: boolean, fn: () => void): void {
     if (!this.open) return;
     // 255 is the count field's ceiling. A tick that produced more than that is a tick with
     // something badly wrong in it, and truncating is better than a count that lies.
-    if (this.count >= 255) return;
+    if (this.count >= MAX_TICK_EVENTS) return;
+    const start = this.writer.length;
     fn();
     if (this.writer.overflowed) {
       // Stop adding. The frame is sealed at whatever fitted, and the count matches, so it
@@ -199,6 +250,14 @@ export class EventCollector {
       this.open = false;
       return;
     }
+    const i = this.count;
+    this.kinds[i] = kind;
+    this.subjects[i] = subject;
+    this.xs[i] = x;
+    this.zs[i] = z;
+    this.muted[i] = muted ? 1 : 0;
+    this.starts[i] = start;
+    this.ends[i] = this.writer.length;
     this.count++;
   }
 }

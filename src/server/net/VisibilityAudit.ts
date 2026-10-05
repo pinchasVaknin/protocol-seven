@@ -1,6 +1,10 @@
+import { decodeHeader, readEvents, Ev, type EventSink } from '../../shared/net/Messages';
 import { EFlag, type EntitySnapshot } from '../../shared/net/Snapshot';
+import { ByteReader } from '../../shared/net/Wire';
 import { makeRayHit } from '../../shared/world/Geometry';
+import type { EventCollector } from './EventCollector';
 import { clearLine, isAlive, NEAR_RADIUS_M, teamOf, type RelevanceContext } from './Relevance';
+import { HEARING_RADIUS_M, isSound } from './SeatEvents';
 import type { SeatView } from './SeatView';
 
 /**
@@ -22,7 +26,12 @@ import type { SeatView } from './SeatView';
  * - **hurt from dormant** — the seat was hit by a body its last snapshot sent dormant (a round
  *   through a wall, a shooter whose eye line was blocked): how often the client's chevron has to
  *   wait for R9's wake. **Still dormant** — such a shooter dormant again in the very next snapshot:
- *   R9 failed and the chevron has nothing to point at. Must be zero.
+ *   R9 failed and the chevron has nothing to point at. Must be zero;
+ * - **sounds** (test 2, phase 2 part 2) — every enemy footstep, jump and landing of a tick, held
+ *   against the frame this seat was actually sent, decoded: one an enemy could hear (within
+ *   `HEARING_RADIUS_M` of where the seat listens, not crouched, not Dead Silence) and was not sent
+ *   is **missing**; one it could not hear and was sent is a **leak** — a position on the wire that
+ *   the game never gave the player. Both must be zero.
  *
  * Off unless a harness turns it on: it costs a line test per pair on top of culling's own, and
  * nothing in a match reads it.
@@ -67,6 +76,14 @@ export interface VisibilityAuditStats {
   hurtFromDormant: number;
   /** Of those, the shooter was dormant in the next snapshot too. Must be zero (R9). */
   hurtStillDormant: number;
+  /** Enemy footsteps, jumps and landings, per seat that could have been sent them. */
+  enemySounds: number;
+  /** Of those, sent. */
+  enemySoundsSent: number;
+  /** Audible and not sent. Must be zero. */
+  soundsMissing: number;
+  /** Sent and not audible. Must be zero. */
+  soundLeaks: number;
 }
 
 export function emptyAuditStats(): VisibilityAuditStats {
@@ -87,6 +104,10 @@ export function emptyAuditStats(): VisibilityAuditStats {
     hurtTotal: 0,
     hurtFromDormant: 0,
     hurtStillDormant: 0,
+    enemySounds: 0,
+    enemySoundsSent: 0,
+    soundsMissing: 0,
+    soundLeaks: 0,
   };
 }
 
@@ -106,6 +127,79 @@ export class SeatAudit {
   private readonly hurtBy = new Set<number>();
   private readonly hit = makeRayHit();
   private startedMs = -1;
+  /** The sounds in the last frame this seat was sent, decoded: kind, body, x, z, used. */
+  private readonly heard: Array<{ kind: number; id: number; x: number; z: number; used: boolean }> = [];
+  private readonly reader = new ByteReader(new Uint8Array(0));
+  private readonly ears: EntitySnapshot[] = [];
+  private readonly sink: EventSink = {
+    onFootstep: (e) => this.heard.push({ kind: Ev.Footstep, id: e.entityId, x: e.x, z: e.z, used: false }),
+    onJump: (e) => this.heard.push({ kind: Ev.Jump, id: e.entityId, x: e.x, z: e.z, used: false }),
+    onLand: (e) => this.heard.push({ kind: Ev.Land, id: e.entityId, x: e.x, z: e.z, used: false }),
+  };
+
+  /**
+   * One tick's sounds against what this seat was sent (`sent`, null for nothing). Where the seat
+   * listens from is worked out here again, not asked of `SeatEvents`: the audit decodes the bytes
+   * and applies the rule itself, so a cut that drifted from the rule shows up as a count.
+   */
+  observeEvents(
+    sent: Uint8Array | null,
+    events: EventCollector,
+    viewerId: number,
+    entities: readonly EntitySnapshot[],
+    entityCount: number,
+    freeForAll: boolean,
+    hearsAll: boolean,
+    spectating: boolean,
+    hidden: (entityId: number) => boolean,
+    out: VisibilityAuditStats,
+  ): void {
+    this.heard.length = 0;
+    if (sent !== null) {
+      this.reader.reuse(sent);
+      const msg = decodeHeader(this.reader);
+      if (msg.kind === 'events') readEvents(this.reader, msg.count, this.sink);
+    }
+
+    const byId = (id: number): EntitySnapshot | null => {
+      for (let i = 0; i < entityCount; i++) if (entities[i]?.entityId === id) return entities[i] ?? null;
+      return null;
+    };
+    const viewer = byId(viewerId);
+    if (viewer === null) return;
+    this.ears.length = 0;
+    for (let i = 0; i < entityCount; i++) {
+      const e = entities[i];
+      if (e === undefined) continue;
+      const listens = spectating
+        ? e.entityId !== viewerId && isAlive(e) && !freeForAll && teamOf(e) === teamOf(viewer)
+        : e.entityId === viewerId;
+      if (listens) this.ears.push(e);
+    }
+
+    for (let i = 0; i < events.pending; i++) {
+      const kind = events.kinds[i] ?? 0;
+      const subject = events.subjects[i] ?? -1;
+      if (!isSound(kind) || subject === viewerId) continue;
+      const body = byId(subject);
+      if (body !== null && !freeForAll && teamOf(body) === teamOf(viewer)) continue;
+      out.enemySounds++;
+      const x = events.xs[i] ?? 0;
+      const z = events.zs[i] ?? 0;
+      const audible =
+        hearsAll ||
+        (!hidden(subject) &&
+          events.muted[i] !== 1 &&
+          this.ears.some((ear) => Math.hypot(ear.x - x, ear.z - z) <= HEARING_RADIUS_M));
+      const match = this.heard.find((h) => !h.used && h.kind === kind && h.id === subject && Math.abs(h.x - x) < 0.1 && Math.abs(h.z - z) < 0.1);
+      if (match !== undefined) {
+        match.used = true;
+        out.enemySoundsSent++;
+      }
+      if (audible && match === undefined) out.soundsMissing++;
+      if (!audible && match !== undefined) out.soundLeaks++;
+    }
+  }
 
   /**
    * The seat was just hurt by `sourceId`. `view` still holds the snapshot last sent, so this is

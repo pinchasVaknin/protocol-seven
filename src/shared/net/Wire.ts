@@ -133,6 +133,17 @@ export class ByteWriter {
     this.u8.set(src, this.at);
     this.at += src.length;
   }
+
+  /**
+   * Append bytes `[from, to)` of what `src` has written. A loop, not `set(subarray(...))`: it runs
+   * per event per seat on the tick's send path, where nothing allocates (S4.7).
+   */
+  copyFrom(src: ByteWriter, from: number, to: number): void {
+    const n = to - from;
+    if (n <= 0 || !this.room(n)) return;
+    const s = src.u8;
+    for (let i = from; i < to; i++) this.u8[this.at++] = s[i] ?? 0;
+  }
 }
 
 export class ByteReader {

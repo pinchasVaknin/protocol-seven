@@ -1450,6 +1450,8 @@ export class Server {
           meanStepMs: round(i.meanStepMs),
           relevanceMs: round(relevance.ms),
           dormantPct: relevance.dormantPct,
+          // Phase 2: what cutting the event stream per seat cost over the same window.
+          eventCutMs: round(relevance.eventCutMs),
         };
       }),
       vote: {

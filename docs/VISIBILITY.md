@@ -4,12 +4,12 @@ Security audit 2026-10-04, finding S4: every client was told where every player 
 client could draw enemies through walls. This document says what leaked, what the server sends
 instead, what that costs, how it is proved, and which decisions were the human's.
 
-**Phase 1 is built** (2026-10-04) — snapshots are culled per seat; see *Phase 1, as built* below,
-which records where the build departed from this design and what it measured. **Phase 2, the
-event stream, is being built** (see *Phase 2* below): footsteps, jumps and landings reach only the
-players who could hear them, shots, hits and kills only in the form each player may have them
-(protocol 29), and the S&D bomb only where each player's own snapshot puts its carrier. What is
-left is the write-up: the residual leaks and the deploy checklist.
+**Phases 1 and 2 are built** (2026-10-04/05). Snapshots are culled per seat (*Phase 1, as built*);
+footsteps, jumps and landings reach only the players who could hear them, shots, hits and kills only
+in the form each player may have them (protocol 29), and the S&D bomb only where each player's own
+snapshot puts its carrier (*Phase 2, as built*). Each section records where the build departed from
+this design and what it measured; *What is still on the wire* lists what a modified client is still
+sent, and why.
 
 ---
 
@@ -355,12 +355,37 @@ for now:
   a plant is running but not where.
 - **Smoke does not hide anything yet** (E4, phase 3).
 
+### Phase 2, measured whole
+
+Every mode once, with every audit on and `--suppressed`, three headless players and ten bots,
+120 s, no added latency — and Search & Destroy again on the bad profile (100 ±30 ms, 2% loss).
+Counts are per player.
+
+| Mode, map | Hard misses | Late | Enemy sounds sent | Suppressed shots → impacts | Hits between others sent | Carried bomb, carrier unseen | Missing / leaked | Event bytes kept off the wire |
+|---|---|---|---|---|---|---|---|---|
+| TDM, FOUNDRY | 0 | 3.9% | 204 of 5179 | 644 → 166 | 696 of 928 | — | 0 / 0 | 32% |
+| Domination, DUNES | 0 | 3.5% | 165 of 5161 | 374 → 81 | 414 of 778 | — | 0 / 0 | 40% |
+| Kill Confirmed, DEPOT | 0 | 1.3% | 108 of 5353 | 504 → 195 | 704 of 919 | — | 0 / 0 | 33% |
+| Free-for-all, FOUNDRY | 0 | 2.5% | 499 of 6686 | 636 → 372 | 271 of 532 | — | 0 / 0 | 50% |
+| Search & Destroy, DUNES | 0 | 0.0% | 1 of 3140 | none fired | 124 of 254 | 1508 of 2262 | 0 / 0 | 59% |
+| Search & Destroy, DUNES, bad profile | 0 | 10.5% (2 of 19) | 30 of 3134 | 234 → 234 | 218 of 365 | 1453 of 2247 | 0 / 0 | 49% |
+
+Every flow passed. R9: 0 shooters still dormant after a hit in every run. In the S&D run with no
+added latency the seeker never fired a suppressed shot — a one-life round can end before it finds
+anybody — and the harness says so as a warning rather than failing a quiet match; the bad-profile
+run is the one that exercised D2 there. Its 10.5% late is two bodies of nineteen coming into view.
+
+**Cost.** Culling stayed at 195–264 µs per seat per snapshot, as in phase 1. Cutting the event
+stream adds 6–8 µs per seat per tick — at 60 Hz, about 0.4 ms a second per player, a tenth of what
+culling costs. Both are on the server's `metrics` line every thirty seconds, per instance:
+`relevanceMs` and `eventCutMs` (DEPLOY.md, *Security checklist*).
+
 ## Phases
 
 1. **Entities — built.** Per-recipient relevance (R1–R4, R6, R7, R8, `Unseen`), `EFlag.Dormant`,
    the client honouring it. Protocol 28. Tests 1, 3 and 4.
-2. **Events and the rest — being built.** R9; sounds by hearing (E1, E2, D4); shots, hits and
-   kills per seat (D2, E3; protocol 29); the S&D bomb's carrier. Test 2.
+2. **Events and the rest — built.** R9; sounds by hearing (E1, E2, D4); shots, hits and kills per
+   seat (D2, E3; protocol 29); the S&D bomb's carrier. Test 2.
 3. **Smoke** as an occluder (E4), and only if the cost asks for it, the baked visibility set.
 
 ## Decisions

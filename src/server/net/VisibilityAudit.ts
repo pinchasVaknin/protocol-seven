@@ -105,6 +105,11 @@ export interface VisibilityAuditStats {
   bombCarrierUnseen: number;
   /** A carried bomb sent anywhere but where the seat's own snapshot put an unseen carrier. Must be zero. */
   bombLeaks: number;
+  /** The event cut's cost and effect: seat-ticks with events, ms cutting, and bytes of the whole frame against those sent. */
+  eventSeatTicks: number;
+  eventCutMs: number;
+  eventBytesWhole: number;
+  eventBytesSent: number;
 }
 
 export function emptyAuditStats(): VisibilityAuditStats {
@@ -139,6 +144,10 @@ export function emptyAuditStats(): VisibilityAuditStats {
     bombCarried: 0,
     bombCarrierUnseen: 0,
     bombLeaks: 0,
+    eventSeatTicks: 0,
+    eventCutMs: 0,
+    eventBytesWhole: 0,
+    eventBytesSent: 0,
   };
 }
 

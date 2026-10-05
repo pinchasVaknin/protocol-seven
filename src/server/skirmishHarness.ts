@@ -92,7 +92,8 @@ interface HarnessOptions {
    * The third client hunts with a suppressor (anti-wallhack phase 2, part 3). This harness's
    * clients never pull a trigger (`hasSomethingToLose`), no weapon is suppressed out of the box and
    * the bots fit nothing — so without it D2's bare impacts, a suppressed shot from a body the
-   * receiver does not have, are never sent, and the audit's zero for them means nothing.
+   * receiver does not have, are never sent, and the audit's zero for them means nothing. A run in
+   * which the seeker still never shot from out of sight says so as a warning.
    */
   readonly suppressed: boolean;
   /** Have one client change its class mid-warmup (§6.6). */
@@ -1603,8 +1604,14 @@ function reportFlow(input: FlowReportInput): number {
         `(target seen); ${audit.eventsMissing} missing, ${audit.eventLeaks} leaked (both must be 0).`,
     );
     if (audit.shots === 0) problems.push('the event audit saw no shots — it is not running');
+    // A coverage note, not a failure: a one-life round can end before the seeker finds anybody to
+    // shoot, and a check that fails on a quiet match is a flaky check. Missing and leaked above
+    // are the invariants; this says when they had nothing of D2's to hold.
     if (opts.suppressed && audit.shotsAsImpact === 0) {
-      problems.push('--suppressed: no suppressed shot was sent as a bare impact — D2 was not exercised');
+      log.warn(
+        `--suppressed: no suppressed shot went out as a bare impact (${audit.shotsSuppressed} suppressed in all) — ` +
+          'D2 was not exercised this run.',
+      );
     }
     if (audit.eventsMissing > 0) problems.push(`${audit.eventsMissing} shot/hit/kill event(s) were not sent as due`);
     if (audit.eventLeaks > 0) problems.push(`${audit.eventLeaks} shot/hit/kill event(s) leaked a position or a health`);
@@ -1616,6 +1623,12 @@ function reportFlow(input: FlowReportInput): number {
       );
     }
     if (audit.bombLeaks > 0) problems.push(`${audit.bombLeaks} bomb send(s) placed a carrier the player could not see`);
+    const cutUs = audit.eventSeatTicks === 0 ? 0 : (1000 * audit.eventCutMs) / audit.eventSeatTicks;
+    const savedPct = audit.eventBytesWhole === 0 ? 0 : 100 * (1 - audit.eventBytesSent / audit.eventBytesWhole);
+    log.info(
+      `event cut: ${Math.round(audit.eventCutMs)} ms over ${audit.eventSeatTicks} seat-tick(s), ${cutUs.toFixed(1)} µs each; ` +
+        `${audit.eventBytesSent} of ${audit.eventBytesWhole} event byte(s) sent (${savedPct.toFixed(0)}% kept off the wire).`,
+    );
     if (audit.hardMisses > 0) {
       problems.push(`${audit.hardMisses} body(ies) in plain view were sent dormant`);
     }

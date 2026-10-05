@@ -160,7 +160,24 @@ and join once: the `joined as entity` line in the log should show a public addre
 `127.0.0.1` or `10.x`.
 
 **What the server cannot hold, by design.** Progression lives in the browser, so a player can
-field a weapon they have not unlocked (README, *A note on progression*). And every client is sent
-every player's position, so a modified client could draw them through walls. Snapshots are now
-culled per player (`docs/VISIBILITY.md`, phase 1): a body you cannot see is sent frozen and hidden.
-The event stream — shots, footsteps, hits — still carries positions to everybody until phase 2.
+field a weapon they have not unlocked (README, *A note on progression*).
+
+**What each player is told about the others** (`docs/VISIBILITY.md`). Every client used to be sent
+every player's position, so a modified client could draw them through walls. Now a body you cannot
+see goes out frozen and hidden (phase 1); an enemy's footsteps reach you only within 12 m, a
+suppressed shot from somebody you cannot see only as its impact, a hit only if you can see who was
+hit, the killer's health only to the victim, and the S&D bomb only where you last saw its carrier
+(phase 2). What is still on the wire, and why, is listed in that document under *What is still on
+the wire*.
+
+**A protocol bump needs every open tab reloaded.** The server refuses a client built for another
+version (`protocol version mismatch`), so after a deploy that moves `PROTOCOL_VERSION` — the boot
+line says `protocol vN` — anyone with the game open must reload the page. Version 29 is the current
+one (phase 2, part 3).
+
+**Watching what the culling costs.** Every thirty seconds the log's `metrics` line carries, per
+instance, `relevanceMs` (deciding who each player is told about), `eventCutMs` (cutting the event
+stream per player) — both totals for the whole window — and `dormantPct` (the share of enemy
+records sent hidden). Divided by players × 600 snapshots a window, `relevanceMs` was 0.07–0.18 ms
+per player per snapshot on Render after phase 1: about 4% of a core for ten players. Ten times
+that is the point to read *Cost* in `docs/VISIBILITY.md`, which names the first optimisation.

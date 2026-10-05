@@ -166,6 +166,8 @@ export abstract class MatchInstance {
   relevanceMs = 0;
   relevanceEnemies = 0;
   relevanceDormant = 0;
+  /** ms spent cutting the event stream per seat since the metrics last read it (phase 2). */
+  eventCutMs = 0;
   /** Phase 1's own proof, when a harness turns it on (`enableVisibilityAudit`). */
   private readonly audits = new Map<number, SeatAudit>();
   /** The R9 subscription on the match's bus. */
@@ -498,11 +500,13 @@ export abstract class MatchInstance {
    * Relevance's cost and effect since the last call, for the metrics line (anti-wallhack phase 1):
    * ms spent deciding, and the share of enemy records that went out dormant.
    */
-  takeRelevanceStats(): { readonly ms: number; readonly dormantPct: number } {
+  takeRelevanceStats(): { readonly ms: number; readonly dormantPct: number; readonly eventCutMs: number } {
     const out = {
       ms: this.relevanceMs,
       dormantPct: this.relevanceEnemies === 0 ? 0 : Math.round((100 * this.relevanceDormant) / this.relevanceEnemies),
+      eventCutMs: this.eventCutMs,
     };
+    this.eventCutMs = 0;
     this.relevanceMs = 0;
     this.relevanceEnemies = 0;
     this.relevanceDormant = 0;
@@ -947,6 +951,7 @@ export abstract class MatchInstance {
       ctx.seesAll = session.cheats.has(Cheat.NoClip);
       ctx.spectating = oneLife && !player.alive;
       ctx.awake = view.awake;
+      const t0 = nowMs();
       cut.select(events, ctx);
       const sent =
         cut.kept === events.pending && cut.varied === 0
@@ -954,7 +959,15 @@ export abstract class MatchInstance {
           : cut.kept === 0
             ? null
             : events.frameFor(cut.keep, cut.writer);
+      const spent = nowMs() - t0;
+      this.eventCutMs += spent;
       if (sent !== null) session.send(sent);
+      if (visibilityAuditEnabled()) {
+        visibilityAuditTotals.eventSeatTicks++;
+        visibilityAuditTotals.eventCutMs += spent;
+        visibilityAuditTotals.eventBytesWhole += frame.length;
+        visibilityAuditTotals.eventBytesSent += sent?.length ?? 0;
+      }
       this.audits.get(player.entityId)?.observeEvents(sent, events, view, ctx, visibilityAuditTotals);
     }
   }

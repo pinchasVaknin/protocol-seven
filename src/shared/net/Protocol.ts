@@ -17,6 +17,13 @@
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v29 (2026-10-05, the human): **a shot nobody here can see or hear arrives as its impact.**
+ * `Ev.Impact` (7) carries a round's terminus and material and nothing else — no shooter, no muzzle,
+ * no direction (which would point back at the muzzle). The server sends it instead of `Fired` for a
+ * suppressed shot from a body dormant to the recipient (D2; anti-wallhack phase 2, part 3,
+ * docs/VISIBILITY.md). A v28 client stops decoding a frame at an event id it does not know, which
+ * would lose the rest of the tick's events, so the version moves.
+ *
  * v28 (2026-10-04, the human): **a body this viewer cannot see is dormant.** `EFlag.Dormant`, bit 11
  * of the entity flags, set per recipient by the server's `SeatView` (anti-wallhack phase 1,
  * docs/VISIBILITY.md): the record is frozen where the body was last relevant to this viewer and the
@@ -223,7 +230,7 @@
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 28;
+export const PROTOCOL_VERSION = 29;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

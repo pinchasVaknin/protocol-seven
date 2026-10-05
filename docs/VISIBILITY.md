@@ -6,9 +6,9 @@ instead, what that costs, how it is proved, and which decisions were the human's
 
 **Phase 1 is built** (2026-10-04) — snapshots are culled per seat; see *Phase 1, as built* below,
 which records where the build departed from this design and what it measured. **Phase 2, the
-event stream, is being built** (see *Phase 2* below): footsteps, jumps and landings now reach only
-the players who could hear them, but until part 3 lands `Fired` and `Damage` still go to every
-client with positions, so a modified client can still place a body that shoots.
+event stream, is being built** (see *Phase 2* below): footsteps, jumps and landings reach only the
+players who could hear them, and shots, hits and kills only in the form each player may have them
+(protocol 29). What is left of phase 2 is the S&D bomb's carrier.
 
 ---
 
@@ -276,12 +276,52 @@ So 97–98% of the enemy footsteps, jumps and landings that every client used to
 leave the server. In the browser, on DUNES in Search & Destroy: teammates' steps still arrived from
 up to 66 m, and no enemy step from beyond 12 m arrived; no errors.
 
+**Part 3 — shots, hits and kills per seat (protocol 29).** The rule is that an event never places a
+body the seat's own snapshot does not, unless the game makes the place public anyway:
+
+- **A shot** goes whole when the seat fired it, has the shooter awake (`SeatView.awake`, the bodies
+  its last snapshot sent awake), or the shot pings the minimap — an unsuppressed rifle's place is
+  on every enemy's minimap by design. A **suppressed** shot from a body the seat does not have goes
+  as `Ev.Impact` (D2): the terminus and the material, no shooter and no direction (the line back
+  along a round's travel is the line to its muzzle). The client draws the spark, the decal and the
+  click, with the spark facing the player, and plays no gunshot and no tracer.
+- **A hit** goes to its target and its source, and to anybody else only if they have the *target*
+  awake. The design said "either party"; but the hit is placed on its target, so the target is the
+  body it would give away, and a seat that sees only the shooter learns nothing it needs from it.
+- **A kill** goes to everybody — the feed is public — with `killerHealth` zeroed for all but the
+  victim (E3).
+- An `Unseen` body's suppressed shots are bare impacts to everybody; a free cam gets everything.
+
+`EventCollector` encodes the two kinds that have a second form twice — the shot as its impact, the
+kill without the health — into a frame of variants, and `frameFor` copies each event in the form
+`SeatEvents` chose. The audit extends test 2 to them, again decoding each seat's real frame and
+reading "awake" off the records its last snapshot carried rather than off `SeatView.awake`.
+
+No weapon is suppressed out of the box, the bots fit nothing, and the flow harness's own clients
+never pull a trigger — so a flow run sends no bare impacts at all, and `--suppressed` makes the
+third client a seeker carrying a suppressor; the run fails if no suppressed shot went out as an
+impact. Measured, 120 s each:
+
+| Run | Other players' shots per player | Suppressed | As a bare impact | Hits between others | Sent | Missing | Leaked |
+|---|---|---|---|---|---|---|---|
+| Kill Confirmed, `--suppressed` | 5196 | 480 | 194 | 897 | 694 | 0 | 0 |
+| Kill Confirmed, `--suppressed`, bad profile | 5664 | 540 | 207 | 899 | 758 | 0 | 0 |
+| Kill Confirmed, default clients | 4938 | 0 | 0 | 990 | 750 | 0 | 0 |
+| Search & Destroy | 600 | 0 | 0 | 287 | 173 | 0 | 0 |
+
+So a fifth of the hits between other players — the ones on a body the seat could not see — no
+longer leave the server, and a suppressed shooter nobody can see is a place the round hit, nothing
+more. In the browser: 398 shots in the arena, the 3 from dormant shooters all unsuppressed; 186
+hits between others, none on a dormant target; two kills of others with the killer's health zero,
+and the player's own death with it (200, "HP LEFT" and 23 m on the death report); an `Impact`
+through the client's sink emits the impact facing the player and no shot.
+
 ## Phases
 
 1. **Entities — built.** Per-recipient relevance (R1–R4, R6, R7, R8, `Unseen`), `EFlag.Dormant`,
    the client honouring it. Protocol 28. Tests 1, 3 and 4.
-2. **Events and the rest — being built.** R9; per-recipient events (D2) filtered by hearing (E1,
-   E2, D4); `killerHealth` to the victim only (E3); the S&D bomb's carrier. Test 2.
+2. **Events and the rest — being built.** R9; sounds by hearing (E1, E2, D4); shots, hits and
+   kills per seat (D2, E3; protocol 29); the S&D bomb's carrier. Test 2.
 3. **Smoke** as an occluder (E4), and only if the cost asks for it, the baked visibility set.
 
 ## Decisions

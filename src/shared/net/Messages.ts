@@ -110,6 +110,12 @@ export const Ev = {
   Footstep: 4,
   Jump: 5,
   Land: 6,
+  /**
+   * A round landed here (protocol v29). What a client is sent instead of `Fired` for a suppressed
+   * shot from a body it is not told about (D2): the spark, the decal and the click of the round
+   * arriving, and nothing about where it came from.
+   */
+  Impact: 7,
 } as const;
 
 export interface FiredEvent {
@@ -220,8 +226,21 @@ export interface PoseEvent {
   material: number;
 }
 
+/**
+ * A round's terminus, alone (protocol v29). No shooter and no direction: the line from an impact
+ * back along its travel is the line to the muzzle.
+ */
+export interface ImpactEvent {
+  x: number;
+  y: number;
+  z: number;
+  /** Terminating surface material, as on `FiredEvent`. */
+  material: number;
+}
+
 export interface EventSink {
   onFired?(e: FiredEvent): void;
+  onImpact?(e: ImpactEvent): void;
   onDamage?(e: DamageEvent): void;
   onKilled?(e: KilledEvent): void;
   onFootstep?(e: FootstepEvent): void;
@@ -1074,6 +1093,14 @@ export function writeFired(w: ByteWriter, e: FiredEvent): void {
   w.u8v((e.tracer ? 1 : 0) | ((e.pelletsHit & 0x3f) << 1) | (e.minimapPing ? 0 : 0x80));
 }
 
+export function writeImpact(w: ByteWriter, e: ImpactEvent): void {
+  w.u8v(Ev.Impact);
+  w.i16(quantPos(e.x));
+  w.i16(quantPos(e.y));
+  w.i16(quantPos(e.z));
+  w.u8v(e.material);
+}
+
 export function writeDamage(w: ByteWriter, e: DamageEvent): void {
   w.u8v(Ev.Damage);
   w.u8v(e.sourceId);
@@ -1812,6 +1839,16 @@ export function readEvents(r: ByteReader, count: number, sink: EventSink): boole
         sink.onFired?.(e);
         break;
       }
+      case Ev.Impact: {
+        const e = impactScratch;
+        e.x = dequantPos(r.i16());
+        e.y = dequantPos(r.i16());
+        e.z = dequantPos(r.i16());
+        e.material = r.u8v();
+        if (r.overran) return false;
+        sink.onImpact?.(e);
+        break;
+      }
       case Ev.Damage: {
         const e = damageScratch;
         e.sourceId = r.u8v();
@@ -1912,5 +1949,6 @@ const footstepScratch: FootstepEvent = {
   quiet: false,
 };
 const poseScratch: PoseEvent = { entityId: 0, x: 0, y: 0, z: 0, speed: 0, material: 0 };
+const impactScratch: ImpactEvent = { x: 0, y: 0, z: 0, material: 0 };
 
 export { ByteReader, ByteWriter };

@@ -25,6 +25,13 @@ export class SeatView {
   readonly list: EntitySnapshot[] = [];
   count = 0;
 
+  /**
+   * Every body the last list sent awake, the seat's own included: what this seat's client has been
+   * told the place of. The event stream asks it (`SeatEvents`), so an event never places a body the
+   * snapshot did not.
+   */
+  readonly awake = new Set<number>();
+
   /** Enemy records in the last list, and how many of them went out dormant. For the metrics. */
   enemies = 0;
   dormantSent = 0;
@@ -73,11 +80,13 @@ export class SeatView {
     this.count = 0;
     this.enemies = 0;
     this.dormantSent = 0;
+    this.awake.clear();
     for (let i = 0; i < entityCount; i++) {
       const e = entities[i];
       if (e === undefined) continue;
       if (e.entityId === viewerId) {
         this.put(e);
+        this.awake.add(e.entityId);
         continue;
       }
       const enemy = viewer === null || ctx.freeForAll || teamOf(e) !== teamOf(viewer);
@@ -94,6 +103,7 @@ export class SeatView {
 
       if (relevant) {
         this.put(e);
+        this.awake.add(e.entityId);
         let frozen = this.frozen.get(e.entityId);
         if (frozen === undefined) {
           frozen = makeEntitySnapshot();

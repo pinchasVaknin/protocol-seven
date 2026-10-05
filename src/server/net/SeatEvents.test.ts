@@ -4,7 +4,8 @@ import { decodeHeader, Ev, readEvents } from '../../shared/net/Messages';
 import { EFlag, makeEntitySnapshot, type EntitySnapshot } from '../../shared/net/Snapshot';
 import { ByteReader } from '../../shared/net/Wire';
 import { EventCollector } from './EventCollector';
-import { HEARING_RADIUS_M, SeatEvents } from './SeatEvents';
+import { HEARING_RADIUS_M, SeatEvents, type SeatContext } from './SeatEvents';
+import { SeatView } from './SeatView';
 import { emptyAuditStats, SeatAudit } from './VisibilityAudit';
 
 /**
@@ -39,14 +40,35 @@ function tick(fill: (bus: GameBus) => void, silent: (id: number) => boolean = ()
 const NOBODY = (): boolean => false;
 const ROSTER = [body(1, 0, 0, 'A'), body(2, 3, 0, 'A'), body(3, 5, 0, 'B'), body(4, 30, 0, 'B')];
 
-/** Which of the tick's events seat 1 is sent, as `kind:entity` strings, decoded off its frame. */
-function sentTo(
-  events: EventCollector,
-  opts: { roster?: EntitySnapshot[]; freeForAll?: boolean; hearsAll?: boolean; spectating?: boolean; hidden?: (id: number) => boolean } = {},
-): string[] {
+interface Opts {
+  roster?: EntitySnapshot[];
+  freeForAll?: boolean;
+  hearsAll?: boolean;
+  spectating?: boolean;
+  hidden?: (id: number) => boolean;
+  awake?: number[];
+  viewerId?: number;
+}
+
+function context(opts: Opts = {}): SeatContext {
   const roster = opts.roster ?? ROSTER;
+  return {
+    viewerId: opts.viewerId ?? 1,
+    entities: roster,
+    entityCount: roster.length,
+    freeForAll: opts.freeForAll ?? false,
+    seesAll: opts.hearsAll ?? false,
+    spectating: opts.spectating ?? false,
+    hidden: opts.hidden ?? NOBODY,
+    awake: new Set(opts.awake ?? [1, 2]),
+  };
+}
+
+/** Which of the tick's events seat 1 is sent, as `kind:entity` strings, decoded off its frame. */
+function sentTo(events: EventCollector, opts: Opts = {}): string[] {
   const cut = new SeatEvents();
-  const kept = cut.select(events, 1, roster, roster.length, opts.freeForAll ?? false, opts.hearsAll ?? false, opts.spectating ?? false, opts.hidden ?? NOBODY);
+  cut.select(events, context(opts));
+  const kept = cut.kept;
   if (kept === 0) return [];
   const r = new ByteReader(events.frameFor(cut.keep, cut.writer));
   const head = decodeHeader(r);
@@ -56,7 +78,10 @@ function sentTo(
     onFootstep: (e) => out.push(`step:${e.entityId}`),
     onJump: (e) => out.push(`jump:${e.entityId}`),
     onLand: (e) => out.push(`land:${e.entityId}`),
-    onKilled: (e) => out.push(`killed:${e.targetId}`),
+    onKilled: (e) => out.push(`killed:${e.targetId}:${e.killerHealth}`),
+    onFired: (e) => out.push(`fired:${e.sourceId}`),
+    onImpact: (e) => out.push(`impact:${Math.round(e.z)}`),
+    onDamage: (e) => out.push(`hit:${e.sourceId}>${e.targetId}`),
   });
   expect(out.length).toBe(kept);
   return out;
@@ -103,7 +128,7 @@ describe('a seat\'s sounds', () => {
       step(bus, 4, 30, 0);
       bus.emit(EV.EntityKilled, { targetId: 4, sourceId: 3, weaponId: 'ar_carbine', zone: 'torso', killerHealth: 50 });
     });
-    expect(sentTo(events)).toEqual(['killed:4']);
+    expect(sentTo(events)).toEqual(['killed:4:0']);
   });
 
   it('hears nothing of an Unseen body, and everything on a free cam', () => {
@@ -139,6 +164,20 @@ describe('a seat\'s sounds', () => {
   });
 });
 
+/** A view whose last snapshot had 1 and 2 awake, and 3 and 4 dormant — what `context()` says. */
+function viewOfSeat1(): SeatView {
+  const view = new SeatView();
+  const recs = ROSTER.map((e) => {
+    const r = makeEntitySnapshot();
+    r.entityId = e.entityId;
+    r.flags = e.entityId <= 2 ? e.flags : e.flags | EFlag.Dormant;
+    return r;
+  });
+  for (const r of recs) view.list.push(r);
+  view.count = recs.length;
+  return view;
+}
+
 describe('the sound audit', () => {
   const run = (frame: (events: EventCollector, cut: SeatEvents) => Uint8Array | null): ReturnType<typeof emptyAuditStats> => {
     const events = tick((bus) => {
@@ -147,9 +186,9 @@ describe('the sound audit', () => {
       step(bus, 4, 30, 0);
     });
     const cut = new SeatEvents();
-    cut.select(events, 1, ROSTER, ROSTER.length, false, false, false, NOBODY);
+    cut.select(events, context());
     const stats = emptyAuditStats();
-    new SeatAudit().observeEvents(frame(events, cut), events, 1, ROSTER, ROSTER.length, false, false, false, NOBODY, stats);
+    new SeatAudit().observeEvents(frame(events, cut), events, viewOfSeat1(), context(), stats);
     return stats;
   };
 
@@ -191,5 +230,126 @@ describe('frameFor', () => {
     readEvents(r, 2, { onFootstep: (e) => kinds.push(Ev.Footstep * 100 + e.entityId) });
     expect(kinds).toEqual([Ev.Footstep * 100 + 3, Ev.Footstep * 100 + 2]);
     expect(r.remaining).toBe(0);
+  });
+});
+
+function shot(bus: GameBus, sourceId: number, x: number, z: number, minimapPing: boolean): void {
+  bus.emit(EV.WeaponFired, {
+    weaponId: 'ar_carbine',
+    sourceId,
+    x,
+    y: 1.6,
+    z,
+    dx: 0,
+    dy: 0,
+    dz: 1,
+    endX: x,
+    endY: 1.6,
+    endZ: z + 20,
+    distance: 20,
+    shotIndex: 0,
+    spreadDeg: 0,
+    tracer: false,
+    hitTarget: false,
+    ammoInMag: 20,
+    pellets: 1,
+    pelletsHit: 0,
+    minimapPing,
+  });
+}
+
+function hurt(bus: GameBus, sourceId: number, targetId: number): void {
+  bus.emit(EV.DamageDealt, {
+    sourceId,
+    targetId,
+    weaponId: 'ar_carbine',
+    zone: 'torso',
+    amount: 20,
+    x: 30,
+    y: 1,
+    z: 0,
+    distance: 20,
+    falloffLoss: 0,
+    penetrationLoss: 0,
+    lethal: false,
+    autonomous: false,
+  });
+}
+
+// Seat 1's last snapshot had 1 and 2 awake (itself and its teammate), 3 and 4 dormant.
+describe('a seat\'s shots, hits and kills (part 3)', () => {
+  it('sends a shot whole from a body it has, or one that pings the minimap, and a suppressed one from a body it lacks as its impact', () => {
+    const events = tick((bus) => {
+      shot(bus, 2, 3, 0, false);
+      shot(bus, 3, 5, 0, true);
+      shot(bus, 4, 30, 0, false);
+    });
+    expect(sentTo(events)).toEqual(['fired:2', 'fired:3', 'impact:20']);
+    expect(sentTo(events, { awake: [1, 2, 4] })).toEqual(['fired:2', 'fired:3', 'fired:4']);
+  });
+
+  it('sends its own shots whole, and everything whole to a free cam', () => {
+    const events = tick((bus) => {
+      shot(bus, 1, 0, 0, false);
+      shot(bus, 4, 30, 0, false);
+    });
+    expect(sentTo(events)).toEqual(['fired:1', 'impact:20']);
+    expect(sentTo(events, { hearsAll: true })).toEqual(['fired:1', 'fired:4']);
+  });
+
+  it('makes an Unseen body\'s suppressed shot an impact even to a seat that would have it', () => {
+    const events = tick((bus) => shot(bus, 3, 5, 0, false));
+    expect(sentTo(events, { awake: [1, 2, 3], hidden: (id) => id === 3 })).toEqual(['impact:20']);
+  });
+
+  it('sends a hit to its target and its source, and to anybody else only with the target awake', () => {
+    const events = tick((bus) => {
+      hurt(bus, 3, 1);
+      hurt(bus, 1, 4);
+      hurt(bus, 4, 3);
+      hurt(bus, 4, 2);
+    });
+    expect(sentTo(events)).toEqual(['hit:3>1', 'hit:1>4', 'hit:4>2']);
+    expect(sentTo(events, { awake: [1, 2, 3] })).toEqual(['hit:3>1', 'hit:1>4', 'hit:4>3', 'hit:4>2']);
+  });
+
+  it('sends every kill, the killer\'s health to the victim alone (E3)', () => {
+    const events = tick((bus) => {
+      bus.emit(EV.EntityKilled, { targetId: 1, sourceId: 3, weaponId: 'ar_carbine', zone: 'head', killerHealth: 64 });
+      bus.emit(EV.EntityKilled, { targetId: 4, sourceId: 2, weaponId: 'ar_carbine', zone: 'torso', killerHealth: 37 });
+    });
+    expect(sentTo(events)).toEqual(['killed:1:64', 'killed:4:0']);
+    expect(sentTo(events, { viewerId: 2, awake: [1, 2] })).toEqual(['killed:1:0', 'killed:4:0']);
+  });
+});
+
+describe('the shot, hit and kill audit', () => {
+  const fill = (bus: GameBus): void => {
+    shot(bus, 3, 5, 0, true);
+    shot(bus, 4, 30, 0, false);
+    hurt(bus, 4, 3);
+    hurt(bus, 4, 2);
+    bus.emit(EV.EntityKilled, { targetId: 2, sourceId: 4, weaponId: 'ar_carbine', zone: 'torso', killerHealth: 50 });
+  };
+  const audit = (frame: Uint8Array | null, events: EventCollector): ReturnType<typeof emptyAuditStats> => {
+    const stats = emptyAuditStats();
+    new SeatAudit().observeEvents(frame, events, viewOfSeat1(), context(), stats);
+    return stats;
+  };
+
+  it('passes the cut', () => {
+    const events = tick(fill);
+    const cut = new SeatEvents();
+    cut.select(events, context());
+    const stats = audit(events.frameFor(cut.keep, cut.writer), events);
+    expect(stats).toMatchObject({ shots: 2, shotsAsImpact: 1, hits: 2, hitsSent: 1, eventsMissing: 0, eventLeaks: 0 });
+  });
+
+  it('catches the old stream: the suppressed muzzle, the hit on a dormant body and the killer\'s health', () => {
+    const events = tick(fill);
+    const stats = audit(events.frameFor(new Uint8Array(255).fill(1), new SeatEvents().writer), events);
+    // The whole shot where an impact was due (a leak, and the impact missing), the hidden hit,
+    // the killer's health.
+    expect(stats).toMatchObject({ eventLeaks: 3, eventsMissing: 1 });
   });
 });

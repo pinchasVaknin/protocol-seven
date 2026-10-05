@@ -4,7 +4,7 @@ import { ByteReader } from '../../shared/net/Wire';
 import { makeRayHit } from '../../shared/world/Geometry';
 import type { EventCollector } from './EventCollector';
 import { clearLine, isAlive, NEAR_RADIUS_M, teamOf, type RelevanceContext } from './Relevance';
-import { HEARING_RADIUS_M, isSound } from './SeatEvents';
+import { HEARING_RADIUS_M, isSound, type SeatContext } from './SeatEvents';
 import type { SeatView } from './SeatView';
 
 /**
@@ -31,7 +31,9 @@ import type { SeatView } from './SeatView';
  *   against the frame this seat was actually sent, decoded: one an enemy could hear (within
  *   `HEARING_RADIUS_M` of where the seat listens, not crouched, not Dead Silence) and was not sent
  *   is **missing**; one it could not hear and was sent is a **leak** — a position on the wire that
- *   the game never gave the player. Both must be zero.
+ *   the game never gave the player. Both must be zero;
+ * - **shots, hits and kills** (test 2, part 3) — the same, against `SeatEvents`'s rules for them:
+ *   see `observeEvents`. Missing and leaked must be zero.
  *
  * Off unless a harness turns it on: it costs a line test per pair on top of culling's own, and
  * nothing in a match reads it.
@@ -84,6 +86,17 @@ export interface VisibilityAuditStats {
   soundsMissing: number;
   /** Sent and not audible. Must be zero. */
   soundLeaks: number;
+  /** Other bodies' shots, per seat; the suppressed ones; and of those, from a body the seat did not have. */
+  shots: number;
+  shotsSuppressed: number;
+  shotsAsImpact: number;
+  /** Hits between two other bodies, per seat; of those, sent. */
+  hits: number;
+  hitsSent: number;
+  /** A shot, hit or kill the seat should have had in the form it should have had it, and did not. Must be zero. */
+  eventsMissing: number;
+  /** A shot, hit or kill (or a killer's health) the seat should not have had, and did. Must be zero. */
+  eventLeaks: number;
 }
 
 export function emptyAuditStats(): VisibilityAuditStats {
@@ -108,6 +121,13 @@ export function emptyAuditStats(): VisibilityAuditStats {
     enemySoundsSent: 0,
     soundsMissing: 0,
     soundLeaks: 0,
+    shots: 0,
+    shotsSuppressed: 0,
+    shotsAsImpact: 0,
+    hits: 0,
+    hitsSent: 0,
+    eventsMissing: 0,
+    eventLeaks: 0,
   };
 }
 
@@ -127,46 +147,61 @@ export class SeatAudit {
   private readonly hurtBy = new Set<number>();
   private readonly hit = makeRayHit();
   private startedMs = -1;
-  /** The sounds in the last frame this seat was sent, decoded: kind, body, x, z, used. */
-  private readonly heard: Array<{ kind: number; id: number; x: number; z: number; used: boolean }> = [];
+  /** The events in the last frame this seat was sent, decoded. */
+  private readonly got: Array<{ kind: number; id: number; other: number; x: number; z: number; hp: number; used: boolean }> = [];
   private readonly reader = new ByteReader(new Uint8Array(0));
   private readonly ears: EntitySnapshot[] = [];
   private readonly sink: EventSink = {
-    onFootstep: (e) => this.heard.push({ kind: Ev.Footstep, id: e.entityId, x: e.x, z: e.z, used: false }),
-    onJump: (e) => this.heard.push({ kind: Ev.Jump, id: e.entityId, x: e.x, z: e.z, used: false }),
-    onLand: (e) => this.heard.push({ kind: Ev.Land, id: e.entityId, x: e.x, z: e.z, used: false }),
+    onFootstep: (e) => this.got.push({ kind: Ev.Footstep, id: e.entityId, other: -1, x: e.x, z: e.z, hp: 0, used: false }),
+    onJump: (e) => this.got.push({ kind: Ev.Jump, id: e.entityId, other: -1, x: e.x, z: e.z, hp: 0, used: false }),
+    onLand: (e) => this.got.push({ kind: Ev.Land, id: e.entityId, other: -1, x: e.x, z: e.z, hp: 0, used: false }),
+    onFired: (e) => this.got.push({ kind: Ev.Fired, id: e.sourceId, other: -1, x: e.x, z: e.z, hp: 0, used: false }),
+    onImpact: (e) => this.got.push({ kind: Ev.Impact, id: -1, other: -1, x: e.x, z: e.z, hp: 0, used: false }),
+    onDamage: (e) => this.got.push({ kind: Ev.Damage, id: e.targetId, other: e.sourceId, x: e.x, z: e.z, hp: 0, used: false }),
+    onKilled: (e) => this.got.push({ kind: Ev.Killed, id: e.targetId, other: e.sourceId, x: 0, z: 0, hp: e.killerHealth, used: false }),
   };
 
   /**
-   * One tick's sounds against what this seat was sent (`sent`, null for nothing). Where the seat
-   * listens from is worked out here again, not asked of `SeatEvents`: the audit decodes the bytes
-   * and applies the rule itself, so a cut that drifted from the rule shows up as a count.
+   * One tick's events against what this seat was actually sent (`sent`, null for nothing), decoded.
+   *
+   * The rules are applied here again rather than asked of `SeatEvents`, and "awake" is read off the
+   * records the seat's last snapshot carried rather than off `SeatView.awake` — so a cut that drifted
+   * from the rule, or from what the client has been told, shows up as a count:
+   *
+   * - an enemy **sound** the seat could hear (within `HEARING_RADIUS_M` of where it listens, not
+   *   muted) must arrive, and one it could not must not;
+   * - a **shot** must arrive whole when the seat fired it, has the shooter awake, or the shot pings
+   *   the minimap; otherwise it must not arrive whole, and arrives as a bare impact (D2);
+   * - a **hit** must arrive when the seat is its target or source or has the target awake, and
+   *   must not otherwise;
+   * - a **kill** must arrive, with the killer's health zeroed unless the seat is the victim (E3).
    */
   observeEvents(
     sent: Uint8Array | null,
     events: EventCollector,
-    viewerId: number,
-    entities: readonly EntitySnapshot[],
-    entityCount: number,
-    freeForAll: boolean,
-    hearsAll: boolean,
-    spectating: boolean,
-    hidden: (entityId: number) => boolean,
+    view: SeatView,
+    seat: SeatContext,
     out: VisibilityAuditStats,
   ): void {
-    this.heard.length = 0;
+    this.got.length = 0;
     if (sent !== null) {
       this.reader.reuse(sent);
       const msg = decodeHeader(this.reader);
       if (msg.kind === 'events') readEvents(this.reader, msg.count, this.sink);
     }
 
+    const { viewerId, entities, entityCount, freeForAll, seesAll, spectating, hidden } = seat;
     const byId = (id: number): EntitySnapshot | null => {
       for (let i = 0; i < entityCount; i++) if (entities[i]?.entityId === id) return entities[i] ?? null;
       return null;
     };
     const viewer = byId(viewerId);
     if (viewer === null) return;
+    const awake = new Set<number>();
+    for (let i = 0; i < view.count; i++) {
+      const rec = view.list[i];
+      if (rec !== undefined && (rec.flags & EFlag.Dormant) === 0) awake.add(rec.entityId);
+    }
     this.ears.length = 0;
     for (let i = 0; i < entityCount; i++) {
       const e = entities[i];
@@ -176,29 +211,70 @@ export class SeatAudit {
         : e.entityId === viewerId;
       if (listens) this.ears.push(e);
     }
+    const take = (kind: number, id: number, x: number, z: number, other = -2): (typeof this.got)[number] | undefined => {
+      const g = this.got.find(
+        (h) => !h.used && h.kind === kind && h.id === id && (other === -2 || h.other === other) && Math.abs(h.x - x) < 0.1 && Math.abs(h.z - z) < 0.1,
+      );
+      if (g !== undefined) g.used = true;
+      return g;
+    };
 
+    let impactsDue = 0;
     for (let i = 0; i < events.pending; i++) {
       const kind = events.kinds[i] ?? 0;
       const subject = events.subjects[i] ?? -1;
-      if (!isSound(kind) || subject === viewerId) continue;
-      const body = byId(subject);
-      if (body !== null && !freeForAll && teamOf(body) === teamOf(viewer)) continue;
-      out.enemySounds++;
+      const object = events.objects[i] ?? -1;
       const x = events.xs[i] ?? 0;
       const z = events.zs[i] ?? 0;
-      const audible =
-        hearsAll ||
-        (!hidden(subject) &&
-          events.muted[i] !== 1 &&
-          this.ears.some((ear) => Math.hypot(ear.x - x, ear.z - z) <= HEARING_RADIUS_M));
-      const match = this.heard.find((h) => !h.used && h.kind === kind && h.id === subject && Math.abs(h.x - x) < 0.1 && Math.abs(h.z - z) < 0.1);
-      if (match !== undefined) {
-        match.used = true;
-        out.enemySoundsSent++;
+
+      if (isSound(kind)) {
+        if (subject === viewerId) continue;
+        const body = byId(subject);
+        if (body !== null && !freeForAll && teamOf(body) === teamOf(viewer)) continue;
+        out.enemySounds++;
+        const audible =
+          seesAll ||
+          (!hidden(subject) &&
+            events.muted[i] !== 1 &&
+            this.ears.some((ear) => Math.hypot(ear.x - x, ear.z - z) <= HEARING_RADIUS_M));
+        const match = take(kind, subject, x, z);
+        if (match !== undefined) out.enemySoundsSent++;
+        if (audible && match === undefined) out.soundsMissing++;
+        if (!audible && match !== undefined) out.soundLeaks++;
+        continue;
       }
-      if (audible && match === undefined) out.soundsMissing++;
-      if (!audible && match !== undefined) out.soundLeaks++;
+
+      if (kind === Ev.Fired) {
+        if (subject === viewerId) continue;
+        out.shots++;
+        if (events.loud[i] !== 1) out.shotsSuppressed++;
+        const whole = seesAll || (!hidden(subject) && (awake.has(subject) || events.loud[i] === 1));
+        const match = take(Ev.Fired, subject, x, z);
+        if (whole && match === undefined) out.eventsMissing++;
+        if (!whole) {
+          if (match !== undefined) out.eventLeaks++;
+          out.shotsAsImpact++;
+          impactsDue++;
+        }
+      } else if (kind === Ev.Damage) {
+        if (subject === viewerId || object === viewerId) continue;
+        out.hits++;
+        const due = seesAll || awake.has(subject);
+        const match = take(Ev.Damage, subject, x, z, object);
+        if (match !== undefined) out.hitsSent++;
+        if (due && match === undefined) out.eventsMissing++;
+        if (!due && match !== undefined) out.eventLeaks++;
+      } else if (kind === Ev.Killed) {
+        const match = take(Ev.Killed, subject, 0, 0, object);
+        if (match === undefined) out.eventsMissing++;
+        else if (subject !== viewerId && !seesAll && match.hp !== 0) out.eventLeaks++;
+      }
     }
+    // A bare impact carries nothing to match it by but its place, so they are counted: as many as
+    // were due, no more and no fewer.
+    const impacts = this.got.filter((g) => g.kind === Ev.Impact).length;
+    if (impacts < impactsDue) out.eventsMissing += impactsDue - impacts;
+    if (impacts > impactsDue) out.eventLeaks += impacts - impactsDue;
   }
 
   /**

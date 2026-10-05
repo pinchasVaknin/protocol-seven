@@ -382,6 +382,30 @@ export class NetSession {
           this.deps.bus.emit(EV.BulletImpact, evImpact);
         },
 
+        /**
+         * A round landed, from a shooter this client is not told about (protocol v29, D2): a
+         * suppressed shot from a dormant body arrives as its terminus alone. The spark, the decal
+         * and the click, and no gunshot, tracer or flash — and no direction, which the server
+         * leaves out because it would point back at the muzzle. The spark faces this player
+         * instead: right for whoever is near enough to see it, and it says nothing.
+         */
+        onImpact: (e) => {
+          const sim = this.deps.controller.sim;
+          const dx = sim.x - e.x;
+          const dy = sim.y + sim.eyeHeight - e.y;
+          const dz = sim.z - e.z;
+          const len = Math.hypot(dx, dy, dz) || 1;
+          evImpact.x = e.x;
+          evImpact.y = e.y;
+          evImpact.z = e.z;
+          evImpact.nx = dx / len;
+          evImpact.ny = dy / len;
+          evImpact.nz = dz / len;
+          evImpact.material = e.material;
+          evImpact.penetrated = false;
+          this.deps.bus.emit(EV.BulletImpact, evImpact);
+        },
+
         onDamage: (e) => {
           evDamage.sourceId = e.sourceId;
           evDamage.targetId = e.targetId;

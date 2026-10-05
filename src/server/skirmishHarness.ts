@@ -56,6 +56,7 @@ const log = logger('skirmish');
  *   npm run skirmish -- --net bad          # 100ms +/-30ms, 2% loss on every link
  *   npm run skirmish -- --fault latency    # FaultyMatchAllocator: latency|failure|capacity
  *   npm run skirmish -- --summary-gate     # RED CONTROL: go silent for the post-match hold
+ *   npm run skirmish -- --suppressed       # the third client hunts with a suppressor (D2's impacts)
  *   npm run skirmish -- --drop-return 3    # 3 drop/return cycles mid-match (F8)
  *   npm run skirmish -- --drop-return 1 --drop-hold 40000   # ...past the grace, on purpose
  *   npm run skirmish -- --cheats            # F14: RED CONTROL — the server must refuse
@@ -87,6 +88,13 @@ interface HarnessOptions {
   readonly slowClient: boolean;
   /** Field the class with no perks. The control run for the §8.9 misprediction probe. */
   readonly noPerks: boolean;
+  /**
+   * The third client hunts with a suppressor (anti-wallhack phase 2, part 3). This harness's
+   * clients never pull a trigger (`hasSomethingToLose`), no weapon is suppressed out of the box and
+   * the bots fit nothing — so without it D2's bare impacts, a suppressed shot from a body the
+   * receiver does not have, are never sent, and the audit's zero for them means nothing.
+   */
+  readonly suppressed: boolean;
   /** Have one client change its class mid-warmup (§6.6). */
   readonly editClass: boolean;
   /** Make every client vote for this ballot index, or -1 for the default spread. */
@@ -655,7 +663,7 @@ async function runFlow(server: Server, opts: HarnessOptions, cfg: ServerConfig):
       // Every client enters through the arena (§6.7), so that is the map it starts against.
       mapId: 'mp_testbed',
       conditions: opts.conditions,
-      behaviour: i % 2 === 0 ? 'strafe' : 'runner',
+      behaviour: opts.suppressed && i === 2 ? 'seeker' : i % 2 === 0 ? 'strafe' : 'runner',
       seed: 1000 + i * 37,
       // `--no-perks` fields the same class with the perk slots empty. The control run for
       // §8.9: if a residual misprediction survives it, the cause is not the loadout.
@@ -1588,6 +1596,18 @@ function reportFlow(input: FlowReportInput): number {
     if (audit.enemySounds === 0) problems.push('the sound audit saw no enemy sounds — it is not running');
     if (audit.soundsMissing > 0) problems.push(`${audit.soundsMissing} audible enemy sound(s) were not sent`);
     if (audit.soundLeaks > 0) problems.push(`${audit.soundLeaks} inaudible enemy sound(s) were sent`);
+    // And for shots, hits and kills (phase 2, part 3).
+    log.info(
+      `shots/hits: ${audit.shots} other players' shot(s) per player, ${audit.shotsSuppressed} suppressed, ` +
+        `${audit.shotsAsImpact} of those sent as a bare impact (shooter not seen); ${audit.hits} hit(s) between others, ${audit.hitsSent} sent ` +
+        `(target seen); ${audit.eventsMissing} missing, ${audit.eventLeaks} leaked (both must be 0).`,
+    );
+    if (audit.shots === 0) problems.push('the event audit saw no shots — it is not running');
+    if (opts.suppressed && audit.shotsAsImpact === 0) {
+      problems.push('--suppressed: no suppressed shot was sent as a bare impact — D2 was not exercised');
+    }
+    if (audit.eventsMissing > 0) problems.push(`${audit.eventsMissing} shot/hit/kill event(s) were not sent as due`);
+    if (audit.eventLeaks > 0) problems.push(`${audit.eventLeaks} shot/hit/kill event(s) leaked a position or a health`);
     if (audit.hardMisses > 0) {
       problems.push(`${audit.hardMisses} body(ies) in plain view were sent dormant`);
     }
@@ -2486,7 +2506,11 @@ function streakHarnessClass(opts: HarnessOptions, index: number): NetLoadout {
    * wallet-bought streak is the one in the slot.
    */
   const fielded = opts.walletStreak ?? streakIdArg(opts.grantStreak);
-  return fielded === null ? base : { ...base, streaks: [fielded, null, null] };
+  const armed = fielded === null ? base : { ...base, streaks: [fielded, null, null] };
+  // `--suppressed`: see `HarnessOptions.suppressed`.
+  return opts.suppressed && index === 2
+    ? { ...armed, primary: { ...armed.primary, attachments: ['muzzle_suppressor'] } }
+    : armed;
 }
 
 /**
@@ -2674,6 +2698,7 @@ function parseArgs(argv: readonly string[]): HarnessOptions {
     port: num('--port', 8177),
     slowClient: argv.includes('--slow-client'),
     noPerks: argv.includes('--no-perks'),
+    suppressed: argv.includes('--suppressed'),
     editClass: argv.includes('--edit-class'),
     voteFor: num('--vote', -1),
     grantStreak: get('--grant-streak'),

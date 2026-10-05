@@ -58,7 +58,7 @@ import type { LoadoutSlot } from '../../shared/meta/Loadouts';
 import type { ReclaimedSeat, ServerMatch } from '../Match';
 import type { NetPlayer } from '../NetPlayer';
 import type { Session } from '../net/Session';
-import { SeatEvents } from '../net/SeatEvents';
+import { SeatEvents, type SeatContext } from '../net/SeatEvents';
 import { SeatView } from '../net/SeatView';
 import { SeatAudit, visibilityAuditEnabled, visibilityAuditTotals } from '../net/VisibilityAudit';
 import { SnapshotEncoder } from '../net/SnapshotEncoder';
@@ -174,6 +174,17 @@ export abstract class MatchInstance {
   /** `Unseen`: a body relevant to, and heard by, nobody but itself. */
   private readonly unseen = (entityId: number): boolean =>
     this.seatByEntity(entityId)?.session.cheats.has(Cheat.Unseen) === true;
+  /** Reused per seat per tick by `sendEvents`. Nothing on the send path allocates (S4.7). */
+  private readonly seatContext: SeatContext = {
+    viewerId: -1,
+    entities: [],
+    entityCount: 0,
+    freeForAll: false,
+    seesAll: false,
+    spectating: false,
+    hidden: () => false,
+    awake: new Set<number>(),
+  };
 
   private readonly header: SnapshotHeader = makeSnapshotHeader();
   private readonly entities: EntitySnapshot[] = [];
@@ -880,38 +891,31 @@ export abstract class MatchInstance {
     const events = this.match.outgoing;
     const frame = events.finish();
     if (frame === null) return;
-    const freeForAll = this.match.modeEntry.freeForAll === true;
     const oneLife = this.match.modeEntry.usesRoundReset === true;
+    const ctx = this.seatContext;
+    ctx.entities = this.entities;
+    ctx.entityCount = this.entityCount;
+    ctx.freeForAll = this.match.modeEntry.freeForAll === true;
+    ctx.hidden = this.unseen;
     for (const seat of this.seats.values()) {
       const { session, player } = seat;
       if (session.closed) continue;
       const cut = this.seatEvents.get(player.entityId);
-      if (cut === undefined) continue;
-      const spectating = oneLife && !player.alive;
-      const kept = cut.select(
-        events,
-        player.entityId,
-        this.entities,
-        this.entityCount,
-        freeForAll,
-        session.cheats.has(Cheat.NoClip),
-        spectating,
-        this.unseen,
-      );
-      const sent = kept === events.pending ? frame : kept === 0 ? null : events.frameFor(cut.keep, cut.writer);
+      const view = this.views.get(player.entityId);
+      if (cut === undefined || view === undefined) continue;
+      ctx.viewerId = player.entityId;
+      ctx.seesAll = session.cheats.has(Cheat.NoClip);
+      ctx.spectating = oneLife && !player.alive;
+      ctx.awake = view.awake;
+      cut.select(events, ctx);
+      const sent =
+        cut.kept === events.pending && cut.varied === 0
+          ? frame
+          : cut.kept === 0
+            ? null
+            : events.frameFor(cut.keep, cut.writer);
       if (sent !== null) session.send(sent);
-      this.audits.get(player.entityId)?.observeEvents(
-        sent,
-        events,
-        player.entityId,
-        this.entities,
-        this.entityCount,
-        freeForAll,
-        session.cheats.has(Cheat.NoClip),
-        spectating,
-        this.unseen,
-        visibilityAuditTotals,
-      );
+      this.audits.get(player.entityId)?.observeEvents(sent, events, view, ctx, visibilityAuditTotals);
     }
   }
 

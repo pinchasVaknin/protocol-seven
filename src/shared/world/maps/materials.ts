@@ -1,5 +1,7 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { MATERIAL_KEYS, type MaterialKey } from './types';
-
+//#endregion
 /**
  * Physical and sensory properties of each map material (brief S6.4, S6.5, S6.7).
  *
@@ -11,6 +13,8 @@ import { MATERIAL_KEYS, type MaterialKey } from './types';
  * Nothing here allocates at runtime — lookups are by index into a frozen table.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MaterialSurface {
   /**
    * Penetration cost per metre of material traversed, in the same units as a weapon's
@@ -53,7 +57,10 @@ export interface MaterialSurface {
   /** Footstep level scale. */
   readonly stepLevel: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * What a bullet decal's texture actually draws, as fractions of the quad it is mapped onto.
  *
@@ -351,7 +358,10 @@ const BY_INDEX: readonly MaterialSurface[] = MATERIAL_KEYS.map((key) => SURFACES
 
 /** Fallback for an out-of-range index; never null, so no call site needs a guard. */
 const DEFAULT_SURFACE: MaterialSurface = SURFACES.concrete;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function surfaceOf(key: MaterialKey): MaterialSurface {
   return SURFACES[key];
 }
@@ -360,4 +370,4 @@ export function surfaceOf(key: MaterialKey): MaterialSurface {
 export function surfaceAtIndex(index: number): MaterialSurface {
   return BY_INDEX[index] ?? DEFAULT_SURFACE;
 }
-
+//#endregion

@@ -9,6 +9,8 @@
  * Everything is a plain JSON-compatible literal. No Three.js types leak in here.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface Vec3Lit {
   x: number;
   y: number;
@@ -20,46 +22,7 @@ export interface Box {
   max: Vec3Lit;
 }
 
-/**
- * Procedural material identifiers. Resolved to CanvasTextures by ProceduralTextures.
- *
- * The first seven are M1's. `brick`, `rust` and `grate` are M4's, added because Foundry
- * needs its shell, its container stacks and its catwalk decks to read as three different
- * things at a glance — and because the M2 penetration system consumes a density per
- * material, so "distinct material" and "shoots through differently" are the same
- * statement. Append only: `materialIndex` is an index into this list and `ColliderSet`
- * stores it.
- *
- * The last five are M8's, and they are what stop Dunes and Depot reading as Foundry with
- * the lights changed. `sand`, `plaster` and `clayTile` are Dunes' warm vocabulary; `asphalt`
- * and `paintedSteel` are Depot's cool one. `wood` is shared — a market stall and a cargo
- * pallet are the same plank.
- */
-export const MATERIAL_KEYS = [
-  'concrete',
-  'concreteDark',
-  'floor',
-  'metal',
-  'hazard',
-  'accent',
-  'rubber',
-  'brick',
-  'rust',
-  'grate',
-  // M8
-  'sand',
-  'plaster',
-  'clayTile',
-  'wood',
-  'asphalt',
-  'paintedSteel',
-] as const;
-
 export type MaterialKey = (typeof MATERIAL_KEYS)[number];
-
-export function materialIndex(key: MaterialKey): number {
-  return MATERIAL_KEYS.indexOf(key);
-}
 
 /**
  * A box volume.
@@ -450,3 +413,49 @@ interface ReverbDef {
   /** Discrete early reflections: delay in seconds and amplitude, 0..1. */
   earlyTaps: readonly Readonly<{ delay: number; gain: number }>[];
 }
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * Procedural material identifiers. Resolved to CanvasTextures by ProceduralTextures.
+ *
+ * The first seven are M1's. `brick`, `rust` and `grate` are M4's, added because Foundry
+ * needs its shell, its container stacks and its catwalk decks to read as three different
+ * things at a glance — and because the M2 penetration system consumes a density per
+ * material, so "distinct material" and "shoots through differently" are the same
+ * statement. Append only: `materialIndex` is an index into this list and `ColliderSet`
+ * stores it.
+ *
+ * The last five are M8's, and they are what stop Dunes and Depot reading as Foundry with
+ * the lights changed. `sand`, `plaster` and `clayTile` are Dunes' warm vocabulary; `asphalt`
+ * and `paintedSteel` are Depot's cool one. `wood` is shared — a market stall and a cargo
+ * pallet are the same plank.
+ */
+export const MATERIAL_KEYS = [
+  'concrete',
+  'concreteDark',
+  'floor',
+  'metal',
+  'hazard',
+  'accent',
+  'rubber',
+  'brick',
+  'rust',
+  'grate',
+  // M8
+  'sand',
+  'plaster',
+  'clayTile',
+  'wood',
+  'asphalt',
+  'paintedSteel',
+] as const;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function materialIndex(key: MaterialKey): number {
+  return MATERIAL_KEYS.indexOf(key);
+}
+//#endregion

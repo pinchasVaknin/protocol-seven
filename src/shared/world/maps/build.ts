@@ -1,6 +1,16 @@
-import type { Brush, MaterialKey, PropDef, PropShapeId, SpawnZone, SupplyPointDef } from './types';
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type {
+  Brush,
+  MaterialKey,
+  PropDef,
+  PropShapeId,
+  SpawnZone,
+  SupplyPointDef,
+  Vec3Lit,
+} from './types';
 import { simCos, simSin } from '../../core/SimMath';
-
+//#endregion
 /**
  * Authoring helpers for the map DSL.
  *
@@ -25,6 +35,8 @@ import { simCos, simSin } from '../../core/SimMath';
  * why `rotateHalf` throws rather than silently producing a ramp pointing into the floor.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface BoxOptions {
   solid?: boolean;
   shadows?: boolean;
@@ -32,6 +44,12 @@ export interface BoxOptions {
   rotationY?: number;
 }
 
+/** An interval on the wall's long axis that is left open. Used for doorways and gates. */
+export type Gap = readonly [number, number];
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** An axis-aligned (or yawed) box, given its centre and full extents. */
 export function addBox(
   out: Brush[],
@@ -80,9 +98,6 @@ export function addSpan(
   );
 }
 
-/** An interval on the wall's long axis that is left open. Used for doorways and gates. */
-export type Gap = readonly [number, number];
-
 /**
  * A wall running along X with doorways cut out of it.
  *
@@ -126,41 +141,6 @@ export function addWallAlongZ(
   for (const [a, b] of spansAround(z0, z1, gaps)) {
     addSpan(out, material, x0, x1, y0, y1, a, b, options);
   }
-}
-
-/**
- * `[from, to]` minus every gap, as the solid intervals that are left.
- *
- * Sorted and merged first, so overlapping doors are one opening rather than a zero-width
- * sliver of wall between them — a sliver being both a rendering artefact and, at 0.02 m,
- * something the capsule can catch on.
- */
-function spansAround(from: number, to: number, gaps: readonly Gap[]): Array<[number, number]> {
-  const lo = Math.min(from, to);
-  const hi = Math.max(from, to);
-  const clipped = gaps
-    .map(([a, b]): [number, number] => [Math.max(lo, Math.min(a, b)), Math.min(hi, Math.max(a, b))])
-    .filter(([a, b]) => b - a > 1e-4)
-    .sort((p, q) => p[0] - q[0]);
-
-  const merged: Array<[number, number]> = [];
-  for (const gap of clipped) {
-    const last = merged[merged.length - 1];
-    if (last !== undefined && gap[0] <= last[1] + 1e-4) {
-      if (gap[1] > last[1]) last[1] = gap[1];
-      continue;
-    }
-    merged.push([gap[0], gap[1]]);
-  }
-
-  const out: Array<[number, number]> = [];
-  let cursor = lo;
-  for (const [a, b] of merged) {
-    if (a - cursor > 1e-4) out.push([cursor, a]);
-    cursor = Math.max(cursor, b);
-  }
-  if (hi - cursor > 1e-4) out.push([cursor, hi]);
-  return out;
 }
 
 /**
@@ -261,7 +241,7 @@ export function rotateHalf(brushes: readonly Brush[]): Brush[] {
     }
     return {
       ...b,
-      position: { x: -b.position.x, y: b.position.y, z: -b.position.z },
+      position: mirroredAboutOrigin(b.position),
       rotationY: b.rotationY + Math.PI,
     };
   });
@@ -271,7 +251,7 @@ export function rotateHalf(brushes: readonly Brush[]): Brush[] {
 export function rotateHalfProps(props: readonly PropDef[]): PropDef[] {
   return props.map((p) => ({
     shape: p.shape,
-    position: { x: -p.position.x, y: p.position.y, z: -p.position.z },
+    position: mirroredAboutOrigin(p.position),
     rotationY: p.rotationY + Math.PI,
   }));
 }
@@ -311,8 +291,59 @@ export function addSupplyPoint(
 export function rotateHalfSpawns(a: readonly SpawnZone[]): SpawnZone[] {
   return a.map((z) => ({
     team: 'B',
-    position: { x: -z.position.x, y: z.position.y, z: -z.position.z },
+    position: mirroredAboutOrigin(z.position),
     facingYaw: z.facingYaw + Math.PI,
     radius: z.radius,
   }));
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * `[from, to]` minus every gap, as the solid intervals that are left.
+ *
+ * Sorted and merged first, so overlapping doors are one opening rather than a zero-width
+ * sliver of wall between them — a sliver being both a rendering artefact and, at 0.02 m,
+ * something the capsule can catch on.
+ */
+function spansAround(from: number, to: number, gaps: readonly Gap[]): Array<[number, number]> {
+  const lo = Math.min(from, to);
+  const hi = Math.max(from, to);
+  const clipped = gaps
+    .map(([a, b]): [number, number] => [Math.max(lo, Math.min(a, b)), Math.min(hi, Math.max(a, b))])
+    .filter(([a, b]) => b - a > 1e-4)
+    .sort((p, q) => p[0] - q[0]);
+
+  const merged: Array<[number, number]> = [];
+  for (const gap of clipped) {
+    const last = merged[merged.length - 1];
+    if (last !== undefined && gap[0] <= last[1] + 1e-4) {
+      if (gap[1] > last[1]) last[1] = gap[1];
+      continue;
+    }
+    merged.push([gap[0], gap[1]]);
+  }
+
+  const out: Array<[number, number]> = [];
+  let cursor = lo;
+  for (const [a, b] of merged) {
+    if (a - cursor > 1e-4) out.push([cursor, a]);
+    cursor = Math.max(cursor, b);
+  }
+  if (hi - cursor > 1e-4) out.push([cursor, hi]);
+  return out;
+}
+
+/**
+ * A point reflected through the origin: the half-map mirror, written once.
+ *
+ * `y` is untouched, because the mirror is a half turn about the vertical axis and not a
+ * flip — a crate on a catwalk stays on the catwalk. The three rotations below used to spell
+ * this out separately, which is three places for one of them to be corrected and the other
+ * two left behind.
+ */
+function mirroredAboutOrigin(p: Vec3Lit): Vec3Lit {
+  return { x: -p.x, y: p.y, z: -p.z };
+}
+//#endregion

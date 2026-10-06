@@ -121,6 +121,15 @@ const FINISHED = {
     'src/shared/world/maps/foundry.ts',
     'src/shared/world/maps/greybox.ts',
   ],
+  A3b: [
+    'src/shared/world/maps/albedo.ts',
+    'src/shared/world/maps/build.ts',
+    'src/shared/world/maps/cover.ts',
+    'src/shared/world/maps/materials.ts',
+    // The programme's first data file: IMPORTS -> DATA, and nothing else.
+    'src/shared/world/maps/props.ts',
+    'src/shared/world/maps/types.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

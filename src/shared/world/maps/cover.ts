@@ -1,6 +1,8 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { CoverPoint, PropDef, PropShapeId } from './types';
 import { simCos, simSin } from '../../core/SimMath';
-
+//#endregion
 /**
  * Deriving `coverPoints` from prop placements (brief S6.5).
  *
@@ -20,6 +22,8 @@ import { simCos, simSin } from '../../core/SimMath';
  * looking at.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 interface CoverProfile {
   /** Half-depth along each offered face direction, metres. */
   readonly halfDepth: number;
@@ -27,7 +31,10 @@ interface CoverProfile {
   /** Local face normals to place cover behind. */
   readonly faces: readonly Readonly<{ x: number; z: number }>[];
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const FOUR_SIDES = [
   { x: 0, z: -1 },
   { x: 0, z: 1 },
@@ -87,7 +94,10 @@ const COVER_PROFILES: Partial<Record<PropShapeId, CoverProfile>> = {
 
 /** How far clear of the object's face a bot stands. Capsule radius plus breathing room. */
 const COVER_STANDOFF = 0.62;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * One cover point beside an object, facing back through it.
  *
@@ -143,3 +153,4 @@ export function deriveCoverPoints(placements: readonly PropDef[]): CoverPoint[] 
   }
   return out;
 }
+//#endregion

@@ -1,5 +1,10 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { MATERIAL_KEYS, type MaterialKey } from './types';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The base colour of every map material, in one place (playtest round 4, F9).
  *
@@ -71,7 +76,10 @@ const MATERIAL_BASE_COLOR: Readonly<Record<MaterialKey, number>> = {
 
   paintedSteel: 0x2f4a4f,
 };
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Every material has a base colour.
  *
@@ -92,3 +100,4 @@ export function materialBaseColor(key: MaterialKey): number {
 export function allMaterialBaseColors(): ReadonlyArray<readonly [MaterialKey, number]> {
   return MATERIAL_KEYS.map((key) => [key, materialBaseColor(key)] as const);
 }
+//#endregion

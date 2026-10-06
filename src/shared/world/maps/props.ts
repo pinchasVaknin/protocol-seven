@@ -1,5 +1,10 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { PropShapeDef, PropShapeId } from './types';
+//#endregion
 
+// ============================================ DATA ============================================ \\
+//#region Data
 /**
  * The authored prop catalogue.
  *
@@ -334,3 +339,4 @@ export const PROP_SHAPES: Readonly<Record<PropShapeId, PropShapeDef>> = {
     ],
   },
 };
+//#endregion

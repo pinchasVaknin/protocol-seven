@@ -1,6 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { isHostile } from '../combat/Hostility';
 import type { ScoreTeam } from '../combat/ScoreSystem';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * Colour is a function of (viewer's team, subject's team) — never of the team id alone
  * (playtest round 4, B12).
@@ -60,7 +65,10 @@ export interface ViewerContext {
   /** No teams: everybody but the viewer is hostile. */
   readonly freeForAll: boolean;
 }
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * What `subject` is to `viewer`.
  *
@@ -130,3 +138,4 @@ export function teamLabel(relation: TeamRelation): string {
       return 'NEUTRAL';
   }
 }
+//#endregion

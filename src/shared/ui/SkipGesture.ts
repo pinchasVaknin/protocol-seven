@@ -40,6 +40,8 @@
  * rule that needs a browser to check is a rule nobody checks.
  */
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** How long Space must be down before it is a hold rather than a tap. Seconds. */
 export const SKIP_HOLD_SECONDS = 0.18;
 
@@ -58,7 +60,10 @@ export const SKIP_TAPS_TO_LEAVE = 3;
  * because a second speed to learn is a second speed to be surprised by.
  */
 export const SKIP_FAST_FORWARD = 6;
+//#endregion
 
+// ===================================== CLASS SkipGesture ====================================== \\
+//#region Class SkipGesture
 /**
  * The state of one skip key.
  *
@@ -66,13 +71,20 @@ export const SKIP_FAST_FORWARD = 6;
  * hold, since each one is driven from a render frame's `dt`.
  */
 export class SkipGesture {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** When the key went down, or -1 while it is up. */
   private downAt = -1;
+
   /** Taps in the current run. */
   private taps = 0;
+
   /** When the last tap of the run landed, or -1 when there is no run. */
   private lastTapAt = -1;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * The key went down. A repeat is not a press — the caller drops those, and a second
    * `press` with no release between is ignored here as well, because a key that is already
@@ -139,4 +151,6 @@ export class SkipGesture {
     this.taps = 0;
     this.lastTapAt = -1;
   }
+  //#endregion
 }
+//#endregion

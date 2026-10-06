@@ -1,6 +1,8 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { DEG2RAD } from '../core/MathUtil';
 import { simTan } from '../core/SimMath';
-
+//#endregion
 /**
  * The crosshair's geometry, as arithmetic (playtest round 4, B2).
  *
@@ -16,6 +18,8 @@ import { simTan } from '../core/SimMath';
  * claim about the reticle stops being a browser claim.
  */
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Crosshair line length in px; must match `--hud-cross-len` in `hud.css`. */
 export const CROSSHAIR_LINE_LENGTH = 7;
 
@@ -42,7 +46,10 @@ export const CROSSHAIR_MIN_GAP = 3;
 
 /** Beyond this the cross has left the screen and there is nothing more to say. */
 const CROSSHAIR_MAX_GAP = 220;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Half-width of the crosshair gap in CSS pixels.
  *
@@ -84,3 +91,4 @@ export function crosshairOpacity(adsFraction: number): number {
   const clamped = Math.max(0, Math.min(1, adsFraction * 1.35));
   return Math.round((1 - clamped) * 100) / 100;
 }
+//#endregion

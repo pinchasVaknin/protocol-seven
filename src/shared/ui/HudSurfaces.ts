@@ -1,9 +1,3 @@
-import { aimWarning } from './Capabilities';
-import { cheatCaption } from '../cheats/Cheats';
-import type { GameStateId } from '../core/GameStates';
-import type { MatchPhase } from '../modes/MatchFlow';
-import { DT } from '../core/Loop';
-
 /**
  * What every HUD surface's visibility is derived from (M11 Gate B, playtest round 4).
  *
@@ -44,6 +38,17 @@ import { DT } from '../core/Loop';
  * is how the table stops describing the code.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { aimWarning } from './Capabilities';
+import { cheatCaption } from '../cheats/Cheats';
+import type { GameStateId } from '../core/GameStates';
+import type { MatchPhase } from '../modes/MatchFlow';
+import { DT } from '../core/Loop';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * Where the player last asked for the debug overlay. **One value, not two booleans.**
  *
@@ -138,7 +143,10 @@ export interface HudSurfaceState {
   readonly pointerLocked: boolean;
   readonly lockRefused: boolean;
 }
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * The aim warning (playtest round 5, B8).
  *
@@ -153,7 +161,7 @@ export interface HudSurfaceState {
  * outlives it.
  */
 export function aimWarningText(s: HudSurfaceState): string {
-  if (!s.hasWorld || s.screen !== 'MATCH') return '';
+  if (!inLiveMatch(s)) return '';
   return aimWarning(s);
 }
 
@@ -189,7 +197,7 @@ export function scoreboardOpen(s: HudSurfaceState): boolean {
  * removes, and `matchCaption` already ranks the arena above the phase.
  */
 export function resultSurfacesVisible(s: HudSurfaceState): boolean {
-  if (!s.hasWorld || s.screen !== 'MATCH') return false;
+  if (!inLiveMatch(s)) return false;
   return !s.inWarmupArena;
 }
 
@@ -209,9 +217,9 @@ export function resultSurfacesVisible(s: HudSurfaceState): boolean {
  *    decided round offers it for a body that is about to be reset anyway.
  */
 export function quickLoadoutWindow(s: HudSurfaceState): QuickLoadoutWindow {
-  if (!s.hasWorld || s.screen !== 'MATCH') return 'none';
+  if (!inLiveMatch(s)) return 'none';
   if (s.playerDead && s.respawnSeconds > 0) return 'respawn';
-  if (s.phase === 'WARMUP' && s.round <= 1) return 'prematch';
+  if (inPrematchWindow(s.phase, s.round)) return 'prematch';
   return 'none';
 }
 
@@ -261,12 +269,12 @@ export function debugOverlayVisible(s: HudSurfaceState): boolean {
  * nothing here — which is the half F14 got
  * wrong by giving one payment a latched bit and rendering everything from the mask.
  *
- * `Cheat.Debug` is deliberately never named. Having the debug overlay unlocked says nothing about
- * the simulation, and a tag that appeared for it would be up for most of a developer's session
- * and stop meaning anything — which is how a warning becomes furniture.
+ * The debug code is deliberately never named here: it grants no entitlement bit at all, so the
+ * mask has nothing for it — and a tag that appeared for it would be up for most of a developer's
+ * session and stop meaning anything, which is how a warning becomes furniture.
  */
 export function cheatTag(s: HudSurfaceState): string {
-  if (!s.hasWorld || s.screen !== 'MATCH') return '';
+  if (!inLiveMatch(s)) return '';
   return cheatCaption(s.cheatMask, s.instantCheatLabel);
 }
 
@@ -356,7 +364,7 @@ export function matchCaption(phase: MatchPhase, inWarmupArena: boolean, ballotOp
  */
 export function briefVisible(phase: MatchPhase, round: number, inWarmupArena: boolean): boolean {
   if (inWarmupArena) return false;
-  return phase === 'WARMUP' && round <= 1;
+  return inPrematchWindow(phase, round);
 }
 
 /**
@@ -386,3 +394,29 @@ export function stepRespawnDisplay(seconds: number, dead: boolean, dt: number = 
   if (!dead || seconds <= 0) return seconds;
   return Math.max(0, seconds - dt);
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * In a live match at all: a world built, and the match screen in front of it.
+ *
+ * The precondition four of the rules above share, and each of them used to spell it out.
+ * Not `debugOverlayVisible`, which is legal over the pause screen and says so itself — the
+ * one rule here that reads `screen` for a different reason.
+ */
+function inLiveMatch(s: HudSurfaceState): boolean {
+  return s.hasWorld && s.screen === 'MATCH';
+}
+
+/**
+ * The pre-match freeze of round one.
+ *
+ * One expression, which is what `briefVisible` has always claimed: *two rules that must
+ * agree and are written twice are two rules that will eventually disagree*. It was written
+ * twice. Now the second one really does read the change.
+ */
+function inPrematchWindow(phase: MatchPhase, round: number): boolean {
+  return phase === 'WARMUP' && round <= 1;
+}
+//#endregion

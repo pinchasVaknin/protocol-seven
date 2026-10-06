@@ -106,6 +106,15 @@ const FINISHED = {
     'src/shared/core/SimMath.ts',
     'src/shared/core/StateHash.ts',
   ],
+  A2: [
+    'src/shared/cheats/Cheats.ts',
+    'src/shared/ui/Capabilities.ts',
+    'src/shared/ui/Crosshair.ts',
+    'src/shared/ui/HudSurfaces.ts',
+    'src/shared/ui/ScreenProjection.ts',
+    'src/shared/ui/SkipGesture.ts',
+    'src/shared/ui/TeamColour.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

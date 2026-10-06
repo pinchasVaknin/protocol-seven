@@ -1,5 +1,3 @@
-import { simCos, simSin, simTan } from '../core/SimMath';
-
 /**
  * World point to screen point, as one pure function (playtest round 4, P9 follow-up).
  *
@@ -46,6 +44,13 @@ import { simCos, simSin, simTan } from '../core/SimMath';
  * - Pixels are top-left origin, which is what the DOM uses.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { simCos, simSin, simTan } from '../core/SimMath';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** A column-major 4x4, in `THREE.Matrix4.elements` order. */
 export type Mat4 = ArrayLike<number>;
 
@@ -78,24 +83,17 @@ export interface ScreenPoint {
   /** Metres in front of the camera. Negative when behind. */
   depth: number;
 }
+//#endregion
 
-/** `out = M * (x, y, z, 1)`, column-major. Returns w separately because the divide is guarded. */
-function transform(
-  m: Mat4,
-  x: number,
-  y: number,
-  z: number,
-  out: { x: number; y: number; z: number; w: number },
-): void {
-  out.x = m[0]! * x + m[4]! * y + m[8]! * z + m[12]!;
-  out.y = m[1]! * x + m[5]! * y + m[9]! * z + m[13]!;
-  out.z = m[2]! * x + m[6]! * y + m[10]! * z + m[14]!;
-  out.w = m[3]! * x + m[7]! * y + m[11]! * z + m[15]!;
-}
-
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const viewScratch = { x: 0, y: 0, z: 0, w: 0 };
-const clipScratch = { x: 0, y: 0, z: 0, w: 0 };
 
+const clipScratch = { x: 0, y: 0, z: 0, w: 0 };
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Project a world point through a camera.
  *
@@ -229,3 +227,21 @@ export function perspectiveMatrixFrom(
   out[14] = (2 * far * near) / (near - far);
   return out;
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** `out = M * (x, y, z, 1)`, column-major. Returns w separately because the divide is guarded. */
+function transform(
+  m: Mat4,
+  x: number,
+  y: number,
+  z: number,
+  out: { x: number; y: number; z: number; w: number },
+): void {
+  out.x = m[0]! * x + m[4]! * y + m[8]! * z + m[12]!;
+  out.y = m[1]! * x + m[5]! * y + m[9]! * z + m[13]!;
+  out.z = m[2]! * x + m[6]! * y + m[10]! * z + m[14]!;
+  out.w = m[3]! * x + m[7]! * y + m[11]! * z + m[15]!;
+}
+//#endregion

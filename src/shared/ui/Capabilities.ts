@@ -31,6 +31,8 @@
  * DOM library. Same reasoning that put `HudSurfaces` and `SpectatorTarget` in `shared/`.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * What the browser says about the pointing devices attached to it.
  *
@@ -59,9 +61,15 @@ export interface Playability {
   /** What the player can do about it, or why they cannot. Empty when `ok`. */
   readonly detail: string;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const PLAYABLE: Playability = { id: 'ok', ok: true, headline: '', detail: '' };
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Can this device play the game?
  *
@@ -121,3 +129,4 @@ export function aimWarning(state: {
   if (!state.wantsPointerLock || state.pointerLocked || !state.lockRefused) return '';
   return 'MOUSE NOT CAPTURED — CLICK TO AIM · F11 FOR FULLSCREEN';
 }
+//#endregion

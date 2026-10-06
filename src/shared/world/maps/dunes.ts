@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import {
   addProp,
   addSpan,
@@ -21,7 +23,7 @@ import type {
   SpawnZone,
   SupplyPointDef,
 } from './types';
-
+//#endregion
 /**
  * MP_DUNES — the first M8 map (brief S6.1).
  *
@@ -82,6 +84,8 @@ import type {
  * Convention: +X east, +Z south, Y up. Floor top is y = 0.
  */
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 // ---- the numbers everything else is derived from --------------------------
 
 const FLOOR_MIN_X = -32;
@@ -143,7 +147,20 @@ const DUNES_LANES: readonly LaneDef[] = [
     b: { x: STREET_X, y: 0.05, z: -33 },
   },
 ];
+//#endregion
 
+// ===================================== DERIVED CONSTANTS ====================================== \\
+//#region Derived Constants
+// ---- assembly -------------------------------------------------------------
+
+const HALF_BRUSHES = villageHalf();
+const TRIM_BRUSHES = trimHalf();
+const HALF_PROPS = propsHalf();
+const ALL_PROPS: PropDef[] = [...HALF_PROPS, ...rotateHalfProps(HALF_PROPS), ...plazaProps()];
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 // ---- geometry -------------------------------------------------------------
 
 /** Ground and the perimeter. Already symmetric about the origin, so it is authored once. */
@@ -503,14 +520,10 @@ function objectives(): ObjectiveDef[] {
     { id: 'snd_bomb', kind: 'bombspawn', label: 'X', position: { x: 0, y: 0, z: -33.83 }, radius: 1 },
   ];
 }
+//#endregion
 
-// ---- assembly -------------------------------------------------------------
-
-const HALF_BRUSHES = villageHalf();
-const TRIM_BRUSHES = trimHalf();
-const HALF_PROPS = propsHalf();
-const ALL_PROPS: PropDef[] = [...HALF_PROPS, ...rotateHalfProps(HALF_PROPS), ...plazaProps()];
-
+// =================================== MODULE INITIALISATION ==================================== \\
+//#region Module Initialisation
 /**
  * The two resupply stations (this session).
  *
@@ -647,3 +660,4 @@ export const DUNES_MAP: MapDef = {
     ],
   },
 };
+//#endregion

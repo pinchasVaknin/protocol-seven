@@ -1,7 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { deriveCoverPoints, emitCoverPoint } from './cover';
 import type { Brush, CoverPoint, MapDef, PropDef, SpawnZone } from './types';
 import { simCos, simSin } from '../../core/SimMath';
 
+import { addBox } from './build';
+//#endregion
 /**
  * MP_TESTBED - the M1 grey-box room (brief S5.6).
  *
@@ -32,6 +36,8 @@ import { simCos, simSin } from '../../core/SimMath';
  * floor are sunk slightly so no downward face is ever coplanar with the floor.
  */
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const FLOOR_TOP = 0;
 const WALL_HEIGHT = 6;
 
@@ -51,56 +57,147 @@ const PIT_RAMP_RUN = 6;
 const PIT_RAMP_ANGLE = Math.atan2(PIT_DEPTH, PIT_RAMP_RUN);
 const PIT_RAMP_LEN = Math.hypot(PIT_DEPTH, PIT_RAMP_RUN);
 const PIT_RAMP_THICK = 0.6;
+//#endregion
 
+// ===================================== DERIVED CONSTANTS ====================================== \\
+//#region Derived Constants
+const COVER_PROPS = props();
+
+export const GREYBOX_MAP: MapDef = {
+  id: 'mp_testbed',
+  name: 'TESTBED',
+  brushes: brushes(),
+  props: [...COVER_PROPS, ...lightStrips()],
+  spawns: spawns(),
+  /**
+   * The room everybody lands in, lit to be read rather than to have a mood (round 5, F6).
+   *
+   * F6 reported the arena as *"nearly black"*, and it was: `npm run readability` puts its floor
+   * at **51/255, flat**, on the same `floor` material Foundry uses at 61.7 rising to 96. Same
+   * albedo, so the entire difference was the lights — a 0.85 hemisphere over a `groundColor` of
+   * `0x24272d`, which is a bounce that bounces nothing.
+   *
+   * The bar is not "brighter", it is the one P11 states: a player can see the geometry, the
+   * dummies and the other players well enough to understand where they are within a second of
+   * arriving. So the target is derived rather than dialled — **the arena reads at least as
+   * bright as the brightest indoor map's floor** — and the probe asserts it, because this is
+   * the room nobody chooses and everybody sees first.
+   *
+   * The hemisphere does the work rather than the sun, deliberately: a lobby wants even light
+   * with no dark corner to be surprised by, and raising the directional would have deepened the
+   * shadows this room has no reason to have.
+   */
+  lights: [
+    { kind: 'hemisphere', skyColor: 0xa8bcd8, groundColor: 0x55575e, intensity: 1.6 },
+    {
+      kind: 'directional',
+      color: 0xffe9cf,
+      intensity: 2.1,
+      direction: { x: 0.42, y: -0.8, z: 0.43 },
+      castShadow: true,
+      shadowExtent: 34,
+    },
+  ],
+  ambient: {
+    skyColor: 0xa8bcd8,
+    // In step with the hemisphere above: `ambient` is the fog and the sky the room is seen
+    // against, and leaving it dark would have put a lit room inside a black box (round 5, F6).
+    groundColor: 0x55575e,
+    fogColor: 0x1b2028,
+    fogNear: 34,
+    fogFar: 96,
+
+    /**
+     * A sky over the testbed, and deliberately **no horizon** (round 5, F2).
+     *
+     * This is the room every player lands in after `PLAY MULTIPLAYER`, so the flat lid F2
+     * reports is more visible here than anywhere: it is the first thing anybody sees. It gets
+     * the gradient and the disc for the same reason round 5's F6 gave it lights.
+     *
+     * It does not get a `skyline`. A ridge line is a claim that there is a place out there,
+     * and this is a grey-box measurement room with a speed lane down one side. Drawing
+     * mountains around it would be the sky saying something the map does not mean.
+     */
+    sky: {
+      zenith: 0x2c3d5c,
+      falloff: 1.0,
+      disc: { color: 0xffeccd, sizeDeg: 1.6, glowDeg: 16, intensity: 1.1 },
+    },
+  },
+
+  coverPoints: coverPoints(COVER_PROPS),
+  objectives: [],
+  navBounds: {
+    min: { x: -26, y: -6, z: -20 },
+    max: { x: 26, y: 10, z: 20 },
+  },
+};
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Every brush in the room, in the order the features are authored.
+ *
+ * One builder per feature, each named after the movement case it exists to exercise and
+ * each carrying the comment that case was authored with. The order is the order the
+ * brushes were pushed in before the split, because an index into this array is a brush.
+ */
 function brushes(): Brush[] {
   const out: Brush[] = [];
+  floorAndWalls(out);
+  distanceMarkers(out);
+  stepAndLedge(out);
+  bullseyePlates(out);
+  bayDividers(out);
+  laneMarkers(out);
+  narrowCorridor(out);
+  pit(out);
+  eastAlcove(out);
+  penetrationBay(out);
+  barricades(out);
+  return out;
+}
 
-  const add = (
-    material: Brush['material'],
-    cx: number,
-    cy: number,
-    cz: number,
-    sx: number,
-    sy: number,
-    sz: number,
-    extra?: Partial<Brush>,
-  ): void => {
-    out.push({
-      position: { x: cx, y: cy, z: cz },
-      size: { x: sx, y: sy, z: sz },
-      rotationY: 0,
-      material,
-      ...extra,
-    });
-  };
+/** The floor, split around the pit hole, and the four perimeter walls. */
+function floorAndWalls(out: Brush[]): void {
 
   // ---- floor, split around the pit hole at x[6,12] z[2,8] ----------------
-  add('floor', 0, -0.5, -8, 48, 1, 20);
-  add('floor', -9, -0.5, 5, 30, 1, 6);
-  add('floor', 18, -0.5, 5, 12, 1, 6);
-  add('floor', 0, -0.5, 13, 48, 1, 10);
+  addBox(out, 'floor', 0, -0.5, -8, 48, 1, 20);
+  addBox(out, 'floor', -9, -0.5, 5, 30, 1, 6);
+  addBox(out, 'floor', 18, -0.5, 5, 12, 1, 6);
+  addBox(out, 'floor', 0, -0.5, 13, 48, 1, 10);
 
   // ---- perimeter walls, interior faces at x = +/-24, z = +/-18 ----------
-  add('concrete', 0, WALL_HEIGHT / 2 - 0.1, -18.5, 49, WALL_HEIGHT + 0.2, 1);
-  add('concrete', 0, WALL_HEIGHT / 2 - 0.1, 18.5, 49, WALL_HEIGHT + 0.2, 1);
-  add('concrete', -24.5, WALL_HEIGHT / 2 - 0.1, 0, 1, WALL_HEIGHT + 0.2, 38);
-  add('concrete', 24.5, WALL_HEIGHT / 2 - 0.1, 0, 1, WALL_HEIGHT + 0.2, 38);
+  addBox(out, 'concrete', 0, WALL_HEIGHT / 2 - 0.1, -18.5, 49, WALL_HEIGHT + 0.2, 1);
+  addBox(out, 'concrete', 0, WALL_HEIGHT / 2 - 0.1, 18.5, 49, WALL_HEIGHT + 0.2, 1);
+  addBox(out, 'concrete', -24.5, WALL_HEIGHT / 2 - 0.1, 0, 1, WALL_HEIGHT + 0.2, 38);
+  addBox(out, 'concrete', 24.5, WALL_HEIGHT / 2 - 0.1, 0, 1, WALL_HEIGHT + 0.2, 38);
+
+}
 
   // ---- long straight: distance markers, 5 m apart, 40 m end to end -------
   // Non-solid: they must not perturb a speed measurement.
+function distanceMarkers(out: Brush[]): void {
+
   for (let i = 0; i <= 8; i++) {
     const x = -20 + i * 5;
     const major = i % 2 === 0;
-    add('hazard', x, 0.03, -14, major ? 0.3 : 0.18, 0.04, major ? 6 : 3.2, { solid: false, shadows: false });
+    addBox(out, 'hazard', x, 0.03, -14, major ? 0.3 : 0.18, 0.04, major ? 6 : 3.2, { solid: false, shadows: false });
   }
 
+}
+
+/** The step, the ledge above it, the ramp that climbs it, and their trim. */
+function stepAndLedge(out: Brush[]): void {
+
   // ---- 0.3 m step -------------------------------------------------------
-  add('concrete', 0, 0.1, -3, 8, 0.4, 6);
+  addBox(out, 'concrete', 0, 0.1, -3, 8, 0.4, 6);
   // Its lip, in the accent material, so the height reads at a glance.
-  add('accent', 0, 0.28, -6.02, 8, 0.05, 0.06, { solid: false, shadows: false });
+  addBox(out, 'accent', 0, 0.28, -6.02, 8, 0.05, 0.06, { solid: false, shadows: false });
 
   // ---- 1.5 m ledge + the ramp that climbs it ----------------------------
-  add('concreteDark', -9.75, 0.65, 6, 7.5, 1.7, 6);
+  addBox(out, 'concreteDark', -9.75, 0.65, 6, 7.5, 1.7, 6);
   {
     // Top surface runs from (x=-18, y=0) to (x=-13.5, y=1.5).
     const midX = -18 + MAIN_RAMP_RUN / 2;
@@ -120,8 +217,10 @@ function brushes(): Brush[] {
     });
   }
   // Ledge lip in the accent colour, and a guard rail on the far side.
-  add('accent', -9.75, 1.48, 3.02, 7.5, 0.06, 0.06, { solid: false, shadows: false });
-  add('metal', -9.75, 1.95, 8.85, 7.5, 0.9, 0.3);
+  addBox(out, 'accent', -9.75, 1.48, 3.02, 7.5, 0.06, 0.06, { solid: false, shadows: false });
+  addBox(out, 'metal', -9.75, 1.95, 8.85, 7.5, 0.9, 0.3);
+
+}
 
   /**
    * The accuracy wall is gone (round 2 playtest).
@@ -191,6 +290,8 @@ function brushes(): Brush[] {
    * boards that are all simultaneously visible, all in open air, and none of which is
    * standing in front of anything else in the room.
    */
+function bullseyePlates(out: Brush[]): void {
+
   const BULLSEYE_RANGES = [10, 16, 22] as const;
   /** Metres off the firing line's own `z`, per range. See the bound above. */
   const BULLSEYE_LATERALS = [-2.7, -2.0, -0.85] as const;
@@ -213,7 +314,7 @@ function brushes(): Brush[] {
     const bx = FIRING_LINE_X + Math.sqrt(Math.max(0, range * range - lateral * lateral));
     const bz = -14 + lateral;
     // Backing board.
-    add('concreteDark', bx, BOARD_Y, bz, 0.3, BOARD_HEIGHT, BOARD_WIDTH);
+    addBox(out, 'concreteDark', bx, BOARD_Y, bz, 0.3, BOARD_HEIGHT, BOARD_WIDTH);
     // Rings, outermost first. Each sits one thickness plus a gap in front of the last, so
     // consecutive plates never share a face and a decal on one is never buried in the next.
     const pitch = RING_THICK + RING_GAP;
@@ -221,9 +322,11 @@ function brushes(): Brush[] {
     for (let r = 0; r < RING_SIZES.length; r++) {
       const size = RING_SIZES[r] ?? 0.1;
       const material = RING_MATERIALS[r] ?? 'concrete';
-      add(material, bx - face - pitch * r, BOARD_Y, bz, RING_THICK, size, size, { shadows: false });
+      addBox(out, material, bx - face - pitch * r, BOARD_Y, bz, RING_THICK, size, size, { shadows: false });
     }
   }
+
+}
 
   /**
    * Bay dividers.
@@ -244,8 +347,12 @@ function brushes(): Brush[] {
    * Every mover in the drill bay was a torso. 0.9 m still reads unmistakably as a boundary
    * and every target in the room is now whole from the firing line.
    */
-  add('concreteDark', FIRING_LINE_X + 13, 0.4, -9.6, 30, 1.0, 0.4);
-  add('concreteDark', FIRING_LINE_X + 13, 0.4, -1.2, 30, 1.0, 0.4);
+function bayDividers(out: Brush[]): void {
+
+  addBox(out, 'concreteDark', FIRING_LINE_X + 13, 0.4, -9.6, 30, 1.0, 0.4);
+  addBox(out, 'concreteDark', FIRING_LINE_X + 13, 0.4, -1.2, 30, 1.0, 0.4);
+
+}
 
   /**
    * Lane markers: a stripe on the floor every five metres out to thirty.
@@ -254,24 +361,34 @@ function brushes(): Brush[] {
    * "about twenty metres" is not a measurement; the stripes are what make the range's numbers
    * mean something.
    */
+function laneMarkers(out: Brush[]): void {
+
   for (let range = 5; range <= 30; range += 5) {
-    add('accent', FIRING_LINE_X + range, 0.01, -14, 0.12, 0.02, 9, { solid: false, shadows: false });
+    addBox(out, 'accent', FIRING_LINE_X + range, 0.01, -14, 0.12, 0.02, 9, { solid: false, shadows: false });
   }
 
+}
+
   // ---- narrow corridor, 1.1 m clear, with a low overhang ----------------
-  add('concreteDark', -21.0, 1.4, 4, 1.0, 3, 12);
-  add('concreteDark', -18.9, 1.4, 4, 1.0, 3, 12);
+function narrowCorridor(out: Brush[]): void {
+
+  addBox(out, 'concreteDark', -21.0, 1.4, 4, 1.0, 3, 12);
+  addBox(out, 'concreteDark', -18.9, 1.4, 4, 1.0, 3, 12);
   // Underside at 1.25 m: crouch (1.10) fits, stand (1.80) does not.
-  add('metal', -19.95, 1.65, 4, 2.1, 0.8, 4);
-  add('hazard', -19.95, 1.27, 2.0, 2.1, 0.05, 0.12, { solid: false, shadows: false });
-  add('hazard', -19.95, 1.27, 6.0, 2.1, 0.05, 0.12, { solid: false, shadows: false });
+  addBox(out, 'metal', -19.95, 1.65, 4, 2.1, 0.8, 4);
+  addBox(out, 'hazard', -19.95, 1.27, 2.0, 2.1, 0.05, 0.12, { solid: false, shadows: false });
+  addBox(out, 'hazard', -19.95, 1.27, 6.0, 2.1, 0.05, 0.12, { solid: false, shadows: false });
+
+}
 
   // ---- pit: 6 x 6 hole, 3 m deep, with a 27 deg ramp out ----------------
-  add('concreteDark', 9, -PIT_DEPTH - 0.5, 5, 6, 1, 6); // pit floor, top at -3
-  add('concreteDark', 5.75, -2, 5, 0.5, 2, 7); // lining, y -3..-1
-  add('concreteDark', 12.25, -2, 5, 0.5, 2, 7);
-  add('concreteDark', 9, -2, 1.75, 6, 2, 0.5);
-  add('concreteDark', 9, -2, 8.25, 6, 2, 0.5);
+function pit(out: Brush[]): void {
+
+  addBox(out, 'concreteDark', 9, -PIT_DEPTH - 0.5, 5, 6, 1, 6); // pit floor, top at -3
+  addBox(out, 'concreteDark', 5.75, -2, 5, 0.5, 2, 7); // lining, y -3..-1
+  addBox(out, 'concreteDark', 12.25, -2, 5, 0.5, 2, 7);
+  addBox(out, 'concreteDark', 9, -2, 1.75, 6, 2, 0.5);
+  addBox(out, 'concreteDark', 9, -2, 8.25, 6, 2, 0.5);
   {
     // Top surface runs from (z=8, y=-3) up to (z=2, y=0).
     const midZ = 5;
@@ -297,33 +414,46 @@ function brushes(): Brush[] {
   // four corners, so each corner was a quarter of a square metre of *exactly* coincident top
   // face — the one flicker case no depth precision can help with, on the floor, at the one
   // piece of geometry in this room the player is meant to walk carefully around.
-  add('hazard', 9, 0.03, 1.9, 6.4, 0.04, 0.25, { solid: false, shadows: false });
-  add('hazard', 9, 0.03, 8.1, 6.4, 0.04, 0.25, { solid: false, shadows: false });
-  add('hazard', 6.1, 0.03, 5, 0.25, 0.04, 5.8, { solid: false, shadows: false });
-  add('hazard', 11.9, 0.03, 5, 0.25, 0.04, 5.8, { solid: false, shadows: false });
+  addBox(out, 'hazard', 9, 0.03, 1.9, 6.4, 0.04, 0.25, { solid: false, shadows: false });
+  addBox(out, 'hazard', 9, 0.03, 8.1, 6.4, 0.04, 0.25, { solid: false, shadows: false });
+  addBox(out, 'hazard', 6.1, 0.03, 5, 0.25, 0.04, 5.8, { solid: false, shadows: false });
+  addBox(out, 'hazard', 11.9, 0.03, 5, 0.25, 0.04, 5.8, { solid: false, shadows: false });
+
+}
 
   // ---- east alcove: 1.2 m shelf under a 2.45 m roof ---------------------
   // Mantling up leaves 1.25 m of headroom, so the vault must finish crouched.
-  add('concreteDark', 21.5, 0.5, 8, 5, 1.4, 7);
-  add('metal', 21.5, 2.75, 8, 5, 0.6, 7);
-  add('accent', 19.02, 1.18, 8, 0.06, 0.05, 7, { solid: false, shadows: false });
+function eastAlcove(out: Brush[]): void {
+
+  addBox(out, 'concreteDark', 21.5, 0.5, 8, 5, 1.4, 7);
+  addBox(out, 'metal', 21.5, 2.75, 8, 5, 0.6, 7);
+  addBox(out, 'accent', 19.02, 1.18, 8, 0.06, 0.05, 7, { solid: false, shadows: false });
+
+}
+
+/** The two penetration panels, their frames, and the firing-line bar. */
+function penetrationBay(out: Brush[]): void {
 
   // ---- M2 penetration bay (S6.4 / acceptance 4) -------------------------
   // Two panels at the far end of the measurement lane, sized so one weapon answers both
   // halves of the criterion: 0.05 m of steel costs 0.095 of the AR's 0.28 penetration
   // budget and lets it through with a reported loss; 0.6 m of concrete costs 0.6 and
   // stops it outright. A dummy stands behind each.
-  add('metal', 17.5, 1.3, -13.9, 0.05, 2.6, 2.6);
-  add('concrete', 17.5, 1.3, -11.0, 0.6, 2.6, 2.6);
+  addBox(out, 'metal', 17.5, 1.3, -13.9, 0.05, 2.6, 2.6);
+  addBox(out, 'concrete', 17.5, 1.3, -11.0, 0.6, 2.6, 2.6);
   // Frames, so the two panels read as different at a glance from the firing line.
-  add('hazard', 17.5, 2.68, -13.9, 0.16, 0.12, 2.72, { solid: false, shadows: false });
-  add('accent', 17.5, 2.68, -11.0, 0.72, 0.12, 2.72, { solid: false, shadows: false });
+  addBox(out, 'hazard', 17.5, 2.68, -13.9, 0.16, 0.12, 2.72, { solid: false, shadows: false });
+  addBox(out, 'accent', 17.5, 2.68, -11.0, 0.72, 0.12, 2.72, { solid: false, shadows: false });
 
   // Firing line: a thin accent bar sitting above the 20 m distance marker, not
   // coplanar with it, because two quads on the same plane is a z-fighting bug.
-  add('accent', -20, 0.055, -14, 0.1, 0.04, 7, { solid: false, shadows: false });
+  addBox(out, 'accent', -20, 0.055, -14, 0.1, 0.04, 7, { solid: false, shadows: false });
+
+}
 
   // ---- angled barricades: oriented-box collision ------------------------
+function barricades(out: Brush[]): void {
+
   out.push({
     position: { x: -4, y: 0.55, z: 12 },
     size: { x: 5, y: 1.5, z: 0.4 },
@@ -337,7 +467,6 @@ function brushes(): Brush[] {
     material: 'concreteDark',
   });
 
-  return out;
 }
 
 function props(): PropDef[] {
@@ -454,76 +583,4 @@ function lightStrips(): PropDef[] {
   }
   return out;
 }
-
-const COVER_PROPS = props();
-
-export const GREYBOX_MAP: MapDef = {
-  id: 'mp_testbed',
-  name: 'TESTBED',
-  brushes: brushes(),
-  props: [...COVER_PROPS, ...lightStrips()],
-  spawns: spawns(),
-  /**
-   * The room everybody lands in, lit to be read rather than to have a mood (round 5, F6).
-   *
-   * F6 reported the arena as *"nearly black"*, and it was: `npm run readability` puts its floor
-   * at **51/255, flat**, on the same `floor` material Foundry uses at 61.7 rising to 96. Same
-   * albedo, so the entire difference was the lights — a 0.85 hemisphere over a `groundColor` of
-   * `0x24272d`, which is a bounce that bounces nothing.
-   *
-   * The bar is not "brighter", it is the one P11 states: a player can see the geometry, the
-   * dummies and the other players well enough to understand where they are within a second of
-   * arriving. So the target is derived rather than dialled — **the arena reads at least as
-   * bright as the brightest indoor map's floor** — and the probe asserts it, because this is
-   * the room nobody chooses and everybody sees first.
-   *
-   * The hemisphere does the work rather than the sun, deliberately: a lobby wants even light
-   * with no dark corner to be surprised by, and raising the directional would have deepened the
-   * shadows this room has no reason to have.
-   */
-  lights: [
-    { kind: 'hemisphere', skyColor: 0xa8bcd8, groundColor: 0x55575e, intensity: 1.6 },
-    {
-      kind: 'directional',
-      color: 0xffe9cf,
-      intensity: 2.1,
-      direction: { x: 0.42, y: -0.8, z: 0.43 },
-      castShadow: true,
-      shadowExtent: 34,
-    },
-  ],
-  ambient: {
-    skyColor: 0xa8bcd8,
-    // In step with the hemisphere above: `ambient` is the fog and the sky the room is seen
-    // against, and leaving it dark would have put a lit room inside a black box (round 5, F6).
-    groundColor: 0x55575e,
-    fogColor: 0x1b2028,
-    fogNear: 34,
-    fogFar: 96,
-
-    /**
-     * A sky over the testbed, and deliberately **no horizon** (round 5, F2).
-     *
-     * This is the room every player lands in after `PLAY MULTIPLAYER`, so the flat lid F2
-     * reports is more visible here than anywhere: it is the first thing anybody sees. It gets
-     * the gradient and the disc for the same reason round 5's F6 gave it lights.
-     *
-     * It does not get a `skyline`. A ridge line is a claim that there is a place out there,
-     * and this is a grey-box measurement room with a speed lane down one side. Drawing
-     * mountains around it would be the sky saying something the map does not mean.
-     */
-    sky: {
-      zenith: 0x2c3d5c,
-      falloff: 1.0,
-      disc: { color: 0xffeccd, sizeDeg: 1.6, glowDeg: 16, intensity: 1.1 },
-    },
-  },
-
-  coverPoints: coverPoints(COVER_PROPS),
-  objectives: [],
-  navBounds: {
-    min: { x: -26, y: -6, z: -20 },
-    max: { x: 26, y: 10, z: 20 },
-  },
-};
-
+//#endregion

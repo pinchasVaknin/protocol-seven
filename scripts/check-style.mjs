@@ -115,6 +115,12 @@ const FINISHED = {
     'src/shared/ui/SkipGesture.ts',
     'src/shared/ui/TeamColour.ts',
   ],
+  A3a: [
+    'src/shared/world/maps/depot.ts',
+    'src/shared/world/maps/dunes.ts',
+    'src/shared/world/maps/foundry.ts',
+    'src/shared/world/maps/greybox.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

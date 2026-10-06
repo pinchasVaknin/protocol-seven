@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import {
   addProp,
   addSpan,
@@ -19,7 +21,7 @@ import type {
   SpawnZone,
   SupplyPointDef,
 } from './types';
-
+//#endregion
 /**
  * MP_FOUNDRY — the M4 map (brief S6.1).
  *
@@ -74,6 +76,8 @@ import type {
  * Convention: +X east, +Z south, Y up. Floor top is y = 0.
  */
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 // ---- the numbers everything else is derived from --------------------------
 
 const FLOOR_MIN_X = -29;
@@ -152,7 +156,20 @@ const FOUNDRY_LANES: readonly LaneDef[] = [
     b: { x: 22, y: 0.05, z: -21 },
   },
 ];
+//#endregion
 
+// ===================================== DERIVED CONSTANTS ====================================== \\
+//#region Derived Constants
+// ---- assembly -------------------------------------------------------------
+
+const HALF_BRUSHES = hallHalf();
+const TRIM_BRUSHES = trimHalf();
+const HALF_PROPS = propsHalf();
+const ALL_PROPS: PropDef[] = [...HALF_PROPS, ...rotateHalfProps(HALF_PROPS)];
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 // ---- geometry -------------------------------------------------------------
 
 /**
@@ -443,14 +460,10 @@ function objectives(): ObjectiveDef[] {
     { id: 'snd_bomb', kind: 'bombspawn', label: 'X', position: { x: 0, y: 0, z: -21.17 }, radius: 1 },
   ];
 }
+//#endregion
 
-// ---- assembly -------------------------------------------------------------
-
-const HALF_BRUSHES = hallHalf();
-const TRIM_BRUSHES = trimHalf();
-const HALF_PROPS = propsHalf();
-const ALL_PROPS: PropDef[] = [...HALF_PROPS, ...rotateHalfProps(HALF_PROPS)];
-
+// =================================== MODULE INITIALISATION ==================================== \\
+//#region Module Initialisation
 /**
  * The two resupply stations (this session).
  *
@@ -573,3 +586,4 @@ export const FOUNDRY_MAP: MapDef = {
     ],
   },
 };
+//#endregion

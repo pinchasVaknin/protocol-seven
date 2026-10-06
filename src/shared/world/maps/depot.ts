@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import {
   addBox,
   addProp,
@@ -21,7 +23,7 @@ import type {
   SupplyPointDef,
 } from './types';
 import { simCos, simSin } from '../../core/SimMath';
-
+//#endregion
 /**
  * MP_DEPOT — the second M8 map (brief S6.2).
  *
@@ -95,6 +97,46 @@ import { simCos, simSin } from '../../core/SimMath';
  * Convention: +X east, +Z south, Y up. Yard surface is y = 0.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+/**
+ * The container stacks, listed once and consumed three times — by the placement pass, by
+ * the climbing feet, and by the lane audit below. A stack that moves moves everywhere.
+ *
+ * `levels` is how many containers high. `climb` says whether this stack carries the foot
+ * that makes its roof mantleable; a stack without one is cover and nothing else.
+ *
+ * Authored for the negative-Z half and rotated.
+ */
+interface StackDef {
+  readonly x: number;
+  readonly z: number;
+  /** Radians. Zero runs the 6 m axis along X. */
+  readonly yaw: number;
+  readonly levels: 1 | 2;
+  /**
+   * Which of the container's two 2.5 m faces carries the climbing ladder, or 0 for none.
+   *
+   * A sign rather than a boolean because the first version derived the side from the yaw
+   * alone and put two ladders inside the perimeter wall — the stack against the west fence
+   * has only one face with three metres of yard in front of it, and it is not the one the
+   * arithmetic chose.
+   */
+  readonly climb: -1 | 0 | 1;
+  /**
+   * Which way along its own length the upper box of a two-high stack is shifted, and
+   * therefore which end of the lower roof is left exposed. Ignored on a one-high stack.
+   *
+   * Explicit for the same reason `climb` is: derived from the geometry it walked a
+   * container into a lane, and the lane audit caught it. Both signs are authored and both
+   * are checked.
+   */
+  readonly shift: -1 | 1;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 // ---- the numbers everything else is derived from --------------------------
 
 const YARD_MIN_X = -30;
@@ -207,41 +249,6 @@ const DEPOT_LANES: readonly LaneDef[] = [
   },
 ];
 
-/**
- * The container stacks, listed once and consumed three times — by the placement pass, by
- * the climbing feet, and by the lane audit below. A stack that moves moves everywhere.
- *
- * `levels` is how many containers high. `climb` says whether this stack carries the foot
- * that makes its roof mantleable; a stack without one is cover and nothing else.
- *
- * Authored for the negative-Z half and rotated.
- */
-interface StackDef {
-  readonly x: number;
-  readonly z: number;
-  /** Radians. Zero runs the 6 m axis along X. */
-  readonly yaw: number;
-  readonly levels: 1 | 2;
-  /**
-   * Which of the container's two 2.5 m faces carries the climbing ladder, or 0 for none.
-   *
-   * A sign rather than a boolean because the first version derived the side from the yaw
-   * alone and put two ladders inside the perimeter wall — the stack against the west fence
-   * has only one face with three metres of yard in front of it, and it is not the one the
-   * arithmetic chose.
-   */
-  readonly climb: -1 | 0 | 1;
-  /**
-   * Which way along its own length the upper box of a two-high stack is shifted, and
-   * therefore which end of the lower roof is left exposed. Ignored on a one-high stack.
-   *
-   * Explicit for the same reason `climb` is: derived from the geometry it walked a
-   * container into a lane, and the lane audit caught it. Both signs are authored and both
-   * are checked.
-   */
-  readonly shift: -1 | 1;
-}
-
 const H = Math.PI / 2;
 
 const STACKS: readonly StackDef[] = [
@@ -259,6 +266,47 @@ const STACKS: readonly StackDef[] = [
   { x: 26.5, z: -28, yaw: H, levels: 1, climb: 0, shift: -1 },
 ];
 
+const MAST_POSITIONS: readonly Readonly<{ x: number; z: number; yaw: number }>[] = [
+  { x: -28, z: -24, yaw: -H },
+  { x: 28, z: 24, yaw: H },
+  { x: -9, z: -31, yaw: Math.PI },
+  { x: 9, z: 31, yaw: 0 },
+  { x: 4, z: -5, yaw: 0 },
+  { x: -4, z: 5, yaw: Math.PI },
+];
+
+/** The three lane centres every stack has to stay clear of. */
+const LANE_CENTRES: readonly number[] = [-LANE_X, 0, LANE_X];
+//#endregion
+
+// ===================================== DERIVED CONSTANTS ====================================== \\
+//#region Derived Constants
+// ---- assembly -------------------------------------------------------------
+
+const SHED_BRUSHES = shed();
+const TRIM_BRUSHES = trimHalf();
+const HALF_PROPS = propsHalf();
+const HALF_STACKS = stackProps();
+const HALF_LADDERS = ladderProps();
+
+/** Everything cover is derived from. Ladders and masts are deliberately not in it. */
+const COVER_PROPS: PropDef[] = [
+  ...HALF_PROPS,
+  ...rotateHalfProps(HALF_PROPS),
+  ...HALF_STACKS,
+  ...rotateHalfProps(HALF_STACKS),
+];
+
+const ALL_PROPS: PropDef[] = [
+  ...COVER_PROPS,
+  ...HALF_LADDERS,
+  ...rotateHalfProps(HALF_LADDERS),
+  ...masts(),
+];
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /** Where the exposed ledge of a two-high stack is, in its own frame. */
 function exposedAlong(s: StackDef): number {
   return s.levels === 2 ? -s.shift * 2.0 : 1.6;
@@ -514,15 +562,6 @@ function propsHalf(): PropDef[] {
   return out;
 }
 
-const MAST_POSITIONS: readonly Readonly<{ x: number; z: number; yaw: number }>[] = [
-  { x: -28, z: -24, yaw: -H },
-  { x: 28, z: 24, yaw: H },
-  { x: -9, z: -31, yaw: Math.PI },
-  { x: 9, z: 31, yaw: 0 },
-  { x: 4, z: -5, yaw: 0 },
-  { x: -4, z: 5, yaw: Math.PI },
-];
-
 /**
  * The six mast lights, placed exactly where the map's `point` lights are.
  *
@@ -666,29 +705,60 @@ function objectives(): ObjectiveDef[] {
   ];
 }
 
-// ---- assembly -------------------------------------------------------------
+/** Throw if a box centred at `cx` with half-extent `hx` reaches into any lane. */
+function assertClearOfLanes(label: string, cx: number, hx: number): void {
+  for (const lane of LANE_CENTRES) {
+    // Both the authored box and its rotated twin, which is at -x.
+    for (const x of [cx, -cx]) {
+      if (Math.abs(x - lane) < hx + LANE_CLEAR) {
+        throw new Error(
+          `[Depot] ${label} intrudes on the lane at x=${lane}. ` +
+            `Lanes are ${LANE_CLEAR * 2} m corridors; see the file comment.`,
+        );
+      }
+    }
+  }
+}
 
-const SHED_BRUSHES = shed();
-const TRIM_BRUSHES = trimHalf();
-const HALF_PROPS = propsHalf();
-const HALF_STACKS = stackProps();
-const HALF_LADDERS = ladderProps();
+/** Every box one stack puts in the yard: the lower one, the upper one, and the ladder foot. */
+function auditStack(s: StackDef): void {
+  // Half-extent along world X: 3.0 for a container lying along X, 1.25 across it.
+  const alongX = Math.abs(simCos(s.yaw)) > 0.5;
+  const hx = alongX ? 3.0 : 1.25;
+  assertClearOfLanes(`stack at (${s.x}, ${s.z})`, s.x, hx);
+  if (s.levels === 2) {
+    // The upper box is shifted along its own length, which moves it in world X only when
+    // that length runs along X. Checked separately because the shift is exactly the kind
+    // of change that quietly walks a container into a lane.
+    const upper = local(s, s.shift * STACK_OFFSET, 0);
+    assertClearOfLanes(`upper box of the stack at (${s.x}, ${s.z})`, upper.x, hx);
+  }
+  if (s.climb !== 0) {
+    // The pallet is the outermost rung and the one most likely to reach a lane.
+    const foot = local(s, exposedAlong(s), s.climb * PALLET_STANDOFF);
+    assertClearOfLanes(`ladder foot of the stack at (${s.x}, ${s.z})`, foot.x, alongX ? 0.65 : 0.8);
+  }
+}
 
-/** Everything cover is derived from. Ladders and masts are deliberately not in it. */
-const COVER_PROPS: PropDef[] = [
-  ...HALF_PROPS,
-  ...rotateHalfProps(HALF_PROPS),
-  ...HALF_STACKS,
-  ...rotateHalfProps(HALF_STACKS),
-];
+/**
+ * The lane audit, run at module load.
+ *
+ * The 109% spread this map first measured was caused by two containers and a gantry leg
+ * sitting inside lane corridors, and it was found by a harness that has to be started, on a
+ * map that has to be loaded. This catches the same class of mistake at import time, which
+ * is where an authoring error belongs — a stack nudged into a lane during tuning throws
+ * with the offending id rather than quietly costing four seconds.
+ *
+ * Stacks only. Props are small, movable and mostly *meant* to be in the way; a 6 m
+ * container is neither.
+ */
+function auditLanes(): void {
+  for (const s of STACKS) auditStack(s);
+}
+//#endregion
 
-const ALL_PROPS: PropDef[] = [
-  ...COVER_PROPS,
-  ...HALF_LADDERS,
-  ...rotateHalfProps(HALF_LADDERS),
-  ...masts(),
-];
-
+// =================================== MODULE INITIALISATION ==================================== \\
+//#region Module Initialisation
 /**
  * The two resupply stations (this session).
  *
@@ -899,52 +969,5 @@ export const DEPOT_MAP: MapDef = {
   },
 };
 
-/**
- * The lane audit, run at module load.
- *
- * The 109% spread this map first measured was caused by two containers and a gantry leg
- * sitting inside lane corridors, and it was found by a harness that has to be started, on a
- * map that has to be loaded. This catches the same class of mistake at import time, which
- * is where an authoring error belongs — a stack nudged into a lane during tuning throws
- * with the offending id rather than quietly costing four seconds.
- *
- * Stacks only. Props are small, movable and mostly *meant* to be in the way; a 6 m
- * container is neither.
- */
-function auditLanes(): void {
-  const lanes = [-LANE_X, 0, LANE_X];
-  const check = (label: string, cx: number, hx: number): void => {
-    for (const lane of lanes) {
-      // Both the authored box and its rotated twin, which is at -x.
-      for (const x of [cx, -cx]) {
-        if (Math.abs(x - lane) < hx + LANE_CLEAR) {
-          throw new Error(
-            `[Depot] ${label} intrudes on the lane at x=${lane}. ` +
-              `Lanes are ${LANE_CLEAR * 2} m corridors; see the file comment.`,
-          );
-        }
-      }
-    }
-  };
-
-  for (const s of STACKS) {
-    // Half-extent along world X: 3.0 for a container lying along X, 1.25 across it.
-    const alongX = Math.abs(simCos(s.yaw)) > 0.5;
-    const hx = alongX ? 3.0 : 1.25;
-    check(`stack at (${s.x}, ${s.z})`, s.x, hx);
-    if (s.levels === 2) {
-      // The upper box is shifted along its own length, which moves it in world X only when
-      // that length runs along X. Checked separately because the shift is exactly the kind
-      // of change that quietly walks a container into a lane.
-      const upper = local(s, s.shift * STACK_OFFSET, 0);
-      check(`upper box of the stack at (${s.x}, ${s.z})`, upper.x, hx);
-    }
-    if (s.climb !== 0) {
-      // The pallet is the outermost rung and the one most likely to reach a lane.
-      const foot = local(s, exposedAlong(s), s.climb * PALLET_STANDOFF);
-      check(`ladder foot of the stack at (${s.x}, ${s.z})`, foot.x, alongX ? 0.65 : 0.8);
-    }
-  }
-}
-
 auditLanes();
+//#endregion

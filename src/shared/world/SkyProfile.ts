@@ -1,5 +1,3 @@
-import type { SkylineDef } from './maps/types';
-
 /**
  * The distant ridge line, as elevation against azimuth (playtest round 5, F2).
  *
@@ -26,6 +24,45 @@ import type { SkylineDef } from './maps/types';
  * rather than as distance; `MIN_FRACTION` keeps the lowest saddle a third of the way up.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { SkylineDef } from './maps/types';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+/**
+ * What a horizon reads at, and whether it is a circle.
+ *
+ * **`worstPeriodicityDeg` is the rule and everything else is a reading.** The profile wraps —
+ * sample 511 is adjacent to sample 0 — and a generator that treats the array as a line rather
+ * than as a circle leaves a vertical step at exactly one azimuth: a crack in the horizon, in
+ * one direction, which a playtester will find and nobody will reproduce from the description.
+ * Comparing the two ends *by size* cannot catch it on a hard-edged skyline, where a step the
+ * size of a building is the point; comparing `skylineAt(i)` with `skylineAt(i + samples)` can,
+ * because a circular generator answers those identically and a line-shaped one never does.
+ *
+ * The heights are readings. A ridge is distance and a ridge tall enough to close the view is a
+ * box, but where that line falls is a judgement about a picture and this file does not make
+ * those — `heightDeg` is authored per map and the browser is where it is looked at.
+ */
+export interface SkylineReading {
+  /**
+   * Largest disagreement between one turn of the circle and the next, in degrees. Zero on a
+   * generator that is a function of azimuth; a whole feature's height on one that is not.
+   */
+  readonly worstPeriodicityDeg: number;
+  /** Largest step between adjacent samples, including the wrap. A reading, not a bound. */
+  readonly worstStepDeg: number;
+  /** The wrap step alone, for the same reason: it is worth seeing, it is not a rule. */
+  readonly seamStepDeg: number;
+  readonly minDeg: number;
+  readonly maxDeg: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Samples around the full circle. 512 is 0.7 degrees of azimuth — finer than any edge here. */
 export const SKY_PROFILE_SAMPLES = 512;
 
@@ -34,15 +71,10 @@ const MIN_FRACTION = 0.34;
 
 /** How much of a block's cell is spent turning over into the next one. */
 const EDGE_RAMP = 0.06;
+//#endregion
 
-/**
- * A hash, not a random number generator.
- *
- * §4.14 bans `Math.random` in gameplay and this is not gameplay, but the reason applies here
- * anyway and more strongly: a horizon that differed between two loads of the same map would
- * be a map that is not one place. Integer mixing on the index and the seed gives the same
- * ridge for ever, and gives it without threading a generator's state through the loop.
- */
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * One feature's height, 0..1, exposed for the probe's red control and for nothing else.
  *
@@ -55,6 +87,59 @@ export function skylineFeatureHeight(index: number, seed: number): number {
   return hash01(index, seed);
 }
 
+/**
+ * The profile, in radians of elevation, one sample per azimuth step from -pi to +pi.
+ *
+ * Returned as a plain array so this file needs no typed-array assumptions on either side of
+ * the partition; the client copies it into a `DataTexture` and the probe reads it directly.
+ */
+export function skylineProfile(def: SkylineDef, samples = SKY_PROFILE_SAMPLES): number[] {
+  const out: number[] = new Array<number>(samples);
+  for (let i = 0; i < samples; i++) out[i] = skylineAt(def, i, samples);
+  return out;
+}
+
+export function readSkyline(def: SkylineDef, samples = SKY_PROFILE_SAMPLES): SkylineReading {
+  const profile = skylineProfile(def, samples);
+  const deg = (r: number): number => (r * 180) / Math.PI;
+
+  let worst = 0;
+  let min = Infinity;
+  let max = -Infinity;
+  let periodicity = 0;
+  for (let i = 0; i < profile.length; i++) {
+    const a = profile[i] ?? 0;
+    const b = profile[(i + 1) % profile.length] ?? 0;
+    worst = Math.max(worst, Math.abs(deg(b) - deg(a)));
+    min = Math.min(min, deg(a));
+    max = Math.max(max, deg(a));
+    // One full turn on: the same azimuth, a different index. Identical, or the curve is not a
+    // function of the direction it is drawn in.
+    periodicity = Math.max(periodicity, Math.abs(deg(skylineAt(def, i + samples, samples)) - deg(a)));
+  }
+
+  const first = profile[0] ?? 0;
+  const last = profile[profile.length - 1] ?? 0;
+  return {
+    worstPeriodicityDeg: periodicity,
+    worstStepDeg: worst,
+    seamStepDeg: Math.abs(deg(first) - deg(last)),
+    minDeg: min,
+    maxDeg: max,
+  };
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * A hash, not a random number generator.
+ *
+ * §4.14 bans `Math.random` in gameplay and this is not gameplay, but the reason applies here
+ * anyway and more strongly: a horizon that differed between two loads of the same map would
+ * be a map that is not one place. Integer mixing on the index and the seed gives the same
+ * ridge for ever, and gives it without threading a generator's state through the loop.
+ */
 function hash01(index: number, seed: number): number {
   let h = (index * 0x27d4eb2d) ^ (seed * 0x165667b1);
   h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
@@ -109,74 +194,4 @@ function skylineAt(def: SkylineDef, index: number, samples = SKY_PROFILE_SAMPLES
 function wrap(index: number, count: number): number {
   return ((index % count) + count) % count;
 }
-
-/**
- * The profile, in radians of elevation, one sample per azimuth step from -pi to +pi.
- *
- * Returned as a plain array so this file needs no typed-array assumptions on either side of
- * the partition; the client copies it into a `DataTexture` and the probe reads it directly.
- */
-export function skylineProfile(def: SkylineDef, samples = SKY_PROFILE_SAMPLES): number[] {
-  const out: number[] = new Array<number>(samples);
-  for (let i = 0; i < samples; i++) out[i] = skylineAt(def, i, samples);
-  return out;
-}
-
-/**
- * What a horizon reads at, and whether it is a circle.
- *
- * **`worstPeriodicityDeg` is the rule and everything else is a reading.** The profile wraps —
- * sample 511 is adjacent to sample 0 — and a generator that treats the array as a line rather
- * than as a circle leaves a vertical step at exactly one azimuth: a crack in the horizon, in
- * one direction, which a playtester will find and nobody will reproduce from the description.
- * Comparing the two ends *by size* cannot catch it on a hard-edged skyline, where a step the
- * size of a building is the point; comparing `skylineAt(i)` with `skylineAt(i + samples)` can,
- * because a circular generator answers those identically and a line-shaped one never does.
- *
- * The heights are readings. A ridge is distance and a ridge tall enough to close the view is a
- * box, but where that line falls is a judgement about a picture and this file does not make
- * those — `heightDeg` is authored per map and the browser is where it is looked at.
- */
-export interface SkylineReading {
-  /**
-   * Largest disagreement between one turn of the circle and the next, in degrees. Zero on a
-   * generator that is a function of azimuth; a whole feature's height on one that is not.
-   */
-  readonly worstPeriodicityDeg: number;
-  /** Largest step between adjacent samples, including the wrap. A reading, not a bound. */
-  readonly worstStepDeg: number;
-  /** The wrap step alone, for the same reason: it is worth seeing, it is not a rule. */
-  readonly seamStepDeg: number;
-  readonly minDeg: number;
-  readonly maxDeg: number;
-}
-
-export function readSkyline(def: SkylineDef, samples = SKY_PROFILE_SAMPLES): SkylineReading {
-  const profile = skylineProfile(def, samples);
-  const deg = (r: number): number => (r * 180) / Math.PI;
-
-  let worst = 0;
-  let min = Infinity;
-  let max = -Infinity;
-  let periodicity = 0;
-  for (let i = 0; i < profile.length; i++) {
-    const a = profile[i] ?? 0;
-    const b = profile[(i + 1) % profile.length] ?? 0;
-    worst = Math.max(worst, Math.abs(deg(b) - deg(a)));
-    min = Math.min(min, deg(a));
-    max = Math.max(max, deg(a));
-    // One full turn on: the same azimuth, a different index. Identical, or the curve is not a
-    // function of the direction it is drawn in.
-    periodicity = Math.max(periodicity, Math.abs(deg(skylineAt(def, i + samples, samples)) - deg(a)));
-  }
-
-  const first = profile[0] ?? 0;
-  const last = profile[profile.length - 1] ?? 0;
-  return {
-    worstPeriodicityDeg: periodicity,
-    worstStepDeg: worst,
-    seamStepDeg: Math.abs(deg(first) - deg(last)),
-    minDeg: min,
-    maxDeg: max,
-  };
-}
+//#endregion

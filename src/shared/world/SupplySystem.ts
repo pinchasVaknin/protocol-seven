@@ -1,10 +1,3 @@
-import { equipmentDef } from '../equipment/EquipmentDefs';
-import type { EquipmentInventory } from '../equipment/EquipmentSystem';
-import type { StanceId } from '../player/Stance';
-import type { Weapon } from '../weapons/WeaponBase';
-import type { WeaponClass, WeaponDef } from '../weapons/WeaponDefs';
-import type { SupplyPointDef } from './maps/types';
-
 /**
  * Resupply stations: the rule that turns kneeling at a crate into ammunition.
  *
@@ -40,6 +33,18 @@ import type { SupplyPointDef } from './maps/types';
  * `BotThrower` is a separate decision about bot behaviour, not about crates.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { equipmentDef } from '../equipment/EquipmentDefs';
+import type { EquipmentInventory } from '../equipment/EquipmentSystem';
+import type { StanceId } from '../player/Stance';
+import type { Weapon } from '../weapons/WeaponBase';
+import type { WeaponClass, WeaponDef } from '../weapons/WeaponDefs';
+import type { SupplyPointDef } from './maps/types';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** Where a body is, for the reach test. Satisfied by `PlayerSim` and by the server's own sim. */
 export interface SupplyBody {
   readonly x: number;
@@ -64,6 +69,38 @@ export interface SupplyConfig {
   readonly reachY: number;
 }
 
+/**
+ * What the crate is doing for one body this tick.
+ *
+ * One record per entity, rewritten in place: this is read by the HUD every frame and stepped
+ * every tick, and a fresh object per body per tick is exactly the allocation S4 asks the
+ * per-tick path not to make.
+ */
+export interface SupplyState {
+  /** The crate this body is standing at, or `NO_SUPPLY_POINT`. */
+  pointId: string;
+  /** In range, but the body is not kneeling — the prompt that teaches the rule. */
+  needsCrouch: boolean;
+  /** Taking something right now. */
+  working: boolean;
+  /** Kneeling, with nothing left to give. */
+  full: boolean;
+  /** The held weapon's reserve as a fraction of what it can carry, for the HUD ring. */
+  stock: number;
+  /** Given at this station since the body arrived, for the debug panel and the tests. */
+  roundsTaken: number;
+  grenadesTaken: number;
+}
+
+interface Progress {
+  pointId: string;
+  roundTicks: number;
+  grenadeTicks: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The shipped rates.
  *
@@ -94,64 +131,29 @@ export const SUPPLY_CONFIG: SupplyConfig = {
  */
 const AUTOMATIC_CLASSES: ReadonlySet<WeaponClass> = new Set<WeaponClass>(['AR', 'SMG', 'LMG']);
 
-/** Rounds one beat gives `def`. See `SUPPLY_CONFIG`. */
-export function roundsPerBeatFor(def: WeaponDef, cfg: SupplyConfig = SUPPLY_CONFIG): number {
-  return AUTOMATIC_CLASSES.has(def.class) ? cfg.automaticRoundsPerBeat : cfg.roundsPerBeat;
-}
-
 /** No crate. Distinct from a crate whose id is the empty string, which the schema forbids. */
 export const NO_SUPPLY_POINT = '';
+//#endregion
 
-/**
- * What the crate is doing for one body this tick.
- *
- * One record per entity, rewritten in place: this is read by the HUD every frame and stepped
- * every tick, and a fresh object per body per tick is exactly the allocation S4 asks the
- * per-tick path not to make.
- */
-export interface SupplyState {
-  /** The crate this body is standing at, or `NO_SUPPLY_POINT`. */
-  pointId: string;
-  /** In range, but the body is not kneeling — the prompt that teaches the rule. */
-  needsCrouch: boolean;
-  /** Taking something right now. */
-  working: boolean;
-  /** Kneeling, with nothing left to give. */
-  full: boolean;
-  /** The held weapon's reserve as a fraction of what it can carry, for the HUD ring. */
-  stock: number;
-  /** Given at this station since the body arrived, for the debug panel and the tests. */
-  roundsTaken: number;
-  grenadesTaken: number;
-}
-
-function makeState(): SupplyState {
-  return {
-    pointId: NO_SUPPLY_POINT,
-    needsCrouch: false,
-    working: false,
-    full: false,
-    stock: 0,
-    roundsTaken: 0,
-    grenadesTaken: 0,
-  };
-}
-
-interface Progress {
-  pointId: string;
-  roundTicks: number;
-  grenadeTicks: number;
-}
-
+// ===================================== CLASS SupplySystem ===================================== \\
+//#region Class SupplySystem
 export class SupplySystem {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly states = new Map<number, SupplyState>();
   private readonly progress = new Map<number, Progress>();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     private readonly points: readonly SupplyPointDef[],
     private readonly cfg: SupplyConfig = SUPPLY_CONFIG,
   ) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Whether this map has any stations at all. The HUD asks before it looks. */
   get any(): boolean {
     return this.points.length > 0;
@@ -168,7 +170,13 @@ export class SupplySystem {
   }
 
   /** One sim tick for one body: what the body is, and what it may be given. */
-  step(entityId: number, body: SupplyBody, alive: boolean, weapon: Weapon, inventory: EquipmentInventory): SupplyState {
+  step(
+    entityId: number,
+    body: SupplyBody,
+    alive: boolean,
+    weapon: Weapon,
+    inventory: EquipmentInventory,
+  ): SupplyState {
     const state = this.stateOf(entityId);
     state.working = false;
     state.needsCrouch = false;
@@ -191,8 +199,7 @@ export class SupplySystem {
      */
     if (body.stance !== 'CROUCH') {
       state.needsCrouch = true;
-      progress.roundTicks = 0;
-      progress.grenadeTicks = 0;
+      resetBeats(progress);
       return state;
     }
 
@@ -200,40 +207,17 @@ export class SupplySystem {
     const grenadeRoom = missingSlot(inventory) !== null;
     if (!roundRoom && !grenadeRoom) {
       state.full = true;
-      progress.roundTicks = 0;
-      progress.grenadeTicks = 0;
+      resetBeats(progress);
       return state;
     }
 
     state.working = true;
 
-    if (roundRoom) {
-      progress.roundTicks++;
-      if (progress.roundTicks >= this.cfg.ticksPerBeat) {
-        progress.roundTicks = 0;
-        // `addReserve` caps at the weapon's own carry and reports what it actually took, so the
-        // last handful into a nearly full pouch counts only the rounds that fitted.
-        state.roundsTaken += weapon.addReserve(roundsPerBeatFor(weapon.definition, this.cfg));
-        state.stock = stockFraction(weapon);
-      }
-    } else {
-      progress.roundTicks = 0;
-    }
+    if (roundRoom) this.giveRounds(state, progress, weapon);
+    else progress.roundTicks = 0;
 
-    if (grenadeRoom) {
-      progress.grenadeTicks++;
-      if (progress.grenadeTicks >= this.cfg.ticksPerGrenade) {
-        progress.grenadeTicks = 0;
-        // The lethal slot first: it is the one that wins a fight, and a player who wanted the
-        // other one can stop when the count they are watching goes up.
-        const slot = missingSlot(inventory);
-        if (slot === 'lethal') inventory.lethalCount++;
-        else if (slot === 'tactical') inventory.tacticalCount++;
-        if (slot !== null) state.grenadesTaken++;
-      }
-    } else {
-      progress.grenadeTicks = 0;
-    }
+    if (grenadeRoom) this.giveGrenade(state, progress, inventory);
+    else progress.grenadeTicks = 0;
 
     return state;
   }
@@ -249,9 +233,10 @@ export class SupplySystem {
     this.states.clear();
     this.progress.clear();
   }
+  //#endregion
 
-  // -- internals ----------------------------------------------------------------
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private forget(entityId: number, state: SupplyState): void {
     state.pointId = NO_SUPPLY_POINT;
     state.roundsTaken = 0;
@@ -290,6 +275,60 @@ export class SupplySystem {
     state.grenadesTaken = 0;
     return fresh;
   }
+
+  /** One tick towards the next handful of rounds, and the handful when the beat lands. */
+  private giveRounds(state: SupplyState, progress: Progress, weapon: Weapon): void {
+    progress.roundTicks++;
+    if (progress.roundTicks < this.cfg.ticksPerBeat) return;
+    progress.roundTicks = 0;
+    // `addReserve` caps at the weapon's own carry and reports what it actually took, so the
+    // last handful into a nearly full pouch counts only the rounds that fitted.
+    state.roundsTaken += weapon.addReserve(roundsPerBeatFor(weapon.definition, this.cfg));
+    state.stock = stockFraction(weapon);
+  }
+
+  /** One tick towards the next grenade, and the grenade when the beat lands. */
+  private giveGrenade(state: SupplyState, progress: Progress, inventory: EquipmentInventory): void {
+    progress.grenadeTicks++;
+    if (progress.grenadeTicks < this.cfg.ticksPerGrenade) return;
+    progress.grenadeTicks = 0;
+    // The lethal slot first: it is the one that wins a fight, and a player who wanted the
+    // other one can stop when the count they are watching goes up.
+    const slot = missingSlot(inventory);
+    if (slot === 'lethal') inventory.lethalCount++;
+    else if (slot === 'tactical') inventory.tacticalCount++;
+    if (slot !== null) state.grenadesTaken++;
+  }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** Rounds one beat gives `def`. See `SUPPLY_CONFIG`. */
+export function roundsPerBeatFor(def: WeaponDef, cfg: SupplyConfig = SUPPLY_CONFIG): number {
+  return AUTOMATIC_CLASSES.has(def.class) ? cfg.automaticRoundsPerBeat : cfg.roundsPerBeat;
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function makeState(): SupplyState {
+  return {
+    pointId: NO_SUPPLY_POINT,
+    needsCrouch: false,
+    working: false,
+    full: false,
+    stock: 0,
+    roundsTaken: 0,
+    grenadesTaken: 0,
+  };
+}
+
+/** Neither beat survives an interruption: partial progress is never banked. */
+function resetBeats(progress: Progress): void {
+  progress.roundTicks = 0;
+  progress.grenadeTicks = 0;
 }
 
 /** The slot that is short of its loadout count, lethal first, or null when both are full. */
@@ -305,3 +344,4 @@ function stockFraction(weapon: Weapon): number {
   const stock = weapon.reserve / max;
   return stock < 0 ? 0 : stock > 1 ? 1 : stock;
 }
+//#endregion

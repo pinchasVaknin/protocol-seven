@@ -1,5 +1,3 @@
-import type { Vec3Lit } from './maps/types';
-
 /**
  * The navmesh structure and its queries. The bake that fills it lives in `NavBake.ts`;
  * `Navmesh.ts` is the barrel both are consumed through.
@@ -25,45 +23,13 @@ import type { Vec3Lit } from './maps/types';
  * 0.22 m.
  */
 
-/** Neighbour offsets. 0-3 orthogonal, 4-7 diagonal; diagonals need both orthogonals. */
-export const NAV_DIRS: readonly Readonly<{ dx: number; dz: number; cost: number }>[] = [
-  { dx: 1, dz: 0, cost: 1 },
-  { dx: -1, dz: 0, cost: 1 },
-  { dx: 0, dz: 1, cost: 1 },
-  { dx: 0, dz: -1, cost: 1 },
-  { dx: 1, dz: 1, cost: Math.SQRT2 },
-  { dx: 1, dz: -1, cost: Math.SQRT2 },
-  { dx: -1, dz: 1, cost: Math.SQRT2 },
-  { dx: -1, dz: -1, cost: Math.SQRT2 },
-];
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { Vec3Lit } from './maps/types';
+//#endregion
 
-/** Which orthogonal links a diagonal depends on, so corners are never cut. */
-export const DIAGONAL_DEPS: readonly Readonly<[number, number]>[] = [
-  [0, 2],
-  [0, 3],
-  [1, 2],
-  [1, 3],
-];
-
-/**
- * Walkable surfaces one XZ column may carry, by default.
- *
- * Two, because that is what Foundry needs and what a 3-lane map with a catwalk deck
- * *means*: the floor, and the thing over it. Depot asks for three — the yard, a container
- * roof, and the gantry above both — and pays for it in bake time and memory, so it is a
- * per-map number from M8 rather than a constant every map is taxed by.
- */
-export const NAV_DEFAULT_LAYERS = 2;
-
-/**
- * The ceiling. `linkLayer` packs `LAYER_BITS` per direction into a Uint16, so a layer
- * index must fit in two bits — four surfaces per column and not one more.
- */
-export const NAV_MAX_LAYERS = 4;
-
-const LAYER_BITS = 2;
-const LAYER_MASK = (1 << LAYER_BITS) - 1;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface NavBakeOptions {
   readonly cellSize: number;
   readonly capsuleRadius: number;
@@ -111,8 +77,65 @@ export interface NavBakeStats {
   /** M8. Of `links`, how many are mantles rather than walks. */
   climbLinks: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Neighbour offsets. 0-3 orthogonal, 4-7 diagonal; diagonals need both orthogonals. */
+export const NAV_DIRS: readonly Readonly<{ dx: number; dz: number; cost: number }>[] = [
+  { dx: 1, dz: 0, cost: 1 },
+  { dx: -1, dz: 0, cost: 1 },
+  { dx: 0, dz: 1, cost: 1 },
+  { dx: 0, dz: -1, cost: 1 },
+  { dx: 1, dz: 1, cost: Math.SQRT2 },
+  { dx: 1, dz: -1, cost: Math.SQRT2 },
+  { dx: -1, dz: 1, cost: Math.SQRT2 },
+  { dx: -1, dz: -1, cost: Math.SQRT2 },
+];
+
+/** Which orthogonal links a diagonal depends on, so corners are never cut. */
+export const DIAGONAL_DEPS: readonly Readonly<[number, number]>[] = [
+  [0, 2],
+  [0, 3],
+  [1, 2],
+  [1, 3],
+];
+
+/**
+ * Walkable surfaces one XZ column may carry, by default.
+ *
+ * Two, because that is what Foundry needs and what a 3-lane map with a catwalk deck
+ * *means*: the floor, and the thing over it. Depot asks for three — the yard, a container
+ * roof, and the gantry above both — and pays for it in bake time and memory, so it is a
+ * per-map number from M8 rather than a constant every map is taxed by.
+ */
+export const NAV_DEFAULT_LAYERS = 2;
+
+/**
+ * The ceiling. `linkLayer` packs `LAYER_BITS` per direction into a Uint16, so a layer
+ * index must fit in two bits — four surfaces per column and not one more.
+ */
+export const NAV_MAX_LAYERS = 4;
+
+const LAYER_BITS = 2;
+const LAYER_MASK = (1 << LAYER_BITS) - 1;
+
+/**
+ * How much more a metre of height difference counts than a metre in plan, when the nearest
+ * walkable node to a position is being chosen.
+ *
+ * Four, so a surface one cell away at the right height beats the cell directly underfoot at
+ * the wrong one. That is what keeps a bot on a catwalk from being snapped to the floor
+ * beneath it, and a bot at the bottom of a pit from being snapped to the lip.
+ */
+const HEIGHT_WEIGHT = 4;
+//#endregion
+
+// ======================================= CLASS NavGrid ======================================== \\
+//#region Class NavGrid
 export class NavGrid {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly cellSize: number;
   readonly originX: number;
   readonly originZ: number;
@@ -143,7 +166,10 @@ export class NavGrid {
   readonly normalY: Float32Array;
 
   readonly stats: NavBakeStats;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     cellSize: number,
     originX: number,
@@ -169,7 +195,10 @@ export class NavGrid {
     this.normalY = new Float32Array(n);
     this.stats = stats;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Total nodes. This is what A*'s working arrays are sized against. */
   get cellCount(): number {
     return this.columnCount * this.layers;
@@ -305,41 +334,19 @@ export class NavGrid {
    *
    * `y` breaks ties by height, which is what keeps a bot on a catwalk from being snapped to
    * the floor beneath it and a bot at the bottom of a pit from being snapped to the lip.
+   *
+   * The search stops at the first ring that offers anything at all. A nearer ring is nearer
+   * in plan by at least a whole cell, and that is the order the rings are walked in.
    */
   nearestCell(x: number, y: number, z: number, maxRings = 12): number {
     const direct = this.cellAtY(x, y, z);
     if (direct >= 0) return direct;
 
-    const cx = this.cellX(x);
-    const cz = this.cellZ(z);
-    let best = -1;
-    let bestScore = Infinity;
-
     for (let ring = 1; ring <= maxRings; ring++) {
-      for (let oz = -ring; oz <= ring; oz++) {
-        for (let ox = -ring; ox <= ring; ox++) {
-          // Only the ring's perimeter; the interior was covered by a smaller ring.
-          if (Math.max(Math.abs(ox), Math.abs(oz)) !== ring) continue;
-          const ix = cx + ox;
-          const iz = cz + oz;
-          if (!this.inBounds(ix, iz)) continue;
-          const column = this.index(ix, iz);
-          for (let l = 0; l < this.layers; l++) {
-            const i = l * this.columnCount + column;
-            if (this.walkable[i] !== 1) continue;
-            const dx = this.centerX(ix) - x;
-            const dz = this.centerZ(iz) - z;
-            const dy = (this.height[i] ?? 0) - y;
-            const score = dx * dx + dz * dz + dy * dy * 4;
-            if (score >= bestScore) continue;
-            bestScore = score;
-            best = i;
-          }
-        }
-      }
+      const best = this.bestInRing(ring, x, y, z);
       if (best >= 0) return best;
     }
-    return best;
+    return -1;
   }
 
   /**
@@ -367,20 +374,6 @@ export class NavGrid {
   }
 
   /**
-   * A surface in this column that could be **mantled** onto from height `fromH`, or -1 (M8).
-   *
-   * The window is deliberately `(stepHeight, mantleHeight]` — open at the bottom, because
-   * anything at or below step-up is an ordinary link and this must not shadow it — and the
-   * *lowest* qualifying surface wins rather than the nearest, because a bot faced with a
-   * crate and a container in the same column should climb the crate.
-   *
-   * The destination being `walkable` is what makes this honest: that flag was set by the
-   * same capsule test movement uses, so a climb link only ever points at somewhere a body
-   * provably fits standing up. What it cannot check is whether `Mantle.detectMantle` will
-   * find the ledge face from this exact approach, which is why a bot that fails a climb
-   * still has `updateStuck` behind it.
-   */
-  /**
    * A surface in this column that could be **dropped down to** from height `fromH`, or -1.
    *
    * The window is `[-dropHeight, -maxDrop)` — everything below an ordinary ground-snap
@@ -406,6 +399,20 @@ export class NavGrid {
     return best;
   }
 
+  /**
+   * A surface in this column that could be **mantled** onto from height `fromH`, or -1 (M8).
+   *
+   * The window is deliberately `(stepHeight, mantleHeight]` — open at the bottom, because
+   * anything at or below step-up is an ordinary link and this must not shadow it — and the
+   * *lowest* qualifying surface wins rather than the nearest, because a bot faced with a
+   * crate and a container in the same column should climb the crate.
+   *
+   * The destination being `walkable` is what makes this honest: that flag was set by the
+   * same capsule test movement uses, so a climb link only ever points at somewhere a body
+   * provably fits standing up. What it cannot check is whether `Mantle.detectMantle` will
+   * find the ledge face from this exact approach, which is why a bot that fails a climb
+   * still has `updateStuck` behind it.
+   */
   climbFrom(ix: number, iz: number, fromH: number, stepHeight: number, mantleHeight: number): number {
     if (mantleHeight <= stepHeight || !this.inBounds(ix, iz)) return -1;
     const column = this.index(ix, iz);
@@ -457,4 +464,68 @@ export class NavGrid {
     // The walk has to arrive at the surface that was asked for, not merely above or below it.
     return Math.abs(prevH - (this.height[toIndex] ?? 0)) < 1e-3;
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * The best-scoring walkable node on one ring's perimeter around a world position, or -1.
+   *
+   * Only the perimeter; the interior was covered by a smaller ring. A row at the ring's own
+   * `|oz|` is a whole side and is walked cell by cell, and the rows between it contribute
+   * their two end cells only — which is what the stride is: one along a side, the ring's full
+   * width across the middle.
+   */
+  private bestInRing(ring: number, x: number, y: number, z: number): number {
+    const cx = this.cellX(x);
+    const cz = this.cellZ(z);
+    let best = -1;
+    let bestScore = Infinity;
+    for (let oz = -ring; oz <= ring; oz++) {
+      const stride = Math.abs(oz) === ring ? 1 : Math.max(1, 2 * ring);
+      for (let ox = -ring; ox <= ring; ox += stride) {
+        const ix = cx + ox;
+        const iz = cz + oz;
+        if (!this.inBounds(ix, iz)) continue;
+        const node = this.bestLayerIn(this.index(ix, iz), x, y, z);
+        if (node < 0) continue;
+        const score = this.cellScore(node, x, y, z);
+        if (score >= bestScore) continue;
+        bestScore = score;
+        best = node;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The best-scoring walkable surface in one column, or -1.
+   *
+   * Taking a column's own best before comparing columns is the same answer as comparing every
+   * node of every column at once — a minimum is the minimum of its parts — and it keeps the
+   * ring walk one loop shallower.
+   */
+  private bestLayerIn(column: number, x: number, y: number, z: number): number {
+    let best = -1;
+    let bestScore = Infinity;
+    for (let l = 0; l < this.layers; l++) {
+      const i = l * this.columnCount + column;
+      if (this.walkable[i] !== 1) continue;
+      const score = this.cellScore(i, x, y, z);
+      if (score >= bestScore) continue;
+      bestScore = score;
+      best = i;
+    }
+    return best;
+  }
+
+  /** Squared distance from a world position to a node's surface, with height weighted. */
+  private cellScore(node: number, x: number, y: number, z: number): number {
+    const dx = this.centerX(this.indexOfX(node)) - x;
+    const dz = this.centerZ(this.indexOfZ(node)) - z;
+    const dy = (this.height[node] ?? 0) - y;
+    return dx * dx + dz * dz + dy * dy * HEIGHT_WEIGHT;
+  }
+  //#endregion
 }
+//#endregion

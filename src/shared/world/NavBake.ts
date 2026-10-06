@@ -1,16 +1,3 @@
-import { nowMs } from '../core/Clock';
-import type { CollisionWorld } from './CollisionWorld';
-import { makeRayHit, rayBox, rayBoxExit } from './Geometry';
-import {
-  DIAGONAL_DEPS,
-  NAV_DIRS,
-  NAV_MAX_LAYERS,
-  NavGrid,
-  type NavBakeOptions,
-  type NavBakeStats,
-} from './NavGrid';
-import type { Box, Vec3Lit } from './maps/types';
-
 /**
  * Baking the navmesh out of map geometry at load (brief S6.5).
  *
@@ -28,6 +15,24 @@ import type { Box, Vec3Lit } from './maps/types';
  * separate nodes instead of one wrong one.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { nowMs } from '../core/Clock';
+import type { CollisionWorld } from './CollisionWorld';
+import { makeRayHit, rayBox, rayBoxExit } from './Geometry';
+import {
+  DIAGONAL_DEPS,
+  NAV_DIRS,
+  NAV_MAX_LAYERS,
+  NavGrid,
+  type NavBakeOptions,
+  type NavBakeStats,
+} from './NavGrid';
+import type { Box, Vec3Lit } from './maps/types';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * How far above the found surface the clearance capsule is placed.
  *
@@ -42,6 +47,9 @@ const NAV_LIFT = 0.12;
 /** Colliders considered in one vertical column. Well past anything a map stacks. */
 const MAX_COLUMN = 96;
 
+/** Above this, a walkable surface is a route rather than floor, and is sampled finer. */
+const ELEVATED_METRES = 1.0;
+
 const columnCandidates = new Int32Array(512);
 const intervalLo = new Float64Array(MAX_COLUMN);
 const intervalHi = new Float64Array(MAX_COLUMN);
@@ -52,7 +60,10 @@ const columnRay = makeRayHit();
 /** Standable surfaces found in the current column, lowest first. Sized to the ceiling. */
 const surfaceY = new Float64Array(NAV_MAX_LAYERS);
 const surfaceNy = new Float64Array(NAV_MAX_LAYERS);
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function bakeNavmesh(world: CollisionWorld, bounds: Box, opts: NavBakeOptions): NavGrid {
   const t0 = nowMs();
   const layers = Math.max(1, Math.min(NAV_MAX_LAYERS, Math.floor(opts.layers)));
@@ -73,37 +84,9 @@ export function bakeNavmesh(world: CollisionWorld, bounds: Box, opts: NavBakeOpt
   };
   const grid = new NavGrid(cs, originX, originZ, dimX, dimZ, layers, stats);
 
-  const topY = bounds.max.y + 1;
-  const columnDepth = bounds.max.y - bounds.min.y + 2;
-
-  // ---- 1. surfaces + clearance per column ----------------------------------
-  for (let iz = 0; iz < dimZ; iz++) {
-    const z = grid.centerZ(iz);
-    for (let ix = 0; ix < dimX; ix++) {
-      const x = grid.centerX(ix);
-      const intervals = collectColumn(world, x, z, topY, columnDepth);
-      const found = standableSurfaces(intervals, bounds.min.y, opts, layers);
-
-      let layer = 0;
-      for (let k = 0; k < found && layer < grid.layers; k++) {
-        const y = surfaceY[k] ?? 0;
-        // The authority on whether a bot fits here is the collision world itself.
-        if (world.overlapCapsule(x, y + NAV_LIFT, z, opts.capsuleRadius, opts.standHeight)) continue;
-        const node = grid.node(ix, iz, layer);
-        grid.walkable[node] = 1;
-        grid.height[node] = y;
-        grid.normalY[node] = surfaceNy[k] ?? 1;
-        layer++;
-        stats.walkable++;
-      }
-      if (layer > 1) stats.stacked++;
-    }
-  }
-
-  // ---- 2. connectivity -----------------------------------------------------
+  markStandableColumns(world, grid, bounds, opts);
   linkGrid(grid, opts);
 
-  // ---- 3. prune anything the spawns cannot reach ---------------------------
   stats.pruned = pruneUnreachable(grid, opts.seeds);
   if (stats.pruned > 0) {
     // Links pointed at nodes that no longer exist; rebuild rather than patch.
@@ -114,14 +97,7 @@ export function bakeNavmesh(world: CollisionWorld, bounds: Box, opts: NavBakeOpt
     linkGrid(grid, opts);
   }
 
-  let links = 0;
-  let climbs = 0;
-  for (let i = 0; i < grid.cellCount; i++) {
-    links += popcount8(grid.links[i] ?? 0);
-    climbs += popcount8(grid.climb[i] ?? 0);
-  }
-  stats.links = links;
-  stats.climbLinks = climbs;
+  recordLinkCounts(grid);
   stats.bakeMs = nowMs() - t0;
   return grid;
 }
@@ -152,156 +128,54 @@ export function samplePatrolCells(grid: NavGrid, spacingMetres: number): Int32Ar
   const found: number[] = [];
   const taken = new Set<number>();
 
-  const take = (node: number): void => {
-    if (taken.has(node)) return;
-    taken.add(node);
-    found.push(node);
-  };
-
-  for (let layer = 0; layer < grid.layers; layer++) {
-    const offset = Math.floor(baseStride / 2);
-    for (let iz = offset; iz < grid.dimZ; iz += baseStride) {
-      for (let ix = offset; ix < grid.dimX; ix += baseStride) {
-        const node = grid.node(ix, iz, layer);
-        if (grid.walkable[node] === 1) {
-          take(node);
-          continue;
-        }
-        // Only the ground layer gets a nudge: an upper layer has genuine holes in it, and
-        // snapping to the nearest walkable node would drag the point down onto the floor.
-        if (layer !== 0) continue;
-        const near = grid.nearestCell(grid.centerX(ix), 0, grid.centerZ(iz), 3);
-        if (near >= 0) take(near);
-      }
-    }
-  }
-
+  sampleGroundLattice(grid, baseStride, found, taken);
   // Second, finer pass over anything off the ground, whichever layer it landed on.
-  for (let layer = 0; layer < grid.layers; layer++) {
-    const offset = Math.floor(fineStride / 2);
-    for (let iz = offset; iz < grid.dimZ; iz += fineStride) {
-      for (let ix = offset; ix < grid.dimX; ix += fineStride) {
-        const node = grid.node(ix, iz, layer);
-        if (grid.walkable[node] !== 1) continue;
-        if ((grid.height[node] ?? 0) < ELEVATED_METRES) continue;
-        take(node);
-      }
-    }
-  }
+  sampleElevatedLattice(grid, fineStride, found, taken);
   return Int32Array.from(found);
 }
+//#endregion
 
-/** Above this, a walkable surface is a route rather than floor, and is sampled finer. */
-const ELEVATED_METRES = 1.0;
-
-// -- internals --------------------------------------------------------------
-
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /**
- * Connectivity.
+ * Every column's standable surfaces, and whether a body actually fits on each of them.
  *
- * Walks first, then mantles, then diagonals — and the order is the design. A climb link is
- * only ever offered where an ordinary walk was **not** available, so the graph never
- * carries two edges to the same place and A* is never asked to choose between a step and a
- * mantle over the same 0.3 m.
- *
- * Diagonals are deliberately walk-only. A mantle is a forward lunge that ends on the far
- * side of a ledge face, and a diagonal approach meets that face at 45 degrees where
- * `Mantle.detectMantle`'s forward probe is far more likely to miss. Offering a diagonal
- * climb would be offering an edge the bot cannot reliably cross, which is worse than not
- * offering it: a path that exists and cannot be walked is how a bot gets stuck for a whole
- * match. Every climb is a straight-on approach.
+ * One loop over the columns rather than one over `iz` inside one over `ix`, because a column
+ * index *is* `iz * dimX + ix`: the same cells, visited in the same order, one level of
+ * nesting shallower.
  */
-function linkGrid(grid: NavGrid, opts: NavBakeOptions): void {
-  const { dimX, dimZ } = grid;
-  for (let layer = 0; layer < grid.layers; layer++) {
-    for (let iz = 0; iz < dimZ; iz++) {
-      for (let ix = 0; ix < dimX; ix++) {
-        const i = grid.node(ix, iz, layer);
-        if (grid.walkable[i] !== 1) continue;
-        const h = grid.height[i] ?? 0;
-        let mask = 0;
-        let climbMask = 0;
+function markStandableColumns(
+  world: CollisionWorld,
+  grid: NavGrid,
+  bounds: Box,
+  opts: NavBakeOptions,
+): void {
+  const stats = grid.stats;
+  const topY = bounds.max.y + 1;
+  const columnDepth = bounds.max.y - bounds.min.y + 2;
 
-        for (let d = 0; d < 4; d++) {
-          const dir = NAV_DIRS[d];
-          if (dir === undefined) continue;
-          const j = grid.layerFrom(ix + dir.dx, iz + dir.dz, h, opts.stepHeight, opts.maxDrop);
-          if (j >= 0) {
-            mask |= 1 << d;
-            grid.setLinkLayer(i, d, grid.layerOf(j));
-            continue;
-          }
-          const climb = grid.climbFrom(ix + dir.dx, iz + dir.dz, h, opts.stepHeight, opts.mantleHeight);
-          if (climb >= 0) {
-            mask |= 1 << d;
-            climbMask |= 1 << d;
-            grid.setLinkLayer(i, d, grid.layerOf(climb));
-            continue;
-          }
-          // Stepping off. Not a climb: nothing is pressed, the bot simply walks over the
-          // edge — so it is an ordinary link that happens to descend a long way.
-          const drop = grid.dropFrom(ix + dir.dx, iz + dir.dz, h, opts.maxDrop, opts.dropHeight);
-          if (drop < 0) continue;
-          mask |= 1 << d;
-          grid.setLinkLayer(i, d, grid.layerOf(drop));
-        }
+  for (let column = 0; column < grid.columnCount; column++) {
+    const ix = column % grid.dimX;
+    const iz = (column - ix) / grid.dimX;
+    const x = grid.centerX(ix);
+    const z = grid.centerZ(iz);
+    const intervals = collectColumn(world, x, z, topY, columnDepth);
+    const found = standableSurfaces(intervals, bounds.min.y, opts, grid.layers);
 
-        for (let d = 4; d < 8; d++) {
-          const dir = NAV_DIRS[d];
-          const deps = DIAGONAL_DEPS[d - 4];
-          if (dir === undefined || deps === undefined) continue;
-          // No corner cutting: a diagonal exists only where both its orthogonals do, and
-          // only where neither of them was a mantle.
-          if ((mask & (1 << deps[0])) === 0 || (mask & (1 << deps[1])) === 0) continue;
-          if ((climbMask & (1 << deps[0])) !== 0 || (climbMask & (1 << deps[1])) !== 0) continue;
-          const j = grid.layerFrom(ix + dir.dx, iz + dir.dz, h, opts.stepHeight, opts.maxDrop);
-          if (j < 0) continue;
-          mask |= 1 << d;
-          grid.setLinkLayer(i, d, grid.layerOf(j));
-        }
-
-        grid.links[i] = mask;
-        grid.climb[i] = climbMask;
-      }
+    let layer = 0;
+    for (let k = 0; k < found && layer < grid.layers; k++) {
+      const y = surfaceY[k] ?? 0;
+      // The authority on whether a bot fits here is the collision world itself.
+      if (world.overlapCapsule(x, y + NAV_LIFT, z, opts.capsuleRadius, opts.standHeight)) continue;
+      const node = layer * grid.columnCount + column;
+      grid.walkable[node] = 1;
+      grid.height[node] = y;
+      grid.normalY[node] = surfaceNy[k] ?? 1;
+      layer++;
+      stats.walkable++;
     }
+    if (layer > 1) stats.stacked++;
   }
-}
-
-/** BFS from the spawn seeds; anything unvisited stops being walkable. */
-function pruneUnreachable(grid: NavGrid, seeds: readonly Vec3Lit[]): number {
-  const n = grid.cellCount;
-  const seen = new Uint8Array(n);
-  const queue = new Int32Array(n);
-  let head = 0;
-  let tail = 0;
-
-  for (const seed of seeds) {
-    const start = grid.nearestCell(seed.x, seed.y, seed.z, 20);
-    if (start < 0 || seen[start] === 1) continue;
-    seen[start] = 1;
-    queue[tail++] = start;
-  }
-
-  while (head < tail) {
-    const i = queue[head++] ?? 0;
-    for (let d = 0; d < 8; d++) {
-      const j = grid.neighbour(i, d);
-      if (j < 0 || seen[j] === 1) continue;
-      seen[j] = 1;
-      queue[tail++] = j;
-    }
-  }
-
-  let pruned = 0;
-  for (let i = 0; i < n; i++) {
-    if (grid.walkable[i] !== 1 || seen[i] === 1) continue;
-    grid.walkable[i] = 0;
-    grid.links[i] = 0;
-    grid.climb[i] = 0;
-    grid.linkLayer[i] = 0;
-    pruned++;
-  }
-  return pruned;
 }
 
 /**
@@ -335,7 +209,16 @@ function collectColumn(
   }
   if (count === 0) return 0;
 
-  // Insertion sort by interval bottom. `count` is a handful of boxes in practice.
+  sortIntervalsByBottom(count);
+  return mergeIntervals(count);
+}
+
+/**
+ * Order the first `count` intervals by their bottom, into `intervalOrder`.
+ *
+ * Insertion sort: `count` is a handful of boxes in practice.
+ */
+function sortIntervalsByBottom(count: number): void {
   for (let i = 0; i < count; i++) intervalOrder[i] = i;
   for (let i = 1; i < count; i++) {
     const cur = intervalOrder[i] ?? 0;
@@ -347,12 +230,19 @@ function collectColumn(
     }
     intervalOrder[j + 1] = cur;
   }
+}
 
-  // Merge forward into the front of the scratch arrays.
+/**
+ * Merge the ordered intervals forward into the front of the scratch arrays, and return how
+ * many are left. Two that touch within 0.1 mm are one surface, and the merged interval takes
+ * the normal of whichever collider owns its top.
+ */
+function mergeIntervals(count: number): number {
+  const first = intervalOrder[0] ?? 0;
   let out = 0;
-  let curLo = intervalLo[intervalOrder[0] ?? 0] ?? 0;
-  let curHi = intervalHi[intervalOrder[0] ?? 0] ?? 0;
-  let curNy = intervalNy[intervalOrder[0] ?? 0] ?? 1;
+  let curLo = intervalLo[first] ?? 0;
+  let curHi = intervalHi[first] ?? 0;
+  let curNy = intervalNy[first] ?? 1;
   for (let i = 1; i < count; i++) {
     const src = intervalOrder[i] ?? 0;
     const lo = intervalLo[src] ?? 0;
@@ -408,9 +298,233 @@ function standableSurfaces(
   return found;
 }
 
+/**
+ * Connectivity.
+ *
+ * Walks first, then mantles, then diagonals — and the order is the design. A climb link is
+ * only ever offered where an ordinary walk was **not** available, so the graph never
+ * carries two edges to the same place and A* is never asked to choose between a step and a
+ * mantle over the same 0.3 m.
+ *
+ * Diagonals are deliberately walk-only. A mantle is a forward lunge that ends on the far
+ * side of a ledge face, and a diagonal approach meets that face at 45 degrees where
+ * `Mantle.detectMantle`'s forward probe is far more likely to miss. Offering a diagonal
+ * climb would be offering an edge the bot cannot reliably cross, which is worse than not
+ * offering it: a path that exists and cannot be walked is how a bot gets stuck for a whole
+ * match. Every climb is a straight-on approach.
+ *
+ * One loop over the nodes rather than three over layer, `iz` and `ix`, because a node index
+ * *is* `layer * columnCount + iz * dimX + ix`: the same nodes in the same order.
+ */
+function linkGrid(grid: NavGrid, opts: NavBakeOptions): void {
+  const n = grid.cellCount;
+  for (let node = 0; node < n; node++) {
+    if (grid.walkable[node] !== 1) continue;
+    const h = grid.height[node] ?? 0;
+    linkStraightNeighbours(grid, opts, node, h);
+    linkDiagonalNeighbours(grid, opts, node, h);
+  }
+}
+
+/**
+ * The four straight neighbours of one node: a walk where movement can cross the height
+ * difference, else a mantle, else a step off the edge. Writes this node's `links` and `climb`.
+ */
+function linkStraightNeighbours(grid: NavGrid, opts: NavBakeOptions, node: number, h: number): void {
+  const ix = grid.indexOfX(node);
+  const iz = grid.indexOfZ(node);
+  let mask = 0;
+  let climbMask = 0;
+
+  for (let d = 0; d < 4; d++) {
+    const dir = NAV_DIRS[d];
+    if (dir === undefined) continue;
+    const j = grid.layerFrom(ix + dir.dx, iz + dir.dz, h, opts.stepHeight, opts.maxDrop);
+    if (j >= 0) {
+      mask |= 1 << d;
+      grid.setLinkLayer(node, d, grid.layerOf(j));
+      continue;
+    }
+    const climb = grid.climbFrom(ix + dir.dx, iz + dir.dz, h, opts.stepHeight, opts.mantleHeight);
+    if (climb >= 0) {
+      mask |= 1 << d;
+      climbMask |= 1 << d;
+      grid.setLinkLayer(node, d, grid.layerOf(climb));
+      continue;
+    }
+    // Stepping off. Not a climb: nothing is pressed, the bot simply walks over the
+    // edge — so it is an ordinary link that happens to descend a long way.
+    const drop = grid.dropFrom(ix + dir.dx, iz + dir.dz, h, opts.maxDrop, opts.dropHeight);
+    if (drop < 0) continue;
+    mask |= 1 << d;
+    grid.setLinkLayer(node, d, grid.layerOf(drop));
+  }
+
+  grid.links[node] = mask;
+  grid.climb[node] = climbMask;
+}
+
+/**
+ * The four diagonals of one node, on top of whatever the straight pass recorded. Walk-only,
+ * and only where both orthogonals exist and neither of them was a mantle.
+ */
+function linkDiagonalNeighbours(grid: NavGrid, opts: NavBakeOptions, node: number, h: number): void {
+  const ix = grid.indexOfX(node);
+  const iz = grid.indexOfZ(node);
+  const climbMask = grid.climb[node] ?? 0;
+  let mask = grid.links[node] ?? 0;
+
+  for (let d = 4; d < 8; d++) {
+    const dir = NAV_DIRS[d];
+    const deps = DIAGONAL_DEPS[d - 4];
+    if (dir === undefined || deps === undefined) continue;
+    // No corner cutting: a diagonal exists only where both its orthogonals do, and
+    // only where neither of them was a mantle.
+    if ((mask & (1 << deps[0])) === 0 || (mask & (1 << deps[1])) === 0) continue;
+    if ((climbMask & (1 << deps[0])) !== 0 || (climbMask & (1 << deps[1])) !== 0) continue;
+    const j = grid.layerFrom(ix + dir.dx, iz + dir.dz, h, opts.stepHeight, opts.maxDrop);
+    if (j < 0) continue;
+    mask |= 1 << d;
+    grid.setLinkLayer(node, d, grid.layerOf(j));
+  }
+
+  grid.links[node] = mask;
+}
+
+/** BFS from the spawn seeds; anything unvisited stops being walkable. */
+function pruneUnreachable(grid: NavGrid, seeds: readonly Vec3Lit[]): number {
+  const seen = new Uint8Array(grid.cellCount);
+  floodFromSeeds(grid, seeds, seen);
+  return clearUnvisited(grid, seen);
+}
+
+/**
+ * Mark every node reachable from a spawn seed, breadth first.
+ *
+ * A seed is a spawn position rather than a node, so it is snapped with a generous ring budget:
+ * a spawn that failed to find the graph would prune the whole map it was meant to anchor.
+ */
+function floodFromSeeds(grid: NavGrid, seeds: readonly Vec3Lit[], seen: Uint8Array): void {
+  const queue = new Int32Array(grid.cellCount);
+  let head = 0;
+  let tail = 0;
+
+  for (const seed of seeds) {
+    const start = grid.nearestCell(seed.x, seed.y, seed.z, 20);
+    if (start < 0 || seen[start] === 1) continue;
+    seen[start] = 1;
+    queue[tail++] = start;
+  }
+
+  while (head < tail) {
+    const i = queue[head++] ?? 0;
+    for (let d = 0; d < 8; d++) {
+      const j = grid.neighbour(i, d);
+      if (j < 0 || seen[j] === 1) continue;
+      seen[j] = 1;
+      queue[tail++] = j;
+    }
+  }
+}
+
+/** Everything the flood did not reach stops being walkable. Returns how many that was. */
+function clearUnvisited(grid: NavGrid, seen: Uint8Array): number {
+  const n = grid.cellCount;
+  let pruned = 0;
+  for (let i = 0; i < n; i++) {
+    if (grid.walkable[i] !== 1 || seen[i] === 1) continue;
+    grid.walkable[i] = 0;
+    grid.links[i] = 0;
+    grid.climb[i] = 0;
+    grid.linkLayer[i] = 0;
+    pruned++;
+  }
+  return pruned;
+}
+
+/** Count what the linking left behind: the edges, and how many of them are mantles. */
+function recordLinkCounts(grid: NavGrid): void {
+  const n = grid.cellCount;
+  let links = 0;
+  let climbs = 0;
+  for (let i = 0; i < n; i++) {
+    links += popcount8(grid.links[i] ?? 0);
+    climbs += popcount8(grid.climb[i] ?? 0);
+  }
+  grid.stats.links = links;
+  grid.stats.climbLinks = climbs;
+}
+
 function popcount8(v: number): number {
   let x = v & 0xff;
   x = x - ((x >> 1) & 0x55);
   x = (x & 0x33) + ((x >> 2) & 0x33);
   return (x + (x >> 4)) & 0x0f;
 }
+
+/** The coarse pass: every layer on the base lattice, with the ground layer allowed a nudge. */
+function sampleGroundLattice(
+  grid: NavGrid,
+  stride: number,
+  found: number[],
+  taken: Set<number>,
+): void {
+  const offset = Math.floor(stride / 2);
+  for (let layer = 0; layer < grid.layers; layer++) {
+    for (let iz = offset; iz < grid.dimZ; iz += stride) {
+      for (let ix = offset; ix < grid.dimX; ix += stride) {
+        takeGroundNode(grid, grid.node(ix, iz, layer), found, taken);
+      }
+    }
+  }
+}
+
+/**
+ * One lattice point on the coarse pass.
+ *
+ * Only the ground layer gets a nudge: an upper layer has genuine holes in it, and
+ * snapping to the nearest walkable node would drag the point down onto the floor.
+ */
+function takeGroundNode(grid: NavGrid, node: number, found: number[], taken: Set<number>): void {
+  if (grid.walkable[node] === 1) {
+    addPatrolNode(node, found, taken);
+    return;
+  }
+  if (grid.layerOf(node) !== 0) return;
+  const x = grid.centerX(grid.indexOfX(node));
+  const z = grid.centerZ(grid.indexOfZ(node));
+  const near = grid.nearestCell(x, 0, z, 3);
+  if (near >= 0) addPatrolNode(near, found, taken);
+}
+
+/** The fine pass: the same lattice at half the stride, taking only what is off the ground. */
+function sampleElevatedLattice(
+  grid: NavGrid,
+  stride: number,
+  found: number[],
+  taken: Set<number>,
+): void {
+  const offset = Math.floor(stride / 2);
+  for (let layer = 0; layer < grid.layers; layer++) {
+    for (let iz = offset; iz < grid.dimZ; iz += stride) {
+      for (let ix = offset; ix < grid.dimX; ix += stride) {
+        takeElevatedNode(grid, grid.node(ix, iz, layer), found, taken);
+      }
+    }
+  }
+}
+
+/** One lattice point on the fine pass: a route rather than floor, or nothing. */
+function takeElevatedNode(grid: NavGrid, node: number, found: number[], taken: Set<number>): void {
+  if (grid.walkable[node] !== 1) return;
+  if ((grid.height[node] ?? 0) < ELEVATED_METRES) return;
+  addPatrolNode(node, found, taken);
+}
+
+/** Keep a node once. The scatter is a set of places, not a count of visits. */
+function addPatrolNode(node: number, found: number[], taken: Set<number>): void {
+  if (taken.has(node)) return;
+  taken.add(node);
+  found.push(node);
+}
+//#endregion

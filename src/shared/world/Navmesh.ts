@@ -6,5 +6,9 @@
  * (forced by the layered grid M4 needed and S3's file-size guidance) is invisible to every
  * consumer that was already importing from `world/Navmesh`.
  */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 export * from './NavGrid';
 export * from './NavBake';
+//#endregion

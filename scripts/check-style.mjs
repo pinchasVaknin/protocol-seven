@@ -138,6 +138,15 @@ const FINISHED = {
     'src/shared/world/Raycaster.ts',
     'src/shared/world/SpatialHash.ts',
   ],
+  A5: [
+    'src/shared/world/MapLuminance.ts',
+    'src/shared/world/NavBake.ts',
+    'src/shared/world/NavGrid.ts',
+    // A barrel: two re-exports, so IMPORTS is the only section it has.
+    'src/shared/world/Navmesh.ts',
+    'src/shared/world/SkyProfile.ts',
+    'src/shared/world/SupplySystem.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

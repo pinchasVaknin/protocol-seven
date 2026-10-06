@@ -187,4 +187,45 @@ describe('a resupply station', () => {
     hold(system, weapon, pouch(), 2);
     expect(weapon.reserve).toBe(0);
   });
+
+  /**
+   * A life ending is the same reset as walking away: the next one starts at a crate it has not
+   * been to. Without it, a body that died mid-beat would come back owed the part of a round it
+   * had already paid for, and the two runtimes would owe it on different ticks.
+   */
+  it('forgets a part-finished beat when the life ends', () => {
+    const system = new SupplySystem(points());
+    const weapon = emptied();
+    hold(system, weapon, pouch(), 0.2);
+    expect(weapon.reserve).toBe(0);
+    system.reset(1);
+    expect(system.stateOf(1).pointId).toBe(NO_SUPPLY_POINT);
+    expect(system.stateOf(1).roundsTaken).toBe(0);
+    // The beat starts over, so a quarter second either side of the reset is still nothing.
+    hold(system, weapon, pouch(), 0.2);
+    expect(weapon.reserve).toBe(0);
+
+    system.clear();
+    expect(system.stateOf(2).pointId).toBe(NO_SUPPLY_POINT);
+  });
+
+  it('hands out a state for a body it has never stepped, without stepping it', () => {
+    const system = new SupplySystem(points());
+    const state = system.stateOf(7);
+    expect(state).toEqual({
+      pointId: NO_SUPPLY_POINT,
+      needsCrouch: false,
+      working: false,
+      full: false,
+      stock: 0,
+      roundsTaken: 0,
+      grenadesTaken: 0,
+    });
+    // One record per entity, rewritten in place: the HUD reads this every frame and a fresh
+    // object per body per tick is the allocation the per-tick path must not make.
+    expect(system.stateOf(7)).toBe(state);
+    system.step(7, body(), true, emptied(), pouch());
+    expect(system.stateOf(7)).toBe(state);
+    expect(state.pointId).toBe('ammo_a');
+  });
 });

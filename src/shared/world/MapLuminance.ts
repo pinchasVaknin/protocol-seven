@@ -1,5 +1,3 @@
-import type { LightDef, MapDef } from './maps/types';
-
 /**
  * How bright a map actually is, as a number (playtest round 4, F9).
  *
@@ -46,6 +44,117 @@ import type { LightDef, MapDef } from './maps/types';
  * the claim F9 needs. It cannot be used the other way round to declare a map bright enough.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { LightDef, MapDef } from './maps/types';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+interface LinearRgb {
+  r: number;
+  g: number;
+  b: number;
+}
+
+interface Sample {
+  /** Where, in world metres. */
+  x: number;
+  y: number;
+  z: number;
+  /** Surface normal. Unit length; the floor is (0, 1, 0). */
+  nx: number;
+  ny: number;
+  nz: number;
+}
+
+/** The lowest and highest of something seen so far, widened one sample at a time. */
+interface Range {
+  min: number;
+  max: number;
+}
+
+export interface FloorReading {
+  /** Screen value 0..255 at the darkest sample taken. */
+  min: number;
+  /** At the brightest. */
+  max: number;
+  /** Mean over all samples. */
+  mean: number;
+  /** How many samples the reading is made of, so a zero cannot mean "never looked". */
+  samples: number;
+  /**
+   * Irradiance luminance at the darkest and brightest samples, before any albedo.
+   *
+   * This is the pair that says how *pooled* a map's lighting is, and it is deliberately
+   * separate from the screen values above: albedo multiplies both ends equally, so this ratio
+   * is a property of the lights alone. It is the number that settles whether raising a ground's
+   * base colour would "flatten the pools", which is the claim two failed Depot passes rested on.
+   */
+  irradianceMin: number;
+  irradianceMax: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Exposure the client renders at. `Renderer` sets `toneMappingExposure` to this. */
+const TONE_MAPPING_EXPOSURE = 1.25;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/**
+ * Linear luminance of an authored sRGB hex — the one number F9 turns on.
+ *
+ * `linearLuminance(0x24262b)` is 0.019 and `linearLuminance(0x555a63)` is 0.101. Those two
+ * colours look like near neighbours in a palette and are a factor of five apart in the space
+ * the renderer works in.
+ */
+export function linearLuminance(hex: number): number {
+  return luminanceOf(linearRgb(hex));
+}
+
+/**
+ * Walk a map's floor on a grid and report what the ground reads at.
+ *
+ * The grid is `navBounds` at `y = 0` with an up-facing normal, which is the surface the player
+ * spends the whole match looking at and the one that covers the most of the screen. The
+ * denominator is carried for the reason every probe in this project carries one: a zero that
+ * means *"the grid was empty"* has to fail as loudly as a zero that means *"it is black"*.
+ */
+export function readFloor(def: MapDef, baseColor: number, step = 2): FloorReading {
+  const { min: lo, max: hi } = def.navBounds;
+  const screen: Range = { min: Infinity, max: -Infinity };
+  const irradianceRange: Range = { min: Infinity, max: -Infinity };
+  let total = 0;
+  let samples = 0;
+  for (let x = lo.x; x <= hi.x; x += step) {
+    for (let z = lo.z; z <= hi.z; z += step) {
+      const irradiance = irradianceAt(def.lights, { x, y: 0, z, nx: 0, ny: 1, nz: 0 });
+      widenRange(irradianceRange, luminanceOf(irradiance));
+      const v = screenValue(baseColor, irradiance);
+      widenRange(screen, v);
+      total += v;
+      samples++;
+    }
+  }
+  if (samples === 0) {
+    return { min: 0, max: 0, mean: 0, samples: 0, irradianceMin: 0, irradianceMax: 0 };
+  }
+  return {
+    min: screen.min,
+    max: screen.max,
+    mean: total / samples,
+    samples,
+    irradianceMin: irradianceRange.min,
+    irradianceMax: irradianceRange.max,
+  };
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /** One channel, sRGB 0..255, to linear 0..1. The IEC 61966-2-1 curve, as three.js uses it. */
 function srgbChannelToLinear(c8: number): number {
   const c = c8 / 255;
@@ -56,12 +165,6 @@ function srgbChannelToLinear(c8: number): number {
 function linearChannelToSrgb(v: number): number {
   const c = v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
   return Math.max(0, Math.min(255, Math.round(c * 255)));
-}
-
-interface LinearRgb {
-  r: number;
-  g: number;
-  b: number;
 }
 
 function linearRgb(hex: number): LinearRgb {
@@ -77,28 +180,6 @@ function luminanceOf(c: LinearRgb): number {
   return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
 }
 
-/**
- * Linear luminance of an authored sRGB hex — the one number F9 turns on.
- *
- * `linearLuminance(0x24262b)` is 0.019 and `linearLuminance(0x555a63)` is 0.101. Those two
- * colours look like near neighbours in a palette and are a factor of five apart in the space
- * the renderer works in.
- */
-export function linearLuminance(hex: number): number {
-  return luminanceOf(linearRgb(hex));
-}
-
-interface Sample {
-  /** Where, in world metres. */
-  x: number;
-  y: number;
-  z: number;
-  /** Surface normal. Unit length; the floor is (0, 1, 0). */
-  nx: number;
-  ny: number;
-  nz: number;
-}
-
 /** Irradiance arriving at one point on one surface, per channel, in linear units. */
 function irradianceAt(lights: readonly LightDef[], s: Sample): LinearRgb {
   const out: LinearRgb = { r: 0, g: 0, b: 0 };
@@ -108,67 +189,88 @@ function irradianceAt(lights: readonly LightDef[], s: Sample): LinearRgb {
 
 function addLight(out: LinearRgb, light: LightDef, s: Sample): void {
   switch (light.kind) {
-    case 'hemisphere': {
-      /**
-       * three.js `getHemisphereLightIrradiance`: the weight is `0.5 * dot(N, up) + 0.5`, so a
-       * floor takes the sky colour outright, a wall takes the average of the two, and a
-       * downward-facing surface takes the ground colour. Both colours are pre-multiplied by
-       * intensity in `WebGLLights`, which is why the multiply is outside the mix here.
-       */
-      const weight = 0.5 * s.ny + 0.5;
-      const sky = linearRgb(light.skyColor);
-      const ground = linearRgb(light.groundColor);
-      out.r += (ground.r + (sky.r - ground.r) * weight) * light.intensity;
-      out.g += (ground.g + (sky.g - ground.g) * weight) * light.intensity;
-      out.b += (ground.b + (sky.b - ground.b) * weight) * light.intensity;
+    case 'hemisphere':
+      addHemisphereIrradiance(out, light, s);
       break;
-    }
-    case 'directional': {
-      // `direction` is the direction the light travels, so the vector *toward* the light is
-      // its negation — the same sign convention `MapRender` uses when it places the light.
-      const len = Math.hypot(light.direction.x, light.direction.y, light.direction.z) || 1;
-      const lx = -light.direction.x / len;
-      const ly = -light.direction.y / len;
-      const lz = -light.direction.z / len;
-      const ndotl = Math.max(0, s.nx * lx + s.ny * ly + s.nz * lz);
-      if (ndotl <= 0) break;
-      const c = linearRgb(light.color);
-      const k = light.intensity * ndotl;
-      out.r += c.r * k;
-      out.g += c.g * k;
-      out.b += c.b * k;
+    case 'directional':
+      addDirectionalIrradiance(out, light, s);
       break;
-    }
-    case 'point': {
-      const dx = light.position.x - s.x;
-      const dy = light.position.y - s.y;
-      const dz = light.position.z - s.z;
-      const d = Math.hypot(dx, dy, dz);
-      if (d < 1e-4) break;
-      const ndotl = Math.max(0, (s.nx * dx + s.ny * dy + s.nz * dz) / d);
-      if (ndotl <= 0) break;
-      /**
-       * three.js `getDistanceAttenuation`, both halves.
-       *
-       * The inverse-square term is the light; the windowing term is the `distance` cutoff, and
-       * it is the one Depot's round-2 pass moved from 30 to 36 m. It is ~1 near the mast and
-       * collapses to 0 at the cutoff, so widening it lifts the band between two masts without
-       * touching the pool centres — which is exactly what the comment in `depot.ts` claims and
-       * what this reproduces.
-       */
-      let falloff = 1 / Math.max(Math.pow(d, light.decay), 0.01);
-      if (light.distance > 0) {
-        const t = Math.min(1, Math.max(0, 1 - Math.pow(d / light.distance, 4)));
-        falloff *= t * t;
-      }
-      const c = linearRgb(light.color);
-      const k = light.intensity * ndotl * falloff;
-      out.r += c.r * k;
-      out.g += c.g * k;
-      out.b += c.b * k;
+    case 'point':
+      addPointIrradiance(out, light, s);
       break;
-    }
   }
+}
+
+/**
+ * three.js `getHemisphereLightIrradiance`: the weight is `0.5 * dot(N, up) + 0.5`, so a
+ * floor takes the sky colour outright, a wall takes the average of the two, and a
+ * downward-facing surface takes the ground colour. Both colours are pre-multiplied by
+ * intensity in `WebGLLights`, which is why the multiply is outside the mix here.
+ */
+function addHemisphereIrradiance(
+  out: LinearRgb,
+  light: Extract<LightDef, { kind: 'hemisphere' }>,
+  s: Sample,
+): void {
+  const weight = 0.5 * s.ny + 0.5;
+  const sky = linearRgb(light.skyColor);
+  const ground = linearRgb(light.groundColor);
+  out.r += (ground.r + (sky.r - ground.r) * weight) * light.intensity;
+  out.g += (ground.g + (sky.g - ground.g) * weight) * light.intensity;
+  out.b += (ground.b + (sky.b - ground.b) * weight) * light.intensity;
+}
+
+function addDirectionalIrradiance(
+  out: LinearRgb,
+  light: Extract<LightDef, { kind: 'directional' }>,
+  s: Sample,
+): void {
+  // `direction` is the direction the light travels, so the vector *toward* the light is
+  // its negation — the same sign convention `MapRender` uses when it places the light.
+  const len = Math.hypot(light.direction.x, light.direction.y, light.direction.z) || 1;
+  const lx = -light.direction.x / len;
+  const ly = -light.direction.y / len;
+  const lz = -light.direction.z / len;
+  const ndotl = Math.max(0, s.nx * lx + s.ny * ly + s.nz * lz);
+  if (ndotl <= 0) return;
+  const c = linearRgb(light.color);
+  const k = light.intensity * ndotl;
+  out.r += c.r * k;
+  out.g += c.g * k;
+  out.b += c.b * k;
+}
+
+function addPointIrradiance(out: LinearRgb, light: Extract<LightDef, { kind: 'point' }>, s: Sample): void {
+  const dx = light.position.x - s.x;
+  const dy = light.position.y - s.y;
+  const dz = light.position.z - s.z;
+  const d = Math.hypot(dx, dy, dz);
+  if (d < 1e-4) return;
+  const ndotl = Math.max(0, (s.nx * dx + s.ny * dy + s.nz * dz) / d);
+  if (ndotl <= 0) return;
+  const c = linearRgb(light.color);
+  const k = light.intensity * ndotl * pointFalloff(light, d);
+  out.r += c.r * k;
+  out.g += c.g * k;
+  out.b += c.b * k;
+}
+
+/**
+ * three.js `getDistanceAttenuation`, both halves.
+ *
+ * The inverse-square term is the light; the windowing term is the `distance` cutoff, and
+ * it is the one Depot's round-2 pass moved from 30 to 36 m. It is ~1 near the mast and
+ * collapses to 0 at the cutoff, so widening it lifts the band between two masts without
+ * touching the pool centres — which is exactly what the comment in `depot.ts` claims and
+ * what this reproduces.
+ */
+function pointFalloff(light: Extract<LightDef, { kind: 'point' }>, d: number): number {
+  let falloff = 1 / Math.max(Math.pow(d, light.decay), 0.01);
+  if (light.distance > 0) {
+    const t = Math.min(1, Math.max(0, 1 - Math.pow(d / light.distance, 4)));
+    falloff *= t * t;
+  }
+  return falloff;
 }
 
 /**
@@ -186,9 +288,6 @@ function lambertRadiance(baseColor: number, irradiance: LinearRgb): LinearRgb {
     b: a.b * k * irradiance.b,
   };
 }
-
-/** Exposure the client renders at. `Renderer` sets `toneMappingExposure` to this. */
-const TONE_MAPPING_EXPOSURE = 1.25;
 
 /**
  * three.js' ACES filmic approximation, per channel.
@@ -217,58 +316,9 @@ function screenValue(baseColor: number, irradiance: LinearRgb): number {
   return linearChannelToSrgb(acesFilmic(l * TONE_MAPPING_EXPOSURE));
 }
 
-export interface FloorReading {
-  /** Screen value 0..255 at the darkest sample taken. */
-  min: number;
-  /** At the brightest. */
-  max: number;
-  /** Mean over all samples. */
-  mean: number;
-  /** How many samples the reading is made of, so a zero cannot mean "never looked". */
-  samples: number;
-  /**
-   * Irradiance luminance at the darkest and brightest samples, before any albedo.
-   *
-   * This is the pair that says how *pooled* a map's lighting is, and it is deliberately
-   * separate from the screen values above: albedo multiplies both ends equally, so this ratio
-   * is a property of the lights alone. It is the number that settles whether raising a ground's
-   * base colour would "flatten the pools", which is the claim two failed Depot passes rested on.
-   */
-  irradianceMin: number;
-  irradianceMax: number;
+/** Take one more reading into a range. The first one sets both ends. */
+function widenRange(range: Range, value: number): void {
+  if (value < range.min) range.min = value;
+  if (value > range.max) range.max = value;
 }
-
-/**
- * Walk a map's floor on a grid and report what the ground reads at.
- *
- * The grid is `navBounds` at `y = 0` with an up-facing normal, which is the surface the player
- * spends the whole match looking at and the one that covers the most of the screen. The
- * denominator is carried for the reason every probe in this project carries one: a zero that
- * means *"the grid was empty"* has to fail as loudly as a zero that means *"it is black"*.
- */
-export function readFloor(def: MapDef, baseColor: number, step = 2): FloorReading {
-  const { min: lo, max: hi } = def.navBounds;
-  let min = Infinity;
-  let max = -Infinity;
-  let irradianceMin = Infinity;
-  let irradianceMax = -Infinity;
-  let total = 0;
-  let samples = 0;
-  for (let x = lo.x; x <= hi.x; x += step) {
-    for (let z = lo.z; z <= hi.z; z += step) {
-      const irradiance = irradianceAt(def.lights, { x, y: 0, z, nx: 0, ny: 1, nz: 0 });
-      const e = luminanceOf(irradiance);
-      if (e < irradianceMin) irradianceMin = e;
-      if (e > irradianceMax) irradianceMax = e;
-      const v = screenValue(baseColor, irradiance);
-      if (v < min) min = v;
-      if (v > max) max = v;
-      total += v;
-      samples++;
-    }
-  }
-  if (samples === 0) {
-    return { min: 0, max: 0, mean: 0, samples: 0, irradianceMin: 0, irradianceMax: 0 };
-  }
-  return { min, max, mean: total / samples, samples, irradianceMin, irradianceMax };
-}
+//#endregion

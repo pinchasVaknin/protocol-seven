@@ -1,3 +1,18 @@
+/**
+ * Consumes exactly one InputCommand per tick and advances the player.
+ *
+ * Everything that decides *what* the player is doing lives here; Movement.ts, Slide.ts
+ * and Mantle.ts own *how*. Edge detection is computed from the command bitfield, in the
+ * sim, never in a DOM handler (brief S4.2).
+ *
+ * Allocation free: every event payload is a module-level singleton, and the brief's
+ * "payloads are transient" contract is what makes that safe. The same argument covers
+ * `press` and `wish` below, which carry a tick's decoded input between the steps of
+ * `step()` without a record per tick.
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { logger } from '../core/Log';
 import { EV, type GameBus, type SlideEndReason } from '../core/Events';
 import { Btn, isDown, justPressed, type InputCommand } from '../core/InputCommand';
@@ -18,19 +33,11 @@ import { copySnapshot, makeSnapshot, PlayerSim, type PlayerSnapshot } from './Pl
 import { beginSlide, canStartSlide, endSlide, stepSlide } from './Slide';
 import { capsuleHeightFor, eyeHeightFor, isLegalStanceTransition, type StanceId } from './Stance';
 import { simCos, simSin } from '../core/SimMath';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const log = logger('PlayerController');
-
-/**
- * Consumes exactly one InputCommand per tick and advances the player.
- *
- * Everything that decides *what* the player is doing lives here; Movement.ts, Slide.ts
- * and Mantle.ts own *how*. Edge detection is computed from the command bitfield, in the
- * sim, never in a DOM handler (brief S4.2).
- *
- * Allocation free: every event payload is a module-level singleton, and the brief's
- * "payloads are transient" contract is what makes that safe.
- */
 
 const evSpawned = { entityId: 0, x: 0, y: 0, z: 0, yaw: 0 };
 const evStance = { entityId: 0, from: 'STAND' as StanceId, to: 'STAND' as StanceId, tick: 0 };
@@ -43,6 +50,39 @@ const evMantleStart = { entityId: 0, x: 0, y: 0, z: 0, ledgeHeight: 0 };
 const evMantleEnd = { entityId: 0, x: 0, y: 0, z: 0, endStance: 'STAND' as StanceId };
 
 const mantleTarget = makeMantleTarget();
+
+/**
+ * This tick's button edges, decoded once at the top of `step` and read by the steps after it.
+ *
+ * A module singleton for the same reason the event payloads above are: `step` runs for the
+ * local player, for every bot and on the server, sixty times a second, and S4.7 asks the
+ * per-tick path to allocate nothing. It is written at the start of a `step` and read only
+ * within that same synchronous call, so the fact that every controller shares one is not
+ * observable — exactly the contract the payloads rely on.
+ */
+const press = {
+  jumpPressed: false,
+  crouchPressed: false,
+  crouchHeld: false,
+  sprintHeld: false,
+  sprintPressed: false,
+  adsHeld: false,
+  fireHeld: false,
+};
+
+/**
+ * This tick's wish direction in world space, unit length or zero, and its magnitude.
+ *
+ * Same singleton argument as `press`. `movingForward` rides along because it is a reading of
+ * the command rather than of the direction, and the two are wanted together everywhere.
+ */
+const wish = {
+  x: 0,
+  z: 0,
+  /** 0..1, the clamped input magnitude. Scales the speed cap, never the direction. */
+  mag: 0,
+  movingForward: false,
+};
 
 /** How quickly the eye height chases the stance target, per second. */
 const EYE_DAMP_RATE = 16;
@@ -57,8 +97,13 @@ const EYE_DAMP_RATE = 16;
 const NOCLIP_SPEED = 10;
 const NOCLIP_BOOST = 4;
 const NOCLIP_PRECISE = 0.25;
+//#endregion
 
+// =================================== CLASS PlayerController =================================== \\
+//#region Class PlayerController
 export class PlayerController {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly sim = new PlayerSim();
   readonly prev: PlayerSnapshot = makeSnapshot();
   readonly curr: PlayerSnapshot = makeSnapshot();
@@ -125,7 +170,10 @@ export class PlayerController {
 
   private strafeInput = 0;
   private crouchHeldThisTick = false;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   /**
    * `entityId` stamps every event this controller emits. It defaults to the local player
    * because M1 and M2 only ever had one of these; from M3 each bot owns one too, and the
@@ -137,7 +185,10 @@ export class PlayerController {
     private readonly bus: GameBus,
     readonly entityId: number = 0,
   ) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   setConfig(cfg: MovementConfig): void {
     this.cfg = cfg;
     this.world.configure(cfg.maxSlopeDeg, cfg.collisionSkin);
@@ -149,16 +200,10 @@ export class PlayerController {
     this.sim.reset(x, y, z, yaw, cfg.standHeight, cfg.standEye);
     this.sim.writeSnapshot(this.curr, 0);
     copySnapshot(this.curr, this.prev);
-    evSpawned.entityId = this.entityId;
-    evSpawned.x = x;
-    evSpawned.y = y;
-    evSpawned.z = z;
-    evSpawned.yaw = yaw;
-    this.bus.emit(EV.PlayerSpawned, evSpawned);
+    this.emitSpawned(x, y, z, yaw);
   }
 
   step(cmd: InputCommand): void {
-    const cfg = this.cfg;
     const sim = this.sim;
     copySnapshot(this.curr, this.prev);
 
@@ -172,196 +217,52 @@ export class PlayerController {
       return;
     }
 
-    const buttons = cmd.buttons;
-    const prevButtons = sim.prevButtons;
-    const jumpPressed = justPressed(buttons, prevButtons, Btn.Jump);
-    const crouchPressed = justPressed(buttons, prevButtons, Btn.Crouch);
-    // `forceCrouch` joins the *held* test and deliberately not the pressed one: see the field.
-    const crouchHeld = isDown(buttons, Btn.Crouch) || this.forceCrouch;
-    const sprintHeld = isDown(buttons, Btn.Sprint);
-    const sprintPressed = justPressed(buttons, prevButtons, Btn.Sprint);
-    const adsHeld = isDown(buttons, Btn.Ads);
-    // Pulling the trigger stops a sprint, which is what starts the sprint-to-fire timer
-    // in the weapon. Holding shift into a gunfight must not be free (brief S6.6).
-    const fireHeld = isDown(buttons, Btn.Fire);
-
-    this.tickTimers(jumpPressed);
+    this.readInputEdges(cmd);
+    this.tickTimers(press.jumpPressed);
 
     if (sim.mantleActive) {
-      const finished = stepMantle(sim, cfg);
-      sim.capsuleHeight = capsuleHeightFor(cfg, sim.stance);
-      if (finished) {
-        evMantleEnd.entityId = this.entityId;
-        evMantleEnd.x = sim.x;
-        evMantleEnd.y = sim.y;
-        evMantleEnd.z = sim.z;
-        evMantleEnd.endStance = sim.stance;
-        this.bus.emit(EV.PlayerMantleEnded, evMantleEnd);
-      }
-      this.finishTick(buttons);
+      this.continueMantle(cmd.buttons);
       return;
     }
 
-    // ---- wish direction, in world space ---------------------------------
-    const fx = -simSin(sim.yaw);
-    const fz = -simCos(sim.yaw);
-    const rx = simCos(sim.yaw);
-    const rz = -simSin(sim.yaw);
-    let wishX = rx * cmd.moveX + fx * cmd.moveZ;
-    let wishZ = rz * cmd.moveX + fz * cmd.moveZ;
-    // Direction and magnitude are separated deliberately. Normalising by the *clamped*
-    // magnitude leaves an over-length direction vector whenever a command arrives with
-    // |move| > 1, and every downstream consumer (accelerate, friction, slide steering)
-    // assumes unit length — the result is a speed cap quietly scaled by |move|.
-    const wishLen = Math.hypot(wishX, wishZ);
-    const wishMag = Math.min(1, wishLen);
-    if (wishLen > 1e-4) {
-      wishX /= wishLen;
-      wishZ /= wishLen;
-    } else {
-      wishX = 0;
-      wishZ = 0;
-    }
-    const movingForward = cmd.moveZ > 0.5;
-
-    this.updateSprint(sprintHeld, sprintPressed, movingForward, crouchHeld, adsHeld || fireHeld);
-
-    // ---- slide -----------------------------------------------------------
-    this.crouchHeldThisTick = crouchHeld;
-    if (sim.slideActive) {
-      const reason = this.slideExitReason(cfg);
-      if (reason !== null) this.exitSlide(reason);
-      else stepSlide(sim, cfg, wishX, wishZ);
-    } else if (crouchPressed && sprintHeld && canStartSlide(sim, cfg)) {
-      const entry = beginSlide(sim, cfg, wishX, wishZ);
-      this.setStance('SLIDE');
-      evSlideStart.entityId = this.entityId;
-      evSlideStart.x = sim.x;
-      evSlideStart.y = sim.y;
-      evSlideStart.z = sim.z;
-      evSlideStart.entrySpeed = entry;
-      this.bus.emit(EV.PlayerSlideStarted, evSlideStart);
-    }
+    this.writeWishDirection(cmd);
+    this.updateSprint(
+      press.sprintHeld,
+      press.sprintPressed,
+      wish.movingForward,
+      press.crouchHeld,
+      press.adsHeld || press.fireHeld,
+    );
+    this.updateSlide();
 
     // ---- jump. This is also the slide jump-cancel route (S5.2). ----------
     if (sim.jumpBuffer > 0 && (sim.grounded || sim.coyote > 0)) this.performJump();
 
     // ---- crouch / stand --------------------------------------------------
-    if (!sim.slideActive) this.updateCrouchStance(crouchHeld);
+    if (!sim.slideActive) this.updateCrouchStance(press.crouchHeld);
 
     // ---- velocity --------------------------------------------------------
     const wasGroundedForCap = sim.grounded;
-    if (sim.slideActive) {
-      // stepSlide already wrote the horizontal velocity.
-      this.currentSpeedCap = sim.slideSpeed;
-    } else {
-      this.currentSpeedCap = this.speedCap(adsHeld);
-      const wishSpeed = this.currentSpeedCap * wishMag;
-      if (sim.grounded) applyFriction(sim, cfg, wishX, wishZ, wishSpeed);
-      const speedBefore = sim.speed;
-      const accel = sim.grounded ? cfg.groundAccel : cfg.groundAccel * cfg.airControl;
-      accelerate(sim, wishX, wishZ, wishSpeed, accel);
-      // Acceleration may never push past the cap; existing momentum above it is left
-      // to friction. This is what bounds wall-hugging and mid-air strafing alike.
-      const limit = Math.max(sim.grounded ? this.currentSpeedCap : sim.airSpeedCap, speedBefore);
-      clampHorizontalSpeed(sim, limit);
-    }
-
-    /**
-     * ---- gravity, which does not press into ground already underfoot (round 4) ---------
-     *
-     * This used to run unconditionally, and standing still was therefore never *still*. The
-     * measured symptom, on flat ground, with no input at all:
-     *
-     * ```
-     *   y: 5.00  0.00  5.00  0.00  0.00  0.00  5.00  0.00   mm
-     * ```
-     *
-     * a 5 mm vertical limit cycle — exactly `collisionSkin` — running at twenty-odd hertz
-     * forever. Gravity drives the capsule 2.7 mm into the floor each tick; `resolve` pushes
-     * it back out by `depth + skin`, which overshoots to 5 mm *above* the floor; from there
-     * it is no longer touching anything, so the next tick has no contact, `groundSnap` pulls
-     * it back down, and the cycle repeats. Five millimetres is nothing at arm's length and
-     * 0.82° of pitch against a wall 0.35 m away — about ten pixels of judder at this FOV,
-     * which is why the report is specifically *"when the player gets right up close"*. It is
-     * visible only when there is something near enough to reference it against.
-     *
-     * That is the jitter. It was never the depth buffer and never the step-up, and rounds 2
-     * and 3 spent themselves on both.
-     *
-     * The same accumulation is the ice-slide on ramps. `projectVelocity` removes the
-     * component of velocity going *into* the surface and correctly leaves the tangential
-     * part — so on a slope, gravity's downhill component builds up every tick until friction
-     * balances it, which is a steady creep downhill with no input. Measured before this:
-     * 292 mm in three seconds on 18°, 766 mm on 44°.
-     *
-     * Both are the same wrong assumption: that a player standing on the floor is falling. A
-     * grounded player is *supported*. Gravity resumes the moment the ground stops being
-     * there, and `groundSnapDist` — 0.4 m — is what keeps the player attached walking over a
-     * crest or down a slope, which is the job it already had.
-     *
-     * The two guards are exactly the two ways `vy` can legitimately be non-falling on a
-     * grounded tick: a jump was just issued, or a mantle/slide wrote an upward velocity.
-     */
-    if (sim.grounded && !sim.jumpedThisTick && sim.vy <= 0) {
-      sim.vy = 0;
-    } else {
-      sim.vy -= cfg.gravity * DT;
-      if (sim.vy < -cfg.maxFallSpeed) sim.vy = -cfg.maxFallSpeed;
-    }
+    this.applyVelocity(press.adsHeld);
+    this.applyGravity();
 
     // ---- collision -------------------------------------------------------
-    integrateMotion(sim, cfg, this.world);
+    integrateMotion(sim, this.cfg, this.world);
 
     if (wasGroundedForCap && !sim.grounded && !sim.jumpedThisTick) {
       sim.airSpeedCap = Math.max(sim.speed, this.airSprintFloor());
     }
 
-    // ---- post-move stance ------------------------------------------------
-    if (!sim.grounded && !sim.slideActive && sim.stance !== 'AIRBORNE') {
-      this.setStance('AIRBORNE');
-    } else if (sim.grounded && sim.stance === 'AIRBORNE') {
-      const wantCrouch = crouchHeld || !this.fitsHere(cfg.standHeight);
-      this.setStance(wantCrouch ? 'CROUCH' : 'STAND');
-    }
+    this.updatePostMoveStance(press.crouchHeld);
+    if (sim.justLanded) this.emitLanded();
+    this.tryMantle(press.jumpPressed, wish.movingForward);
 
-    if (sim.justLanded) {
-      evLand.entityId = this.entityId;
-      evLand.x = sim.x;
-      evLand.y = sim.y;
-      evLand.z = sim.z;
-      evLand.impactSpeed = sim.landImpact;
-      evLand.stance = sim.stance;
-      evLand.material = sim.groundMaterial;
-      this.bus.emit(EV.PlayerLanded, evLand);
-    }
-
-    // ---- mantle detection -------------------------------------------------
-    const autoVault = sim.grounded && sim.sprintActive && movingForward && sim.blockedHorizontally;
-    if ((jumpPressed || autoVault) && detectMantle(sim, cfg, this.world, mantleTarget)) {
-      // An auto-vault only clears low obstacles; anything taller waits for a jump press.
-      const autoVaultTooTall =
-        autoVault && !jumpPressed && mantleTarget.ledgeHeight > cfg.autoVaultMaxHeight;
-      if (!autoVaultTooTall) {
-        if (sim.slideActive) this.exitSlide('blocked');
-        beginMantle(sim, mantleTarget);
-        this.setStance('MANTLE');
-        sim.capsuleHeight = capsuleHeightFor(cfg, 'MANTLE');
-        sim.jumpBuffer = 0;
-        evMantleStart.entityId = this.entityId;
-        evMantleStart.x = sim.x;
-        evMantleStart.y = sim.y;
-        evMantleStart.z = sim.z;
-        evMantleStart.ledgeHeight = mantleTarget.ledgeHeight;
-        this.bus.emit(EV.PlayerMantleStarted, evMantleStart);
-      }
-    }
-
-    this.finishTick(buttons);
+    this.finishTick(cmd.buttons);
   }
+  //#endregion
 
-  // -- helpers -------------------------------------------------------------
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * One tick of free-cam flight (post-M8 QA tool).
    *
@@ -431,6 +332,22 @@ export class PlayerController {
     sim.writeSnapshot(this.curr, this.strafeInput);
   }
 
+  /** Decode this tick's button edges into `press`, which every step below reads. */
+  private readInputEdges(cmd: InputCommand): void {
+    const buttons = cmd.buttons;
+    const prevButtons = this.sim.prevButtons;
+    press.jumpPressed = justPressed(buttons, prevButtons, Btn.Jump);
+    press.crouchPressed = justPressed(buttons, prevButtons, Btn.Crouch);
+    // `forceCrouch` joins the *held* test and deliberately not the pressed one: see the field.
+    press.crouchHeld = isDown(buttons, Btn.Crouch) || this.forceCrouch;
+    press.sprintHeld = isDown(buttons, Btn.Sprint);
+    press.sprintPressed = justPressed(buttons, prevButtons, Btn.Sprint);
+    press.adsHeld = isDown(buttons, Btn.Ads);
+    // Pulling the trigger stops a sprint, which is what starts the sprint-to-fire timer
+    // in the weapon. Holding shift into a gunfight must not be free (brief S6.6).
+    press.fireHeld = isDown(buttons, Btn.Fire);
+  }
+
   private tickTimers(jumpPressed: boolean): void {
     const sim = this.sim;
     const cfg = this.cfg;
@@ -442,6 +359,44 @@ export class PlayerController {
     sim.coyote = sim.grounded ? cfg.coyoteTime : Math.max(0, sim.coyote - DT);
     sim.jumpedThisTick = false;
     if (jumpPressed) sim.jumpBuffer = cfg.jumpBufferTime;
+  }
+
+  /**
+   * A vault owns the tick it is on: the pose is interpolated, nothing else reads the command.
+   */
+  private continueMantle(buttons: number): void {
+    const sim = this.sim;
+    const finished = stepMantle(sim, this.cfg);
+    sim.capsuleHeight = capsuleHeightFor(this.cfg, sim.stance);
+    if (finished) this.emitMantleEnded();
+    this.finishTick(buttons);
+  }
+
+  /** This tick's wish direction in world space, into `wish`. */
+  private writeWishDirection(cmd: InputCommand): void {
+    const sim = this.sim;
+    const fx = -simSin(sim.yaw);
+    const fz = -simCos(sim.yaw);
+    const rx = simCos(sim.yaw);
+    const rz = -simSin(sim.yaw);
+    let wishX = rx * cmd.moveX + fx * cmd.moveZ;
+    let wishZ = rz * cmd.moveX + fz * cmd.moveZ;
+    // Direction and magnitude are separated deliberately. Normalising by the *clamped*
+    // magnitude leaves an over-length direction vector whenever a command arrives with
+    // |move| > 1, and every downstream consumer (accelerate, friction, slide steering)
+    // assumes unit length — the result is a speed cap quietly scaled by |move|.
+    const wishLen = Math.hypot(wishX, wishZ);
+    wish.mag = Math.min(1, wishLen);
+    if (wishLen > 1e-4) {
+      wishX /= wishLen;
+      wishZ /= wishLen;
+    } else {
+      wishX = 0;
+      wishZ = 0;
+    }
+    wish.x = wishX;
+    wish.z = wishZ;
+    wish.movingForward = cmd.moveZ > 0.5;
   }
 
   /** `weaponBusy` is ADS or the trigger: either one ends a sprint. */
@@ -494,59 +449,23 @@ export class PlayerController {
     sim.tacSprintCooldown = this.cfg.tacSprintCooldown;
   }
 
-  /**
-   * The least an airborne body may accelerate to: sprint speed, in the weapon's hands.
-   *
-   * Air control can reach this from a standstill, so left at the config's sprint speed a jump
-   * would be the way out from under a heavy weapon — a minigun walks at 3.7 m/s and a hop could
-   * take it to 6.9 in a fifth of a second. The perks' `speedScale` is deliberately not in it: the
-   * air has never been scaled by Lightweight, and every M1 jump number was measured that way.
-   */
-  private airSprintFloor(): number {
-    return this.cfg.sprintSpeed * this.weaponSpeedScale;
-  }
-
-  /** Horizontal speed cap for the current state, before the input magnitude scale. */
-  private speedCap(adsHeld: boolean): number {
+  /** Continue a slide, end it, or start one on the crouch press out of a sprint. */
+  private updateSlide(): void {
     const sim = this.sim;
     const cfg = this.cfg;
-    if (!sim.grounded) return Math.max(sim.airSpeedCap, this.airSprintFloor());
-    const scale = this.speedScale * this.weaponSpeedScale;
-    if (sim.stance === 'CROUCH') return cfg.crouchSpeed * scale;
-    if (adsHeld) return cfg.adsSpeed * scale;
-    if (sim.tacSprintActive) {
-      const held = cfg.tacSprintDuration;
-      if (sim.tacSprintElapsed <= held) return cfg.tacSprintSpeed * scale;
-      const t = clamp01((sim.tacSprintElapsed - held) / Math.max(cfg.tacSprintDecay, 1e-3));
-      return lerp(cfg.tacSprintSpeed, cfg.sprintSpeed, t) * scale;
+    this.crouchHeldThisTick = press.crouchHeld;
+
+    if (sim.slideActive) {
+      const reason = this.slideExitReason(cfg);
+      if (reason !== null) this.exitSlide(reason);
+      else stepSlide(sim, cfg, wish.x, wish.z);
+      return;
     }
-    if (sim.sprintActive) return cfg.sprintSpeed * scale;
-    return cfg.walkSpeed * scale;
-  }
-
-  private performJump(): void {
-    const sim = this.sim;
-    const cfg = this.cfg;
-    if (sim.slideActive) this.exitSlide('jumpCancel');
-
-    // Jumping out of a crouch is only allowed where the taller capsule fits, which is
-    // what stops a jump from launching the player through a low ceiling.
-    if (sim.stance === 'CROUCH' && !this.fitsHere(cfg.standHeight)) return;
-
-    sim.vy = jumpVelocity(cfg);
-    sim.grounded = false;
-    sim.coyote = 0;
-    sim.jumpBuffer = 0;
-    sim.jumpedThisTick = true;
-    sim.airSpeedCap = Math.max(sim.speed, this.airSprintFloor());
-    this.setStance('AIRBORNE');
-
-    evJump.entityId = this.entityId;
-    evJump.x = sim.x;
-    evJump.y = sim.y;
-    evJump.z = sim.z;
-    evJump.horizontalSpeed = sim.speed;
-    this.bus.emit(EV.PlayerJumped, evJump);
+    if (press.crouchPressed && press.sprintHeld && canStartSlide(sim, cfg)) {
+      const entry = beginSlide(sim, cfg, wish.x, wish.z);
+      this.setStance('SLIDE');
+      this.emitSlideStarted(entry);
+    }
   }
 
   /**
@@ -592,11 +511,126 @@ export class PlayerController {
       this.setStance('STAND');
     }
 
-    evSlideEnd.entityId = this.entityId;
-    evSlideEnd.reason = reason;
-    evSlideEnd.exitSpeed = exitSpeed;
-    evSlideEnd.tick = sim.tick;
-    this.bus.emit(EV.PlayerSlideEnded, evSlideEnd);
+    this.emitSlideEnded(reason, exitSpeed);
+  }
+
+  private performJump(): void {
+    const sim = this.sim;
+    const cfg = this.cfg;
+    if (sim.slideActive) this.exitSlide('jumpCancel');
+
+    // Jumping out of a crouch is only allowed where the taller capsule fits, which is
+    // what stops a jump from launching the player through a low ceiling.
+    if (sim.stance === 'CROUCH' && !this.fitsHere(cfg.standHeight)) return;
+
+    sim.vy = jumpVelocity(cfg);
+    sim.grounded = false;
+    sim.coyote = 0;
+    sim.jumpBuffer = 0;
+    sim.jumpedThisTick = true;
+    sim.airSpeedCap = Math.max(sim.speed, this.airSprintFloor());
+    this.setStance('AIRBORNE');
+
+    this.emitJumped();
+  }
+
+  /**
+   * The least an airborne body may accelerate to: sprint speed, in the weapon's hands.
+   *
+   * Air control can reach this from a standstill, so left at the config's sprint speed a jump
+   * would be the way out from under a heavy weapon — a minigun walks at 3.7 m/s and a hop could
+   * take it to 6.9 in a fifth of a second. The perks' `speedScale` is deliberately not in it: the
+   * air has never been scaled by Lightweight, and every M1 jump number was measured that way.
+   */
+  private airSprintFloor(): number {
+    return this.cfg.sprintSpeed * this.weaponSpeedScale;
+  }
+
+  /** Horizontal speed cap for the current state, before the input magnitude scale. */
+  private speedCap(adsHeld: boolean): number {
+    const sim = this.sim;
+    const cfg = this.cfg;
+    if (!sim.grounded) return Math.max(sim.airSpeedCap, this.airSprintFloor());
+    const scale = this.speedScale * this.weaponSpeedScale;
+    if (sim.stance === 'CROUCH') return cfg.crouchSpeed * scale;
+    if (adsHeld) return cfg.adsSpeed * scale;
+    if (sim.tacSprintActive) {
+      const held = cfg.tacSprintDuration;
+      if (sim.tacSprintElapsed <= held) return cfg.tacSprintSpeed * scale;
+      const t = clamp01((sim.tacSprintElapsed - held) / Math.max(cfg.tacSprintDecay, 1e-3));
+      return lerp(cfg.tacSprintSpeed, cfg.sprintSpeed, t) * scale;
+    }
+    if (sim.sprintActive) return cfg.sprintSpeed * scale;
+    return cfg.walkSpeed * scale;
+  }
+
+  /** Friction, acceleration and the cap — or, in a slide, the curve `stepSlide` already wrote. */
+  private applyVelocity(adsHeld: boolean): void {
+    const sim = this.sim;
+    const cfg = this.cfg;
+    if (sim.slideActive) {
+      // stepSlide already wrote the horizontal velocity.
+      this.currentSpeedCap = sim.slideSpeed;
+      return;
+    }
+
+    this.currentSpeedCap = this.speedCap(adsHeld);
+    const wishSpeed = this.currentSpeedCap * wish.mag;
+    if (sim.grounded) applyFriction(sim, cfg, wish.x, wish.z, wishSpeed);
+    const speedBefore = sim.speed;
+    const accel = sim.grounded ? cfg.groundAccel : cfg.groundAccel * cfg.airControl;
+    accelerate(sim, wish.x, wish.z, wishSpeed, accel);
+    // Acceleration may never push past the cap; existing momentum above it is left
+    // to friction. This is what bounds wall-hugging and mid-air strafing alike.
+    const limit = Math.max(sim.grounded ? this.currentSpeedCap : sim.airSpeedCap, speedBefore);
+    clampHorizontalSpeed(sim, limit);
+  }
+
+  /**
+   * Gravity, which does not press into ground already underfoot (round 4).
+   *
+   * This used to run unconditionally, and standing still was therefore never *still*. The
+   * measured symptom, on flat ground, with no input at all:
+   *
+   * ```
+   *   y: 5.00  0.00  5.00  0.00  0.00  0.00  5.00  0.00   mm
+   * ```
+   *
+   * a 5 mm vertical limit cycle — exactly `collisionSkin` — running at twenty-odd hertz
+   * forever. Gravity drives the capsule 2.7 mm into the floor each tick; `resolve` pushes
+   * it back out by `depth + skin`, which overshoots to 5 mm *above* the floor; from there
+   * it is no longer touching anything, so the next tick has no contact, `groundSnap` pulls
+   * it back down, and the cycle repeats. Five millimetres is nothing at arm's length and
+   * 0.82° of pitch against a wall 0.35 m away — about ten pixels of judder at this FOV,
+   * which is why the report is specifically *"when the player gets right up close"*. It is
+   * visible only when there is something near enough to reference it against.
+   *
+   * That is the jitter. It was never the depth buffer and never the step-up, and rounds 2
+   * and 3 spent themselves on both.
+   *
+   * The same accumulation is the ice-slide on ramps. `projectVelocity` removes the
+   * component of velocity going *into* the surface and correctly leaves the tangential
+   * part — so on a slope, gravity's downhill component builds up every tick until friction
+   * balances it, which is a steady creep downhill with no input. Measured before this:
+   * 292 mm in three seconds on 18°, 766 mm on 44°.
+   *
+   * Both are the same wrong assumption: that a player standing on the floor is falling. A
+   * grounded player is *supported*. Gravity resumes the moment the ground stops being
+   * there, and `groundSnapDist` — 0.4 m — is what keeps the player attached walking over a
+   * crest or down a slope, which is the job it already had.
+   *
+   * The two guards are exactly the two ways `vy` can legitimately be non-falling on a
+   * grounded tick: a jump was just issued, or a mantle/slide wrote an upward velocity.
+   */
+  private applyGravity(): void {
+    const sim = this.sim;
+    const cfg = this.cfg;
+    if (sim.grounded && !sim.jumpedThisTick && sim.vy <= 0) {
+      sim.vy = 0;
+      return;
+    }
+    sim.vy -= cfg.gravity * DT;
+    if (sim.vy < -cfg.maxFallSpeed) sim.vy = -cfg.maxFallSpeed;
   }
 
   private updateCrouchStance(crouchHeld: boolean): void {
@@ -610,6 +644,39 @@ export class PlayerController {
     if (sim.stance === 'CROUCH' && this.fitsHere(this.cfg.standHeight)) this.setStance('STAND');
   }
 
+  /** Leaving the ground, or arriving on it: the stance the collision pass implies. */
+  private updatePostMoveStance(crouchHeld: boolean): void {
+    const sim = this.sim;
+    if (!sim.grounded && !sim.slideActive && sim.stance !== 'AIRBORNE') {
+      this.setStance('AIRBORNE');
+      return;
+    }
+    if (sim.grounded && sim.stance === 'AIRBORNE') {
+      const wantCrouch = crouchHeld || !this.fitsHere(this.cfg.standHeight);
+      this.setStance(wantCrouch ? 'CROUCH' : 'STAND');
+    }
+  }
+
+  /** A jump press, or a sprint into something low enough to vault without asking. */
+  private tryMantle(jumpPressed: boolean, movingForward: boolean): void {
+    const sim = this.sim;
+    const cfg = this.cfg;
+    const autoVault = sim.grounded && sim.sprintActive && movingForward && sim.blockedHorizontally;
+    if (!jumpPressed && !autoVault) return;
+    if (!detectMantle(sim, cfg, this.world, mantleTarget)) return;
+    // An auto-vault only clears low obstacles; anything taller waits for a jump press.
+    const autoVaultTooTall =
+      autoVault && !jumpPressed && mantleTarget.ledgeHeight > cfg.autoVaultMaxHeight;
+    if (autoVaultTooTall) return;
+
+    if (sim.slideActive) this.exitSlide('blocked');
+    beginMantle(sim, mantleTarget);
+    this.setStance('MANTLE');
+    sim.capsuleHeight = capsuleHeightFor(cfg, 'MANTLE');
+    sim.jumpBuffer = 0;
+    this.emitMantleStarted();
+  }
+
   private fitsHere(height: number): boolean {
     return capsuleFits(this.world, this.cfg, this.sim.x, this.sim.y, this.sim.z, height);
   }
@@ -621,13 +688,10 @@ export class PlayerController {
       log.warn(`illegal stance transition ${sim.stance} -> ${next}`);
       return;
     }
-    evStance.entityId = this.entityId;
-    evStance.from = sim.stance;
-    evStance.to = next;
-    evStance.tick = sim.tick;
+    const from = sim.stance;
     sim.stance = next;
     sim.capsuleHeight = capsuleHeightFor(this.cfg, next);
-    this.bus.emit(EV.PlayerStanceChanged, evStance);
+    this.emitStanceChanged(from, next);
   }
 
   /** Eye smoothing, head bob and footstep cadence. Runs on every path out of step(). */
@@ -647,15 +711,7 @@ export class PlayerController {
       const strideForStance = sim.stance === 'CROUCH' ? stride * 1.35 : stride;
       if (sim.distanceSinceStep >= strideForStance * 0.5) {
         sim.distanceSinceStep = 0;
-        evStep.entityId = this.entityId;
-        evStep.x = sim.x;
-        evStep.y = sim.y;
-        evStep.z = sim.z;
-        evStep.speed = speed;
-        evStep.heavy = sim.tacSprintActive || sim.sprintActive;
-        evStep.quiet = sim.stance === 'CROUCH' || sim.stance === 'SLIDE';
-        evStep.material = sim.groundMaterial;
-        this.bus.emit(EV.PlayerFootstep, evStep);
+        this.emitFootstep(speed);
       }
     } else if (!sim.grounded) {
       sim.distanceSinceStep = 0;
@@ -664,4 +720,100 @@ export class PlayerController {
     sim.prevButtons = buttons;
     sim.writeSnapshot(this.curr, this.strafeInput);
   }
+
+  // Nine events, nine fillers. One method per payload rather than one generic stamper: the
+  // payloads are nine different shapes, and a helper over all of them would make every one of
+  // these call sites polymorphic on the per-tick path, which is what R7 is about.
+
+  private emitSpawned(x: number, y: number, z: number, yaw: number): void {
+    evSpawned.entityId = this.entityId;
+    evSpawned.x = x;
+    evSpawned.y = y;
+    evSpawned.z = z;
+    evSpawned.yaw = yaw;
+    this.bus.emit(EV.PlayerSpawned, evSpawned);
+  }
+
+  private emitStanceChanged(from: StanceId, to: StanceId): void {
+    evStance.entityId = this.entityId;
+    evStance.from = from;
+    evStance.to = to;
+    evStance.tick = this.sim.tick;
+    this.bus.emit(EV.PlayerStanceChanged, evStance);
+  }
+
+  private emitJumped(): void {
+    const sim = this.sim;
+    evJump.entityId = this.entityId;
+    evJump.x = sim.x;
+    evJump.y = sim.y;
+    evJump.z = sim.z;
+    evJump.horizontalSpeed = sim.speed;
+    this.bus.emit(EV.PlayerJumped, evJump);
+  }
+
+  private emitLanded(): void {
+    const sim = this.sim;
+    evLand.entityId = this.entityId;
+    evLand.x = sim.x;
+    evLand.y = sim.y;
+    evLand.z = sim.z;
+    evLand.impactSpeed = sim.landImpact;
+    evLand.stance = sim.stance;
+    evLand.material = sim.groundMaterial;
+    this.bus.emit(EV.PlayerLanded, evLand);
+  }
+
+  private emitFootstep(speed: number): void {
+    const sim = this.sim;
+    evStep.entityId = this.entityId;
+    evStep.x = sim.x;
+    evStep.y = sim.y;
+    evStep.z = sim.z;
+    evStep.speed = speed;
+    evStep.heavy = sim.tacSprintActive || sim.sprintActive;
+    evStep.quiet = sim.stance === 'CROUCH' || sim.stance === 'SLIDE';
+    evStep.material = sim.groundMaterial;
+    this.bus.emit(EV.PlayerFootstep, evStep);
+  }
+
+  private emitSlideStarted(entrySpeed: number): void {
+    const sim = this.sim;
+    evSlideStart.entityId = this.entityId;
+    evSlideStart.x = sim.x;
+    evSlideStart.y = sim.y;
+    evSlideStart.z = sim.z;
+    evSlideStart.entrySpeed = entrySpeed;
+    this.bus.emit(EV.PlayerSlideStarted, evSlideStart);
+  }
+
+  private emitSlideEnded(reason: SlideEndReason, exitSpeed: number): void {
+    evSlideEnd.entityId = this.entityId;
+    evSlideEnd.reason = reason;
+    evSlideEnd.exitSpeed = exitSpeed;
+    evSlideEnd.tick = this.sim.tick;
+    this.bus.emit(EV.PlayerSlideEnded, evSlideEnd);
+  }
+
+  private emitMantleStarted(): void {
+    const sim = this.sim;
+    evMantleStart.entityId = this.entityId;
+    evMantleStart.x = sim.x;
+    evMantleStart.y = sim.y;
+    evMantleStart.z = sim.z;
+    evMantleStart.ledgeHeight = mantleTarget.ledgeHeight;
+    this.bus.emit(EV.PlayerMantleStarted, evMantleStart);
+  }
+
+  private emitMantleEnded(): void {
+    const sim = this.sim;
+    evMantleEnd.entityId = this.entityId;
+    evMantleEnd.x = sim.x;
+    evMantleEnd.y = sim.y;
+    evMantleEnd.z = sim.z;
+    evMantleEnd.endStance = sim.stance;
+    this.bus.emit(EV.PlayerMantleEnded, evMantleEnd);
+  }
+  //#endregion
 }
+//#endregion

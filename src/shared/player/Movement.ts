@@ -1,3 +1,12 @@
+/**
+ * Movement integration: friction, acceleration, and the collision pass.
+ *
+ * `dt` is the constant from Loop.ts. Nothing in this file reads a frame delta.
+ * All scratch state is module-level so the per-tick path allocates nothing (S4.7).
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { DT } from '../core/Loop';
 import {
   makeGroundProbe,
@@ -7,14 +16,10 @@ import {
 } from '../world/CollisionWorld';
 import type { MovementConfig } from './MovementConfig';
 import type { PlayerSim } from './PlayerState';
+//#endregion
 
-/**
- * Movement integration: friction, acceleration, and the collision pass.
- *
- * `dt` is the constant from Loop.ts. Nothing in this file reads a frame delta.
- * All scratch state is module-level so the per-tick path allocates nothing (S4.7).
- */
-
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const moveOut = makeMoveOutput();
 const stepRise = makeMoveOutput();
 const stepForward = makeMoveOutput();
@@ -26,7 +31,7 @@ const DEBUG_CONTACT_CAP = 16;
 /**
  * How far the capsule must actually rise before a step-up is worth attempting, metres.
  *
- * An absolute floor rather than a fraction of `stepHeight`: see `integrateMotion`. Small
+ * An absolute floor rather than a fraction of `stepHeight`: see `tryStepUp`. Small
  * enough that a 5 cm kerb under a low ceiling still steps, large enough that a capsule
  * pinned flush against a wall does not run three extra sweeps every tick to discover it
  * cannot move.
@@ -63,21 +68,10 @@ export const movementDebug = {
   normals: new Float32Array(DEBUG_CONTACT_CAP * 3),
   points: new Float32Array(DEBUG_CONTACT_CAP * 3),
 };
+//#endregion
 
-function captureContacts(out: MoveOutput): void {
-  for (let i = 0; i < out.contactCount && movementDebug.count < DEBUG_CONTACT_CAP; i++) {
-    const src = i * 3;
-    const dst = movementDebug.count * 3;
-    movementDebug.normals[dst] = out.normals[src] ?? 0;
-    movementDebug.normals[dst + 1] = out.normals[src + 1] ?? 0;
-    movementDebug.normals[dst + 2] = out.normals[src + 2] ?? 0;
-    movementDebug.points[dst] = out.points[src] ?? 0;
-    movementDebug.points[dst + 1] = out.points[src + 1] ?? 0;
-    movementDebug.points[dst + 2] = out.points[src + 2] ?? 0;
-    movementDebug.count++;
-  }
-}
-
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Ground friction, applied to what the player is NOT asking for.
  *
@@ -144,16 +138,6 @@ export function applyFriction(
 
   sim.vx = wishX * forward + acrossX;
   sim.vz = wishZ * forward + acrossZ;
-}
-
-/**
- * One tick of friction on a scalar speed. Below `stopSpeed` the drop goes linear so
- * the player actually reaches zero instead of asymptotically creeping.
- */
-function bleed(speed: number, cfg: MovementConfig): number {
-  const control = speed < cfg.stopSpeed ? cfg.stopSpeed : speed;
-  const next = speed - control * cfg.friction * DT;
-  return next <= 0 ? 0 : next;
 }
 
 /**
@@ -237,18 +221,7 @@ export function integrateMotion(sim: PlayerSim, cfg: MovementConfig, world: Coll
   // ---- horizontal, projected onto the ground plane -----------------------
   const dx = sim.vx * DT;
   const dz = sim.vz * DT;
-  let slopeDy = 0;
-  if (sim.grounded && sim.groundNy > 0.2 && sim.vy <= 0) {
-    // Follow the surface instead of driving into it: no bumping up ramps, no
-    // launching off the top of one, no phantom airtime on the way down.
-    slopeDy = -(dx * sim.groundNx + dz * sim.groundNz) / sim.groundNy;
-    const limit = Math.hypot(dx, dz) * 1.5;
-    if (slopeDy > limit) slopeDy = limit;
-    if (slopeDy < -limit) slopeDy = -limit;
-  }
-
-  const vxBefore = sim.vx;
-  const vzBefore = sim.vz;
+  const slopeDy = groundPlaneDy(sim, dx, dz);
 
   world.moveCapsule(startX, startY, startZ, dx, slopeDy, dz, r, h, moveOut);
   let hx = moveOut.x;
@@ -260,101 +233,11 @@ export function integrateMotion(sim: PlayerSim, cfg: MovementConfig, world: Coll
   const achieved = Math.hypot(hx - startX, hz - startZ);
   sim.blockedHorizontally = desired > 1e-4 && achieved < desired - 1e-3;
 
-  /**
-   * ---- step-up: silent, no vault animation (S5.1) ------------------------
-   *
-   * The `rise` gate was `> stepHeight * 0.5` and is now an absolute minimum (post-M8). The
-   * old test scaled with the config, so raising `stepHeight` to clear taller obstacles also
-   * raised the *ceiling* the capsule had to have free above it before a step was attempted —
-   * which made the setting fight itself, and under a low soffit or a container lip it refused
-   * to step over things it had just been retuned to step over. What actually matters is that
-   * the capsule got far enough up to have a chance of clearing the obstacle, and a few
-   * centimetres is that.
-   *
-   * ## The forward probe is a radius, not a tick (round 2)
-   *
-   * Post-M8 raised `stepHeight` to 0.5 m and the report came back "still getting stuck on
-   * small stairs". The height was never the problem. This is rise, advance, drop — which is
-   * the classic three-sweep step-up, and the classic version works on an **axis-aligned box**
-   * whose bottom is flat: nudge it 7 cm forward over the step and 7 cm of its underside is
-   * already above the tread, so the drop lands on the tread.
-   *
-   * A capsule's bottom is a hemisphere, and it is only over a tread once its *centre* has
-   * passed the lip — which takes a full `capsuleRadius`, 0.35 m. A walking tick advances
-   * 0.075 m. So the old sequence raised the capsule, shuffled it 7 cm (still 27 cm short of
-   * the edge), dropped it, and the descending hemisphere clipped the step's top corner. That
-   * corner's contact normal is about 27° off vertical — steeper than `maxSlopeDeg`, so it is
-   * a *wall*, so de-penetration pushed the capsule back off it and down to the floor. Net
-   * horizontal progress: zero. And because the sequence then reported `steppedUp` and
-   * restored the velocity the collision had killed, it did that silently, every tick, for as
-   * long as the player held forward. That is the bug, and it is why the ledges that snagged
-   * were exactly the ones between `groundSnapDist` and hip height.
-   *
-   * The advance is therefore `max(what the player asked for, radius + skin)`: the probe is
-   * asking "is there a tread up here", and that question cannot be answered from 27 cm short
-   * of it. The pop is bounded by the radius, happens once per obstacle rather than per tick,
-   * and is the same thing every engine that steps a capsule does.
-   *
-   * The acceptance test gained the missing half of its job with it. "Came back down onto
-   * walkable ground" was never sufficient — the floor the player was already standing on
-   * satisfies it — so it now also has to have *got somewhere*, measured after the drop rather
-   * than before it.
-   *
-   * ## What that cost, and the two gates that pay it back (round 3)
-   *
-   * A radius-long probe is a *query*, and round 2 let its answer become the *move*. Whenever
-   * the sequence was attempted and accepted, the capsule advanced up to 0.355 m in one tick —
-   * and it was attempted whenever the horizontal pass lost so much as a millimetre. Sliding
-   * diagonally along a wall loses a millimetre on every tick forever, so it fired on every
-   * tick forever: measured, **20.6 m/s** against a flat wall at a walk speed of 4.6, and 7.3
-   * up an 18° ramp. That is the "wall-strafing super speed" report and it is entirely this.
-   *
-   * Two gates, because the two bad cases fail for different reasons and neither test catches
-   * both:
-   *
-   *  - **`STEP_BLOCKED_FRACTION`** — a step *stops* you, a wall or a ramp only shaves you. The
-   *    measured separation is 0.39 against 0.77, so half the requested distance is the gate.
-   *    This is what excludes ramps, which do genuinely gain height and would otherwise pass
-   *    any climb test.
-   *  - **an actual climb** — the landing must be above where the capsule started by more than
-   *    `MIN_STEP_RISE`. This is what excludes walls, which block hard enough to pass the first
-   *    gate when you run at them steeply but climb 5 mm, not 50 cm.
-   *
-   * `sim.blockedHorizontally` keeps its old, looser meaning: `PlayerController` reads it to
-   * decide whether a sprint should auto-vault, and that is a question about touching something
-   * rather than about being stopped by it.
-   */
-  const stepBlocked = desired > 1e-4 && achieved < desired * STEP_BLOCKED_FRACTION;
-  if (stepBlocked && sim.wasGrounded && cfg.stepHeight > 0) {
-    world.moveCapsule(startX, startY, startZ, 0, cfg.stepHeight, 0, r, h, stepRise);
-    const rise = stepRise.y - startY;
-    if (rise > MIN_STEP_RISE) {
-      // Scale the commanded delta up to at least a radius, keeping its direction.
-      const probeScale = desired > 1e-6 ? Math.max(1, (r + cfg.collisionSkin) / desired) : 0;
-      world.moveCapsule(stepRise.x, stepRise.y, stepRise.z, dx * probeScale, 0, dz * probeScale, r, h, stepForward);
-      const probedDistance = Math.hypot(stepForward.x - startX, stepForward.z - startZ);
-      if (probedDistance > achieved + 0.005) {
-        world.moveCapsule(stepForward.x, stepForward.y, stepForward.z, 0, -(rise + 0.02), 0, r, h, stepDrop);
-        const steppedDistance = Math.hypot(stepDrop.x - startX, stepDrop.z - startZ);
-        const climbed = stepDrop.y - startY;
-        // Accept only if we came back down onto walkable ground *higher than we left*, and
-        // the landing is further along than simply walking into the thing was. Landing at the
-        // same height means there was nothing to climb: the probe found the floor it started
-        // on, and taking its distance is the speed exploit.
-        if (stepDrop.grounded && climbed > MIN_STEP_RISE && steppedDistance > achieved + 0.005) {
-          hx = stepDrop.x;
-          hy = stepDrop.y;
-          hz = stepDrop.z;
-          horizontalContacts = stepForward;
-          sim.steppedUp = true;
-          sim.blockedHorizontally = false;
-          // The blocked move never happened, so the velocity it would have killed
-          // is restored before the (much weaker) stepped contacts are projected.
-          sim.vx = vxBefore;
-          sim.vz = vzBefore;
-        }
-      }
-    }
+  if (tryStepUp(sim, cfg, world, achieved)) {
+    hx = stepDrop.x;
+    hy = stepDrop.y;
+    hz = stepDrop.z;
+    horizontalContacts = stepForward;
   }
 
   sim.x = hx;
@@ -363,8 +246,179 @@ export function integrateMotion(sim: PlayerSim, cfg: MovementConfig, world: Coll
   projectVelocity(sim, horizontalContacts, false);
   if (movementDebug.capture) captureContacts(horizontalContacts);
 
-  // ---- vertical ----------------------------------------------------------
   const impactSpeed = -sim.vy;
+  integrateVertical(sim, cfg, world);
+  adoptSteppedGround(sim, world);
+  snapToGround(sim, cfg, world);
+
+  // ---- landing -----------------------------------------------------------
+  sim.justLanded = false;
+  if (sim.grounded && !sim.wasGrounded) {
+    sim.justLanded = true;
+    sim.landImpact = impactSpeed > 0 ? impactSpeed : 0;
+  }
+}
+
+/** Initial upward velocity that reaches `jumpHeight` under `gravity`. */
+export function jumpVelocity(cfg: MovementConfig): number {
+  return Math.sqrt(2 * cfg.gravity * cfg.jumpHeight);
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * One tick of friction on a scalar speed. Below `stopSpeed` the drop goes linear so
+ * the player actually reaches zero instead of asymptotically creeping.
+ */
+function bleed(speed: number, cfg: MovementConfig): number {
+  const control = speed < cfg.stopSpeed ? cfg.stopSpeed : speed;
+  const next = speed - control * cfg.friction * DT;
+  return next <= 0 ? 0 : next;
+}
+
+/**
+ * The vertical part of a horizontal step, so the capsule follows the surface instead of
+ * driving into it: no bumping up ramps, no launching off the top of one, and no phantom
+ * airtime on the way down. Zero unless the body is standing on something walkable.
+ */
+function groundPlaneDy(sim: PlayerSim, dx: number, dz: number): number {
+  if (!sim.grounded || sim.groundNy <= 0.2 || sim.vy > 0) return 0;
+  let slopeDy = -(dx * sim.groundNx + dz * sim.groundNz) / sim.groundNy;
+  const limit = Math.hypot(dx, dz) * 1.5;
+  if (slopeDy > limit) slopeDy = limit;
+  if (slopeDy < -limit) slopeDy = -limit;
+  return slopeDy;
+}
+
+/**
+ * Step-up: silent, no vault animation (S5.1).
+ *
+ * Rise, advance, drop. Returns true when the sequence found somewhere better than walking
+ * into the obstacle did, in which case `stepDrop` holds the landing and `stepForward` holds
+ * the contacts to project against. Reads the horizontal pass's result out of `moveOut`, and
+ * the start position off `sim`, which the caller has not written yet.
+ *
+ * The `rise` gate was `> stepHeight * 0.5` and is now an absolute minimum (post-M8). The
+ * old test scaled with the config, so raising `stepHeight` to clear taller obstacles also
+ * raised the *ceiling* the capsule had to have free above it before a step was attempted —
+ * which made the setting fight itself, and under a low soffit or a container lip it refused
+ * to step over things it had just been retuned to step over. What actually matters is that
+ * the capsule got far enough up to have a chance of clearing the obstacle, and a few
+ * centimetres is that.
+ *
+ * ## The forward probe is a radius, not a tick (round 2)
+ *
+ * Post-M8 raised `stepHeight` to 0.5 m and the report came back "still getting stuck on
+ * small stairs". The height was never the problem. This is rise, advance, drop — which is
+ * the classic three-sweep step-up, and the classic version works on an **axis-aligned box**
+ * whose bottom is flat: nudge it 7 cm forward over the step and 7 cm of its underside is
+ * already above the tread, so the drop lands on the tread.
+ *
+ * A capsule's bottom is a hemisphere, and it is only over a tread once its *centre* has
+ * passed the lip — which takes a full `capsuleRadius`, 0.35 m. A walking tick advances
+ * 0.075 m. So the old sequence raised the capsule, shuffled it 7 cm (still 27 cm short of
+ * the edge), dropped it, and the descending hemisphere clipped the step's top corner. That
+ * corner's contact normal is about 27° off vertical — steeper than `maxSlopeDeg`, so it is
+ * a *wall*, so de-penetration pushed the capsule back off it and down to the floor. Net
+ * horizontal progress: zero. And because the sequence then reported `steppedUp` and
+ * restored the velocity the collision had killed, it did that silently, every tick, for as
+ * long as the player held forward. That is the bug, and it is why the ledges that snagged
+ * were exactly the ones between `groundSnapDist` and hip height.
+ *
+ * The advance is therefore `max(what the player asked for, radius + skin)`: the probe is
+ * asking "is there a tread up here", and that question cannot be answered from 27 cm short
+ * of it. The pop is bounded by the radius, happens once per obstacle rather than per tick,
+ * and is the same thing every engine that steps a capsule does.
+ *
+ * The acceptance test gained the missing half of its job with it. "Came back down onto
+ * walkable ground" was never sufficient — the floor the player was already standing on
+ * satisfies it — so it now also has to have *got somewhere*, measured after the drop rather
+ * than before it.
+ *
+ * ## What that cost, and the two gates that pay it back (round 3)
+ *
+ * A radius-long probe is a *query*, and round 2 let its answer become the *move*. Whenever
+ * the sequence was attempted and accepted, the capsule advanced up to 0.355 m in one tick —
+ * and it was attempted whenever the horizontal pass lost so much as a millimetre. Sliding
+ * diagonally along a wall loses a millimetre on every tick forever, so it fired on every
+ * tick forever: measured, **20.6 m/s** against a flat wall at a walk speed of 4.6, and 7.3
+ * up an 18° ramp. That is the "wall-strafing super speed" report and it is entirely this.
+ *
+ * Two gates, because the two bad cases fail for different reasons and neither test catches
+ * both:
+ *
+ *  - **`STEP_BLOCKED_FRACTION`** — a step *stops* you, a wall or a ramp only shaves you. The
+ *    measured separation is 0.39 against 0.77, so half the requested distance is the gate.
+ *    This is what excludes ramps, which do genuinely gain height and would otherwise pass
+ *    any climb test.
+ *  - **an actual climb** — the landing must be above where the capsule started by more than
+ *    `MIN_STEP_RISE`. This is what excludes walls, which block hard enough to pass the first
+ *    gate when you run at them steeply but climb 5 mm, not 50 cm.
+ *
+ * `sim.blockedHorizontally` keeps its old, looser meaning: `PlayerController` reads it to
+ * decide whether a sprint should auto-vault, and that is a question about touching something
+ * rather than about being stopped by it.
+ */
+function tryStepUp(
+  sim: PlayerSim,
+  cfg: MovementConfig,
+  world: CollisionWorld,
+  achieved: number,
+): boolean {
+  const dx = sim.vx * DT;
+  const dz = sim.vz * DT;
+  const desired = Math.hypot(dx, dz);
+  const stepBlocked = desired > 1e-4 && achieved < desired * STEP_BLOCKED_FRACTION;
+  if (!stepBlocked || !sim.wasGrounded || cfg.stepHeight <= 0) return false;
+
+  const r = cfg.capsuleRadius;
+  const h = sim.capsuleHeight;
+  const startX = sim.x;
+  const startY = sim.y;
+  const startZ = sim.z;
+  const vxBefore = sim.vx;
+  const vzBefore = sim.vz;
+
+  world.moveCapsule(startX, startY, startZ, 0, cfg.stepHeight, 0, r, h, stepRise);
+  const rise = stepRise.y - startY;
+  if (rise <= MIN_STEP_RISE) return false;
+
+  // Scale the commanded delta up to at least a radius, keeping its direction.
+  const probeScale = desired > 1e-6 ? Math.max(1, (r + cfg.collisionSkin) / desired) : 0;
+  world.moveCapsule(stepRise.x, stepRise.y, stepRise.z, dx * probeScale, 0, dz * probeScale, r, h, stepForward);
+  const probedDistance = Math.hypot(stepForward.x - startX, stepForward.z - startZ);
+  if (probedDistance <= achieved + 0.005) return false;
+
+  world.moveCapsule(stepForward.x, stepForward.y, stepForward.z, 0, -(rise + 0.02), 0, r, h, stepDrop);
+  const steppedDistance = Math.hypot(stepDrop.x - startX, stepDrop.z - startZ);
+  const climbed = stepDrop.y - startY;
+  // Accept only if we came back down onto walkable ground *higher than we left*, and
+  // the landing is further along than simply walking into the thing was. Landing at the
+  // same height means there was nothing to climb: the probe found the floor it started
+  // on, and taking its distance is the speed exploit.
+  if (!stepDrop.grounded || climbed <= MIN_STEP_RISE || steppedDistance <= achieved + 0.005) {
+    return false;
+  }
+
+  sim.steppedUp = true;
+  sim.blockedHorizontally = false;
+  // The blocked move never happened, so the velocity it would have killed
+  // is restored before the (much weaker) stepped contacts are projected.
+  sim.vx = vxBefore;
+  sim.vz = vzBefore;
+  return true;
+}
+
+/**
+ * The vertical pass: gravity's displacement, the floor it finds and the ceiling it hits.
+ *
+ * This is the pass that owns `grounded`, because it is the only one whose contacts may be
+ * interpreted as floor.
+ */
+function integrateVertical(sim: PlayerSim, cfg: MovementConfig, world: CollisionWorld): void {
+  const r = cfg.capsuleRadius;
+  const h = sim.capsuleHeight;
   world.moveCapsule(sim.x, sim.y, sim.z, 0, sim.vy * DT, 0, r, h, moveOut);
   sim.x = moveOut.x;
   sim.y = moveOut.y;
@@ -380,40 +434,37 @@ export function integrateMotion(sim: PlayerSim, cfg: MovementConfig, world: Coll
   if (moveOut.hitCeiling && sim.vy > 0) sim.vy = 0;
   projectVelocity(sim, moveOut, true);
   if (movementDebug.capture) captureContacts(moveOut);
+}
 
-  // The horizontal pass can also land us (walking up a ramp onto flat ground).
-  if (!sim.grounded && sim.steppedUp) {
-    sim.grounded = true;
-    sim.groundNx = stepDrop.groundNx;
-    sim.groundNy = stepDrop.groundNy;
-    sim.groundNz = stepDrop.groundNz;
-    sim.groundMaterial = world.colliders.materialAt(stepDrop.groundIndex);
-  }
+/** The horizontal pass can also land us (walking up a ramp onto flat ground). */
+function adoptSteppedGround(sim: PlayerSim, world: CollisionWorld): void {
+  if (sim.grounded || !sim.steppedUp) return;
+  sim.grounded = true;
+  sim.groundNx = stepDrop.groundNx;
+  sim.groundNy = stepDrop.groundNy;
+  sim.groundNz = stepDrop.groundNz;
+  sim.groundMaterial = world.colliders.materialAt(stepDrop.groundIndex);
+}
 
-  // ---- ground snap: stay glued when walking off a step or down a ramp ----
+/** Ground snap: stay glued when walking off a step or down a ramp. */
+function snapToGround(sim: PlayerSim, cfg: MovementConfig, world: CollisionWorld): void {
   if (
-    !sim.grounded &&
-    sim.wasGrounded &&
-    !sim.jumpedThisTick &&
-    sim.vy <= 0.01 &&
-    cfg.groundSnapDist > 0 &&
-    world.probeGround(sim.x, sim.y, sim.z, r, h, cfg.groundSnapDist, probe)
+    sim.grounded ||
+    !sim.wasGrounded ||
+    sim.jumpedThisTick ||
+    sim.vy > 0.01 ||
+    cfg.groundSnapDist <= 0 ||
+    !world.probeGround(sim.x, sim.y, sim.z, cfg.capsuleRadius, sim.capsuleHeight, cfg.groundSnapDist, probe)
   ) {
-    sim.y -= probe.distance;
-    sim.grounded = true;
-    sim.groundNx = probe.nx;
-    sim.groundNy = probe.ny;
-    sim.groundNz = probe.nz;
-    sim.groundMaterial = world.colliders.materialAt(probe.index);
-    if (sim.vy < 0) sim.vy = 0;
+    return;
   }
-
-  // ---- landing -----------------------------------------------------------
-  sim.justLanded = false;
-  if (sim.grounded && !sim.wasGrounded) {
-    sim.justLanded = true;
-    sim.landImpact = impactSpeed > 0 ? impactSpeed : 0;
-  }
+  sim.y -= probe.distance;
+  sim.grounded = true;
+  sim.groundNx = probe.nx;
+  sim.groundNy = probe.ny;
+  sim.groundNz = probe.nz;
+  sim.groundMaterial = world.colliders.materialAt(probe.index);
+  if (sim.vy < 0) sim.vy = 0;
 }
 
 /**
@@ -435,7 +486,17 @@ function projectVelocity(sim: PlayerSim, out: MoveOutput, allowVertical: boolean
   }
 }
 
-/** Initial upward velocity that reaches `jumpHeight` under `gravity`. */
-export function jumpVelocity(cfg: MovementConfig): number {
-  return Math.sqrt(2 * cfg.gravity * cfg.jumpHeight);
+function captureContacts(out: MoveOutput): void {
+  for (let i = 0; i < out.contactCount && movementDebug.count < DEBUG_CONTACT_CAP; i++) {
+    const src = i * 3;
+    const dst = movementDebug.count * 3;
+    movementDebug.normals[dst] = out.normals[src] ?? 0;
+    movementDebug.normals[dst + 1] = out.normals[src + 1] ?? 0;
+    movementDebug.normals[dst + 2] = out.normals[src + 2] ?? 0;
+    movementDebug.points[dst] = out.points[src] ?? 0;
+    movementDebug.points[dst + 1] = out.points[src + 1] ?? 0;
+    movementDebug.points[dst + 2] = out.points[src + 2] ?? 0;
+    movementDebug.count++;
+  }
 }
+//#endregion

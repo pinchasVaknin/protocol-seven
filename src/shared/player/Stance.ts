@@ -1,13 +1,22 @@
-import type { MovementConfig } from './MovementConfig';
-
 /**
  * Stance machine vocabulary (brief S5.3).
  *
  * Stance is the single authority for capsule height, eye height and the movement
  * speed cap. Nothing else may set those independently.
  */
-export type StanceId = 'STAND' | 'CROUCH' | 'SLIDE' | 'AIRBORNE' | 'MANTLE';
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { MovementConfig } from './MovementConfig';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type StanceId = 'STAND' | 'CROUCH' | 'SLIDE' | 'AIRBORNE' | 'MANTLE';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const STANCES: readonly StanceId[] = ['STAND', 'CROUCH', 'SLIDE', 'AIRBORNE', 'MANTLE'];
 
 /**
@@ -28,20 +37,6 @@ const LEGAL: Readonly<Record<StanceId, readonly StanceId[]>> = {
   MANTLE: ['STAND', 'CROUCH', 'AIRBORNE'],
 };
 
-export function isLegalStanceTransition(from: StanceId, to: StanceId): boolean {
-  return from === to || LEGAL[from].includes(to);
-}
-
-/**
- * The stances a body is drawn low in. A slide and a mantle have no authored clips of their
- * own and are drawn with the crouch loops (`AnimationSelector`), and since M13 C2 the hitbox
- * rig follows the same rule (`rigLayoutFor`): one predicate, so the boxes and the body cannot
- * disagree about which pose a stance is.
- */
-export function isLowStance(stance: StanceId): boolean {
-  return stance === 'CROUCH' || stance === 'SLIDE' || stance === 'MANTLE';
-}
-
 /**
  * How fast a body reads as walking, metres per second. A dead zone, so interpolation noise
  * cannot make a standing actor moonwalk — and, since M13 C2, the speed at which a crouching
@@ -57,6 +52,23 @@ export const LOCOMOTION_IDLE_SPEED = 0.12;
  * layout while the slide is fast and the crouch-walk layout once it has bled off.
  */
 export const LOCOMOTION_RUN_SPEED = 5.4;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function isLegalStanceTransition(from: StanceId, to: StanceId): boolean {
+  return from === to || LEGAL[from].includes(to);
+}
+
+/**
+ * The stances a body is drawn low in. A slide and a mantle have no authored clips of their
+ * own and are drawn with the crouch loops (`AnimationSelector`), and since M13 C2 the hitbox
+ * rig follows the same rule (`rigLayoutFor`): one predicate, so the boxes and the body cannot
+ * disagree about which pose a stance is.
+ */
+export function isLowStance(stance: StanceId): boolean {
+  return stance === 'CROUCH' || stance === 'SLIDE' || stance === 'MANTLE';
+}
 
 /** Collision capsule height for a stance, metres. */
 export function capsuleHeightFor(cfg: MovementConfig, stance: StanceId): number {
@@ -89,4 +101,4 @@ export function eyeHeightFor(cfg: MovementConfig, stance: StanceId): number {
       return cfg.crouchEye;
   }
 }
-
+//#endregion

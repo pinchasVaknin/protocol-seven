@@ -1,13 +1,3 @@
-import { clamp01, smoothstep } from '../core/MathUtil';
-import { DT } from '../core/Loop';
-import type { CollisionWorld } from '../world/CollisionWorld';
-import { makeRayHit } from '../world/Geometry';
-import { capsuleFits } from './Movement';
-import type { MovementConfig } from './MovementConfig';
-import type { PlayerSim } from './PlayerState';
-import type { StanceId } from './Stance';
-import { simCos, simSin } from '../core/SimMath';
-
 /**
  * Ledge detection and the vault itself (brief S5.1: ledges 0.4-1.6 m, 0.4 s vault).
  *
@@ -17,6 +7,21 @@ import { simCos, simSin } from '../core/SimMath';
  * finish crouched instead of clipping (acceptance criterion 3).
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { clamp01, smoothstep } from '../core/MathUtil';
+import { DT } from '../core/Loop';
+import type { CollisionWorld } from '../world/CollisionWorld';
+import { makeRayHit } from '../world/Geometry';
+import { capsuleFits } from './Movement';
+import type { MovementConfig } from './MovementConfig';
+import type { PlayerSim } from './PlayerState';
+import type { StanceId } from './Stance';
+import { simCos, simSin } from '../core/SimMath';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MantleTarget {
   toX: number;
   toY: number;
@@ -26,11 +31,10 @@ export interface MantleTarget {
   ledgeHeight: number;
   endStance: StanceId;
 }
+//#endregion
 
-export function makeMantleTarget(): MantleTarget {
-  return { toX: 0, toY: 0, toZ: 0, dirX: 0, dirZ: 0, ledgeHeight: 0, endStance: 'STAND' };
-}
-
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const wallHit = makeRayHit();
 const topHit = makeRayHit();
 
@@ -40,6 +44,13 @@ const WALL_PROBE_HEIGHT = 0.25;
 const TOP_PROBE_OVERSHOOT = 0.3;
 /** Clearance above the detected ledge before the downward probe starts. */
 const TOP_PROBE_HEADROOM = 0.35;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeMantleTarget(): MantleTarget {
+  return { toX: 0, toY: 0, toZ: 0, dirX: 0, dirZ: 0, ledgeHeight: 0, endStance: 'STAND' };
+}
 
 /**
  * Look for a mantleable ledge in front of the player.
@@ -157,3 +168,4 @@ export function stepMantle(sim: PlayerSim, cfg: MovementConfig): boolean {
   sim.mantleCooldown = 0.25;
   return true;
 }
+//#endregion

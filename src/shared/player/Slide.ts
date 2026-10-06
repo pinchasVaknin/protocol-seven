@@ -1,8 +1,3 @@
-import { clamp01 } from '../core/MathUtil';
-import { DT } from '../core/Loop';
-import type { MovementConfig } from './MovementConfig';
-import type { PlayerSim } from './PlayerState';
-
 /**
  * Slide, and the slide-cancel rules (brief S5.2, LOCKED).
  *
@@ -19,6 +14,16 @@ import type { PlayerSim } from './PlayerState';
  * being stopped by the world — see `PlayerController.slideExitReason`.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { clamp01 } from '../core/MathUtil';
+import { DT } from '../core/Loop';
+import type { MovementConfig } from './MovementConfig';
+import type { PlayerSim } from './PlayerState';
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function canStartSlide(sim: PlayerSim, cfg: MovementConfig): boolean {
   if (sim.slideActive || sim.mantleActive) return false;
   if (!sim.grounded) return false;
@@ -100,3 +105,4 @@ export function endSlide(sim: PlayerSim, cfg: MovementConfig): void {
     sim.tacSprintCooldown = cfg.tacSprintCooldown;
   }
 }
+//#endregion

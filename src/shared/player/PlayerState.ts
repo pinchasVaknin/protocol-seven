@@ -1,5 +1,10 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { StanceId } from './Stance';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** The renderable slice of player state, sampled once per sim tick and interpolated. */
 export interface PlayerSnapshot {
   x: number;
@@ -19,36 +24,89 @@ export interface PlayerSnapshot {
   strafe: number;
 }
 
-export function makeSnapshot(): PlayerSnapshot {
-  return {
-    x: 0,
-    y: 0,
-    z: 0,
-    eyeHeight: 1.65,
-    bobPhase: 0,
-    speed: 0,
-    vy: 0,
-    stance: 'STAND',
-    grounded: false,
-    slideRoll: 0,
-    strafe: 0,
-  };
-}
+/**
+ * The complete mutable state of a `PlayerSim`, as a flat record (M10, S4.11).
+ *
+ * `PlayerSnapshot` above is the *render* view — eleven fields, enough to draw a frame.
+ * This is the *simulation* view: every field `step()` reads or writes, and nothing else.
+ * Reconciliation needs the second kind. S4.11 requires the client to *"snap to the
+ * authoritative state and replay every unacked command"*, and a replay that restored only
+ * the pose would resume with the wrong slide timer, the wrong coyote window and the wrong
+ * `prevButtons` — so the first replayed tick would produce a different result than the
+ * server got, and the correction would never converge.
+ *
+ * The rule when adding a field to `PlayerSim`: **add it here too.** A field that is not
+ * saved is a field that silently resets on every correction, and the symptom is a movement
+ * bug that only appears under packet loss.
+ */
+export interface PlayerSimState {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  yaw: number;
+  pitch: number;
 
-export function copySnapshot(src: PlayerSnapshot, dst: PlayerSnapshot): void {
-  dst.x = src.x;
-  dst.y = src.y;
-  dst.z = src.z;
-  dst.eyeHeight = src.eyeHeight;
-  dst.bobPhase = src.bobPhase;
-  dst.speed = src.speed;
-  dst.vy = src.vy;
-  dst.stance = src.stance;
-  dst.grounded = src.grounded;
-  dst.slideRoll = src.slideRoll;
-  dst.strafe = src.strafe;
-}
+  stance: StanceId;
+  grounded: boolean;
+  wasGrounded: boolean;
+  groundNx: number;
+  groundNy: number;
+  groundNz: number;
+  groundMaterial: number;
 
+  capsuleHeight: number;
+  eyeHeight: number;
+
+  sprintActive: boolean;
+  sprintHeldTime: number;
+  tacSprintActive: boolean;
+  tacSprintElapsed: number;
+  tacSprintCooldown: number;
+  tacLockout: number;
+  lastSprintPressTick: number;
+
+  slideActive: boolean;
+  slideElapsed: number;
+  slideCooldown: number;
+  slideDirX: number;
+  slideDirZ: number;
+  slideSpeed: number;
+  slideAirTime: number;
+
+  coyote: number;
+  jumpBuffer: number;
+  jumpedThisTick: boolean;
+  airSpeedCap: number;
+
+  mantleActive: boolean;
+  mantleElapsed: number;
+  mantleFromX: number;
+  mantleFromY: number;
+  mantleFromZ: number;
+  mantleToX: number;
+  mantleToY: number;
+  mantleToZ: number;
+  mantleDirX: number;
+  mantleDirZ: number;
+  mantleEndStance: StanceId;
+  mantleCooldown: number;
+
+  prevButtons: number;
+  tick: number;
+  bobPhase: number;
+  distanceSinceStep: number;
+  landImpact: number;
+  justLanded: boolean;
+  blockedHorizontally: boolean;
+  steppedUp: boolean;
+}
+//#endregion
+
+// ====================================== CLASS PlayerSim ======================================= \\
+//#region Class PlayerSim
 /**
  * Full simulation state for the local player.
  *
@@ -56,6 +114,8 @@ export function copySnapshot(src: PlayerSnapshot, dst: PlayerSnapshot): void {
  * is what a server-authoritative rewind will need later. No Three.js types.
  */
 export class PlayerSim {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   // pose (feet position)
   x = 0;
   y = 0;
@@ -143,7 +203,10 @@ export class PlayerSim {
   /** Debug: last horizontal blocked-move flag from the collision pass. */
   blockedHorizontally = false;
   steppedUp = false;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get speed(): number {
     return Math.hypot(this.vx, this.vz);
   }
@@ -214,86 +277,40 @@ export class PlayerSim {
     out.slideRoll = this.slideActive ? 1 : 0;
     out.strafe = strafe;
   }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeSnapshot(): PlayerSnapshot {
+  return {
+    x: 0,
+    y: 0,
+    z: 0,
+    eyeHeight: 1.65,
+    bobPhase: 0,
+    speed: 0,
+    vy: 0,
+    stance: 'STAND',
+    grounded: false,
+    slideRoll: 0,
+    strafe: 0,
+  };
 }
 
-/**
- * The complete mutable state of a `PlayerSim`, as a flat record (M10, S4.11).
- *
- * `PlayerSnapshot` above is the *render* view — eleven fields, enough to draw a frame.
- * This is the *simulation* view: every field `step()` reads or writes, and nothing else.
- * Reconciliation needs the second kind. S4.11 requires the client to *"snap to the
- * authoritative state and replay every unacked command"*, and a replay that restored only
- * the pose would resume with the wrong slide timer, the wrong coyote window and the wrong
- * `prevButtons` — so the first replayed tick would produce a different result than the
- * server got, and the correction would never converge.
- *
- * The rule when adding a field to `PlayerSim`: **add it here too.** A field that is not
- * saved is a field that silently resets on every correction, and the symptom is a movement
- * bug that only appears under packet loss.
- */
-export interface PlayerSimState {
-  x: number;
-  y: number;
-  z: number;
-  vx: number;
-  vy: number;
-  vz: number;
-  yaw: number;
-  pitch: number;
-
-  stance: StanceId;
-  grounded: boolean;
-  wasGrounded: boolean;
-  groundNx: number;
-  groundNy: number;
-  groundNz: number;
-  groundMaterial: number;
-
-  capsuleHeight: number;
-  eyeHeight: number;
-
-  sprintActive: boolean;
-  sprintHeldTime: number;
-  tacSprintActive: boolean;
-  tacSprintElapsed: number;
-  tacSprintCooldown: number;
-  tacLockout: number;
-  lastSprintPressTick: number;
-
-  slideActive: boolean;
-  slideElapsed: number;
-  slideCooldown: number;
-  slideDirX: number;
-  slideDirZ: number;
-  slideSpeed: number;
-  slideAirTime: number;
-
-  coyote: number;
-  jumpBuffer: number;
-  jumpedThisTick: boolean;
-  airSpeedCap: number;
-
-  mantleActive: boolean;
-  mantleElapsed: number;
-  mantleFromX: number;
-  mantleFromY: number;
-  mantleFromZ: number;
-  mantleToX: number;
-  mantleToY: number;
-  mantleToZ: number;
-  mantleDirX: number;
-  mantleDirZ: number;
-  mantleEndStance: StanceId;
-  mantleCooldown: number;
-
-  prevButtons: number;
-  tick: number;
-  bobPhase: number;
-  distanceSinceStep: number;
-  landImpact: number;
-  justLanded: boolean;
-  blockedHorizontally: boolean;
-  steppedUp: boolean;
+export function copySnapshot(src: PlayerSnapshot, dst: PlayerSnapshot): void {
+  dst.x = src.x;
+  dst.y = src.y;
+  dst.z = src.z;
+  dst.eyeHeight = src.eyeHeight;
+  dst.bobPhase = src.bobPhase;
+  dst.speed = src.speed;
+  dst.vy = src.vy;
+  dst.stance = src.stance;
+  dst.grounded = src.grounded;
+  dst.slideRoll = src.slideRoll;
+  dst.strafe = src.strafe;
 }
 
 export function makePlayerSimState(): PlayerSimState {
@@ -480,4 +497,4 @@ export function loadPlayerSim(src: PlayerSimState, sim: PlayerSimState): void {
   sim.blockedHorizontally = src.blockedHorizontally;
   sim.steppedUp = src.steppedUp;
 }
-
+//#endregion

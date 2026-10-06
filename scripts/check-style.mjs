@@ -147,6 +147,17 @@ const FINISHED = {
     'src/shared/world/SkyProfile.ts',
     'src/shared/world/SupplySystem.ts',
   ],
+  A6: [
+    'src/shared/player/Health.ts',
+    'src/shared/player/Mantle.ts',
+    'src/shared/player/Movement.ts',
+    // No imports at all, so TYPES is its first section.
+    'src/shared/player/MovementConfig.ts',
+    'src/shared/player/PlayerController.ts',
+    'src/shared/player/PlayerState.ts',
+    'src/shared/player/Slide.ts',
+    'src/shared/player/Stance.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

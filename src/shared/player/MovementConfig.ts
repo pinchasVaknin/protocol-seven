@@ -5,6 +5,9 @@
  * tuned from here — the debug overlay drives this object live and can copy the tuned
  * result back out as source (F1 -> TUNING -> COPY CONFIG).
  */
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MovementConfig {
   // -- speeds (m/s) ------------------------------------------------------
   walkSpeed: number;
@@ -97,6 +100,18 @@ export interface MovementConfig {
   footstepStride: number;
 }
 
+export interface TunableMeta {
+  readonly label: string;
+  readonly group: string;
+  readonly min: number;
+  readonly max: number;
+  readonly step: number;
+  readonly unit: string;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const DEFAULT_MOVEMENT_CONFIG: MovementConfig = {
   walkSpeed: 4.6,
   sprintSpeed: 6.9,
@@ -198,15 +213,6 @@ export const DEFAULT_MOVEMENT_CONFIG: MovementConfig = {
   footstepStride: 2.1,
 };
 
-export interface TunableMeta {
-  readonly label: string;
-  readonly group: string;
-  readonly min: number;
-  readonly max: number;
-  readonly step: number;
-  readonly unit: string;
-}
-
 /**
  * Slider metadata for every field above.
  *
@@ -277,7 +283,10 @@ export const MOVEMENT_TUNABLES: Readonly<Record<keyof MovementConfig, TunableMet
 };
 
 export const MOVEMENT_CONFIG_KEYS = Object.keys(DEFAULT_MOVEMENT_CONFIG) as Array<keyof MovementConfig>;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function cloneMovementConfig(src: MovementConfig): MovementConfig {
   return { ...src };
 }
@@ -298,7 +307,11 @@ export function movementConfigToSource(cfg: MovementConfig): string {
   lines.push('};');
   return lines.join('\n');
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function round(v: number): number {
   return Math.round(v * 1e4) / 1e4;
 }
+//#endregion

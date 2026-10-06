@@ -1,6 +1,3 @@
-import { DT } from '../core/Loop';
-import type { TunableMeta } from './MovementConfig';
-
 /**
  * Health and regeneration (brief S6.4).
  *
@@ -11,6 +8,14 @@ import type { TunableMeta } from './MovementConfig';
  * Runs on sim ticks. `DT` is the constant, never a frame delta.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { DT } from '../core/Loop';
+import type { TunableMeta } from './MovementConfig';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface HealthConfig {
   max: number;
   /** Quiet seconds after the last damage before regeneration starts. */
@@ -18,7 +23,10 @@ export interface HealthConfig {
   /** HP per second once regeneration has started. */
   regenRate: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * 200, not 100 (playtest, 2026-09-23).
  *
@@ -48,17 +56,13 @@ export const HEALTH_TUNABLES: Readonly<Record<keyof HealthConfig, TunableMeta>> 
 };
 
 export const HEALTH_CONFIG_KEYS = Object.keys(DEFAULT_HEALTH_CONFIG) as Array<keyof HealthConfig>;
+//#endregion
 
-export function healthConfigToSource(cfg: HealthConfig): string {
-  const lines = ['export const DEFAULT_HEALTH_CONFIG: HealthConfig = {'];
-  for (const key of HEALTH_CONFIG_KEYS) {
-    lines.push(`  ${key}: ${Math.round(cfg[key] * 1e4) / 1e4},`);
-  }
-  lines.push('};');
-  return lines.join('\n');
-}
-
+// ======================================== CLASS Health ======================================== \\
+//#region Class Health
 export class Health {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   current: number;
   /**
    * Absorbed before `current` and never regenerated (M6, the ARMOUR PLATE field upgrade).
@@ -78,11 +82,17 @@ export class Health {
   changedThisTick = false;
   /** Signed change applied on the tick `changedThisTick` was set. */
   lastDelta = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private cfg: HealthConfig) {
     this.current = cfg.max;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   setConfig(cfg: HealthConfig): void {
     this.cfg = cfg;
     if (this.current > cfg.max) this.current = cfg.max;
@@ -191,4 +201,18 @@ export class Health {
     this.changedThisTick = true;
     this.lastDelta = this.current - before;
   }
+  //#endregion
 }
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function healthConfigToSource(cfg: HealthConfig): string {
+  const lines = ['export const DEFAULT_HEALTH_CONFIG: HealthConfig = {'];
+  for (const key of HEALTH_CONFIG_KEYS) {
+    lines.push(`  ${key}: ${Math.round(cfg[key] * 1e4) / 1e4},`);
+  }
+  lines.push('};');
+  return lines.join('\n');
+}
+//#endregion

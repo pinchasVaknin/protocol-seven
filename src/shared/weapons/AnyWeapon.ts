@@ -1,5 +1,3 @@
-import { WEAPON_DEFS, type WeaponDef } from './WeaponDefs';
-
 /**
  * Any weapon a *fired shot* can name: the loadout catalogue, plus whatever registered itself.
  *
@@ -25,8 +23,19 @@ import { WEAPON_DEFS, type WeaponDef } from './WeaponDefs';
  * Code that means the *loadout* — a picker, an unlock, a camo — should keep reading
  * `WEAPON_DEFS` and keep being unable to see any of this.
  */
-const REGISTERED = new Map<string, WeaponDef>();
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { WEAPON_DEFS, type WeaponDef } from './WeaponDefs';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const REGISTERED = new Map<string, WeaponDef>();
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** Add a def that is not in the loadout table. Called by whatever builds one. */
 export function registerWeaponDef(def: WeaponDef): void {
   REGISTERED.set(def.id, def);
@@ -35,3 +44,4 @@ export function registerWeaponDef(def: WeaponDef): void {
 export function anyWeaponDef(id: string): WeaponDef | undefined {
   return WEAPON_DEFS[id] ?? REGISTERED.get(id);
 }
+//#endregion

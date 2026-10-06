@@ -1,14 +1,3 @@
-import { makeDamageRequest, type DamageRequest, type DamageSystem } from '../combat/DamageSystem';
-import { makeRigHit, type RigHit } from '../combat/HitboxRig';
-import { EV, type GameBus } from '../core/Events';
-import { DT } from '../core/Loop';
-import { clamp01 } from '../core/MathUtil';
-import type { PlayerSim } from '../player/PlayerState';
-import type { CollisionWorld } from '../world/CollisionWorld';
-import { makeRayHit, type RayHit } from '../world/Geometry';
-import { AR_DEFAULT, cloneWeaponDef, type WeaponDef } from './WeaponDefs';
-import { simCos, simSin } from '../core/SimMath';
-
 /**
  * The knife (post-M8 playtest; given a blade in round 2).
  *
@@ -46,6 +35,35 @@ import { simCos, simSin } from '../core/SimMath';
  * answer "is there anything between these two points".
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { makeDamageRequest, type DamageRequest, type DamageSystem } from '../combat/DamageSystem';
+import { makeRigHit, type RigHit } from '../combat/HitboxRig';
+import { EV, type GameBus } from '../core/Events';
+import { DT } from '../core/Loop';
+import { clamp01 } from '../core/MathUtil';
+import type { PlayerSim } from '../player/PlayerState';
+import type { CollisionWorld } from '../world/CollisionWorld';
+import { makeRayHit, type RayHit } from '../world/Geometry';
+import { AR_DEFAULT, cloneWeaponDef, type WeaponDef } from './WeaponDefs';
+import { simCos, simSin } from '../core/SimMath';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type MeleePhase = 'IDLE' | 'WINDUP' | 'STRIKE' | 'RECOVER';
+
+export interface MeleeDeps {
+  readonly world: CollisionWorld;
+  readonly damage: DamageSystem;
+  readonly bus: GameBus;
+  /** Who is swinging. Stamps the damage request, so the killfeed credits the right operator. */
+  readonly sourceId: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Seconds the arm takes to come back before the strike lands. */
 const WINDUP_SECONDS = 0.12;
 /** Seconds after the strike before the weapon is usable again. */
@@ -86,48 +104,16 @@ const MELEE_RANGE = 2.0;
  */
 const MELEE_DAMAGE = 380;
 
-export type MeleePhase = 'IDLE' | 'WINDUP' | 'STRIKE' | 'RECOVER';
-
 let knifeDef: WeaponDef | null = null;
 
-/**
- * The knife's `WeaponDef`.
- *
- * Built by cloning the carbine and overriding what matters, exactly as `streaks/StreakWeapons`
- * does and for the same reason: it guarantees every field the schema requires is present, so
- * adding one cannot leave the knife half-initialised. The killfeed reads `name` off this.
- */
-function meleeWeapon(): WeaponDef {
-  if (knifeDef !== null) return knifeDef;
-  const def = cloneWeaponDef(AR_DEFAULT);
-  def.id = 'melee_knife';
-  def.name = 'KNIFE';
-  def.damage.near = MELEE_DAMAGE;
-  def.damage.far = MELEE_DAMAGE;
-  // Every zone kills. A knife that needed a torso hit would be a knife that misses.
-  def.headshotMult = 1;
-  def.limbMult = 1;
-  def.upperTorsoMult = 1;
-  // No falloff inside its own reach, and it can never be fired beyond it.
-  def.damageFalloff.start = 1000;
-  def.damageFalloff.end = 1001;
-  def.penetration = 0;
-  def.minimapPing = false;
-  knifeDef = def;
-  return def;
-}
-
-export interface MeleeDeps {
-  readonly world: CollisionWorld;
-  readonly damage: DamageSystem;
-  readonly bus: GameBus;
-  /** Who is swinging. Stamps the damage request, so the killfeed credits the right operator. */
-  readonly sourceId: number;
-}
-
 const evSwing = { sourceId: 0, x: 0, y: 0, z: 0, hit: false, lethal: false };
+//#endregion
 
+// ======================================== CLASS Melee ========================================= \\
+//#region Class Melee
 export class Melee {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   phase: MeleePhase = 'IDLE';
 
   /** True on the tick a swing connected. Read by the feedback layer for the hitmarker. */
@@ -141,12 +127,18 @@ export class Melee {
   private readonly rigHit: RigHit = makeRigHit();
   private readonly bestHit: RigHit = makeRigHit();
   private readonly ray: RayHit = makeRayHit();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly deps: MeleeDeps) {
     this.request = makeDamageRequest(meleeWeapon());
     this.request.sourceId = deps.sourceId;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * True while the knife owns the hands.
    *
@@ -215,9 +207,10 @@ export class Melee {
     this.phase = 'IDLE';
     this.timer = 0;
   }
+  //#endregion
 
-  // -- internals --------------------------------------------------------------
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private begin(): void {
     this.phase = 'WINDUP';
     this.timer = WINDUP_SECONDS;
@@ -269,6 +262,14 @@ export class Melee {
       return;
     }
 
+    this.landSwing(sim, bestId, bestT);
+  }
+
+  /**
+   * The blade arrived. Fill the damage request from the hit the search left in `bestHit` and
+   * the point already written into `evSwing`, then announce what it did.
+   */
+  private landSwing(sim: PlayerSim, bestId: number, bestT: number): void {
     const req = this.request;
     req.weapon = meleeWeapon();
     req.targetId = bestId;
@@ -276,14 +277,14 @@ export class Melee {
     req.upperTorso = this.bestHit.upper;
     req.distance = bestT;
     req.penetrationRetain = 1;
-    req.x = px;
-    req.y = py;
-    req.z = pz;
+    req.x = evSwing.x;
+    req.y = evSwing.y;
+    req.z = evSwing.z;
     // The eye the swing was taken from. A blade is as directional as a round — a shield held
     // towards it is in the way, and the counter to one is to be somewhere else.
-    req.originX = ox;
-    req.originY = oy;
-    req.originZ = oz;
+    req.originX = sim.x;
+    req.originY = sim.y + sim.eyeHeight;
+    req.originZ = sim.z;
 
     const dealt = this.deps.damage.apply(req);
     this.hitThisTick = dealt > 0;
@@ -298,6 +299,37 @@ export class Melee {
   private targetAlive(entityId: number): boolean {
     return this.deps.damage.get(entityId)?.health.alive === true;
   }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * The knife's `WeaponDef`.
+ *
+ * Built by cloning the carbine and overriding what matters, exactly as `streaks/StreakWeapons`
+ * does and for the same reason: it guarantees every field the schema requires is present, so
+ * adding one cannot leave the knife half-initialised. The killfeed reads `name` off this.
+ */
+function meleeWeapon(): WeaponDef {
+  if (knifeDef !== null) return knifeDef;
+  const def = cloneWeaponDef(AR_DEFAULT);
+  def.id = 'melee_knife';
+  def.name = 'KNIFE';
+  def.damage.near = MELEE_DAMAGE;
+  def.damage.far = MELEE_DAMAGE;
+  // Every zone kills. A knife that needed a torso hit would be a knife that misses.
+  def.headshotMult = 1;
+  def.limbMult = 1;
+  def.upperTorsoMult = 1;
+  // No falloff inside its own reach, and it can never be fired beyond it.
+  def.damageFalloff.start = 1000;
+  def.damageFalloff.end = 1001;
+  def.penetration = 0;
+  def.minimapPing = false;
+  knifeDef = def;
+  return def;
 }
 
 function copyRigHit(src: RigHit, dst: RigHit): void {
@@ -309,3 +341,4 @@ function copyRigHit(src: RigHit, dst: RigHit): void {
   dst.ny = src.ny;
   dst.nz = src.nz;
 }
+//#endregion

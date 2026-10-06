@@ -222,3 +222,114 @@ describe('a weapon with an infinite reserve', () => {
     expect(weapon.reloading).toBe(false);
   });
 });
+
+/**
+ * The trigger, which is the other half of `stepTrigger` and the half the reload rules sit on
+ * top of. A fractional fire-rate accumulator, a dry click that fires once per *pull* rather
+ * than once per tick, and a safety valve above both.
+ */
+describe('the trigger', () => {
+  it('queues shots on a fractional accumulator, not a whole number of ticks', () => {
+    const weapon = new Weapon(AR_DEFAULT, createGameBus());
+    const input = makeWeaponInput();
+    input.fireHeld = true;
+    // 700 RPM is 5.14 ticks a shot. Rounding that to 5 or 6 would put the real rate at 720
+    // or 600, which is a different gun.
+    let shots = 0;
+    for (let tick = 0; tick < 60; tick++) {
+      weapon.step(input);
+      while (weapon.consumeShot()) shots++;
+    }
+    expect(AR_DEFAULT.rpm).toBe(700);
+    expect(shots).toBe(12);
+  });
+
+  it('offers the first round on the tick the trigger goes down', () => {
+    const weapon = new Weapon(AR_DEFAULT, createGameBus());
+    const input = makeWeaponInput();
+    input.fireHeld = true;
+    input.firePressed = true;
+    weapon.step(input);
+    expect(weapon.pendingShots).toBe(1);
+    expect(weapon.consumeShot()).toBe(true);
+    expect(weapon.mag).toBe(AR_DEFAULT.magSize - 1);
+    // One owed shot, taken once.
+    expect(weapon.consumeShot()).toBe(false);
+  });
+
+  it('never queues more than four rounds in a tick, whatever the rate says', () => {
+    const silly = { ...AR_DEFAULT, rpm: 60000 };
+    const weapon = new Weapon(silly, createGameBus());
+    const input = makeWeaponInput();
+    input.fireHeld = true;
+    weapon.step(input);
+    expect(weapon.pendingShots).toBe(4);
+  });
+
+  it('queues nothing while the weapon is down or reloading', () => {
+    const weapon = new Weapon(AR_DEFAULT, createGameBus());
+    const input = makeWeaponInput();
+    input.fireHeld = true;
+    input.lowering = true;
+    run(weapon, input, 0.5);
+    expect(weapon.raise).toBe(0);
+    expect(weapon.pendingShots).toBe(0);
+
+    const reloading = armed();
+    const ri = makeWeaponInput();
+    ri.reloadPressed = true;
+    reloading.step(ri);
+    expect(reloading.reloading).toBe(true);
+    ri.reloadPressed = false;
+    ri.fireHeld = true;
+    reloading.step(ri);
+    expect(reloading.pendingShots).toBe(0);
+  });
+
+  it('clicks once per trigger pull on an empty magazine, not once per tick', () => {
+    const bus = createGameBus();
+    const weapon = new Weapon(AR_DEFAULT, bus);
+    weapon.mag = 0;
+    weapon.reserve = 0;
+    let clicks = 0;
+    bus.on(EV.WeaponDryFired, () => clicks++);
+
+    const input = makeWeaponInput();
+    input.fireHeld = true;
+    run(weapon, input, 0.5);
+    expect(clicks).toBe(1);
+    expect(weapon.pendingShots).toBe(0);
+
+    // Releasing and pulling again is a second click. Without the per-pull latch, running the
+    // magazine dry *while holding* would produce no click at all, because there is no press
+    // edge on the tick the last round leaves.
+    input.fireHeld = false;
+    weapon.step(input);
+    input.fireHeld = true;
+    weapon.step(input);
+    expect(clicks).toBe(2);
+  });
+
+  it('reports the dry click on exactly the tick it happened', () => {
+    const weapon = new Weapon(AR_DEFAULT, createGameBus());
+    weapon.mag = 0;
+    weapon.reserve = 0;
+    const input = makeWeaponInput();
+    input.fireHeld = true;
+    weapon.step(input);
+    expect(weapon.dryFiredThisTick).toBe(true);
+    weapon.step(input);
+    expect(weapon.dryFiredThisTick).toBe(false);
+  });
+
+  it('banks no credit in the fire timer while the trigger is up', () => {
+    const weapon = new Weapon(AR_DEFAULT, createGameBus());
+    const input = makeWeaponInput();
+    // A second of waiting must not buy a burst on the tick the trigger goes down.
+    run(weapon, input, 1);
+    expect(weapon.fireTimer).toBe(0);
+    input.fireHeld = true;
+    weapon.step(input);
+    expect(weapon.pendingShots).toBe(1);
+  });
+});

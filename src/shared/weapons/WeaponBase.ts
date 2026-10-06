@@ -1,8 +1,3 @@
-import { EV, type GameBus, type ReloadStep } from '../core/Events';
-import { DT } from '../core/Loop';
-import { clamp01, moveTowards } from '../core/MathUtil';
-import { shotInterval, type WeaponDef } from './WeaponDefs';
-
 /**
  * The weapon runtime: ammo, fire timing, ADS, reload, sprint-to-fire (brief S6.1/S6.6).
  *
@@ -15,6 +10,16 @@ import { shotInterval, type WeaponDef } from './WeaponDefs';
  * Everything advances on sim ticks with the constant `DT`. Allocation free.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { EV, type GameBus, type ReloadStep } from '../core/Events';
+import { DT } from '../core/Loop';
+import { clamp01, moveTowards } from '../core/MathUtil';
+import { shotInterval, type WeaponDef } from './WeaponDefs';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface WeaponInput {
   fireHeld: boolean;
   firePressed: boolean;
@@ -35,23 +40,15 @@ export interface WeaponInput {
   lowering: boolean;
 }
 
-export function makeWeaponInput(): WeaponInput {
-  return {
-    fireHeld: false,
-    firePressed: false,
-    adsHeld: false,
-    reloadPressed: false,
-    reloadBlocked: false,
-    lowering: false,
-  };
-}
-
 /** Keyframe positions as a fraction of the reload's duration. */
 interface ReloadTrack {
   readonly steps: readonly ReloadStep[];
   readonly times: readonly number[];
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const TACTICAL_TRACK: ReloadTrack = {
   steps: ['down', 'magOut', 'magIn', 'raise'],
   times: [0.0, 0.17, 0.5, 0.78],
@@ -75,8 +72,13 @@ const evReloadDone = { weaponId: '', sourceId: 0, mag: 0, reserve: 0 };
 const evAds = { weaponId: '', sourceId: 0, aiming: false };
 const evAmmo = { weaponId: '', sourceId: 0, mag: 0, reserve: 0 };
 const evDry = { weaponId: '', sourceId: 0 };
+//#endregion
 
+// ======================================== CLASS Weapon ======================================== \\
+//#region Class Weapon
 export class Weapon {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   mag: number;
   reserve: number;
   /**
@@ -127,7 +129,10 @@ export class Weapon {
    * edge on the tick the last round leaves — which is exactly the case a player hits.
    */
   private dryFiredThisPull = false;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   /**
    * `sourceId` stamps every event this weapon emits. It defaults to the local player (0)
    * because M2 only ever had one weapon; from M3 each bot carries one, and the id is how
@@ -142,7 +147,10 @@ export class Weapon {
     this.mag = def.magSize;
     this.reserve = def.reserveAmmo;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get definition(): WeaponDef {
     return this.def;
   }
@@ -293,9 +301,10 @@ export class Weapon {
     this.reloadElapsed = 0;
     this.reloadStepIndex = 0;
   }
+  //#endregion
 
-  // -- internals -----------------------------------------------------------
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private stepRaise(lowering: boolean): void {
     const swap = this.handlingSeconds > 0;
     const seconds = swap ? this.handlingSeconds : this.def.sprintOutTime;
@@ -387,29 +396,40 @@ export class Weapon {
     if (!input.fireHeld) this.dryFiredThisPull = false;
 
     if (!input.fireHeld || !this.canFire) {
-      if (this.fireTimer < 0) this.fireTimer = 0;
+      this.restFireTimer();
       return;
     }
 
     if (this.mag <= 0) {
-      // Click, once per trigger pull, then reload for the player the way CoD does.
-      if (!this.dryFiredThisPull) {
-        this.dryFiredThisPull = true;
-        this.dryFiredThisTick = true;
-        evDry.weaponId = this.def.id;
-        evDry.sourceId = this.sourceId;
-        this.bus.emit(EV.WeaponDryFired, evDry);
-        // The automatic reload on a dry trigger is the same magazine change and obeys the same
-        // rule. This is the path that made blocking the key alone insufficient: firing is legal
-        // mid-slide, so an empty weapon fired while sliding reloaded itself.
-        if (this.hasReserve && !input.reloadBlocked) this.beginReload();
-      }
-      if (this.fireTimer < 0) this.fireTimer = 0;
+      this.dryFire(input.reloadBlocked);
+      this.restFireTimer();
       return;
     }
 
-    // Fractional accumulator, not a whole number of ticks: 700 RPM is 5.14 ticks per
-    // shot, and rounding that to 5 or 6 would put the real rate at 720 or 600.
+    this.queueShots();
+  }
+
+  /** Click, once per trigger pull, then reload for the player the way CoD does. */
+  private dryFire(reloadBlocked: boolean): void {
+    if (this.dryFiredThisPull) return;
+    this.dryFiredThisPull = true;
+    this.dryFiredThisTick = true;
+    evDry.weaponId = this.def.id;
+    evDry.sourceId = this.sourceId;
+    this.bus.emit(EV.WeaponDryFired, evDry);
+    // The automatic reload on a dry trigger is the same magazine change and obeys the same
+    // rule. This is the path that made blocking the key alone insufficient: firing is legal
+    // mid-slide, so an empty weapon fired while sliding reloaded itself.
+    if (this.hasReserve && !reloadBlocked) this.beginReload();
+  }
+
+  /**
+   * How many rounds this tick owes the caller.
+   *
+   * Fractional accumulator, not a whole number of ticks: 700 RPM is 5.14 ticks per
+   * shot, and rounding that to 5 or 6 would put the real rate at 720 or 600.
+   */
+  private queueShots(): void {
     const interval = shotInterval(this.def);
     let queued = 0;
     while (this.fireTimer <= 0 && queued < MAX_SHOTS_PER_TICK && queued < this.mag) {
@@ -417,6 +437,14 @@ export class Weapon {
       this.fireTimer += interval;
     }
     this.pendingShots = queued;
+    this.restFireTimer();
+  }
+
+  /**
+   * The timer never banks credit. A second of a raised trigger must not buy a burst on the
+   * tick it goes down, so the debt is cleared on every path out of the trigger.
+   */
+  private restFireTimer(): void {
     if (this.fireTimer < 0) this.fireTimer = 0;
   }
 
@@ -434,4 +462,20 @@ export class Weapon {
     evAmmo.reserve = this.reserve;
     this.bus.emit(EV.WeaponAmmoChanged, evAmmo);
   }
+  //#endregion
 }
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeWeaponInput(): WeaponInput {
+  return {
+    fireHeld: false,
+    firePressed: false,
+    adsHeld: false,
+    reloadPressed: false,
+    reloadBlocked: false,
+    lowering: false,
+  };
+}
+//#endregion

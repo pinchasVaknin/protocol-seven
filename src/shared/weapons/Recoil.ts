@@ -1,9 +1,3 @@
-import { DT } from '../core/Loop';
-import { clamp01, damp, DEG2RAD, lerp, TAU } from '../core/MathUtil';
-import type { Rng } from '../core/Rng';
-import type { WeaponDef } from './WeaponDefs';
-import { simCos, simSin, simTan } from '../core/SimMath';
-
 /**
  * Recoil and spread (brief S6.2).
  *
@@ -25,6 +19,17 @@ import { simCos, simSin, simTan } from '../core/SimMath';
  * Runs on sim ticks; `DT` is the constant. Allocation free.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { DT } from '../core/Loop';
+import { clamp01, damp, DEG2RAD, lerp, TAU } from '../core/MathUtil';
+import type { Rng } from '../core/Rng';
+import type { WeaponDef } from './WeaponDefs';
+import { simCos, simSin, simTan } from '../core/SimMath';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface SpreadContext {
   /** 0 = stationary, 1 = at or above walking pace. */
   moveFraction: number;
@@ -51,12 +56,19 @@ export interface AimSample {
   ax: number;
   ay: number;
 }
+//#endregion
 
-export function makeAimSample(): AimSample {
-  return { dx: 0, dy: 0, dz: -1, spreadDeg: 0, ax: 0, ay: 0 };
-}
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** The sunflower lattice's turn, radians. See `pelletOffset`. */
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+//#endregion
 
+// ======================================== CLASS Recoil ======================================== \\
+//#region Class Recoil
 export class Recoil {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /**
    * Transient aim offset in degrees, recovering to zero.
    *
@@ -84,7 +96,10 @@ export class Recoil {
 
   /** Per-shot spread bloom, degrees. */
   bloom = 0;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   reset(): void {
     this.aimPitch = 0;
     this.aimYaw = 0;
@@ -203,6 +218,14 @@ export class Recoil {
     out.spreadDeg = spreadDeg;
     aimWithOffset(yaw, pitch, ax, ay, out);
   }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeAimSample(): AimSample {
+  return { dx: 0, dy: 0, dz: -1, spreadDeg: 0, ax: 0, ay: 0 };
 }
 
 /**
@@ -264,8 +287,6 @@ export function aimWithOffset(
  * Pellet 0 is always dead centre, which is the same contract every other weapon makes: the
  * round you aimed goes where you aimed.
  */
-const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-
 export function pelletOffset(
   index: number,
   count: number,
@@ -314,3 +335,4 @@ export function accumulatePattern(
   }
   return n;
 }
+//#endregion

@@ -1,8 +1,3 @@
-import { DT } from '../core/Loop';
-import { clamp01, TAU } from '../core/MathUtil';
-import type { ScopeProfile, WeaponDef } from './WeaponDefs';
-import { simSin } from '../core/SimMath';
-
 /**
  * The sniper scope (brief S6.1): visible breath sway, hold-breath on Shift, and the glint
  * an enemy can see.
@@ -19,6 +14,16 @@ import { simSin } from '../core/SimMath';
  * Runs on sim ticks; `DT` is the constant. Allocation free.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { DT } from '../core/Loop';
+import { clamp01, TAU } from '../core/MathUtil';
+import type { ScopeProfile, WeaponDef } from './WeaponDefs';
+import { simSin } from '../core/SimMath';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Seconds the hold-breath damping takes to engage and to let go. */
 const HOLD_BLEND_SECONDS = 0.18;
 
@@ -27,8 +32,27 @@ const SCOPED_THRESHOLD = 0.5;
 
 /** Aimed fraction at which the objective lens starts catching the light. */
 const GLINT_THRESHOLD = 0.85;
+//#endregion
 
+// ====================================== CLASS ScopeState ====================================== \\
+//#region Class ScopeState
 export class ScopeState {
+  // ========================================== STATIC ========================================== \\
+  //#region Static
+  /**
+   * Whether this weapon is throwing a glint right now (S6.1).
+   *
+   * Deliberately a property of the *scope being up*, not of firing: the point of a glint is
+   * that holding an angle costs you something before you pull the trigger.
+   */
+  static glinting(def: WeaponDef, adsFraction: number): boolean {
+    const scope: ScopeProfile | undefined = def.scope;
+    return scope !== undefined && scope.glint && adsFraction >= GLINT_THRESHOLD;
+  }
+  //#endregion
+
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Degrees. Added to the aim exactly the way recoil's transient offset is. */
   swayYaw = 0;
   swayPitch = 0;
@@ -41,7 +65,10 @@ export class ScopeState {
   private phase = 0;
   private holdBlend = 0;
   private scoped = false;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   reset(): void {
     this.swayYaw = 0;
     this.swayPitch = 0;
@@ -104,15 +131,6 @@ export class ScopeState {
     this.swayYaw = simSin(this.phase * w) * amp;
     this.swayPitch = simSin(this.phase * w * 0.61 + 1.3) * amp * 0.62;
   }
-
-  /**
-   * Whether this weapon is throwing a glint right now (S6.1).
-   *
-   * Deliberately a property of the *scope being up*, not of firing: the point of a glint is
-   * that holding an angle costs you something before you pull the trigger.
-   */
-  static glinting(def: WeaponDef, adsFraction: number): boolean {
-    const scope: ScopeProfile | undefined = def.scope;
-    return scope !== undefined && scope.glint && adsFraction >= GLINT_THRESHOLD;
-  }
+  //#endregion
 }
+//#endregion

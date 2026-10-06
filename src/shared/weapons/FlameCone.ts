@@ -1,6 +1,3 @@
-import { DEG2RAD } from '../core/MathUtil';
-import { simCos } from '../core/SimMath';
-
 /**
  * Is this body in the jet, and how far down it?
  *
@@ -30,14 +27,28 @@ import { simCos } from '../core/SimMath';
  * weapon behave at contact range the way a player expects a flamethrower to.
  */
 
-/** Metres. The jet is never narrower than this, however close the target is. See above. */
-const MIN_WIDTH_M = 0.7;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { DEG2RAD } from '../core/MathUtil';
+import { simCos } from '../core/SimMath';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface FlameHit {
   /** Metres from the muzzle, for `damageAtRange`. */
   readonly distance: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Metres. The jet is never narrower than this, however close the target is. See above. */
+const MIN_WIDTH_M = 0.7;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * `null` when the point is not in the jet.
  *
@@ -79,3 +90,4 @@ export function flameHit(
   if (offsetSq <= halfWidth * halfWidth) return { distance };
   return null;
 }
+//#endregion

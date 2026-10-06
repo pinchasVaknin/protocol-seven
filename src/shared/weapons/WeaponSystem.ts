@@ -1,3 +1,23 @@
+/**
+ * The seam between "the player pressed a button" and "a round landed".
+ *
+ * Runs entirely on sim ticks. It reads one `InputCommand`, drives the weapon state
+ * machine, resolves the shot through `Ballistics`, and emits events — it never touches
+ * the renderer, the HUD or the audio graph. Everything visible or audible is wired up in
+ * `Game` from the events this emits, which is what lets the headless harness fire a full
+ * magazine and read the shot placements back with no browser in the loop.
+ *
+ * The one thing that leaves this class other than an event is the **view residual**: the
+ * unrecovered part of each recoil kick, which has to reach the same place mouse movement
+ * does. See `takeViewResidual`.
+ *
+ * M5 added three things and no new weapon classes: an `Inventory` of two slots with a swap
+ * between them, a pellet loop for the shotgun, and a `ScopeState` for the snipers. All three
+ * are driven from fields on the `WeaponDef`.
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { makeDamageRequest, PLAYER_ENTITY_ID, type DamageRequest, type DamageSystem } from '../combat/DamageSystem';
 import type { HitZone } from '../combat/HitboxRig';
 import { shotsFrom } from '../combat/ShotAccounting';
@@ -17,25 +37,10 @@ import type { ViewmodelConfig } from './ViewmodelConfig';
 import { makeWeaponInput, type Weapon, type WeaponInput } from './WeaponBase';
 import { MAX_PELLETS, type WeaponDef } from './WeaponDefs';
 import { simCos, simSin } from '../core/SimMath';
+//#endregion
 
-/**
- * The seam between "the player pressed a button" and "a round landed".
- *
- * Runs entirely on sim ticks. It reads one `InputCommand`, drives the weapon state
- * machine, resolves the shot through `Ballistics`, and emits events — it never touches
- * the renderer, the HUD or the audio graph. Everything visible or audible is wired up in
- * `Game` from the events this emits, which is what lets the headless harness fire a full
- * magazine and read the shot placements back with no browser in the loop.
- *
- * The one thing that leaves this class other than an event is the **view residual**: the
- * unrecovered part of each recoil kick, which has to reach the same place mouse movement
- * does. See `takeViewResidual`.
- *
- * M5 added three things and no new weapon classes: an `Inventory` of two slots with a swap
- * between them, a pellet loop for the shotgun, and a `ScopeState` for the snipers. All three
- * are driven from fields on the `WeaponDef`.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface WeaponSnapshot {
   raise: number;
   adsFraction: number;
@@ -48,19 +53,6 @@ export interface WeaponSnapshot {
   swapFraction: number;
 }
 
-function makeSnapshot(): WeaponSnapshot {
-  return {
-    raise: 1,
-    adsFraction: 0,
-    visualPunch: 0,
-    visualLateral: 0,
-    aimPitch: 0,
-    aimYaw: 0,
-    reloadFraction: 0,
-    swapFraction: 1,
-  };
-}
-
 /**
  * Where a shot's muzzle position comes from.
  *
@@ -71,6 +63,18 @@ function makeSnapshot(): WeaponSnapshot {
  */
 export type MuzzleStyle = 'viewmodel' | 'world';
 
+/** Per-pellet record for the S8.5 read-out. Fixed length, written in place. */
+export interface PelletReport {
+  count: number;
+  hits: number;
+  damage: number;
+  readonly zones: HitZone[];
+  readonly targets: number[];
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Third-person muzzle offset from the eye, metres: forward, right, down. */
 const WORLD_MUZZLE_FORWARD = 0.44;
 const WORLD_MUZZLE_RIGHT = 0.16;
@@ -99,41 +103,22 @@ const evFired = {
   minimapPing: true,
 };
 
+const muzzleOut = { x: 0, y: 0, z: 0 };
+
 /**
- * Whether the hands are on something other than the gun this tick — what `fireBlocked` is set
- * from, in both runtimes (2026-09-28).
+ * The jet in flight: the aim direction and the eye it leaves from.
  *
- * A grenade drawn, cooking or being thrown (`throwBusy`), a knife mid-swing (`meleeBusy`), and the
- * two presses that *start* one of those: the equipment keys held, and the knife's rising edge.
- * The presses are in the test because the thrower and the knife are stepped *after* the weapon,
- * so on the first tick of either the busy flag is still last tick's answer — exactly how one round
- * used to escape at the start of every cook.
- *
- * It lived inline in `ClientMatch`, which is why it only ever held in a solo match: the server
- * stepped every connected human's rifle with nothing set, so a player cooking a grenade with the
- * fire button — the button that pulls the pin — was also emptying a hidden rifle at whatever they
- * were looking at, on the machine whose hits count. One function now, called by both.
+ * A module singleton for the same reason `evFired` and `muzzleOut` are — one tick of fuel is
+ * resolved inside one synchronous call, and S4.7 asks the per-tick path to allocate nothing.
  */
-export function handsOffWeapon(buttons: number, prevButtons: number, throwBusy: boolean, meleeBusy: boolean): boolean {
-  return (
-    throwBusy ||
-    meleeBusy ||
-    isDown(buttons, Btn.Lethal) ||
-    isDown(buttons, Btn.Tactical) ||
-    justPressed(buttons, prevButtons, Btn.Melee)
-  );
-}
+const flameJet = { dx: 0, dy: 0, dz: 0, eyeX: 0, eyeY: 0, eyeZ: 0 };
+//#endregion
 
-/** Per-pellet record for the S8.5 read-out. Fixed length, written in place. */
-export interface PelletReport {
-  count: number;
-  hits: number;
-  damage: number;
-  readonly zones: HitZone[];
-  readonly targets: number[];
-}
-
+// ===================================== CLASS WeaponSystem ===================================== \\
+//#region Class WeaponSystem
 export class WeaponSystem {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly inventory: Inventory;
   readonly recoil = new Recoil();
   readonly scope = new ScopeState();
@@ -195,6 +180,47 @@ export class WeaponSystem {
   private tracerCounter = 0;
 
   /**
+   * Set true while something else owns the player's hands (a grenade, the knife).
+   *
+   * Written from `handsOffWeapon` before `step` runs — by `ClientMatch` for the local player and
+   * by `NetPlayer` for every connected one — so there is one answer to "is the weapon available"
+   * and the viewmodel reads the same flag.
+   */
+  fireBlocked = false;
+
+  /**
+   * Set true while the player is not with this weapon at all (post-M8).
+   *
+   * `fireBlocked` says "the hands are busy" — the weapon is still in them, it simply cannot
+   * be fired this instant. This says something stronger: the player is flying a Chopper
+   * Gunner, or has the mortar's targeting map up (2026-09-28, `Btn.Targeting`), so the trigger,
+   * the sights and the reload key all belong to something else and none of them should reach
+   * the rifle.
+   *
+   * It is a separate flag rather than a wider `fireBlocked` because the two have different
+   * answers for ADS. A grenade cook leaves the sights available; a camera takeover must
+   * not, or the ADS button silently aims a weapon a kilometre away and the scope overlay
+   * takes the crosshair off the gunship's screen.
+   */
+  suspended = false;
+
+  /**
+   * The fire button went down while the weapon was suspended and has not come up since
+   * (2026-09-28).
+   *
+   * The click that confirms a mortar mark closes the map on its first tick and is still held on
+   * the next few, and the trigger that was firing a gunship's cannon is still held on the tick the
+   * gunship comes down. Neither is a pull of the rifle's trigger, and both used to be one: the map
+   * closing handed the rifle a held trigger, which an automatic fires. So a trigger held through a
+   * suspension stays dead until it is let go — the same rule in both runtimes, because both step
+   * this class.
+   */
+  private triggerHeldOff = false;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  /**
    * `sourceId` and `muzzleStyle` are M3's additions and they are the only two things that
    * differ between the player's weapon and a bot's. Everything else — recoil, spread,
    * sprint-to-fire, reloads, falloff, penetration — is shared, which is the point: a bot
@@ -221,7 +247,10 @@ export class WeaponSystem {
     this.request.sourceId = sourceId;
     this.idleInput.lowering = true;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** The weapon actually in the player's hands. */
   get weapon(): Weapon {
     return this.inventory.active;
@@ -236,7 +265,6 @@ export class WeaponSystem {
     this.inventory.retuneSlot(this.inventory.activeSlotIndex, def);
   }
 
-  /** Put a different weapon in a slot: 0 primary, 1 secondary. */
   /**
    * Hold a killstreak weapon, or give the body back its loadout. Asked every tick by whichever
    * runtime owns this weapon system — see `Inventory.holdStreakWeapon` and `CarriedWeaponStreak`.
@@ -250,6 +278,7 @@ export class WeaponSystem {
     return this.inventory.streakWeaponHeld;
   }
 
+  /** Put a different weapon in a slot: 0 primary, 1 secondary. */
   equip(slotIndex: number, def: WeaponDef): void {
     this.inventory.setSlot(slotIndex, def);
     this.recoil.reset();
@@ -342,44 +371,6 @@ export class WeaponSystem {
   }
 
   /** One simulation tick. */
-  /**
-   * Set true while something else owns the player's hands (a grenade, the knife).
-   *
-   * Written from `handsOffWeapon` before `step` runs — by `ClientMatch` for the local player and
-   * by `NetPlayer` for every connected one — so there is one answer to "is the weapon available"
-   * and the viewmodel reads the same flag.
-   */
-  fireBlocked = false;
-
-  /**
-   * Set true while the player is not with this weapon at all (post-M8).
-   *
-   * `fireBlocked` says "the hands are busy" — the weapon is still in them, it simply cannot
-   * be fired this instant. This says something stronger: the player is flying a Chopper
-   * Gunner, or has the mortar's targeting map up (2026-09-28, `Btn.Targeting`), so the trigger,
-   * the sights and the reload key all belong to something else and none of them should reach
-   * the rifle.
-   *
-   * It is a separate flag rather than a wider `fireBlocked` because the two have different
-   * answers for ADS. A grenade cook leaves the sights available; a camera takeover must
-   * not, or the ADS button silently aims a weapon a kilometre away and the scope overlay
-   * takes the crosshair off the gunship's screen.
-   */
-  suspended = false;
-
-  /**
-   * The fire button went down while the weapon was suspended and has not come up since
-   * (2026-09-28).
-   *
-   * The click that confirms a mortar mark closes the map on its first tick and is still held on
-   * the next few, and the trigger that was firing a gunship's cannon is still held on the tick the
-   * gunship comes down. Neither is a pull of the rifle's trigger, and both used to be one: the map
-   * closing handed the rifle a held trigger, which an automatic fires. So a trigger held through a
-   * suspension stays dead until it is let go — the same rule in both runtimes, because both step
-   * this class.
-   */
-  private triggerHeldOff = false;
-
   step(cmd: InputCommand, sim: PlayerSim): void {
     copySnapshot(this.curr, this.prev);
 
@@ -387,45 +378,9 @@ export class WeaponSystem {
     const prevButtons = this.prevButtons;
     this.prevButtons = buttons;
 
-    /**
-     * The swap machine runs first so the weapon that steps below is the right one.
-     *
-     * **A carried killstreak weapon cannot be put away while it can still fire.** It is not in
-     * the loadout and the keys that reach the loadout must not reach it: a player who could swap
-     * to their rifle would be holding a streak in a slot they can come back to, and the thirty
-     * seconds it is priced at would become thirty seconds of *their choosing*. Once the belt is
-     * spent that argument is over — see `Inventory.streakWeaponSpent`.
-     */
-    if (!this.inventory.streakWeaponHeld || this.inventory.streakWeaponSpent) {
-      if (justPressed(buttons, prevButtons, Btn.SwapWeapon)) this.inventory.requestToggle();
-      if (justPressed(buttons, prevButtons, Btn.Slot1)) this.inventory.requestSwap(0);
-      if (justPressed(buttons, prevButtons, Btn.Slot2)) this.inventory.requestSwap(1);
-    }
+    this.readSwapKeys(buttons, prevButtons);
     const swapLower = this.inventory.step();
-
-    const wi = this.input;
-    if (!isDown(buttons, Btn.Fire)) this.triggerHeldOff = false;
-    else if (this.suspended) this.triggerHeldOff = true;
-    // `fireBlocked` is set by whatever currently owns the hands — a grenade or the knife.
-    // Applied to the *input* rather than to the weapon, so a blocked trigger behaves exactly
-    // like a trigger nobody pulled: no dry-fire click, no auto reload, and releasing during the
-    // block does not queue a shot for when it lifts.
-    const blocked = this.fireBlocked || this.suspended || this.triggerHeldOff;
-    wi.fireHeld = !blocked && isDown(buttons, Btn.Fire);
-    wi.firePressed = !blocked && justPressed(buttons, prevButtons, Btn.Fire);
-    // `suspended` takes the sights too, which `fireBlocked` deliberately does not. See the
-    // field comment: this is the difference between busy hands and an absent player.
-    wi.adsHeld = !this.suspended && isDown(buttons, Btn.Ads);
-    wi.reloadPressed = !this.suspended && justPressed(buttons, prevButtons, Btn.Reload);
-    // A magazine change needs both hands, and a sprint, a slide and a vault each have them
-    // (2026-09-25, the human). Read off the same `sim` the stance machine owns, so the weapon
-    // and the body cannot disagree about what the player is doing — and so a bot, which comes
-    // through this same call, obeys it too.
-    wi.reloadBlocked = sim.sprintActive || sim.tacSprintActive || sim.slideActive || sim.mantleActive;
-    // Anything that puts the weapon out of the fight lowers it. A slide no longer does:
-    // M4 playtesting called firing mid-slide missing, and it is — the cost is now a spread
-    // penalty in `SpreadContext` rather than a weapon you cannot use.
-    wi.lowering = sim.sprintActive || sim.tacSprintActive || sim.mantleActive || swapLower || this.suspended;
+    const wi = this.writeWeaponInput(buttons, prevButtons, sim, swapLower);
 
     const weapon = this.inventory.active;
     const def = weapon.definition;
@@ -443,11 +398,7 @@ export class WeaponSystem {
     // running total across a whole match.
     if (!wi.fireHeld || weapon.reloadFinishedThisTick) this.recoil.resetPattern();
 
-    this.spreadCtx.moveFraction = clamp01(sim.speed / Math.max(this.walkSpeed, 0.1));
-    this.spreadCtx.adsFraction = weapon.adsFraction;
-    this.spreadCtx.crouched = sim.stance === 'CROUCH';
-    this.spreadCtx.airborne = !sim.grounded || sim.slideActive;
-    this.spreadDeg = this.recoil.spreadDegrees(def, this.spreadCtx);
+    this.updateSpread(def, sim, weapon.adsFraction);
 
     while (weapon.pendingShots > 0) {
       if (!weapon.consumeShot()) break;
@@ -482,22 +433,33 @@ export class WeaponSystem {
    * **No penetration.** The segment test is a plain line of sight: fire stops at the wall.
    */
   private fireFlame(cmd: InputCommand, sim: PlayerSim, def: WeaponDef): void {
-    const flame = def.flame;
-    if (flame === undefined) return;
+    if (def.flame === undefined) return;
+    this.aimFlameJet(cmd, sim);
+    this.beginFlameShot(def);
+    this.burnBodiesInCone(def);
+    this.emitFlameFired(cmd, sim, def);
+  }
 
-    // The aim as the player is holding it. A jet has no spread sample and no per-pellet
-    // rotation — where it points is where they are pointing, which is what makes it readable.
+  /**
+   * Where the jet is pointing and where it leaves from, into `flameJet`.
+   *
+   * The aim as the player is holding it. A jet has no spread sample and no per-pellet
+   * rotation — where it points is where they are pointing, which is what makes it readable.
+   */
+  private aimFlameJet(cmd: InputCommand, sim: PlayerSim): void {
     const yaw = cmd.yaw + this.recoil.aimYaw * DEG2RAD;
     const pitch = cmd.pitch + this.recoil.aimPitch * DEG2RAD;
     const cp = simCos(pitch);
-    const dx = -simSin(yaw) * cp;
-    const dy = simSin(pitch);
-    const dz = -simCos(yaw) * cp;
+    flameJet.dx = -simSin(yaw) * cp;
+    flameJet.dy = simSin(pitch);
+    flameJet.dz = -simCos(yaw) * cp;
+    flameJet.eyeX = sim.x;
+    flameJet.eyeY = sim.y + sim.eyeHeight;
+    flameJet.eyeZ = sim.z;
+  }
 
-    const eyeX = sim.x;
-    const eyeY = sim.y + sim.eyeHeight;
-    const eyeZ = sim.z;
-
+  /** The fixed half of the damage request, and a cleared pellet report for one tick of fuel. */
+  private beginFlameShot(def: WeaponDef): void {
     this.request.weapon = def;
     this.request.zone = 'torso';
     this.request.upperTorso = false;
@@ -505,9 +467,9 @@ export class WeaponSystem {
     this.request.penetrationRetain = 1;
     // The jet leaves the eye and travels; a shield between the two is in its way. See
     // `DamageRequest.originX`.
-    this.request.originX = eyeX;
-    this.request.originY = eyeY;
-    this.request.originZ = eyeZ;
+    this.request.originX = flameJet.eyeX;
+    this.request.originY = flameJet.eyeY;
+    this.request.originZ = flameJet.eyeZ;
 
     const report = this.lastPellets;
     report.count = 1;
@@ -515,6 +477,24 @@ export class WeaponSystem {
     report.damage = 0;
     report.zones[0] = 'torso';
     report.targets[0] = -1;
+  }
+
+  /**
+   * Every body in the cone with a clear line to it, through the same damage door a rifle uses.
+   *
+   * That door is the point: a flamethrower cannot burn a teammate for the same reason a rifle
+   * cannot shoot one, rather than for a new reason written here.
+   */
+  private burnBodiesInCone(def: WeaponDef): void {
+    const flame = def.flame;
+    if (flame === undefined) return;
+    const dx = flameJet.dx;
+    const dy = flameJet.dy;
+    const dz = flameJet.dz;
+    const eyeX = flameJet.eyeX;
+    const eyeY = flameJet.eyeY;
+    const eyeZ = flameJet.eyeZ;
+    const report = this.lastPellets;
 
     for (const target of this.damage.list) {
       if (target.entityId === this.sourceId) continue;
@@ -538,15 +518,30 @@ export class WeaponSystem {
       report.damage += dealt;
       report.targets[0] = target.entityId;
     }
+  }
 
-    // The feedback layer wants a muzzle and a sound per tick of fuel, and the tip of the jet is
-    // what a tracer would have ended at. `BurnSystem` is not told anything here: it listens for
-    // the damage this just dealt, which is the only signal that a body was actually in the fire.
-    //
-    // The tip is the jet's reach or the first wall on the aim, whichever is nearer (2026-09-28).
-    // It is what the flame effect is drawn to, on this machine and — because the end point is
-    // what the wire carries — on every other one, so a jet held on a wall spreads on the wall
-    // rather than drawing through it. Damage is unchanged: it never reached past a wall anyway.
+  /**
+   * One muzzle and one sound per tick of fuel, ending where a tracer would have.
+   *
+   * `BurnSystem` is not told anything here: it listens for the damage this just dealt, which is
+   * the only signal that a body was actually in the fire.
+   *
+   * The tip is the jet's reach or the first wall on the aim, whichever is nearer (2026-09-28).
+   * It is what the flame effect is drawn to, on this machine and — because the end point is
+   * what the wire carries — on every other one, so a jet held on a wall spreads on the wall
+   * rather than drawing through it. Damage is unchanged: it never reached past a wall anyway.
+   */
+  private emitFlameFired(cmd: InputCommand, sim: PlayerSim, def: WeaponDef): void {
+    const flame = def.flame;
+    if (flame === undefined) return;
+    const dx = flameJet.dx;
+    const dy = flameJet.dy;
+    const dz = flameJet.dz;
+    const eyeX = flameJet.eyeX;
+    const eyeY = flameJet.eyeY;
+    const eyeZ = flameJet.eyeZ;
+    const report = this.lastPellets;
+
     const reach = this.world.raycast(eyeX, eyeY, eyeZ, dx, dy, dz, flame.rangeM, this.flameRay)
       ? this.flameRay.t
       : flame.rangeM;
@@ -589,8 +584,74 @@ export class WeaponSystem {
     out.reloadFraction = lerp(a.reloadFraction, b.reloadFraction, alpha);
     out.swapFraction = lerp(a.swapFraction, b.swapFraction, alpha);
   }
+  //#endregion
 
-  // -- internals -------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * The swap machine's keys, read before anything else steps so the weapon that steps below is
+   * the right one.
+   *
+   * **A carried killstreak weapon cannot be put away while it can still fire.** It is not in
+   * the loadout and the keys that reach the loadout must not reach it: a player who could swap
+   * to their rifle would be holding a streak in a slot they can come back to, and the thirty
+   * seconds it is priced at would become thirty seconds of *their choosing*. Once the belt is
+   * spent that argument is over — see `Inventory.streakWeaponSpent`.
+   */
+  private readSwapKeys(buttons: number, prevButtons: number): void {
+    if (this.inventory.streakWeaponHeld && !this.inventory.streakWeaponSpent) return;
+    if (justPressed(buttons, prevButtons, Btn.SwapWeapon)) this.inventory.requestToggle();
+    if (justPressed(buttons, prevButtons, Btn.Slot1)) this.inventory.requestSwap(0);
+    if (justPressed(buttons, prevButtons, Btn.Slot2)) this.inventory.requestSwap(1);
+  }
+
+  /**
+   * This tick's `WeaponInput`, which is where every "may the player do this" rule is applied.
+   *
+   * Applied to the *input* rather than to the weapon, so a blocked trigger behaves exactly
+   * like a trigger nobody pulled: no dry-fire click, no auto reload, and releasing during the
+   * block does not queue a shot for when it lifts.
+   */
+  private writeWeaponInput(
+    buttons: number,
+    prevButtons: number,
+    sim: PlayerSim,
+    swapLower: boolean,
+  ): WeaponInput {
+    const wi = this.input;
+    if (!isDown(buttons, Btn.Fire)) this.triggerHeldOff = false;
+    else if (this.suspended) this.triggerHeldOff = true;
+    // `fireBlocked` is set by whatever currently owns the hands — a grenade or the knife.
+    const blocked = this.fireBlocked || this.suspended || this.triggerHeldOff;
+    wi.fireHeld = !blocked && isDown(buttons, Btn.Fire);
+    wi.firePressed = !blocked && justPressed(buttons, prevButtons, Btn.Fire);
+    // `suspended` takes the sights too, which `fireBlocked` deliberately does not. See the
+    // field comment: this is the difference between busy hands and an absent player.
+    wi.adsHeld = !this.suspended && isDown(buttons, Btn.Ads);
+    wi.reloadPressed = !this.suspended && justPressed(buttons, prevButtons, Btn.Reload);
+    // A magazine change needs both hands, and a sprint, a slide and a vault each have them
+    // (2026-09-25, the human). Read off the same `sim` the stance machine owns, so the weapon
+    // and the body cannot disagree about what the player is doing — and so a bot, which comes
+    // through this same call, obeys it too.
+    wi.reloadBlocked = sim.sprintActive || sim.tacSprintActive || sim.slideActive || sim.mantleActive;
+    // Anything that puts the weapon out of the fight lowers it. A slide no longer does:
+    // M4 playtesting called firing mid-slide missing, and it is — the cost is now a spread
+    // penalty in `SpreadContext` rather than a weapon you cannot use.
+    wi.lowering = sim.sprintActive || sim.tacSprintActive || sim.mantleActive || swapLower || this.suspended;
+    return wi;
+  }
+
+  /**
+   * The cone every pellet of this tick's shots will share, from the body's state and the
+   * sight picture. Computed before the shots so one trigger pull cannot straddle two cones.
+   */
+  private updateSpread(def: WeaponDef, sim: PlayerSim, adsFraction: number): void {
+    this.spreadCtx.moveFraction = clamp01(sim.speed / Math.max(this.walkSpeed, 0.1));
+    this.spreadCtx.adsFraction = adsFraction;
+    this.spreadCtx.crouched = sim.stance === 'CROUCH';
+    this.spreadCtx.airborne = !sim.grounded || sim.slideActive;
+    this.spreadDeg = this.recoil.spreadDegrees(def, this.spreadCtx);
+  }
 
   private fireOne(cmd: InputCommand, sim: PlayerSim, def: WeaponDef): void {
     // A jet is not a ray, and nothing below it applies: no spread sample, no pellet loop, no
@@ -623,6 +684,36 @@ export class WeaponSystem {
     const pitch = cmd.pitch + (recoil.aimPitch + this.scope.swayPitch) * DEG2RAD;
     recoil.sampleAim(yaw, pitch, this.spreadDeg, this.rng, this.aim);
 
+    const pellets = this.firePellets(def, yaw, pitch, sim);
+    this.takeRecoilResidual(def, ads);
+    const tracer = this.advanceTracer(def);
+
+    const muzzle = this.muzzleWorld(cmd, sim);
+    evFired.weaponId = def.id;
+    evFired.sourceId = this.sourceId;
+    evFired.x = muzzle.x;
+    evFired.y = muzzle.y;
+    evFired.z = muzzle.z;
+    evFired.shotIndex = shotIndex;
+    evFired.spreadDeg = this.spreadDeg;
+    evFired.tracer = tracer;
+    evFired.hitTarget = this.lastPellets.hits > 0;
+    evFired.ammoInMag = this.inventory.active.mag;
+    evFired.pellets = pellets;
+    evFired.pelletsHit = this.lastPellets.hits;
+    evFired.minimapPing = def.minimapPing;
+    this.bus.emit(EV.WeaponFired, evFired);
+  }
+
+  /**
+   * Trace every pellet of one trigger pull, into `lastPellets` and the first pellet's terminus
+   * into the event. Returns how many went out.
+   *
+   * Pellet 0 is the aim sample itself; the rest are laid out around it. The whole pattern is
+   * rotated per pull so two shots are never identical, and the rotation is drawn here so it
+   * stays exactly one draw after the aim sample's in the per-shot stream.
+   */
+  private firePellets(def: WeaponDef, yaw: number, pitch: number, sim: PlayerSim): number {
     // Rounds leave the eye, not the barrel: a shot that originated at the viewmodel's
     // muzzle would clip walls the player can plainly see past.
     const eyeX = sim.x;
@@ -638,10 +729,7 @@ export class WeaponSystem {
     report.hits = 0;
     report.damage = 0;
 
-    // Pellet 0 is the aim sample itself; the rest are laid out around it. The whole
-    // pattern is rotated per pull so two shots are never identical.
     const rotation = this.rng.float() * TAU;
-    let anyHit = false;
     for (let i = 0; i < pellets; i++) {
       let dx = this.aim.dx;
       let dy = this.aim.dy;
@@ -663,7 +751,6 @@ export class WeaponSystem {
       this.ballistics.fire(eyeX, eyeY, eyeZ, dx, dy, dz, def, this.request, this.trace);
 
       if (this.trace.hitTarget) {
-        anyHit = true;
         report.hits++;
         report.damage += this.trace.damage;
         report.zones[i] = this.trace.zone;
@@ -686,34 +773,31 @@ export class WeaponSystem {
         evFired.dz = dz;
       }
     }
+    return pellets;
+  }
 
+  /**
+   * Kick the weapon, and move the unrecovered part of it onto this system's own residual —
+   * which is the one output that is not an event, because permanent aim change is the same
+   * quantity mouse movement produces and belongs in the same place (S6.2).
+   */
+  private takeRecoilResidual(def: WeaponDef, ads: number): void {
+    const recoil = this.recoil;
     recoil.onShot(def, ads);
     this.residualYaw += recoil.residualYaw;
     this.residualPitch += recoil.residualPitch;
     recoil.residualYaw = 0;
     recoil.residualPitch = 0;
+  }
 
-    // Roughly one round in three draws a tracer (S6.5), counted rather than diced so the
-    // spacing is even instead of clumping.
+  /**
+   * Whether this round draws a tracer. Roughly one in three (S6.5), counted rather than diced
+   * so the spacing is even instead of clumping.
+   */
+  private advanceTracer(def: WeaponDef): boolean {
     this.tracerCounter++;
     const every = def.tracerFraction <= 0 ? 0 : Math.max(1, Math.round(1 / def.tracerFraction));
-    const tracer = every > 0 && this.tracerCounter % every === 0;
-
-    const muzzle = this.muzzleWorld(cmd, sim);
-    evFired.weaponId = def.id;
-    evFired.sourceId = this.sourceId;
-    evFired.x = muzzle.x;
-    evFired.y = muzzle.y;
-    evFired.z = muzzle.z;
-    evFired.shotIndex = shotIndex;
-    evFired.spreadDeg = this.spreadDeg;
-    evFired.tracer = tracer;
-    evFired.hitTarget = anyHit;
-    evFired.ammoInMag = this.inventory.active.mag;
-    evFired.pellets = pellets;
-    evFired.pelletsHit = report.hits;
-    evFired.minimapPing = def.minimapPing;
-    this.bus.emit(EV.WeaponFired, evFired);
+    return every > 0 && this.tracerCounter % every === 0;
   }
 
   /**
@@ -766,9 +850,52 @@ export class WeaponSystem {
     out.reloadFraction = weapon.reloadFraction;
     out.swapFraction = this.inventory.swapping ? 0 : 1;
   }
+  //#endregion
 }
+//#endregion
 
-const muzzleOut = { x: 0, y: 0, z: 0 };
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/**
+ * Whether the hands are on something other than the gun this tick — what `fireBlocked` is set
+ * from, in both runtimes (2026-09-28).
+ *
+ * A grenade drawn, cooking or being thrown (`throwBusy`), a knife mid-swing (`meleeBusy`), and the
+ * two presses that *start* one of those: the equipment keys held, and the knife's rising edge.
+ * The presses are in the test because the thrower and the knife are stepped *after* the weapon,
+ * so on the first tick of either the busy flag is still last tick's answer — exactly how one round
+ * used to escape at the start of every cook.
+ *
+ * It lived inline in `ClientMatch`, which is why it only ever held in a solo match: the server
+ * stepped every connected human's rifle with nothing set, so a player cooking a grenade with the
+ * fire button — the button that pulls the pin — was also emptying a hidden rifle at whatever they
+ * were looking at, on the machine whose hits count. One function now, called by both.
+ */
+export function handsOffWeapon(buttons: number, prevButtons: number, throwBusy: boolean, meleeBusy: boolean): boolean {
+  return (
+    throwBusy ||
+    meleeBusy ||
+    isDown(buttons, Btn.Lethal) ||
+    isDown(buttons, Btn.Tactical) ||
+    justPressed(buttons, prevButtons, Btn.Melee)
+  );
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function makeSnapshot(): WeaponSnapshot {
+  return {
+    raise: 1,
+    adsFraction: 0,
+    visualPunch: 0,
+    visualLateral: 0,
+    aimPitch: 0,
+    aimYaw: 0,
+    reloadFraction: 0,
+    swapFraction: 1,
+  };
+}
 
 function copySnapshot(src: WeaponSnapshot, dst: WeaponSnapshot): void {
   dst.raise = src.raise;
@@ -780,3 +907,4 @@ function copySnapshot(src: WeaponSnapshot, dst: WeaponSnapshot): void {
   dst.reloadFraction = src.reloadFraction;
   dst.swapFraction = src.swapFraction;
 }
+//#endregion

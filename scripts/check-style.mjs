@@ -158,6 +158,16 @@ const FINISHED = {
     'src/shared/player/Slide.ts',
     'src/shared/player/Stance.ts',
   ],
+  A7: [
+    'src/shared/weapons/AnyWeapon.ts',
+    'src/shared/weapons/Ballistics.ts',
+    'src/shared/weapons/FlameCone.ts',
+    'src/shared/weapons/Melee.ts',
+    'src/shared/weapons/Recoil.ts',
+    'src/shared/weapons/Scope.ts',
+    'src/shared/weapons/WeaponBase.ts',
+    'src/shared/weapons/WeaponSystem.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

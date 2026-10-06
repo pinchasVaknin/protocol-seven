@@ -1,5 +1,7 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { ColliderSet } from './ColliderSet';
-
+//#endregion
 /**
  * Primitive tests against a single oriented box from a ColliderSet.
  *
@@ -12,8 +14,8 @@ import type { ColliderSet } from './ColliderSet';
  * Nothing here allocates. Results are written into caller-owned records.
  */
 
-const EPS = 1e-6;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface Contact {
   /** Penetration depth along `n`, metres. Positive when touching. */
   depth: number;
@@ -29,16 +31,56 @@ export interface Contact {
   index: number;
 }
 
-export function makeContact(): Contact {
-  return { depth: 0, nx: 0, ny: 0, nz: 0, px: 0, py: 0, pz: 0, index: -1 };
-}
-
 export interface RayHit {
   t: number;
   nx: number;
   ny: number;
   nz: number;
   index: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const EPS = 1e-6;
+
+/**
+ * The ray in the box's local frame, plus the basis it was transformed with.
+ *
+ * Module-level rather than returned, for the reason every scratch in this file is: these run per
+ * collider per raycast and must not allocate. The basis is kept as well as the local ray because
+ * `rayBox` needs it again to turn its face normal back into world space — so the nine reads
+ * happen once per call here instead of once per call in each of the two primitives.
+ */
+let localOx = 0;
+let localOy = 0;
+let localOz = 0;
+let localDx = 0;
+let localDy = 0;
+let localDz = 0;
+let basis0 = 0;
+let basis1 = 0;
+let basis2 = 0;
+let basis3 = 0;
+let basis4 = 0;
+let basis5 = 0;
+let basis6 = 0;
+let basis7 = 0;
+let basis8 = 0;
+
+let entryMin = 0;
+let entryMax = 0;
+let entryAxis = 0;
+let entrySign = 0;
+
+let exitMin = 0;
+let exitMax = 0;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeContact(): Contact {
+  return { depth: 0, nx: 0, ny: 0, nz: 0, px: 0, py: 0, pz: 0, index: -1 };
 }
 
 export function makeRayHit(): RayHit {
@@ -233,132 +275,28 @@ export function rayBox(
   maxT: number,
   out: RayHit,
 ): boolean {
-  const cx = set.centerX(i);
-  const cy = set.centerY(i);
-  const cz = set.centerZ(i);
-  const aligned = set.isAxisAligned(i);
+  const aligned = toBoxLocalRay(set, i, ox, oy, oz, dx, dy, dz);
+  const lox = localOx;
+  const loy = localOy;
+  const loz = localOz;
+  const ldx = localDx;
+  const ldy = localDy;
+  const ldz = localDz;
 
-  const b0 = set.basisAt(i, 0);
-  const b1 = set.basisAt(i, 1);
-  const b2 = set.basisAt(i, 2);
-  const b3 = set.basisAt(i, 3);
-  const b4 = set.basisAt(i, 4);
-  const b5 = set.basisAt(i, 5);
-  const b6 = set.basisAt(i, 6);
-  const b7 = set.basisAt(i, 7);
-  const b8 = set.basisAt(i, 8);
+  // Unrolled per axis over module-level state, the same way `rayBoxExit` does it below: this
+  // runs per collider per raycast and must not allocate.
+  entryMin = 0;
+  entryMax = maxT;
+  entryAxis = 0;
+  entrySign = 0;
+  if (!entrySlab(lox, ldx, set.halfX(i), 0)) return false;
+  if (!entrySlab(loy, ldy, set.halfY(i), 1)) return false;
+  if (!entrySlab(loz, ldz, set.halfZ(i), 2)) return false;
 
-  const rx = ox - cx;
-  const ry = oy - cy;
-  const rz = oz - cz;
-
-  let lox: number;
-  let loy: number;
-  let loz: number;
-  let ldx: number;
-  let ldy: number;
-  let ldz: number;
-  if (aligned) {
-    lox = rx;
-    loy = ry;
-    loz = rz;
-    ldx = dx;
-    ldy = dy;
-    ldz = dz;
-  } else {
-    lox = rx * b0 + ry * b1 + rz * b2;
-    loy = rx * b3 + ry * b4 + rz * b5;
-    loz = rx * b6 + ry * b7 + rz * b8;
-    ldx = dx * b0 + dy * b1 + dz * b2;
-    ldy = dx * b3 + dy * b4 + dz * b5;
-    ldz = dx * b6 + dy * b7 + dz * b8;
-  }
-
-  let tmin = 0;
-  let tmax = maxT;
-  let axis = 0;
-  let axisSign = 0;
-
-  // X slab
-  {
-    const h = set.halfX(i);
-    if (Math.abs(ldx) < EPS) {
-      if (lox < -h || lox > h) return false;
-    } else {
-      const inv = 1 / ldx;
-      let t1 = (-h - lox) * inv;
-      let t2 = (h - lox) * inv;
-      let s = -1;
-      if (t1 > t2) {
-        const tmp = t1;
-        t1 = t2;
-        t2 = tmp;
-        s = 1;
-      }
-      if (t1 > tmin) {
-        tmin = t1;
-        axis = 0;
-        axisSign = s;
-      }
-      if (t2 < tmax) tmax = t2;
-      if (tmin > tmax) return false;
-    }
-  }
-  // Y slab
-  {
-    const h = set.halfY(i);
-    if (Math.abs(ldy) < EPS) {
-      if (loy < -h || loy > h) return false;
-    } else {
-      const inv = 1 / ldy;
-      let t1 = (-h - loy) * inv;
-      let t2 = (h - loy) * inv;
-      let s = -1;
-      if (t1 > t2) {
-        const tmp = t1;
-        t1 = t2;
-        t2 = tmp;
-        s = 1;
-      }
-      if (t1 > tmin) {
-        tmin = t1;
-        axis = 1;
-        axisSign = s;
-      }
-      if (t2 < tmax) tmax = t2;
-      if (tmin > tmax) return false;
-    }
-  }
-  // Z slab
-  {
-    const h = set.halfZ(i);
-    if (Math.abs(ldz) < EPS) {
-      if (loz < -h || loz > h) return false;
-    } else {
-      const inv = 1 / ldz;
-      let t1 = (-h - loz) * inv;
-      let t2 = (h - loz) * inv;
-      let s = -1;
-      if (t1 > t2) {
-        const tmp = t1;
-        t1 = t2;
-        t2 = tmp;
-        s = 1;
-      }
-      if (t1 > tmin) {
-        tmin = t1;
-        axis = 2;
-        axisSign = s;
-      }
-      if (t2 < tmax) tmax = t2;
-      if (tmin > tmax) return false;
-    }
-  }
-
-  out.t = tmin;
+  out.t = entryMin;
   out.index = i;
 
-  if (axisSign === 0) {
+  if (entrySign === 0) {
     // Origin was already inside the box: report a normal facing the ray source.
     out.nx = -dx;
     out.ny = -dy;
@@ -366,17 +304,17 @@ export function rayBox(
     return true;
   }
 
-  const nlx = axis === 0 ? axisSign : 0;
-  const nly = axis === 1 ? axisSign : 0;
-  const nlz = axis === 2 ? axisSign : 0;
+  const nlx = entryAxis === 0 ? entrySign : 0;
+  const nly = entryAxis === 1 ? entrySign : 0;
+  const nlz = entryAxis === 2 ? entrySign : 0;
   if (aligned) {
     out.nx = nlx;
     out.ny = nly;
     out.nz = nlz;
   } else {
-    out.nx = nlx * b0 + nly * b3 + nlz * b6;
-    out.ny = nlx * b1 + nly * b4 + nlz * b7;
-    out.nz = nlx * b2 + nly * b5 + nlz * b8;
+    out.nx = nlx * basis0 + nly * basis3 + nlz * basis6;
+    out.ny = nlx * basis1 + nly * basis4 + nlz * basis7;
+    out.nz = nlx * basis2 + nly * basis5 + nlz * basis8;
   }
   return true;
 }
@@ -400,45 +338,13 @@ export function rayBoxExit(
   dy: number,
   dz: number,
 ): number {
-  const cx = set.centerX(i);
-  const cy = set.centerY(i);
-  const cz = set.centerZ(i);
-  const aligned = set.isAxisAligned(i);
-
-  const rx = ox - cx;
-  const ry = oy - cy;
-  const rz = oz - cz;
-
-  let lox: number;
-  let loy: number;
-  let loz: number;
-  let ldx: number;
-  let ldy: number;
-  let ldz: number;
-  if (aligned) {
-    lox = rx;
-    loy = ry;
-    loz = rz;
-    ldx = dx;
-    ldy = dy;
-    ldz = dz;
-  } else {
-    const b0 = set.basisAt(i, 0);
-    const b1 = set.basisAt(i, 1);
-    const b2 = set.basisAt(i, 2);
-    const b3 = set.basisAt(i, 3);
-    const b4 = set.basisAt(i, 4);
-    const b5 = set.basisAt(i, 5);
-    const b6 = set.basisAt(i, 6);
-    const b7 = set.basisAt(i, 7);
-    const b8 = set.basisAt(i, 8);
-    lox = rx * b0 + ry * b1 + rz * b2;
-    loy = rx * b3 + ry * b4 + rz * b5;
-    loz = rx * b6 + ry * b7 + rz * b8;
-    ldx = dx * b0 + dy * b1 + dz * b2;
-    ldy = dx * b3 + dy * b4 + dz * b5;
-    ldz = dx * b6 + dy * b7 + dz * b8;
-  }
+  toBoxLocalRay(set, i, ox, oy, oz, dx, dy, dz);
+  const lox = localOx;
+  const loy = localOy;
+  const loz = localOz;
+  const ldx = localDx;
+  const ldy = localDy;
+  const ldz = localDz;
 
   // Unrolled per axis rather than looped over a scratch array: this runs once per
   // penetrated surface per shot and must not allocate.
@@ -449,9 +355,91 @@ export function rayBoxExit(
   if (!exitSlab(loz, ldz, set.halfZ(i))) return -1;
   return exitMax;
 }
+//#endregion
 
-let exitMin = 0;
-let exitMax = 0;
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Rigid-transform a ray into collider `i`'s local frame, where the box is axis aligned and
+ * centred on the origin. Returns whether the box was already axis aligned, which both callers
+ * need afterwards.
+ *
+ * The origin is a point, so the centre comes off it first; the direction is a vector, so it is
+ * only rotated. This was written out in full in both `rayBox` and `rayBoxExit`, and the two
+ * copies were the whole of why each was over the line limit.
+ */
+function toBoxLocalRay(
+  set: ColliderSet,
+  i: number,
+  ox: number,
+  oy: number,
+  oz: number,
+  dx: number,
+  dy: number,
+  dz: number,
+): boolean {
+  const rx = ox - set.centerX(i);
+  const ry = oy - set.centerY(i);
+  const rz = oz - set.centerZ(i);
+
+  basis0 = set.basisAt(i, 0);
+  basis1 = set.basisAt(i, 1);
+  basis2 = set.basisAt(i, 2);
+  basis3 = set.basisAt(i, 3);
+  basis4 = set.basisAt(i, 4);
+  basis5 = set.basisAt(i, 5);
+  basis6 = set.basisAt(i, 6);
+  basis7 = set.basisAt(i, 7);
+  basis8 = set.basisAt(i, 8);
+
+  if (set.isAxisAligned(i)) {
+    localOx = rx;
+    localOy = ry;
+    localOz = rz;
+    localDx = dx;
+    localDy = dy;
+    localDz = dz;
+    return true;
+  }
+  localOx = rx * basis0 + ry * basis1 + rz * basis2;
+  localOy = rx * basis3 + ry * basis4 + rz * basis5;
+  localOz = rx * basis6 + ry * basis7 + rz * basis8;
+  localDx = dx * basis0 + dy * basis1 + dz * basis2;
+  localDy = dx * basis3 + dy * basis4 + dz * basis5;
+  localDz = dx * basis6 + dy * basis7 + dz * basis8;
+  return false;
+}
+
+/**
+ * One slab of `rayBox`: narrows `entryMin`/`entryMax` and remembers which face the near
+ * intersection came from. False once the interval has closed and the ray has missed.
+ *
+ * The same test as `exitSlab` below, with the entry face tracked as well — a hit needs to know
+ * which way its normal points and an exit distance does not. It was written out three times,
+ * once per axis, and the stated reason was allocation; module-level state and a module-level
+ * function allocate nothing, which is the argument `exitSlab` already makes for itself. Three
+ * copies of a slab test is three places for an epsilon to drift apart.
+ */
+function entrySlab(o: number, d: number, h: number, axis: number): boolean {
+  if (Math.abs(d) < EPS) return o >= -h && o <= h;
+  const inv = 1 / d;
+  let t1 = (-h - o) * inv;
+  let t2 = (h - o) * inv;
+  let s = -1;
+  if (t1 > t2) {
+    const tmp = t1;
+    t1 = t2;
+    t2 = tmp;
+    s = 1;
+  }
+  if (t1 > entryMin) {
+    entryMin = t1;
+    entryAxis = axis;
+    entrySign = s;
+  }
+  if (t2 < entryMax) entryMax = t2;
+  return entryMin <= entryMax;
+}
 
 function exitSlab(o: number, d: number, h: number): boolean {
   if (Math.abs(d) < EPS) return o >= -h && o <= h;
@@ -475,3 +463,4 @@ function clamp(v: number, lo: number, hi: number): number {
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
+//#endregion

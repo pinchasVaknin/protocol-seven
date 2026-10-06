@@ -130,6 +130,14 @@ const FINISHED = {
     'src/shared/world/maps/props.ts',
     'src/shared/world/maps/types.ts',
   ],
+  A4: [
+    'src/shared/world/ColliderSet.ts',
+    'src/shared/world/CollisionWorld.ts',
+    'src/shared/world/Geometry.ts',
+    'src/shared/world/MapLoader.ts',
+    'src/shared/world/Raycaster.ts',
+    'src/shared/world/SpatialHash.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

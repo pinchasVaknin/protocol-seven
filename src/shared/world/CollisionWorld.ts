@@ -1,10 +1,12 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { ColliderSet } from './ColliderSet';
 import { capsuleBoxPenetration, makeContact, type Contact, type RayHit } from './Geometry';
 import { Raycaster } from './Raycaster';
 import { SpatialHash } from './SpatialHash';
 import type { Box } from './maps/types';
 import { simCos } from '../core/SimMath';
-
+//#endregion
 /**
  * The one collision scheme (brief S4.3): swept capsule against static oriented boxes,
  * de-penetrated along the contact normal, at most 4 resolution iterations per tick,
@@ -18,12 +20,8 @@ import { simCos } from '../core/SimMath';
  * Every entry point here is allocation free.
  */
 
-const MAX_CONTACTS = 8;
-const MAX_SUBSTEPS = 16;
-const RESOLUTION_ITERATIONS = 4;
-const CANDIDATE_CAP = 512;
-const SUBSTEP_FRACTION = 0.4;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MoveOutput {
   x: number;
   y: number;
@@ -46,26 +44,6 @@ export interface MoveOutput {
   iterations: number;
 }
 
-export function makeMoveOutput(): MoveOutput {
-  return {
-    x: 0,
-    y: 0,
-    z: 0,
-    contactCount: 0,
-    normals: new Float32Array(MAX_CONTACTS * 3),
-    points: new Float32Array(MAX_CONTACTS * 3),
-    grounded: false,
-    groundNx: 0,
-    groundNy: 0,
-    groundNz: 0,
-    groundIndex: -1,
-    hitCeiling: false,
-    hitWall: false,
-    maxDepth: 0,
-    iterations: 0,
-  };
-}
-
 export interface GroundProbe {
   /** How far the capsule must drop to rest on the surface, metres. */
   distance: number;
@@ -74,47 +52,22 @@ export interface GroundProbe {
   nz: number;
   index: number;
 }
+//#endregion
 
-export function makeGroundProbe(): GroundProbe {
-  return { distance: 0, nx: 0, ny: 1, nz: 0, index: -1 };
-}
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const MAX_CONTACTS = 8;
+const MAX_SUBSTEPS = 16;
+const RESOLUTION_ITERATIONS = 4;
+const CANDIDATE_CAP = 512;
+const SUBSTEP_FRACTION = 0.4;
+//#endregion
 
+// ==================================== CLASS CollisionWorld ==================================== \\
+//#region Class CollisionWorld
 export class CollisionWorld {
-  readonly colliders: ColliderSet;
-  readonly hash: SpatialHash;
-
-  /** cos of the steepest walkable slope. Set from MovementConfig at load. */
-  private minGroundY = simCos((46 * Math.PI) / 180);
-  private skin = 0.005;
-
-  private readonly candidates = new Int32Array(CANDIDATE_CAP);
-  private readonly contact = makeContact();
-  private readonly best = makeContact();
-
-  /** Shares this world's collider set and hash — one structure, one scheme (S4.3). */
-  readonly raycaster: Raycaster;
-
-  /** Diagnostics for the debug overlay; reset by the caller each tick. */
-  broadphaseTests = 0;
-  narrowphaseTests = 0;
-
-  /**
-   * Build the hash from `bounds`, or adopt one that has already been built.
-   *
-   * The second form is what `CollisionWorld.sharing` uses; prefer that named factory at call
-   * sites, because "a `SpatialHash` where a `Box` normally goes" reads as a mistake.
-   */
-  constructor(colliders: ColliderSet, bounds: Box | SpatialHash, cellSize = 4) {
-    this.colliders = colliders;
-    if (bounds instanceof SpatialHash) {
-      this.hash = bounds;
-    } else {
-      this.hash = new SpatialHash(cellSize);
-      this.hash.build(colliders, bounds);
-    }
-    this.raycaster = new Raycaster(colliders, this.hash);
-  }
-
+  // ========================================== STATIC ========================================== \\
+  //#region Static
   /**
    * A second view over collider geometry that has **already been built** (M11, S4.19).
    *
@@ -136,7 +89,51 @@ export class CollisionWorld {
   static sharing(colliders: ColliderSet, hash: SpatialHash): CollisionWorld {
     return new CollisionWorld(colliders, hash);
   }
+  //#endregion
 
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
+  readonly colliders: ColliderSet;
+  readonly hash: SpatialHash;
+
+  /** cos of the steepest walkable slope. Set from MovementConfig at load. */
+  private minGroundY = simCos((46 * Math.PI) / 180);
+  private skin = 0.005;
+
+  private readonly candidates = new Int32Array(CANDIDATE_CAP);
+  private readonly contact = makeContact();
+  private readonly best = makeContact();
+
+  /** Shares this world's collider set and hash — one structure, one scheme (S4.3). */
+  readonly raycaster: Raycaster;
+
+  /** Diagnostics for the debug overlay; reset by the caller each tick. */
+  broadphaseTests = 0;
+  narrowphaseTests = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  /**
+   * Build the hash from `bounds`, or adopt one that has already been built.
+   *
+   * The second form is what `CollisionWorld.sharing` uses; prefer that named factory at call
+   * sites, because "a `SpatialHash` where a `Box` normally goes" reads as a mistake.
+   */
+  constructor(colliders: ColliderSet, bounds: Box | SpatialHash, cellSize = 4) {
+    this.colliders = colliders;
+    if (bounds instanceof SpatialHash) {
+      this.hash = bounds;
+    } else {
+      this.hash = new SpatialHash(cellSize);
+      this.hash.build(colliders, bounds);
+    }
+    this.raycaster = new Raycaster(colliders, this.hash);
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   configure(maxSlopeDeg: number, skin: number): void {
     this.minGroundY = simCos((maxSlopeDeg * Math.PI) / 180);
     this.skin = skin;
@@ -295,7 +292,10 @@ export class CollisionWorld {
   ): boolean {
     return this.raycaster.segmentClear(ax, ay, az, bx, by, bz, out);
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   // -- internals ----------------------------------------------------------
 
   private gatherCandidates(
@@ -438,9 +438,39 @@ export class CollisionWorld {
     out.points[i3 + 2] = c.pz;
     out.contactCount++;
   }
+  //#endregion
+}
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeMoveOutput(): MoveOutput {
+  return {
+    x: 0,
+    y: 0,
+    z: 0,
+    contactCount: 0,
+    normals: new Float32Array(MAX_CONTACTS * 3),
+    points: new Float32Array(MAX_CONTACTS * 3),
+    grounded: false,
+    groundNx: 0,
+    groundNy: 0,
+    groundNz: 0,
+    groundIndex: -1,
+    hitCeiling: false,
+    hitWall: false,
+    maxDepth: 0,
+    iterations: 0,
+  };
 }
 
+export function makeGroundProbe(): GroundProbe {
+  return { distance: 0, nx: 0, ny: 1, nz: 0, index: -1 };
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function copyContact(src: Contact, dst: Contact): void {
   dst.depth = src.depth;
   dst.nx = src.nx;
@@ -451,3 +481,4 @@ function copyContact(src: Contact, dst: Contact): void {
   dst.pz = src.pz;
   dst.index = src.index;
 }
+//#endregion

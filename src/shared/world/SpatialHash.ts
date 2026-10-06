@@ -1,6 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { ColliderSet } from './ColliderSet';
 import type { Box } from './maps/types';
+//#endregion
 
+// ===================================== CLASS SpatialHash ====================================== \\
+//#region Class SpatialHash
 /**
  * Uniform spatial hash over static geometry, 4 m cells (brief S4.3).
  *
@@ -13,6 +18,8 @@ import type { Box } from './maps/types';
  * into a caller-owned Int32Array and de-duplicated with a rolling stamp.
  */
 export class SpatialHash {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly cellSize: number;
 
   private originX = 0;
@@ -32,11 +39,17 @@ export class SpatialHash {
   recordQueriedCells = false;
   readonly queriedCells = new Int32Array(4096);
   queriedCellCount = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(cellSize = 4) {
     this.cellSize = cellSize;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get dimensions(): readonly [number, number, number] {
     return [this.dimX, this.dimY, this.dimZ];
   }
@@ -203,21 +216,39 @@ export class SpatialHash {
     const z0 = this.cellZOf(minZ);
     const z1 = this.cellZOf(maxZ);
 
+    // The full-array test is a loop condition rather than a return inside the body: the same
+    // cells are walked and the same count comes back, and the nest stays three deep.
     let n = 0;
-    for (let cz = z0; cz <= z1; cz++) {
-      for (let cy = y0; cy <= y1; cy++) {
-        for (let cx = x0; cx <= x1; cx++) {
-          const cell = this.cellIndex(cx, cy, cz);
-          this.noteCell(cell);
-          const end = this.itemsEnd(cell);
-          for (let k = this.itemsBegin(cell); k < end; k++) {
-            const idx = this.itemAt(k);
-            if (idx < 0 || !this.claim(idx)) continue;
-            if (n >= out.length) return n;
-            out[n++] = idx;
-          }
+    for (let cz = z0; cz <= z1 && n < out.length; cz++) {
+      for (let cy = y0; cy <= y1 && n < out.length; cy++) {
+        for (let cx = x0; cx <= x1 && n < out.length; cx++) {
+          n = this.collectCell(this.cellIndex(cx, cy, cz), out, n);
         }
       }
+    }
+    return n;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Append the unclaimed colliders of one cell to `out`, and return the new count.
+   *
+   * Split out of the triple cell loop above, which was five levels deep with this inside it.
+   * `claim` is what keeps a collider registered in several cells from being written several
+   * times, and the cap is honoured here as well as by the caller so a full array stops the walk
+   * rather than overrunning.
+   */
+  private collectCell(cell: number, out: Int32Array, from: number): number {
+    this.noteCell(cell);
+    let n = from;
+    const end = this.itemsEnd(cell);
+    for (let k = this.itemsBegin(cell); k < end; k++) {
+      const idx = this.itemAt(k);
+      if (idx < 0 || !this.claim(idx)) continue;
+      if (n >= out.length) return n;
+      out[n++] = idx;
     }
     return n;
   }
@@ -237,8 +268,13 @@ export class SpatialHash {
       }
     }
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function clampInt(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
+//#endregion

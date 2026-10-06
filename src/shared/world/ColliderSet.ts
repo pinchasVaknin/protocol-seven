@@ -1,38 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { materialIndex, type MaterialKey, type Vec3Lit } from './maps/types';
 import { simCos, simSin } from '../core/SimMath';
+//#endregion
 
-/**
- * Write a rotation basis (columns = local axes in world space) into `out` at `offset`.
- * Rotations compose as R = Rz * Rx * Ry, which is also the order the mesher uses, so
- * a brush's collider and its render mesh can never disagree.
- */
-export function writeBasis(
-  rotationY: number,
-  rotationX: number,
-  rotationZ: number,
-  out: Float32Array | number[],
-  offset = 0,
-): void {
-  const cy = simCos(rotationY);
-  const sy = simSin(rotationY);
-  const cx = simCos(rotationX);
-  const sx = simSin(rotationX);
-  const cz = simCos(rotationZ);
-  const sz = simSin(rotationZ);
-
-  out[offset] = cz * cy + sz * sx * sy;
-  out[offset + 1] = sz * cx;
-  out[offset + 2] = -cz * sy + sz * sx * cy;
-
-  out[offset + 3] = -sz * cy + cz * sx * sy;
-  out[offset + 4] = cz * cx;
-  out[offset + 5] = sz * sy + cz * sx * cy;
-
-  out[offset + 6] = cx * sy;
-  out[offset + 7] = -sx;
-  out[offset + 8] = cx * cy;
-}
-
+// ===================================== CLASS ColliderSet ====================================== \\
+//#region Class ColliderSet
 /**
  * Static world geometry as oriented boxes, stored in flat typed arrays.
  *
@@ -47,6 +20,8 @@ export function writeBasis(
  * weighted sum of the columns.
  */
 export class ColliderSet {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   count = 0;
   readonly capacity: number;
 
@@ -56,7 +31,10 @@ export class ColliderSet {
   readonly aabb: Float32Array;
   readonly axisAligned: Uint8Array;
   readonly material: Uint8Array;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(capacity: number) {
     this.capacity = capacity;
     this.center = new Float32Array(capacity * 3);
@@ -66,7 +44,10 @@ export class ColliderSet {
     this.axisAligned = new Uint8Array(capacity);
     this.material = new Uint8Array(capacity);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Append a box. Rotations are applied in Y -> X -> Z order, matching how the mesher
    * builds the matching render mesh.
@@ -158,4 +139,41 @@ export class ColliderSet {
   materialAt(i: number): number {
     return this.material[i] ?? 0;
   }
+  //#endregion
 }
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/**
+ * Write a rotation basis (columns = local axes in world space) into `out` at `offset`.
+ * Rotations compose as R = Rz * Rx * Ry, which is also the order the mesher uses, so
+ * a brush's collider and its render mesh can never disagree.
+ */
+export function writeBasis(
+  rotationY: number,
+  rotationX: number,
+  rotationZ: number,
+  out: Float32Array | number[],
+  offset = 0,
+): void {
+  const cy = simCos(rotationY);
+  const sy = simSin(rotationY);
+  const cx = simCos(rotationX);
+  const sx = simSin(rotationX);
+  const cz = simCos(rotationZ);
+  const sz = simSin(rotationZ);
+
+  out[offset] = cz * cy + sz * sx * sy;
+  out[offset + 1] = sz * cx;
+  out[offset + 2] = -cz * sy + sz * sx * cy;
+
+  out[offset + 3] = -sz * cy + cz * sx * sy;
+  out[offset + 4] = cz * cx;
+  out[offset + 5] = sz * sy + cz * sx * cy;
+
+  out[offset + 6] = cx * sy;
+  out[offset + 7] = -sx;
+  out[offset + 8] = cx * cy;
+}
+//#endregion

@@ -1,9 +1,3 @@
-import { EV, type GameBus } from '../core/Events';
-import { isHostile } from './Hostility';
-import { LocalIdentity } from './LocalIdentity';
-import { hitsFrom, shotsFrom } from './ShotAccounting';
-import { Disposable } from '../core/Disposable';
-
 /**
  * Who is winning, and what everybody in the match has done (brief S6.5).
  *
@@ -19,6 +13,17 @@ import { Disposable } from '../core/Disposable';
  * whose it is.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { EV, type GameBus } from '../core/Events';
+import { isHostile } from './Hostility';
+import { LocalIdentity } from './LocalIdentity';
+import { hitsFrom, shotsFrom } from './ShotAccounting';
+import { Disposable } from '../core/Disposable';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type ScoreTeam = 'A' | 'B';
 
 /**
@@ -87,10 +92,47 @@ export interface TeamTotals {
   rounds: number;
 }
 
-function makeTotals(): TeamTotals {
-  return { score: 0, kills: 0, deaths: 0, rounds: 0 };
+interface DamageRecord {
+  sourceId: number;
+  targetId: number;
+  tick: number;
 }
 
+/**
+ * One row as the wire carries it (M13 Phase B). Every column the modes' `getScoreboardColumns`
+ * can read — see `PlayerScore` for what each means — and nothing a client decides for itself.
+ */
+export interface ReplicatedScoreRow {
+  readonly entityId: number;
+  readonly displayName: string;
+  readonly team: ScoreTeam;
+  readonly kills: number;
+  readonly deaths: number;
+  readonly assists: number;
+  readonly score: number;
+  readonly streak: number;
+  readonly bestStreak: number;
+  readonly shotsFired: number;
+  readonly shotsHit: number;
+  readonly damageDealt: number;
+  readonly headshots: number;
+  readonly captures: number;
+  readonly defends: number;
+  readonly plants: number;
+  readonly defuses: number;
+  readonly tags: number;
+}
+
+/** What a ladder ranks by. Structural, so the wire's summary rows rank the same way. */
+export interface Rankable {
+  readonly score: number;
+  readonly kills: number;
+  readonly deaths: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * Recent damage, for assist attribution.
  *
@@ -107,14 +149,13 @@ const DAMAGE_LEDGER_SIZE = 128;
  * short enough that a hit landed at the start of the lane does not.
  */
 const ASSIST_WINDOW_TICKS = 480;
+//#endregion
 
-interface DamageRecord {
-  sourceId: number;
-  targetId: number;
-  tick: number;
-}
-
+// ===================================== CLASS ScoreSystem ====================================== \\
+//#region Class ScoreSystem
 export class ScoreSystem extends Disposable {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /**
    * Whether this match has teams at all (M11 Gate B playtest).
    *
@@ -183,7 +224,10 @@ export class ScoreSystem extends Disposable {
   private readonly assistScratch: number[] = [];
 
   private readonly identity: LocalIdentity;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   /**
    * `identity` is optional so every M1-M8 call site keeps working: absent, it is the
    * single-player seat and `isLocal` means exactly what it has always meant.
@@ -244,7 +288,10 @@ export class ScoreSystem extends Disposable {
       }),
     );
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** The current sim tick. Called once per tick by `MatchFlow`. */
   setTick(tick: number): void {
     this.tick = tick;
@@ -363,41 +410,12 @@ export class ScoreSystem extends Disposable {
         row.team = r.team;
         changed = true;
       }
-      if (
-        row.kills !== r.kills || row.deaths !== r.deaths || row.assists !== r.assists ||
-        row.score !== r.score || row.streak !== r.streak || row.bestStreak !== r.bestStreak ||
-        row.shotsFired !== r.shotsFired || row.shotsHit !== r.shotsHit ||
-        row.damageDealt !== r.damageDealt || row.headshots !== r.headshots ||
-        row.captures !== r.captures || row.defends !== r.defends || row.plants !== r.plants ||
-        row.defuses !== r.defuses || row.tags !== r.tags
-      ) {
-        row.kills = r.kills;
-        row.deaths = r.deaths;
-        row.assists = r.assists;
-        row.score = r.score;
-        row.streak = r.streak;
-        row.bestStreak = r.bestStreak;
-        row.shotsFired = r.shotsFired;
-        row.shotsHit = r.shotsHit;
-        row.damageDealt = r.damageDealt;
-        row.headshots = r.headshots;
-        row.captures = r.captures;
-        row.defends = r.defends;
-        row.plants = r.plants;
-        row.defuses = r.defuses;
-        row.tags = r.tags;
+      if (this.haveColumnsChanged(row, r)) {
+        this.copyColumns(row, r);
         changed = true;
       }
     }
-    // Anything the server no longer lists is gone: a bot that gave its seat to a human.
-    for (let i = this.all.length - 1; i >= 0; i--) {
-      const row = this.all[i];
-      if (row === undefined) continue;
-      if (rows.some((r) => r.entityId === row.entityId)) continue;
-      this.rowsById.delete(row.entityId);
-      this.all.splice(i, 1);
-      changed = true;
-    }
+    if (this.pruneRowsMissingFrom(rows)) changed = true;
     if (changed) this.serial++;
   }
 
@@ -444,31 +462,6 @@ export class ScoreSystem extends Disposable {
     if (killer.streak > killer.bestStreak) killer.bestStreak = killer.streak;
     if (headshot) killer.headshots++;
     this.totals[killer.team].kills++;
-  }
-
-  /**
-   * One assist each to everyone who softened the victim up, excluding the killer and the
-   * victim's own team. Deduplicated through a reused scratch array so a burst of six
-   * rounds is one assist rather than six.
-   */
-  private creditAssists(victimId: number, killerId: number, victimTeam: ScoreTeam): void {
-    const scratch = this.assistScratch;
-    scratch.length = 0;
-    const oldest = this.tick - ASSIST_WINDOW_TICKS;
-    for (const record of this.ledger) {
-      if (record.targetId !== victimId) continue;
-      if (record.tick < oldest) continue;
-      if (record.sourceId === killerId || record.sourceId === victimId) continue;
-      if (scratch.includes(record.sourceId)) continue;
-      scratch.push(record.sourceId);
-    }
-    for (const id of scratch) {
-      const row = this.rowsById.get(id);
-      if (row === undefined) continue;
-      // Same rule as the kill itself: in FFA the victim's "side" is not a side.
-      if (!isHostile(row.team, victimTeam, this.freeForAll)) continue;
-      row.assists++;
-    }
   }
 
   /**
@@ -549,33 +542,95 @@ export class ScoreSystem extends Disposable {
     super.dispose();
     this.clear();
   }
-}
+  //#endregion
 
-/**
- * One row as the wire carries it (M13 Phase B). Every column the modes' `getScoreboardColumns`
- * can read — see `PlayerScore` for what each means — and nothing a client decides for itself.
- */
-export interface ReplicatedScoreRow {
-  readonly entityId: number;
-  readonly displayName: string;
-  readonly team: ScoreTeam;
-  readonly kills: number;
-  readonly deaths: number;
-  readonly assists: number;
-  readonly score: number;
-  readonly streak: number;
-  readonly bestStreak: number;
-  readonly shotsFired: number;
-  readonly shotsHit: number;
-  readonly damageDealt: number;
-  readonly headshots: number;
-  readonly captures: number;
-  readonly defends: number;
-  readonly plants: number;
-  readonly defuses: number;
-  readonly tags: number;
-}
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Whether any counter on this row differs from the server's.
+   *
+   * Asked before copying because `serial` is what the replication decides on, and a serial
+   * that moved for a frame that changed nothing would resend the whole board. The columns are
+   * written out rather than walked by key: this is the shape a `Scoreboard` caches, and keyed
+   * access to a nineteen-field object is not what the hot paths in this folder do.
+   */
+  private haveColumnsChanged(row: PlayerScore, r: ReplicatedScoreRow): boolean {
+    return (
+      row.kills !== r.kills || row.deaths !== r.deaths || row.assists !== r.assists ||
+      row.score !== r.score || row.streak !== r.streak || row.bestStreak !== r.bestStreak ||
+      row.shotsFired !== r.shotsFired || row.shotsHit !== r.shotsHit ||
+      row.damageDealt !== r.damageDealt || row.headshots !== r.headshots ||
+      row.captures !== r.captures || row.defends !== r.defends || row.plants !== r.plants ||
+      row.defuses !== r.defuses || row.tags !== r.tags
+    );
+  }
 
+  /** The server's counters onto an existing row, so a cached row object stays the same object. */
+  private copyColumns(row: PlayerScore, r: ReplicatedScoreRow): void {
+    row.kills = r.kills;
+    row.deaths = r.deaths;
+    row.assists = r.assists;
+    row.score = r.score;
+    row.streak = r.streak;
+    row.bestStreak = r.bestStreak;
+    row.shotsFired = r.shotsFired;
+    row.shotsHit = r.shotsHit;
+    row.damageDealt = r.damageDealt;
+    row.headshots = r.headshots;
+    row.captures = r.captures;
+    row.defends = r.defends;
+    row.plants = r.plants;
+    row.defuses = r.defuses;
+    row.tags = r.tags;
+  }
+
+  /**
+   * Take off the board anything the server no longer lists: a bot that gave its seat to a
+   * human. Returns whether anything went.
+   */
+  private pruneRowsMissingFrom(rows: readonly ReplicatedScoreRow[]): boolean {
+    let removed = false;
+    for (let i = this.all.length - 1; i >= 0; i--) {
+      const row = this.all[i];
+      if (row === undefined) continue;
+      if (rows.some((r) => r.entityId === row.entityId)) continue;
+      this.rowsById.delete(row.entityId);
+      this.all.splice(i, 1);
+      removed = true;
+    }
+    return removed;
+  }
+
+  /**
+   * One assist each to everyone who softened the victim up, excluding the killer and the
+   * victim's own team. Deduplicated through a reused scratch array so a burst of six
+   * rounds is one assist rather than six.
+   */
+  private creditAssists(victimId: number, killerId: number, victimTeam: ScoreTeam): void {
+    const scratch = this.assistScratch;
+    scratch.length = 0;
+    const oldest = this.tick - ASSIST_WINDOW_TICKS;
+    for (const record of this.ledger) {
+      if (record.targetId !== victimId) continue;
+      if (record.tick < oldest) continue;
+      if (record.sourceId === killerId || record.sourceId === victimId) continue;
+      if (scratch.includes(record.sourceId)) continue;
+      scratch.push(record.sourceId);
+    }
+    for (const id of scratch) {
+      const row = this.rowsById.get(id);
+      if (row === undefined) continue;
+      // Same rule as the kill itself: in FFA the victim's "side" is not a side.
+      if (!isHostile(row.team, victimTeam, this.freeForAll)) continue;
+      row.assists++;
+    }
+  }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Accuracy as a percentage, or -1 when nothing has been fired.
  *
@@ -592,13 +647,6 @@ export function killDeath(row: PlayerScore): number {
   return row.deaths === 0 ? row.kills : row.kills / row.deaths;
 }
 
-/** What a ladder ranks by. Structural, so the wire's summary rows rank the same way. */
-export interface Rankable {
-  readonly score: number;
-  readonly kills: number;
-  readonly deaths: number;
-}
-
 /**
  * The board's order: score, then kills, then fewest deaths (M13 Phase A, lifted from
  * `Scoreboard.refresh`).
@@ -611,3 +659,11 @@ export interface Rankable {
 export function compareRows(a: Rankable, b: Rankable): number {
   return b.score - a.score || b.kills - a.kills || a.deaths - b.deaths;
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function makeTotals(): TeamTotals {
+  return { score: 0, kills: 0, deaths: 0, rounds: 0 };
+}
+//#endregion

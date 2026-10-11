@@ -35,8 +35,13 @@
  * for the reason `Damageable.team` gives — `combat/` sits below `ai/`.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type HostilitySide = 'A' | 'B';
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Whether a body on `subjectTeam` is an enemy of a body on `viewerTeam`.
  *
@@ -51,3 +56,4 @@ export function isHostile(
   if (freeForAll) return true;
   return subjectTeam !== viewerTeam;
 }
+//#endregion

@@ -1,10 +1,3 @@
-import { EV, type GameBus } from '../core/Events';
-import { Disposable } from '../core/Disposable';
-import { DT } from '../core/Loop';
-import { anyWeaponDef } from '../weapons/AnyWeapon';
-import type { WeaponDef } from '../weapons/WeaponDefs';
-import { makeDamageRequest, type DamageRequest, type DamageSystem } from './DamageSystem';
-
 /**
  * Bodies that are still burning after the jet has moved on (2026-09-26, the human).
  *
@@ -37,6 +30,18 @@ import { makeDamageRequest, type DamageRequest, type DamageSystem } from './Dama
  * reason: the machine is theirs, the kill is theirs.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { EV, type GameBus } from '../core/Events';
+import { Disposable } from '../core/Disposable';
+import { DT } from '../core/Loop';
+import { anyWeaponDef } from '../weapons/AnyWeapon';
+import type { WeaponDef } from '../weapons/WeaponDefs';
+import { makeDamageRequest, type DamageRequest, type DamageSystem } from './DamageSystem';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** One body, on fire. */
 interface Burn {
   entityId: number;
@@ -45,11 +50,19 @@ interface Burn {
   /** Seconds left. Refreshed — not stacked — every time the jet touches them again. */
   secondsLeft: number;
 }
+//#endregion
 
+// ====================================== CLASS BurnSystem ====================================== \\
+//#region Class BurnSystem
 export class BurnSystem extends Disposable {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly burning = new Map<number, Burn>();
   private readonly request: DamageRequest;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   /**
    * `burnDef` is handed in rather than imported: the def belongs to `streaks/`, which depends on
    * `combat/` and must not be depended on back — the same rule that keeps `Damageable` from
@@ -74,7 +87,10 @@ export class BurnSystem extends Disposable {
     this.own(bus.on(EV.PlayerSpawned, (p) => this.burning.delete(p.entityId)));
     this.own(bus.on(EV.EntityKilled, (p) => this.burning.delete(p.targetId)));
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Whether this body is on fire, for the HUD, the wire and the renderer. */
   isBurning(entityId: number): boolean {
     return this.burning.has(entityId);
@@ -131,9 +147,10 @@ export class BurnSystem extends Disposable {
   clear(): void {
     this.burning.clear();
   }
+  //#endregion
 
-  // -- internals ----------------------------------------------------------------
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * Refreshed rather than stacked.
    *
@@ -152,4 +169,6 @@ export class BurnSystem extends Disposable {
     }
     this.burning.set(entityId, { entityId, sourceId, secondsLeft: seconds });
   }
+  //#endregion
 }
+//#endregion

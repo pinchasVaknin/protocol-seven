@@ -1,12 +1,3 @@
-import { nowMs } from '../core/Clock';
-import { EV, type GameBus } from '../core/Events';
-import { DEG2RAD, clamp01, lerp } from '../core/MathUtil';
-import { simCos, simSin } from '../core/SimMath';
-import { isHostile } from './Hostility';
-import type { Health } from '../player/Health';
-import type { ShieldProfile, WeaponDef } from '../weapons/WeaponDefs';
-import type { HitboxRig, HitZone } from './HitboxRig';
-
 /**
  * The only place damage is applied (brief S6.4).
  *
@@ -15,9 +6,24 @@ import type { HitboxRig, HitZone } from './HitboxRig';
  * resolved in one place so the numbers printed by the debug panel are, by construction,
  * the numbers the game used.
  *
- * Allocation free: the request and the event payload are module-level singletons.
+ * Allocation free: the request, the resolved amounts and the event payloads are module-level
+ * singletons.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { nowMs } from '../core/Clock';
+import { EV, type GameBus } from '../core/Events';
+import { DEG2RAD, clamp01, lerp } from '../core/MathUtil';
+import { simCos, simSin } from '../core/SimMath';
+import { isHostile } from './Hostility';
+import type { Health } from '../player/Health';
+import type { ShieldProfile, WeaponDef } from '../weapons/WeaponDefs';
+import type { HitboxRig, HitZone } from './HitboxRig';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface Damageable {
   readonly entityId: number;
   readonly displayName: string;
@@ -123,31 +129,36 @@ export interface LastHitReport {
   lethal: boolean;
   atMs: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const PLAYER_ENTITY_ID = 0;
 
 /**
- * Callers own their request record and reuse it, which is what keeps the shot path
- * allocation free. It carries the weapon it was built for; retarget it per shot.
+ * Metres. Below this the origin and the impact are the same point, and there is no side.
+ *
+ * `BurnSystem` is the case that matters: its fire is already on the body, so it fills the
+ * origin with the body's own position rather than inventing a direction for it. A shield does
+ * not put out a fire that is burning on the arm holding it, and this is how it says so —
+ * without `combat/` knowing that burns exist.
  */
-export function makeDamageRequest(weapon: WeaponDef): DamageRequest {
-  return {
-    sourceId: PLAYER_ENTITY_ID,
-    targetId: -1,
-    zone: 'torso',
-    upperTorso: false,
-    weapon,
-    autonomous: false,
-    distance: 0,
-    penetrationRetain: 1,
-    x: 0,
-    y: 0,
-    z: 0,
-    originX: 0,
-    originY: 0,
-    originZ: 0,
-  };
-}
+const NO_DIRECTION_M = 0.01;
+
+/**
+ * Everything one hit resolves to, between the arithmetic and the two records that report it.
+ *
+ * Module level and reused for the reason the two payloads below are: this runs once per pellet
+ * of every shot in the game and must not allocate. Written only by `resolveHitAmounts` and read
+ * only by the two private methods that report a hit, inside the same `apply` call.
+ */
+const resolved = {
+  base: 0,
+  zoneMult: 0,
+  falloffLoss: 0,
+  penetrationLoss: 0,
+  amount: 0,
+};
 
 const evDamage = {
   sourceId: 0,
@@ -166,35 +177,13 @@ const evDamage = {
 };
 
 const evKilled = { targetId: 0, sourceId: 0, weaponId: '', zone: 'torso' as HitZone, killerHealth: 0 };
+//#endregion
 
-/**
- * Damage multiplier for a zone, taken from the weapon rather than the rig.
- *
- * `upperTorso` splits the torso in two from M5. A weapon with `upperTorsoMult === 1` — every
- * weapon but the two snipers — is unaffected, which is what keeps M2's verified numbers
- * verified.
- */
-function zoneMultiplier(def: WeaponDef, zone: HitZone, upperTorso: boolean): number {
-  switch (zone) {
-    case 'head':
-      return def.headshotMult;
-    case 'torso':
-      return upperTorso ? def.upperTorsoMult : 1;
-    case 'arm':
-    case 'leg':
-      return def.limbMult;
-  }
-}
-
-/** Falloff-interpolated base damage at `distance` metres. */
-export function damageAtRange(def: WeaponDef, distance: number): number {
-  const { start, end } = def.damageFalloff;
-  if (end <= start) return distance <= start ? def.damage.near : def.damage.far;
-  const t = clamp01((distance - start) / (end - start));
-  return lerp(def.damage.near, def.damage.far, t);
-}
-
+// ===================================== CLASS DamageSystem ===================================== \\
+//#region Class DamageSystem
 export class DamageSystem {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly lastHit: LastHitReport = {
     valid: false,
     targetName: '',
@@ -303,9 +292,15 @@ export class DamageSystem {
   blockedByShield = 0;
 
   private readonly entities = new Map<number, Damageable>();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly bus: GameBus) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   register(entity: Damageable): void {
     if (this.entities.has(entity.entityId)) this.unregister(entity.entityId);
     this.entities.set(entity.entityId, entity);
@@ -327,6 +322,10 @@ export class DamageSystem {
   /**
    * Apply one hit. Returns the damage actually dealt, or 0 if the target is gone or
    * already dead. Emits `damage.dealt`, and `entity.killed` on the lethal hit only.
+   *
+   * Four refusals, then the arithmetic, then two records. The order of the four is the whole of
+   * what each one means: the shield is a wall and returns before anything is resolved, while
+   * the arena's rule below is applied after it and reports what the hit *would* have cost.
    */
   apply(req: DamageRequest): number {
     const target = this.entities.get(req.targetId);
@@ -335,60 +334,14 @@ export class DamageSystem {
       this.blockedByInvulnerable++;
       return 0;
     }
-    if (req.sourceId !== req.targetId) {
-      // The gate for every damage source, not just ballistics — which filters friendly
-      // rigs out of target selection, so this is the one that will still be here when
-      // grenades and killstreaks arrive with their own way of asking. A source or target
-      // on no side at all — a range dummy — is never a teammate.
-      const source = this.entities.get(req.sourceId);
-      if (
-        source?.team !== undefined &&
-        target.team !== undefined &&
-        !isHostile(source.team, target.team, this.freeForAll)
-      ) {
-        return 0;
-      }
-    }
-
-    /**
-     * The riot shield, and why it is here rather than in the six places that shoot (2026-09-27).
-     *
-     * A shield is not a property of any weapon, and the list of things it has to answer for is
-     * the list of things that can hurt somebody: a rifle, a pellet, a blade, a sentry's burst, a
-     * jet of fire, a grenade, a shell. Every one of those already arrives here, having done its
-     * own arithmetic, and not one of them should have to know that shields exist. So the rule
-     * lives at the door with the friendly gate and the invulnerable check — one place, and the
-     * next thing that learns to deal damage is covered by it without a line of its own.
-     *
-     * **Before the arithmetic**, unlike the arena's rule below, and the difference is the
-     * point: `combatantsInvulnerable` spares a body while still reporting what the hit *would*
-     * have cost, because that is a rule about a waiting room. A shield is a wall. A round that
-     * stopped in it did not hit anybody, so there is no hitmarker, no damage number, no report,
-     * no event and no burn lit — which falls out of returning zero here exactly as the friendly
-     * gate's zero does.
-     */
-    const shield = this.shieldOf(req.targetId);
-    const shieldRetain =
-      shield === null || !coveredByShield(shield, target, req)
-        ? 1
-        : req.weapon.explosive === true
-          ? clamp01(shield.blastRetain)
-          : 0;
+    if (this.isRefusedByFriendlyGate(target, req)) return 0;
+    const shieldRetain = this.shieldRetainFor(target, req);
     if (shieldRetain <= 0) {
       this.blockedByShield++;
       return 0;
     }
 
-    const def = req.weapon;
-    const base = damageAtRange(def, req.distance);
-    const mult = zoneMultiplier(def, req.zone, req.upperTorso);
-    const beforePenetration = base * mult;
-    const retain = clamp01(req.penetrationRetain);
-    // The penetration term and the shield's are separate losses against the same hit, and the
-    // report below splits them the only way it can: `penetrationLoss` keeps its old meaning and
-    // the shield's half shows up in `finalDamage`, which is the number that was true.
-    const throughWalls = beforePenetration * retain;
-    const amount = throughWalls * shieldRetain;
+    const amount = resolveHitAmounts(req, shieldRetain);
 
     /**
      * The one door, and the arena's rule is applied at it (F7).
@@ -400,53 +353,9 @@ export class DamageSystem {
     const spares = this.combatantsInvulnerable && target.team !== undefined;
     const lethal = spares ? false : target.health.applyDamage(amount);
 
-    const report = this.lastHit;
-    report.valid = true;
-    report.targetName = target.displayName;
-    report.zone = req.zone;
-    report.upperTorso = req.upperTorso;
-    report.distance = req.distance;
-    report.baseDamage = base;
-    report.zoneMultiplier = mult;
-    report.falloffLoss = (def.damage.near - base) * mult;
-    report.penetrationLoss = beforePenetration - throughWalls;
-    report.finalDamage = amount;
-    report.remainingHealth = target.health.current;
-    report.lethal = lethal;
-    report.atMs = nowMs();
-
-    evDamage.sourceId = req.sourceId;
-    evDamage.targetId = req.targetId;
-    evDamage.weaponId = def.id;
-    evDamage.zone = req.zone;
-    evDamage.amount = amount;
-    evDamage.x = req.x;
-    evDamage.y = req.y;
-    evDamage.z = req.z;
-    evDamage.distance = req.distance;
-    evDamage.falloffLoss = report.falloffLoss;
-    evDamage.penetrationLoss = report.penetrationLoss;
-    evDamage.lethal = lethal;
-    evDamage.autonomous = req.autonomous;
-    this.bus.emit(EV.DamageDealt, evDamage);
-
-    if (lethal) {
-      evKilled.targetId = req.targetId;
-      evKilled.sourceId = req.sourceId;
-      evKilled.weaponId = def.id;
-      evKilled.zone = req.zone;
-      /**
-       * The killer's remaining health, read at the one instant it is the answer (round 5, F9).
-       *
-       * Here rather than at the subscriber, because this is the only line in the game that runs
-       * with both bodies in hand and the kill already resolved. A shooter who is not a
-       * `Damageable` — a sentry, a mortar, a killstreak — has no health to report and gives 0,
-       * which the death panel reads as "not a person" and does not print.
-       */
-      const killer = req.sourceId === req.targetId ? undefined : this.entities.get(req.sourceId);
-      evKilled.killerHealth = killer === undefined ? 0 : Math.max(0, Math.round(killer.health.current));
-      this.bus.emit(EV.EntityKilled, evKilled);
-    }
+    this.reportLastHit(target, req, lethal);
+    this.emitDamageDealt(req, lethal);
+    if (lethal) this.emitEntityKilled(req);
 
     return amount;
   }
@@ -454,17 +363,197 @@ export class DamageSystem {
   get count(): number {
     return this.list.length;
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Whether this hit is one team-mate shooting another.
+   *
+   * The gate for every damage source, not just ballistics — which filters friendly rigs out of
+   * target selection, so this is the one that will still be here when grenades and killstreaks
+   * arrive with their own way of asking. A source or target on no side at all — a range dummy —
+   * is never a teammate, and a body hurting itself is never asked.
+   */
+  private isRefusedByFriendlyGate(target: Damageable, req: DamageRequest): boolean {
+    if (req.sourceId === req.targetId) return false;
+    const source = this.entities.get(req.sourceId);
+    return (
+      source?.team !== undefined &&
+      target.team !== undefined &&
+      !isHostile(source.team, target.team, this.freeForAll)
+    );
+  }
+
+  /**
+   * What fraction of this hit the target's riot shield lets through, and why it is here rather
+   * than in the six places that shoot (2026-09-27).
+   *
+   * A shield is not a property of any weapon, and the list of things it has to answer for is
+   * the list of things that can hurt somebody: a rifle, a pellet, a blade, a sentry's burst, a
+   * jet of fire, a grenade, a shell. Every one of those already arrives here, having done its
+   * own arithmetic, and not one of them should have to know that shields exist. So the rule
+   * lives at the door with the friendly gate and the invulnerable check — one place, and the
+   * next thing that learns to deal damage is covered by it without a line of its own.
+   *
+   * **Before the arithmetic**, unlike the arena's rule in `apply`, and the difference is the
+   * point: `combatantsInvulnerable` spares a body while still reporting what the hit *would*
+   * have cost, because that is a rule about a waiting room. A shield is a wall. A round that
+   * stopped in it did not hit anybody, so there is no hitmarker, no damage number, no report,
+   * no event and no burn lit — which falls out of the zero this returns exactly as the friendly
+   * gate's zero does. A blast is the one thing it only softens.
+   */
+  private shieldRetainFor(target: Damageable, req: DamageRequest): number {
+    const shield = this.shieldOf(req.targetId);
+    return shield === null || !coveredByShield(shield, target, req)
+      ? 1
+      : req.weapon.explosive === true
+        ? clamp01(shield.blastRetain)
+        : 0;
+  }
+
+  /**
+   * The debug read-out of this hit (S7): the losses that produced it, split the only way they
+   * can be.
+   *
+   * `penetrationLoss` keeps its old meaning and the shield's half shows up in `finalDamage`,
+   * which is the number that was true. `remainingHealth` is read after the deduction, so the
+   * arena's spared body reports the health it still has beside the damage it did not take.
+   */
+  private reportLastHit(target: Damageable, req: DamageRequest, lethal: boolean): void {
+    const report = this.lastHit;
+    report.valid = true;
+    report.targetName = target.displayName;
+    report.zone = req.zone;
+    report.upperTorso = req.upperTorso;
+    report.distance = req.distance;
+    report.baseDamage = resolved.base;
+    report.zoneMultiplier = resolved.zoneMult;
+    report.falloffLoss = resolved.falloffLoss;
+    report.penetrationLoss = resolved.penetrationLoss;
+    report.finalDamage = resolved.amount;
+    report.remainingHealth = target.health.current;
+    report.lethal = lethal;
+    report.atMs = nowMs();
+  }
+
+  /** The hit as every surface sees it: the hitmarker, the damage number, the burn, the score. */
+  private emitDamageDealt(req: DamageRequest, lethal: boolean): void {
+    evDamage.sourceId = req.sourceId;
+    evDamage.targetId = req.targetId;
+    evDamage.weaponId = req.weapon.id;
+    evDamage.zone = req.zone;
+    evDamage.amount = resolved.amount;
+    evDamage.x = req.x;
+    evDamage.y = req.y;
+    evDamage.z = req.z;
+    evDamage.distance = req.distance;
+    evDamage.falloffLoss = resolved.falloffLoss;
+    evDamage.penetrationLoss = resolved.penetrationLoss;
+    evDamage.lethal = lethal;
+    evDamage.autonomous = req.autonomous;
+    this.bus.emit(EV.DamageDealt, evDamage);
+  }
+
+  /**
+   * The kill, with the killer's remaining health read at the one instant it is the answer
+   * (round 5, F9).
+   *
+   * Here rather than at the subscriber, because this is the only line in the game that runs
+   * with both bodies in hand and the kill already resolved. A shooter who is not a
+   * `Damageable` — a sentry, a mortar, a killstreak — has no health to report and gives 0,
+   * which the death panel reads as "not a person" and does not print.
+   */
+  private emitEntityKilled(req: DamageRequest): void {
+    evKilled.targetId = req.targetId;
+    evKilled.sourceId = req.sourceId;
+    evKilled.weaponId = req.weapon.id;
+    evKilled.zone = req.zone;
+    const killer = req.sourceId === req.targetId ? undefined : this.entities.get(req.sourceId);
+    evKilled.killerHealth = killer === undefined ? 0 : Math.max(0, Math.round(killer.health.current));
+    this.bus.emit(EV.EntityKilled, evKilled);
+  }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/**
+ * Callers own their request record and reuse it, which is what keeps the shot path
+ * allocation free. It carries the weapon it was built for; retarget it per shot.
+ */
+export function makeDamageRequest(weapon: WeaponDef): DamageRequest {
+  return {
+    sourceId: PLAYER_ENTITY_ID,
+    targetId: -1,
+    zone: 'torso',
+    upperTorso: false,
+    weapon,
+    autonomous: false,
+    distance: 0,
+    penetrationRetain: 1,
+    x: 0,
+    y: 0,
+    z: 0,
+    originX: 0,
+    originY: 0,
+    originZ: 0,
+  };
+}
+
+/** Falloff-interpolated base damage at `distance` metres. */
+export function damageAtRange(def: WeaponDef, distance: number): number {
+  const { start, end } = def.damageFalloff;
+  if (end <= start) return distance <= start ? def.damage.near : def.damage.far;
+  const t = clamp01((distance - start) / (end - start));
+  return lerp(def.damage.near, def.damage.far, t);
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Damage multiplier for a zone, taken from the weapon rather than the rig.
+ *
+ * `upperTorso` splits the torso in two from M5. A weapon with `upperTorsoMult === 1` — every
+ * weapon but the two snipers — is unaffected, which is what keeps M2's verified numbers
+ * verified.
+ */
+function zoneMultiplier(def: WeaponDef, zone: HitZone, upperTorso: boolean): number {
+  switch (zone) {
+    case 'head':
+      return def.headshotMult;
+    case 'torso':
+      return upperTorso ? def.upperTorsoMult : 1;
+    case 'arm':
+    case 'leg':
+      return def.limbMult;
+  }
 }
 
 /**
- * Metres. Below this the origin and the impact are the same point, and there is no side.
+ * One hit's whole arithmetic, into `resolved`. Returns the damage, which is the only part of it
+ * `apply` itself needs.
  *
- * `BurnSystem` is the case that matters: its fire is already on the body, so it fills the
- * origin with the body's own position rather than inventing a direction for it. A shield does
- * not put out a fire that is burning on the arm holding it, and this is how it says so —
- * without `combat/` knowing that burns exist.
+ * The penetration term and the shield's are separate losses against the same hit: each is
+ * applied to the figure the one before it left, in that order, and a hit that lost everything
+ * to a wall still reports — unlike one a shield refused, which never reaches here.
  */
-const NO_DIRECTION_M = 0.01;
+function resolveHitAmounts(req: DamageRequest, shieldRetain: number): number {
+  const def = req.weapon;
+  const base = damageAtRange(def, req.distance);
+  const mult = zoneMultiplier(def, req.zone, req.upperTorso);
+  const beforePenetration = base * mult;
+  const retain = clamp01(req.penetrationRetain);
+  const throughWalls = beforePenetration * retain;
+  resolved.base = base;
+  resolved.zoneMult = mult;
+  resolved.falloffLoss = (def.damage.near - base) * mult;
+  resolved.penetrationLoss = beforePenetration - throughWalls;
+  resolved.amount = throughWalls * shieldRetain;
+  return resolved.amount;
+}
 
 /**
  * Did this hit arrive inside the arc the shield covers?
@@ -494,3 +583,4 @@ function coveredByShield(shield: ShieldProfile, target: Damageable, req: DamageR
   const cosAngle = (bx * fx + bz * fz) / back;
   return cosAngle >= simCos(shield.halfAngleDeg * DEG2RAD);
 }
+//#endregion

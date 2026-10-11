@@ -1,8 +1,3 @@
-import type { Combatant } from '../ai/Combatant';
-import { EV, type GameBus } from '../core/Events';
-import { LocalIdentity } from './LocalIdentity';
-import type { HitZone } from './HitboxRig';
-
 /**
  * The killfeed's model (brief S6.5).
  *
@@ -17,8 +12,16 @@ import type { HitZone } from './HitboxRig';
  * get the right names" a question you could only answer by looking.
  */
 
-const FEED_HISTORY = 32;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { Combatant } from '../ai/Combatant';
+import { EV, type GameBus } from '../core/Events';
+import { LocalIdentity } from './LocalIdentity';
+import type { HitZone } from './HitboxRig';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * Names and teams for entity ids (M10, playtest round 2).
  *
@@ -39,20 +42,6 @@ export interface CombatantDirectory {
   teamOf(entityId: number): 'A' | 'B' | null;
 }
 
-/** The local roster as a directory. The single-player and server-side path, unchanged. */
-function rosterDirectory(roster: readonly Combatant[]): CombatantDirectory {
-  return {
-    nameOf(entityId) {
-      for (const c of roster) if (c.entityId === entityId) return c.displayName;
-      return null;
-    },
-    teamOf(entityId) {
-      for (const c of roster) if (c.entityId === entityId) return c.team;
-      return null;
-    },
-  };
-}
-
 export interface KillfeedLine {
   killerId: number;
   victimId: number;
@@ -68,23 +57,11 @@ export interface KillfeedLine {
   /** Sim tick the kill landed on, so the debug log is ordered by game time. */
   tick: number;
 }
+//#endregion
 
-function makeLine(): KillfeedLine {
-  return {
-    killerId: -1,
-    victimId: -1,
-    killerName: '',
-    victimName: '',
-    killerTeam: 'NONE',
-    victimTeam: 'NONE',
-    weaponId: '',
-    zone: 'torso',
-    headshot: false,
-    suicide: false,
-    involvesLocal: false,
-    tick: 0,
-  };
-}
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const FEED_HISTORY = 32;
 
 const evEntry = {
   killerName: '',
@@ -96,15 +73,23 @@ const evEntry = {
   suicide: false,
   involvesLocal: false,
 };
+//#endregion
 
+// ======================================= CLASS Killfeed ======================================= \\
+//#region Class Killfeed
 export class Killfeed {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Ring of the most recent lines, newest last. Preallocated; never grows. */
   private readonly ring: KillfeedLine[] = [];
   private writeAt = 0;
   private written = 0;
 
   private directory: CombatantDirectory;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     private readonly bus: GameBus,
     roster: readonly Combatant[] | CombatantDirectory,
@@ -113,7 +98,10 @@ export class Killfeed {
     this.directory = Array.isArray(roster) ? rosterDirectory(roster) : (roster as CombatantDirectory);
     for (let i = 0; i < FEED_HISTORY; i++) this.ring.push(makeLine());
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Swap the name source. Used when a match becomes networked and the bodies stop being local.
    */
@@ -179,20 +167,70 @@ export class Killfeed {
     this.writeAt = (this.writeAt + 1) % FEED_HISTORY;
     this.written++;
 
-    evEntry.killerName = slot.killerName;
-    evEntry.victimName = slot.victimName;
-    evEntry.killerTeam = slot.killerTeam;
-    evEntry.victimTeam = slot.victimTeam;
-    evEntry.weaponId = slot.weaponId;
-    evEntry.headshot = slot.headshot;
-    evEntry.suicide = slot.suicide;
-    evEntry.involvesLocal = slot.involvesLocal;
-    this.bus.emit(EV.KillfeedEntry, evEntry);
+    this.publishEntry(slot);
   }
 
   reset(): void {
     this.writeAt = 0;
     this.written = 0;
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * The line as the bus carries it: everything a surface draws, and none of the ids or the tick
+   * that only the model and the debug log need.
+   *
+   * Copied field by field into a module-level payload rather than handed the ring slot itself,
+   * for the reason every `ev*` singleton in `combat/` exists: this runs inside the sim and must
+   * not allocate, and a subscriber must not be given a record the next kill will overwrite.
+   */
+  private publishEntry(line: KillfeedLine): void {
+    evEntry.killerName = line.killerName;
+    evEntry.victimName = line.victimName;
+    evEntry.killerTeam = line.killerTeam;
+    evEntry.victimTeam = line.victimTeam;
+    evEntry.weaponId = line.weaponId;
+    evEntry.headshot = line.headshot;
+    evEntry.suicide = line.suicide;
+    evEntry.involvesLocal = line.involvesLocal;
+    this.bus.emit(EV.KillfeedEntry, evEntry);
+  }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** The local roster as a directory. The single-player and server-side path, unchanged. */
+function rosterDirectory(roster: readonly Combatant[]): CombatantDirectory {
+  return {
+    nameOf(entityId) {
+      for (const c of roster) if (c.entityId === entityId) return c.displayName;
+      return null;
+    },
+    teamOf(entityId) {
+      for (const c of roster) if (c.entityId === entityId) return c.team;
+      return null;
+    },
+  };
+}
+
+function makeLine(): KillfeedLine {
+  return {
+    killerId: -1,
+    victimId: -1,
+    killerName: '',
+    victimName: '',
+    killerTeam: 'NONE',
+    victimTeam: 'NONE',
+    weaponId: '',
+    zone: 'torso',
+    headshot: false,
+    suicide: false,
+    involvesLocal: false,
+    tick: 0,
+  };
+}
+//#endregion

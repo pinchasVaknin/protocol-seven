@@ -1,5 +1,3 @@
-import { MAX_PELLETS } from '../weapons/WeaponDefs';
-
 /**
  * What counts as a shot, and what counts as a hit (playtest round 5, B5).
  *
@@ -45,6 +43,13 @@ import { MAX_PELLETS } from '../weapons/WeaponDefs';
  * counters is the `weapon.fired` handler.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { MAX_PELLETS } from '../weapons/WeaponDefs';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * How many rays a pull sends.
  *
@@ -68,7 +73,10 @@ export interface FiredShot extends PelletCount {
   /** How many of them found a body. */
   readonly pelletsHit: number;
 }
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * How many shots this trigger pull is worth.
  *
@@ -92,3 +100,4 @@ export function shotsFrom(fired: PelletCount): number {
 export function hitsFrom(fired: FiredShot): number {
   return Math.max(0, Math.min(shotsFrom(fired), Math.round(fired.pelletsHit)));
 }
+//#endregion

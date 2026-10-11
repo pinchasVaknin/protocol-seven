@@ -1,5 +1,3 @@
-import { simCos, simSin } from '../core/SimMath';
-import { isLowStance, LOCOMOTION_IDLE_SPEED, LOCOMOTION_RUN_SPEED, type StanceId } from '../player/Stance';
 /**
  * Oriented-box hitbox rig (brief S6.3).
  *
@@ -35,9 +33,15 @@ import { isLowStance, LOCOMOTION_IDLE_SPEED, LOCOMOTION_RUN_SPEED, type StanceId
  * note there for why the fallback is what makes an incomplete clip family safe.
  */
 
-export type HitZone = 'head' | 'torso' | 'arm' | 'leg';
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { simCos, simSin } from '../core/SimMath';
+import { isLowStance, LOCOMOTION_IDLE_SPEED, LOCOMOTION_RUN_SPEED, type StanceId } from '../player/Stance';
+//#endregion
 
-export const HIT_ZONES: readonly HitZone[] = ['head', 'torso', 'arm', 'leg'];
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type HitZone = 'head' | 'torso' | 'arm' | 'leg';
 
 export interface HitboxDef {
   readonly name: string;
@@ -87,26 +91,6 @@ export interface RigHit {
   nz: number;
 }
 
-export function makeRigHit(): RigHit {
-  return { t: 0, zone: 'torso', boxIndex: -1, upper: false, nx: 0, ny: 0, nz: 0 };
-}
-
-/**
- * A 1.8 m humanoid, proportioned so the zones read the way a player expects: a head
- * you have to aim for, a torso that is the honest target, and limbs on the silhouette
- * edges where a sloppy spray lands.
- */
-export const HUMANOID_RIG: RigLayout = buildLayout('humanoid', [
-  { name: 'head', zone: 'head', ox: 0, oy: 1.645, oz: 0, sx: 0.22, sy: 0.25, sz: 0.23 },
-  { name: 'neck', zone: 'head', ox: 0, oy: 1.5, oz: 0, sx: 0.13, sy: 0.1, sz: 0.13 },
-  { name: 'chest', zone: 'torso', ox: 0, oy: 1.26, oz: 0, sx: 0.46, sy: 0.4, sz: 0.27, upper: true },
-  { name: 'abdomen', zone: 'torso', ox: 0, oy: 0.94, oz: 0, sx: 0.4, sy: 0.28, sz: 0.24 },
-  { name: 'armL', zone: 'arm', ox: -0.31, oy: 1.16, oz: 0, sx: 0.14, sy: 0.62, sz: 0.16 },
-  { name: 'armR', zone: 'arm', ox: 0.31, oy: 1.16, oz: 0, sx: 0.14, sy: 0.62, sz: 0.16 },
-  { name: 'legL', zone: 'leg', ox: -0.11, oy: 0.42, oz: 0, sx: 0.18, sy: 0.84, sz: 0.2 },
-  { name: 'legR', zone: 'leg', ox: 0.11, oy: 0.42, oz: 0, sx: 0.18, sy: 0.84, sz: 0.2 },
-]);
-
 /**
  * A joint of the drawn body in the actor's frame: x to the right, y up, z with the body
  * facing **−z**, so a negative z is in front of the feet. The numbers below are the mean
@@ -117,57 +101,6 @@ type Joint = readonly [x: number, y: number, z: number];
 
 /** Half-extents added to a segment's bounding box on each axis: the limb's radius. */
 type Pad = readonly [x: number, y: number, z: number];
-
-/**
- * The radius of each body part, chosen so that a segment box around the *standing* joints
- * reproduces the standing box it replaces: head `Head→HeadTop_End` is 0.23 m tall and 0.09 m
- * deep in bind, and padded by (0.11, 0.01, 0.07) it is the 0.22 × 0.25 × 0.23 head box above;
- * chest `Spine1→Neck` is 0.30 m, padded to the 0.40 m chest box; abdomen `Hips→Spine1` is
- * 0.23 m, padded to the 0.28 m abdomen box. The limbs split into two segments each (the
- * standing layout uses one box per limb), padded to the standing limb's width and depth.
- */
-const PAD = {
-  head: [0.11, 0.01, 0.07] as Pad,
-  neck: [0.065, 0.02, 0.055] as Pad,
-  chest: [0.23, 0.05, 0.12] as Pad,
-  abdomen: [0.2, 0.025, 0.12] as Pad,
-  arm: [0.07, 0.04, 0.08] as Pad,
-  leg: [0.09, 0.05, 0.1] as Pad,
-} as const;
-
-/**
- * An axis-aligned box around the segment `a → b`, padded by the part's radius.
- *
- * Yaw is the only rotation the rig supports (see `HitboxRig`), so a pitched torso or a
- * folded leg becomes the bounding box of its segment rather than a tilted slab. That
- * over-covers the corners of a diagonal segment, which is the price the rig's own comment
- * accepts; splitting each limb in two keeps the price small.
- */
-function segmentBox(
-  name: string,
-  zone: HitZone,
-  a: Joint,
-  b: Joint,
-  pad: Pad,
-  upper?: boolean,
-): HitboxDef {
-  const box: HitboxDef = {
-    name,
-    zone,
-    ox: round((a[0] + b[0]) * 0.5),
-    oy: round((a[1] + b[1]) * 0.5),
-    oz: round((a[2] + b[2]) * 0.5),
-    sx: round(Math.abs(a[0] - b[0]) + pad[0] * 2),
-    sy: round(Math.abs(a[1] - b[1]) + pad[1] * 2),
-    sz: round(Math.abs(a[2] - b[2]) + pad[2] * 2),
-  };
-  return upper === true ? { ...box, upper: true } : box;
-}
-
-/** Three decimals: the joints are measured to centimetres, and a hash must not depend on a rounding mode. */
-function round(v: number): number {
-  return Math.round(v * 1000) / 1000;
-}
 
 /** The joints one low layout is built from. Left and right are the body's own. */
 interface PoseJoints {
@@ -189,23 +122,44 @@ interface PoseJoints {
   readonly rightLeg: Joint;
   readonly rightFoot: Joint;
 }
+//#endregion
 
-function poseLayout(id: string, j: PoseJoints): RigLayout {
-  return buildLayout(id, [
-    segmentBox('head', 'head', j.head, j.headTop, PAD.head),
-    segmentBox('neck', 'head', j.neck, j.head, PAD.neck),
-    segmentBox('chest', 'torso', j.spine1, j.neck, PAD.chest, true),
-    segmentBox('abdomen', 'torso', j.hips, j.spine1, PAD.abdomen),
-    segmentBox('upperArmL', 'arm', j.leftArm, j.leftForeArm, PAD.arm),
-    segmentBox('foreArmL', 'arm', j.leftForeArm, j.leftHand, PAD.arm),
-    segmentBox('upperArmR', 'arm', j.rightArm, j.rightForeArm, PAD.arm),
-    segmentBox('foreArmR', 'arm', j.rightForeArm, j.rightHand, PAD.arm),
-    segmentBox('thighL', 'leg', j.leftUpLeg, j.leftLeg, PAD.leg),
-    segmentBox('shinL', 'leg', j.leftLeg, j.leftFoot, PAD.leg),
-    segmentBox('thighR', 'leg', j.rightUpLeg, j.rightLeg, PAD.leg),
-    segmentBox('shinR', 'leg', j.rightLeg, j.rightFoot, PAD.leg),
-  ]);
-}
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+export const HIT_ZONES: readonly HitZone[] = ['head', 'torso', 'arm', 'leg'];
+
+/**
+ * A 1.8 m humanoid, proportioned so the zones read the way a player expects: a head
+ * you have to aim for, a torso that is the honest target, and limbs on the silhouette
+ * edges where a sloppy spray lands.
+ */
+export const HUMANOID_RIG: RigLayout = buildLayout('humanoid', [
+  { name: 'head', zone: 'head', ox: 0, oy: 1.645, oz: 0, sx: 0.22, sy: 0.25, sz: 0.23 },
+  { name: 'neck', zone: 'head', ox: 0, oy: 1.5, oz: 0, sx: 0.13, sy: 0.1, sz: 0.13 },
+  { name: 'chest', zone: 'torso', ox: 0, oy: 1.26, oz: 0, sx: 0.46, sy: 0.4, sz: 0.27, upper: true },
+  { name: 'abdomen', zone: 'torso', ox: 0, oy: 0.94, oz: 0, sx: 0.4, sy: 0.28, sz: 0.24 },
+  { name: 'armL', zone: 'arm', ox: -0.31, oy: 1.16, oz: 0, sx: 0.14, sy: 0.62, sz: 0.16 },
+  { name: 'armR', zone: 'arm', ox: 0.31, oy: 1.16, oz: 0, sx: 0.14, sy: 0.62, sz: 0.16 },
+  { name: 'legL', zone: 'leg', ox: -0.11, oy: 0.42, oz: 0, sx: 0.18, sy: 0.84, sz: 0.2 },
+  { name: 'legR', zone: 'leg', ox: 0.11, oy: 0.42, oz: 0, sx: 0.18, sy: 0.84, sz: 0.2 },
+]);
+
+/**
+ * The radius of each body part, chosen so that a segment box around the *standing* joints
+ * reproduces the standing box it replaces: head `Head→HeadTop_End` is 0.23 m tall and 0.09 m
+ * deep in bind, and padded by (0.11, 0.01, 0.07) it is the 0.22 × 0.25 × 0.23 head box above;
+ * chest `Spine1→Neck` is 0.30 m, padded to the 0.40 m chest box; abdomen `Hips→Spine1` is
+ * 0.23 m, padded to the 0.28 m abdomen box. The limbs split into two segments each (the
+ * standing layout uses one box per limb), padded to the standing limb's width and depth.
+ */
+const PAD = {
+  head: [0.11, 0.01, 0.07] as Pad,
+  neck: [0.065, 0.02, 0.055] as Pad,
+  chest: [0.23, 0.05, 0.12] as Pad,
+  abdomen: [0.2, 0.025, 0.12] as Pad,
+  arm: [0.07, 0.04, 0.08] as Pad,
+  leg: [0.09, 0.05, 0.1] as Pad,
+} as const;
 
 /**
  * `Crouch_Idle_Aiming`: a kneel. Right knee on the floor, left foot forward, torso upright
@@ -312,6 +266,417 @@ const HUMANOID_CROUCH_PISTOL_RIG: RigLayout = poseLayout('humanoid-crouch-pistol
 });
 
 /**
+ * `Running_Slide` over clip time 0.400–0.800 s — the part `CharacterAnimator` plays across a
+ * slide (2026-09-28). A baseball slide: the left leg out straight 0.83 m in front of the feet,
+ * the right folded under, the torso laid back and rolled onto its right side with the right hand
+ * planted behind. Crown at 0.50 m against the crouch run's 1.38, which is the pose a slide used to
+ * be drawn with and the reason it needs a layout of its own: a round aimed at this head passes
+ * under every box the old one had.
+ *
+ * Echo's joints, mean over that window, from
+ * `scripts/measure-crouch.mjs --dir public/models/bots/animations/locomotion/slide --window 0.4:0.8 --pose`.
+ * The other six skins agree within 3.5 cm (Apex, 1.025 scale, is the 3.5). Over the window the
+ * crown runs 0.44–0.61 m and the head box spans 0.39–0.58, so the crown is inside it on every
+ * frame but the window's first and last, where it is 3 cm over — left on record rather than padded
+ * away, as the crouched throw's 12.7 cm was. The drop before the window belongs to the cross-fade.
+ */
+const HUMANOID_SLIDE_RIG: RigLayout = lyingLayout('humanoid-slide', {
+  headTop: [0.67, 0.5, -0.06],
+  head: [0.48, 0.47, 0.1],
+  neck: [0.43, 0.5, 0.12],
+  spine1: [0.15, 0.41, 0.1],
+  hips: [0, 0.28, -0.01],
+  leftArm: [0.31, 0.52, -0.03],
+  leftForeArm: [0.08, 0.53, -0.09],
+  leftHand: [-0.16, 0.52, -0.12],
+  rightArm: [0.37, 0.44, 0.3],
+  rightForeArm: [0.3, 0.37, 0.52],
+  rightHand: [0.33, 0.17, 0.61],
+  leftUpLeg: [-0.06, 0.34, -0.12],
+  leftLeg: [0.01, 0.22, -0.49],
+  leftFoot: [-0.05, 0.12, -0.83],
+  rightUpLeg: [-0.03, 0.15, 0.06],
+  rightLeg: [0.26, 0.03, -0.18],
+  rightFoot: [-0.09, 0.04, -0.21],
+});
+
+/** Every layout a humanoid can wear, for anything that needs to enumerate them (debug, audits). */
+export const HUMANOID_LAYOUTS: readonly RigLayout[] = [
+  HUMANOID_RIG,
+  HUMANOID_CROUCH_RIG,
+  HUMANOID_CROUCH_PISTOL_RIG,
+  HUMANOID_CROUCH_WALK_RIG,
+  HUMANOID_CROUCH_RUN_RIG,
+  HUMANOID_SLIDE_RIG,
+];
+
+const EPS = 1e-6;
+
+/**
+ * The interval and the face `raySlab` is narrowing, one axis at a time.
+ *
+ * Module-level rather than an out parameter or a closure: the slab test runs once per box per
+ * shot and must not allocate. They are written and read inside a single `raySlab` call, and the
+ * axis and the sign are only ever read after one has returned a hit.
+ */
+let slabMin = 0;
+let slabMax = 0;
+let slabAxis = 0;
+let slabSign = 0;
+//#endregion
+
+// ====================================== CLASS HitboxRig ======================================= \\
+//#region Class HitboxRig
+/**
+ * A rig instance: a layout plus a yaw-oriented transform.
+ *
+ * Only yaw is supported, deliberately. A bot that pitches or rolls its hitboxes is a
+ * bot whose hitboxes have stopped matching what the player sees, and every shooter that
+ * has tried it has regretted it.
+ */
+export class HitboxRig {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
+  /**
+   * The boxes this body wears right now. Set from the stance and speed on the tick the shot
+   * resolves (`rigLayoutFor`), and rewound with the transform by lag compensation.
+   *
+   * M3 had a `heightScale` here instead — a uniform squash of the standing layout by the
+   * capsule height, so that cover would cover a crouching body. It covered the crouch idle
+   * and nothing else (C1's table); a layout per drawn pose replaced it in M13 C2.
+   */
+  layout: RigLayout;
+
+  x = 0;
+  y = 0;
+  z = 0;
+  yaw = 0;
+
+  private cos = 1;
+  private sin = 0;
+
+  /**
+   * The ray `raycast` is resolving, in this rig's own frame, and the box it found.
+   *
+   * On the instance rather than at module level, so two rigs tested in one process — a menu
+   * skirmish beside a match — cannot read each other's ray. A ray is six numbers and a bound,
+   * which is more than a helper should take as arguments; the alternative was one function of
+   * seventy lines. `localDy` is absent because yaw does not rotate it: it is `dy` throughout.
+   */
+  private localOx = 0;
+  private localOy = 0;
+  private localOz = 0;
+  private localDx = 0;
+  private localDz = 0;
+  private hitT = 0;
+  private hitAxis = 0;
+  private hitSign = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  constructor(layout: RigLayout = HUMANOID_RIG) {
+    this.layout = layout;
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  setLayout(layout: RigLayout): void {
+    this.layout = layout;
+  }
+
+  setTransform(x: number, y: number, z: number, yaw: number): void {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+    if (yaw !== this.yaw) {
+      this.yaw = yaw;
+      this.cos = simCos(yaw);
+      this.sin = simSin(yaw);
+    }
+  }
+
+  /** World-space centre of the bounding sphere. */
+  get boundCenterY(): number {
+    return this.y + this.layout.boundY;
+  }
+
+  /** Height of this rig's silhouette right now, metres: the top of its highest box. */
+  get standingHeight(): number {
+    return this.layout.height;
+  }
+
+  /**
+   * Ray versus this rig. `dx,dy,dz` must be normalised. Returns true and writes the
+   * nearest hit inside `maxT`.
+   */
+  raycast(
+    ox: number,
+    oy: number,
+    oz: number,
+    dx: number,
+    dy: number,
+    dz: number,
+    maxT: number,
+    out: RigHit,
+  ): boolean {
+    if (this.missesBoundSphere(ox, oy, oz, dx, dy, dz, maxT)) return false;
+    this.toRigLocalRay(ox, oy, oz, dx, dz);
+    const index = this.nearestBoxHit(dy, maxT);
+    if (index < 0) return false;
+    return this.writeRigHit(out, index);
+  }
+
+  /**
+   * Write this rig's boxes into world space, 8 corners each, for the debug
+   * visualiser. `out` receives 24 floats per box.
+   */
+  writeWorldCorners(out: Float32Array): number {
+    const boxes = this.layout.boxes;
+    const cs = this.cos;
+    const sn = this.sin;
+    let w = 0;
+    for (const box of boxes) {
+      const hx = box.sx * 0.5;
+      const hy = box.sy * 0.5;
+      const hz = box.sz * 0.5;
+      for (let corner = 0; corner < 8; corner++) {
+        const lx = box.ox + ((corner & 1) === 0 ? -hx : hx);
+        const ly = box.oy + ((corner & 2) === 0 ? -hy : hy);
+        const lz = box.oz + ((corner & 4) === 0 ? -hz : hz);
+        if (w + 3 > out.length) return w;
+        out[w++] = this.x + lx * cs + lz * sn;
+        out[w++] = this.y + ly;
+        out[w++] = this.z - lx * sn + lz * cs;
+      }
+    }
+    return w;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** The cheap reject against the bounding sphere, before touching any box. */
+  private missesBoundSphere(
+    ox: number,
+    oy: number,
+    oz: number,
+    dx: number,
+    dy: number,
+    dz: number,
+    maxT: number,
+  ): boolean {
+    const mx = ox - this.x;
+    const my = oy - this.boundCenterY;
+    const mz = oz - this.z;
+    const b = mx * dx + my * dy + mz * dz;
+    const r = this.layout.boundRadius;
+    const c = mx * mx + my * my + mz * mz - r * r;
+    // Outside the sphere and pointing away: nothing to do.
+    if (c > 0 && b > 0) return true;
+    if (b * b - c < 0) return true;
+    const near = -b - Math.sqrt(b * b - c);
+    return near > maxT;
+  }
+
+  /**
+   * World -> rig-local, into the fields above. Yaw only, so this is a 2x2 rotation plus a
+   * translation, and `dy` is left where it is.
+   */
+  private toRigLocalRay(ox: number, oy: number, oz: number, dx: number, dz: number): void {
+    const cs = this.cos;
+    const sn = this.sin;
+    const rx = ox - this.x;
+    const rz = oz - this.z;
+    this.localOx = rx * cs - rz * sn;
+    this.localOy = oy - this.y;
+    this.localOz = rx * sn + rz * cs;
+    this.localDx = dx * cs - dz * sn;
+    this.localDz = dx * sn + dz * cs;
+  }
+
+  /**
+   * The index of the nearest box the local ray enters inside `maxT`, or -1. The distance and
+   * the face it entered through are left in `hitT`/`hitAxis`/`hitSign`.
+   */
+  private nearestBoxHit(dy: number, maxT: number): number {
+    const lox = this.localOx;
+    const ry = this.localOy;
+    const loz = this.localOz;
+    const ldx = this.localDx;
+    const ldz = this.localDz;
+
+    let bestT = maxT;
+    let bestIndex = -1;
+    let bestAxis = 0;
+    let bestSign = 0;
+
+    const boxes = this.layout.boxes;
+    for (let i = 0; i < boxes.length; i++) {
+      const box = boxes[i];
+      if (box === undefined) continue;
+      const t = raySlab(
+        lox - box.ox,
+        ry - box.oy,
+        loz - box.oz,
+        ldx,
+        dy,
+        ldz,
+        box.sx * 0.5,
+        box.sy * 0.5,
+        box.sz * 0.5,
+        bestT,
+      );
+      if (t < 0) continue;
+      bestT = t;
+      bestIndex = i;
+      bestAxis = slabAxis;
+      bestSign = slabSign;
+    }
+
+    this.hitT = bestT;
+    this.hitAxis = bestAxis;
+    this.hitSign = bestSign;
+    return bestIndex;
+  }
+
+  /**
+   * The hit into the caller's record, with the normal rotated back out of rig-local space.
+   *
+   * Nothing is written until the box is in hand, so a caller's record is untouched by a miss.
+   */
+  private writeRigHit(out: RigHit, index: number): boolean {
+    const hitBox = this.layout.boxes[index];
+    if (hitBox === undefined) return false;
+
+    out.t = this.hitT;
+    out.zone = hitBox.zone;
+    out.boxIndex = index;
+    out.upper = hitBox.upper === true;
+
+    // Local -> world for the normal (inverse yaw rotation).
+    const cs = this.cos;
+    const sn = this.sin;
+    const nlx = this.hitAxis === 0 ? this.hitSign : 0;
+    const nly = this.hitAxis === 1 ? this.hitSign : 0;
+    const nlz = this.hitAxis === 2 ? this.hitSign : 0;
+    out.nx = nlx * cs + nlz * sn;
+    out.ny = nly;
+    out.nz = -nlx * sn + nlz * cs;
+    return true;
+  }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeRigHit(): RigHit {
+  return { t: 0, zone: 'torso', boxIndex: -1, upper: false, nx: 0, ny: 0, nz: 0 };
+}
+
+/**
+ * The layout a body wears in `stance` moving at `(vx, vz)` with `pistol` in its hands, chosen by
+ * the rule the animation selector uses to choose the clip: standing stances wear the standing
+ * layout; a low stance wears the kneel, the crouch walk above the idle dead zone, and the crouch
+ * run above the run threshold — which a crouch reaches only by landing in one at speed.
+ *
+ * `pistol` is the whole of the weapon's influence, and it reaches exactly one branch: the
+ * crouched idle, where a sidearm is drawn in its own half-squat 10.9 cm above the kneel's head
+ * box. Everywhere else the pistol family has no clip of its own, the body falls back to the
+ * rifle's — and because the layout is chosen by the same three facts the clip is, it falls back
+ * with it. That is what makes half a family safe to admit where M13 decision 11 could not: the
+ * clip and the boxes cannot disagree about which pose a body is in, whatever it is holding.
+ *
+ * Squared speeds, on purpose: `Math.hypot` is not something two runtimes have to agree on and
+ * a threshold comparison does not need it.
+ *
+ * **A slide is a stance, not a speed** (2026-09-28). It used to fall through to the crouch
+ * layouts by speed, because it was drawn with the crouch loops; it has a clip of its own now,
+ * played for the whole of a fixed-length slide, so it wears that clip's layout from its first
+ * tick to its last whatever it is doing — and in either hand, because the clip is the same.
+ */
+export function rigLayoutFor(stance: StanceId, vx: number, vz: number, pistol: boolean): RigLayout {
+  if (stance === 'SLIDE') return HUMANOID_SLIDE_RIG;
+  if (!isLowStance(stance)) return HUMANOID_RIG;
+  const speedSq = vx * vx + vz * vz;
+  if (speedSq >= LOCOMOTION_RUN_SPEED * LOCOMOTION_RUN_SPEED) return HUMANOID_CROUCH_RUN_RIG;
+  if (speedSq > LOCOMOTION_IDLE_SPEED * LOCOMOTION_IDLE_SPEED) return HUMANOID_CROUCH_WALK_RIG;
+  return pistol ? HUMANOID_CROUCH_PISTOL_RIG : HUMANOID_CROUCH_RIG;
+}
+
+export function buildLayout(id: string, boxes: readonly HitboxDef[]): RigLayout {
+  let top = 0;
+  for (const b of boxes) top = Math.max(top, b.oy + b.sy * 0.5);
+  const boundY = top * 0.5;
+  let radius = 0;
+  for (const b of boxes) {
+    const dy = b.oy - boundY;
+    const corner = Math.hypot(b.sx, b.sy, b.sz) * 0.5;
+    radius = Math.max(radius, Math.hypot(b.ox, dy, b.oz) + corner);
+  }
+  // The chest if the layout marks one, else the first torso box (the sentry has no chest),
+  // else the middle of the silhouette.
+  const chest = boxes.find((b) => b.upper === true) ?? boxes.find((b) => b.zone === 'torso');
+  return { id, boxes, height: top, aimY: chest?.oy ?? top * 0.5, boundY, boundRadius: radius };
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * An axis-aligned box around the segment `a → b`, padded by the part's radius.
+ *
+ * Yaw is the only rotation the rig supports (see `HitboxRig`), so a pitched torso or a
+ * folded leg becomes the bounding box of its segment rather than a tilted slab. That
+ * over-covers the corners of a diagonal segment, which is the price the rig's own comment
+ * accepts; splitting each limb in two keeps the price small.
+ */
+function segmentBox(
+  name: string,
+  zone: HitZone,
+  a: Joint,
+  b: Joint,
+  pad: Pad,
+  upper?: boolean,
+): HitboxDef {
+  const box: HitboxDef = {
+    name,
+    zone,
+    ox: round((a[0] + b[0]) * 0.5),
+    oy: round((a[1] + b[1]) * 0.5),
+    oz: round((a[2] + b[2]) * 0.5),
+    sx: round(Math.abs(a[0] - b[0]) + pad[0] * 2),
+    sy: round(Math.abs(a[1] - b[1]) + pad[1] * 2),
+    sz: round(Math.abs(a[2] - b[2]) + pad[2] * 2),
+  };
+  return upper === true ? { ...box, upper: true } : box;
+}
+
+/** Three decimals: the joints are measured to centimetres, and a hash must not depend on a rounding mode. */
+function round(v: number): number {
+  return Math.round(v * 1000) / 1000;
+}
+
+function poseLayout(id: string, j: PoseJoints): RigLayout {
+  return buildLayout(id, [
+    segmentBox('head', 'head', j.head, j.headTop, PAD.head),
+    segmentBox('neck', 'head', j.neck, j.head, PAD.neck),
+    segmentBox('chest', 'torso', j.spine1, j.neck, PAD.chest, true),
+    segmentBox('abdomen', 'torso', j.hips, j.spine1, PAD.abdomen),
+    segmentBox('upperArmL', 'arm', j.leftArm, j.leftForeArm, PAD.arm),
+    segmentBox('foreArmL', 'arm', j.leftForeArm, j.leftHand, PAD.arm),
+    segmentBox('upperArmR', 'arm', j.rightArm, j.rightForeArm, PAD.arm),
+    segmentBox('foreArmR', 'arm', j.rightForeArm, j.rightHand, PAD.arm),
+    segmentBox('thighL', 'leg', j.leftUpLeg, j.leftLeg, PAD.leg),
+    segmentBox('shinL', 'leg', j.leftLeg, j.leftFoot, PAD.leg),
+    segmentBox('thighR', 'leg', j.rightUpLeg, j.rightLeg, PAD.leg),
+    segmentBox('shinR', 'leg', j.rightLeg, j.rightFoot, PAD.leg),
+  ]);
+}
+
+/**
  * A box around every joint of one body part, padded by the same radius on every axis.
  *
  * The slide's own builder, because `PAD` cannot describe a body lying down. Those pads are an
@@ -382,278 +747,14 @@ function lyingLayout(id: string, j: PoseJoints): RigLayout {
 }
 
 /**
- * `Running_Slide` over clip time 0.400–0.800 s — the part `CharacterAnimator` plays across a
- * slide (2026-09-28). A baseball slide: the left leg out straight 0.83 m in front of the feet,
- * the right folded under, the torso laid back and rolled onto its right side with the right hand
- * planted behind. Crown at 0.50 m against the crouch run's 1.38, which is the pose a slide used to
- * be drawn with and the reason it needs a layout of its own: a round aimed at this head passes
- * under every box the old one had.
- *
- * Echo's joints, mean over that window, from
- * `scripts/measure-crouch.mjs --dir public/models/bots/animations/locomotion/slide --window 0.4:0.8 --pose`.
- * The other six skins agree within 3.5 cm (Apex, 1.025 scale, is the 3.5). Over the window the
- * crown runs 0.44–0.61 m and the head box spans 0.39–0.58, so the crown is inside it on every
- * frame but the window's first and last, where it is 3 cm over — left on record rather than padded
- * away, as the crouched throw's 12.7 cm was. The drop before the window belongs to the cross-fade.
- */
-const HUMANOID_SLIDE_RIG: RigLayout = lyingLayout('humanoid-slide', {
-  headTop: [0.67, 0.5, -0.06],
-  head: [0.48, 0.47, 0.1],
-  neck: [0.43, 0.5, 0.12],
-  spine1: [0.15, 0.41, 0.1],
-  hips: [0, 0.28, -0.01],
-  leftArm: [0.31, 0.52, -0.03],
-  leftForeArm: [0.08, 0.53, -0.09],
-  leftHand: [-0.16, 0.52, -0.12],
-  rightArm: [0.37, 0.44, 0.3],
-  rightForeArm: [0.3, 0.37, 0.52],
-  rightHand: [0.33, 0.17, 0.61],
-  leftUpLeg: [-0.06, 0.34, -0.12],
-  leftLeg: [0.01, 0.22, -0.49],
-  leftFoot: [-0.05, 0.12, -0.83],
-  rightUpLeg: [-0.03, 0.15, 0.06],
-  rightLeg: [0.26, 0.03, -0.18],
-  rightFoot: [-0.09, 0.04, -0.21],
-});
-
-/** Every layout a humanoid can wear, for anything that needs to enumerate them (debug, audits). */
-export const HUMANOID_LAYOUTS: readonly RigLayout[] = [
-  HUMANOID_RIG,
-  HUMANOID_CROUCH_RIG,
-  HUMANOID_CROUCH_PISTOL_RIG,
-  HUMANOID_CROUCH_WALK_RIG,
-  HUMANOID_CROUCH_RUN_RIG,
-  HUMANOID_SLIDE_RIG,
-];
-
-/**
- * The layout a body wears in `stance` moving at `(vx, vz)` with `pistol` in its hands, chosen by
- * the rule the animation selector uses to choose the clip: standing stances wear the standing
- * layout; a low stance wears the kneel, the crouch walk above the idle dead zone, and the crouch
- * run above the run threshold — which a crouch reaches only by landing in one at speed.
- *
- * `pistol` is the whole of the weapon's influence, and it reaches exactly one branch: the
- * crouched idle, where a sidearm is drawn in its own half-squat 10.9 cm above the kneel's head
- * box. Everywhere else the pistol family has no clip of its own, the body falls back to the
- * rifle's — and because the layout is chosen by the same three facts the clip is, it falls back
- * with it. That is what makes half a family safe to admit where M13 decision 11 could not: the
- * clip and the boxes cannot disagree about which pose a body is in, whatever it is holding.
- *
- * Squared speeds, on purpose: `Math.hypot` is not something two runtimes have to agree on and
- * a threshold comparison does not need it.
- *
- * **A slide is a stance, not a speed** (2026-09-28). It used to fall through to the crouch
- * layouts by speed, because it was drawn with the crouch loops; it has a clip of its own now,
- * played for the whole of a fixed-length slide, so it wears that clip's layout from its first
- * tick to its last whatever it is doing — and in either hand, because the clip is the same.
- */
-export function rigLayoutFor(stance: StanceId, vx: number, vz: number, pistol: boolean): RigLayout {
-  if (stance === 'SLIDE') return HUMANOID_SLIDE_RIG;
-  if (!isLowStance(stance)) return HUMANOID_RIG;
-  const speedSq = vx * vx + vz * vz;
-  if (speedSq >= LOCOMOTION_RUN_SPEED * LOCOMOTION_RUN_SPEED) return HUMANOID_CROUCH_RUN_RIG;
-  if (speedSq > LOCOMOTION_IDLE_SPEED * LOCOMOTION_IDLE_SPEED) return HUMANOID_CROUCH_WALK_RIG;
-  return pistol ? HUMANOID_CROUCH_PISTOL_RIG : HUMANOID_CROUCH_RIG;
-}
-
-export function buildLayout(id: string, boxes: readonly HitboxDef[]): RigLayout {
-  let top = 0;
-  for (const b of boxes) top = Math.max(top, b.oy + b.sy * 0.5);
-  const boundY = top * 0.5;
-  let radius = 0;
-  for (const b of boxes) {
-    const dy = b.oy - boundY;
-    const corner = Math.hypot(b.sx, b.sy, b.sz) * 0.5;
-    radius = Math.max(radius, Math.hypot(b.ox, dy, b.oz) + corner);
-  }
-  // The chest if the layout marks one, else the first torso box (the sentry has no chest),
-  // else the middle of the silhouette.
-  const chest = boxes.find((b) => b.upper === true) ?? boxes.find((b) => b.zone === 'torso');
-  return { id, boxes, height: top, aimY: chest?.oy ?? top * 0.5, boundY, boundRadius: radius };
-}
-
-const EPS = 1e-6;
-
-/**
- * A rig instance: a layout plus a yaw-oriented transform.
- *
- * Only yaw is supported, deliberately. A bot that pitches or rolls its hitboxes is a
- * bot whose hitboxes have stopped matching what the player sees, and every shooter that
- * has tried it has regretted it.
- */
-export class HitboxRig {
-  /**
-   * The boxes this body wears right now. Set from the stance and speed on the tick the shot
-   * resolves (`rigLayoutFor`), and rewound with the transform by lag compensation.
-   *
-   * M3 had a `heightScale` here instead — a uniform squash of the standing layout by the
-   * capsule height, so that cover would cover a crouching body. It covered the crouch idle
-   * and nothing else (C1's table); a layout per drawn pose replaced it in M13 C2.
-   */
-  layout: RigLayout;
-
-  x = 0;
-  y = 0;
-  z = 0;
-  yaw = 0;
-
-  private cos = 1;
-  private sin = 0;
-
-  constructor(layout: RigLayout = HUMANOID_RIG) {
-    this.layout = layout;
-  }
-
-  setLayout(layout: RigLayout): void {
-    this.layout = layout;
-  }
-
-  setTransform(x: number, y: number, z: number, yaw: number): void {
-    this.x = x;
-    this.y = y;
-    this.z = z;
-    if (yaw !== this.yaw) {
-      this.yaw = yaw;
-      this.cos = simCos(yaw);
-      this.sin = simSin(yaw);
-    }
-  }
-
-  /** World-space centre of the bounding sphere. */
-  get boundCenterY(): number {
-    return this.y + this.layout.boundY;
-  }
-
-  /** Height of this rig's silhouette right now, metres: the top of its highest box. */
-  get standingHeight(): number {
-    return this.layout.height;
-  }
-
-  /**
-   * Ray versus this rig. `dx,dy,dz` must be normalised. Returns true and writes the
-   * nearest hit inside `maxT`.
-   */
-  raycast(
-    ox: number,
-    oy: number,
-    oz: number,
-    dx: number,
-    dy: number,
-    dz: number,
-    maxT: number,
-    out: RigHit,
-  ): boolean {
-    // Cheap reject against the bounding sphere before touching any box.
-    const cx = this.x;
-    const cy = this.boundCenterY;
-    const cz = this.z;
-    const mx = ox - cx;
-    const my = oy - cy;
-    const mz = oz - cz;
-    const b = mx * dx + my * dy + mz * dz;
-    const r = this.layout.boundRadius;
-    const c = mx * mx + my * my + mz * mz - r * r;
-    // Outside the sphere and pointing away: nothing to do.
-    if (c > 0 && b > 0) return false;
-    if (b * b - c < 0) return false;
-    const near = -b - Math.sqrt(b * b - c);
-    if (near > maxT) return false;
-
-    // World -> rig-local. Yaw only, so this is a 2x2 rotation plus a translation.
-    const cs = this.cos;
-    const sn = this.sin;
-    const rx = ox - cx;
-    const ry = oy - this.y;
-    const rz = oz - cz;
-    const lox = rx * cs - rz * sn;
-    const loz = rx * sn + rz * cs;
-    const ldx = dx * cs - dz * sn;
-    const ldz = dx * sn + dz * cs;
-
-    let bestT = maxT;
-    let bestIndex = -1;
-    let bestAxis = 0;
-    let bestSign = 0;
-
-    const boxes = this.layout.boxes;
-    for (let i = 0; i < boxes.length; i++) {
-      const box = boxes[i];
-      if (box === undefined) continue;
-      const t = raySlab(
-        lox - box.ox,
-        ry - box.oy,
-        loz - box.oz,
-        ldx,
-        dy,
-        ldz,
-        box.sx * 0.5,
-        box.sy * 0.5,
-        box.sz * 0.5,
-        bestT,
-      );
-      if (t < 0) continue;
-      bestT = t;
-      bestIndex = i;
-      bestAxis = slabAxis;
-      bestSign = slabSign;
-    }
-
-    if (bestIndex < 0) return false;
-    const hitBox = boxes[bestIndex];
-    if (hitBox === undefined) return false;
-
-    out.t = bestT;
-    out.zone = hitBox.zone;
-    out.boxIndex = bestIndex;
-    out.upper = hitBox.upper === true;
-
-    // Local -> world for the normal (inverse yaw rotation).
-    const nlx = bestAxis === 0 ? bestSign : 0;
-    const nly = bestAxis === 1 ? bestSign : 0;
-    const nlz = bestAxis === 2 ? bestSign : 0;
-    out.nx = nlx * cs + nlz * sn;
-    out.ny = nly;
-    out.nz = -nlx * sn + nlz * cs;
-    return true;
-  }
-
-  /**
-   * Write this rig's boxes into world space, 8 corners each, for the debug
-   * visualiser. `out` receives 24 floats per box.
-   */
-  writeWorldCorners(out: Float32Array): number {
-    const boxes = this.layout.boxes;
-    const cs = this.cos;
-    const sn = this.sin;
-    let w = 0;
-    for (const box of boxes) {
-      const hx = box.sx * 0.5;
-      const hy = box.sy * 0.5;
-      const hz = box.sz * 0.5;
-      for (let corner = 0; corner < 8; corner++) {
-        const lx = box.ox + ((corner & 1) === 0 ? -hx : hx);
-        const ly = box.oy + ((corner & 2) === 0 ? -hy : hy);
-        const lz = box.oz + ((corner & 4) === 0 ? -hz : hz);
-        if (w + 3 > out.length) return w;
-        out[w++] = this.x + lx * cs + lz * sn;
-        out[w++] = this.y + ly;
-        out[w++] = this.z - lx * sn + lz * cs;
-      }
-    }
-    return w;
-  }
-}
-
-/**
  * Slab test against an axis-aligned box centred on the origin.
  *
- * Returns the entry distance, or -1 for a miss / a hit past `maxT`. The hit axis and
- * face sign land in the two module-level scratch values below rather than in an out
- * parameter: this runs once per box per shot and must not allocate.
+ * Returns the entry distance, or -1 for a miss / a hit past `maxT`. The interval starts at
+ * `slabMin = 0`, so a ray that began inside the box lands at zero rather than behind itself —
+ * which is the property `ai/PlayerCombatant` relies on. The hit axis and face sign land in the
+ * module-level scratch values above rather than in an out parameter: this runs once per box per
+ * shot and must not allocate.
  */
-let slabAxis = 0;
-let slabSign = 0;
-
 function raySlab(
   ox: number,
   oy: number,
@@ -666,79 +767,48 @@ function raySlab(
   hz: number,
   maxT: number,
 ): number {
-  let tmin = 0;
-  let tmax = maxT;
-  let axis = 0;
-  let sign = 0;
+  slabMin = 0;
+  slabMax = maxT;
+  slabAxis = 0;
+  slabSign = 0;
 
-  if (Math.abs(dx) < EPS) {
-    if (ox < -hx || ox > hx) return -1;
-  } else {
-    const inv = 1 / dx;
-    let t1 = (-hx - ox) * inv;
-    let t2 = (hx - ox) * inv;
-    let s = -1;
-    if (t1 > t2) {
-      const tmp = t1;
-      t1 = t2;
-      t2 = tmp;
-      s = 1;
-    }
-    if (t1 > tmin) {
-      tmin = t1;
-      axis = 0;
-      sign = s;
-    }
-    if (t2 < tmax) tmax = t2;
-    if (tmin > tmax) return -1;
-  }
+  if (!narrowSlab(ox, dx, hx, 0)) return -1;
+  if (!narrowSlab(oy, dy, hy, 1)) return -1;
+  if (!narrowSlab(oz, dz, hz, 2)) return -1;
 
-  if (Math.abs(dy) < EPS) {
-    if (oy < -hy || oy > hy) return -1;
-  } else {
-    const inv = 1 / dy;
-    let t1 = (-hy - oy) * inv;
-    let t2 = (hy - oy) * inv;
-    let s = -1;
-    if (t1 > t2) {
-      const tmp = t1;
-      t1 = t2;
-      t2 = tmp;
-      s = 1;
-    }
-    if (t1 > tmin) {
-      tmin = t1;
-      axis = 1;
-      sign = s;
-    }
-    if (t2 < tmax) tmax = t2;
-    if (tmin > tmax) return -1;
-  }
-
-  if (Math.abs(dz) < EPS) {
-    if (oz < -hz || oz > hz) return -1;
-  } else {
-    const inv = 1 / dz;
-    let t1 = (-hz - oz) * inv;
-    let t2 = (hz - oz) * inv;
-    let s = -1;
-    if (t1 > t2) {
-      const tmp = t1;
-      t1 = t2;
-      t2 = tmp;
-      s = 1;
-    }
-    if (t1 > tmin) {
-      tmin = t1;
-      axis = 2;
-      sign = s;
-    }
-    if (t2 < tmax) tmax = t2;
-    if (tmin > tmax) return -1;
-  }
-
-  slabAxis = axis;
   // The ray started inside the box; report a face pointing back at the shooter.
-  slabSign = sign === 0 ? 1 : sign;
-  return tmin;
+  if (slabSign === 0) slabSign = 1;
+  return slabMin;
 }
+
+/**
+ * One axis of `raySlab`: narrows `slabMin`/`slabMax` and remembers which face the near
+ * intersection came from. False once the interval has closed and the ray has missed.
+ *
+ * This was written out three times, once per axis, with allocation given as the reason. A
+ * module-level function over module-level state allocates nothing — which is the argument
+ * `world/Geometry.entrySlab` already makes for the identical test next door. The in-range test
+ * for a parallel ray is written as `!(o < -h || o > h)` rather than `o >= -h && o <= h` because
+ * that is the form the three copies had, and the two differ for a NaN coordinate.
+ */
+function narrowSlab(o: number, d: number, h: number, axis: number): boolean {
+  if (Math.abs(d) < EPS) return !(o < -h || o > h);
+  const inv = 1 / d;
+  let t1 = (-h - o) * inv;
+  let t2 = (h - o) * inv;
+  let s = -1;
+  if (t1 > t2) {
+    const tmp = t1;
+    t1 = t2;
+    t2 = tmp;
+    s = 1;
+  }
+  if (t1 > slabMin) {
+    slabMin = t1;
+    slabAxis = axis;
+    slabSign = s;
+  }
+  if (t2 < slabMax) slabMax = t2;
+  return slabMin <= slabMax;
+}
+//#endregion

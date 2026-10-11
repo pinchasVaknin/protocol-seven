@@ -1,5 +1,10 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { PLAYER_ENTITY_ID } from './DamageSystem';
+//#endregion
 
+// ==================================== CLASS LocalIdentity ===================================== \\
+//#region Class LocalIdentity
 /**
  * Which entity is *this* client (M10, playtest round 2).
  *
@@ -37,9 +42,14 @@ import { PLAYER_ENTITY_ID } from './DamageSystem';
  * (HARD RULE 8).
  */
 export class LocalIdentity {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private id: number = PLAYER_ENTITY_ID;
   private readonly listeners: Array<(entityId: number) => void> = [];
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** The entity this client controls. `PLAYER_ENTITY_ID` until a server says otherwise. */
   get entityId(): number {
     return this.id;
@@ -77,5 +87,6 @@ export class LocalIdentity {
       if (at >= 0) this.listeners.splice(at, 1);
     };
   }
+  //#endregion
 }
-
+//#endregion

@@ -182,6 +182,16 @@ const FINISHED = {
     'src/shared/weapons/defs/smgs.ts',
     'src/shared/weapons/defs/snipers.ts',
   ],
+  A9: [
+    'src/shared/combat/BurnSystem.ts',
+    'src/shared/combat/DamageSystem.ts',
+    'src/shared/combat/HitboxRig.ts',
+    'src/shared/combat/Hostility.ts',
+    'src/shared/combat/Killfeed.ts',
+    'src/shared/combat/LocalIdentity.ts',
+    'src/shared/combat/ScoreSystem.ts',
+    'src/shared/combat/ShotAccounting.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

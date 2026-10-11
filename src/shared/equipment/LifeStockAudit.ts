@@ -16,6 +16,8 @@
  * re-derived it would be a second opinion about the thing it is auditing.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** Who the life belonged to. Split because they refill through different doors. */
 export type LifeStockOwner = 'human' | 'bot';
 
@@ -40,10 +42,18 @@ export interface LifeStockReport {
   observedStock: number;
   expectedStock: number;
 }
+//#endregion
 
+// ==================================== CLASS LifeStockAudit ==================================== \\
+//#region Class LifeStockAudit
 export class LifeStockAudit {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly totals = blankStockReport();
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * One life started. `lethal`/`tactical` are what it holds; `lethalFull`/`tacticalFull` what
    * a full one holds.
@@ -74,8 +84,12 @@ export class LifeStockAudit {
   report(): LifeStockReport {
     return { ...this.totals };
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function blankStockReport(): LifeStockReport {
   return {
     lifeStarts: 0,
@@ -89,3 +103,4 @@ function blankStockReport(): LifeStockReport {
     expectedStock: 0,
   };
 }
+//#endregion

@@ -1,5 +1,3 @@
-import type { WeaponDef } from '../weapons/WeaponDefs';
-
 /**
  * Grenades and equipment (brief S6.3).
  *
@@ -18,6 +16,13 @@ import type { WeaponDef } from '../weapons/WeaponDefs';
  * is the *only* thing in this project that is not hitscan.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { WeaponDef } from '../weapons/WeaponDefs';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type EquipmentSlot = 'lethal' | 'tactical';
 
 export type EquipmentId = 'frag' | 'semtex' | 'flashbang' | 'smoke' | 'claymore';
@@ -89,94 +94,10 @@ export interface EquipmentDef {
   /** Bots below this tier index never throw one (S6.3). Recruit is 0. */
   readonly minBotTier: number;
 }
+//#endregion
 
-/**
- * An explosion's damage curve, expressed as a weapon.
- *
- * `near` at the centre falling linearly to `far` at `end` is exactly what
- * `damageAtRange` already computes, so a grenade needs no second damage model. Zone
- * multipliers are all 1: a blast does not care which limb it found first, and a headshot
- * multiplier on shrapnel would make crouching *worse*, which is backwards.
- */
-function blast(id: string, name: string, near: number, far: number, radius: number): WeaponDef {
-  return {
-    id,
-    name,
-    class: 'LAUNCHER',
-    slot: 'primary',
-    // What it is, for the one reader that has to tell a pressure wave from a bullet: a riot
-    // shield refuses the second and only halves the first. See `WeaponDef.explosive`.
-    explosive: true,
-    damage: { near, far },
-    damageFalloff: { start: 0.6, end: radius },
-    headshotMult: 1,
-    limbMult: 1,
-    upperTorsoMult: 1,
-    rpm: 60,
-    magSize: 1,
-    reserveAmmo: 0,
-    reloadTime: 1,
-    reloadEmptyTime: 1,
-    adsTime: 0.3,
-    sprintOutTime: 0.2,
-    // A blast is attribution, never held: nobody's feet read this. 1 so it could not matter if one did.
-    moveSpeedMult: 1,
-    swapInTime: 0.5,
-    swapOutTime: 0.4,
-    pellets: 1,
-    pelletSpread: 0,
-    spread: {
-      hipStand: 0,
-      hipMove: 0,
-      ads: 0,
-      crouchScale: 1,
-      airScale: 1,
-      perShot: 0,
-      perShotMax: 0,
-      recover: 1,
-    },
-    recoil: {
-      kicks: [],
-      verticalScale: 0,
-      horizontalScale: 0,
-      firstShotScale: 1,
-      recoverFraction: 1,
-      recoverRate: 10,
-      recoverDelay: 0.1,
-      adsScale: 1,
-      visualScale: 0,
-      visualAttack: 0.03,
-      visualSettle: 0.15,
-    },
-    penetration: 0,
-    projectileSpeed: 18,
-    unlockLevel: 1,
-    attachmentSlots: [],
-    adsFovScale: 1,
-    adsViewmodelFovScale: 1,
-    tracerFraction: 0,
-    shakePerShot: 0,
-    muzzleFlashScale: 0,
-    minimapPing: true,
-    laserVisible: false,
-    voice: {
-      level: 1,
-      bodyFreq: 180,
-      bodyQ: 0.6,
-      bodyDecay: 0.4,
-      bodyRatio: 0.15,
-      tailDecay: 1.1,
-      tailLevel: 0.5,
-      tailFreq: 900,
-      clickFreq: 2400,
-      clickLevel: 0.7,
-      thumpFreq: 40,
-      thumpLevel: 1,
-      wet: 0.6,
-    },
-  };
-}
-
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Shared defaults so each record below only states what makes it different. */
 const BASE = {
   count: 2,
@@ -302,7 +223,105 @@ export const EQUIPMENT_DEFS: Readonly<Record<EquipmentId, EquipmentDef>> = {
   smoke: SMOKE,
   claymore: CLAYMORE,
 };
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function equipmentDef(id: EquipmentId): EquipmentDef {
   return EQUIPMENT_DEFS[id];
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * An explosion's damage curve, expressed as a weapon.
+ *
+ * `near` at the centre falling linearly to `far` at `end` is exactly what
+ * `damageAtRange` already computes, so a grenade needs no second damage model. Zone
+ * multipliers are all 1: a blast does not care which limb it found first, and a headshot
+ * multiplier on shrapnel would make crouching *worse*, which is backwards.
+ *
+ * Over the line limit at 75 lines, and left that way: the body is one data literal, which is
+ * the first exception the refactor guidance allows. Splitting it would put a `WeaponDef`'s
+ * fields in two places.
+ */
+function blast(id: string, name: string, near: number, far: number, radius: number): WeaponDef {
+  return {
+    id,
+    name,
+    class: 'LAUNCHER',
+    slot: 'primary',
+    // What it is, for the one reader that has to tell a pressure wave from a bullet: a riot
+    // shield refuses the second and only halves the first. See `WeaponDef.explosive`.
+    explosive: true,
+    damage: { near, far },
+    damageFalloff: { start: 0.6, end: radius },
+    headshotMult: 1,
+    limbMult: 1,
+    upperTorsoMult: 1,
+    rpm: 60,
+    magSize: 1,
+    reserveAmmo: 0,
+    reloadTime: 1,
+    reloadEmptyTime: 1,
+    adsTime: 0.3,
+    sprintOutTime: 0.2,
+    // A blast is attribution, never held: nobody's feet read this. 1 so it could not matter if one did.
+    moveSpeedMult: 1,
+    swapInTime: 0.5,
+    swapOutTime: 0.4,
+    pellets: 1,
+    pelletSpread: 0,
+    spread: {
+      hipStand: 0,
+      hipMove: 0,
+      ads: 0,
+      crouchScale: 1,
+      airScale: 1,
+      perShot: 0,
+      perShotMax: 0,
+      recover: 1,
+    },
+    recoil: {
+      kicks: [],
+      verticalScale: 0,
+      horizontalScale: 0,
+      firstShotScale: 1,
+      recoverFraction: 1,
+      recoverRate: 10,
+      recoverDelay: 0.1,
+      adsScale: 1,
+      visualScale: 0,
+      visualAttack: 0.03,
+      visualSettle: 0.15,
+    },
+    penetration: 0,
+    projectileSpeed: 18,
+    unlockLevel: 1,
+    attachmentSlots: [],
+    adsFovScale: 1,
+    adsViewmodelFovScale: 1,
+    tracerFraction: 0,
+    shakePerShot: 0,
+    muzzleFlashScale: 0,
+    minimapPing: true,
+    laserVisible: false,
+    voice: {
+      level: 1,
+      bodyFreq: 180,
+      bodyQ: 0.6,
+      bodyDecay: 0.4,
+      bodyRatio: 0.15,
+      tailDecay: 1.1,
+      tailLevel: 0.5,
+      tailFreq: 900,
+      clickFreq: 2400,
+      clickLevel: 0.7,
+      thumpFreq: 40,
+      thumpLevel: 1,
+      wet: 0.6,
+    },
+  };
+}
+//#endregion

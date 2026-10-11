@@ -1,10 +1,3 @@
-import type { BotTeam } from '../ai/Combatant';
-import { DT } from '../core/Loop';
-import type { CollisionWorld, MoveOutput } from '../world/CollisionWorld';
-import { makeMoveOutput } from '../world/CollisionWorld';
-import type { EquipmentConfig } from './EquipmentConfig';
-import type { EquipmentDef } from './EquipmentDefs';
-
 /**
  * A thrown object in flight (brief S6.3).
  *
@@ -15,8 +8,30 @@ import type { EquipmentDef } from './EquipmentDefs';
  *
  * Everything is pooled and the pool never grows: a match can have a few dozen live objects
  * and each one is a fixed record written in place, so the per-tick path allocates nothing.
+ *
+ * ## One launch, one integration
+ *
+ * `solveLaunch` and the two helpers at the bottom are shared on purpose. A thrown object has to
+ * leave the hand from the same point whether the caller is `EquipmentSystem.throwFrom` or
+ * `BotThrower`'s safety check, and it has to fly the same arc whether it is being stepped or
+ * previewed — otherwise the bot aims at a place its grenade will not land, which is a defect
+ * nobody can see from outside. They were written out twice each, and they are written once now.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { BotTeam } from '../ai/Combatant';
+import { DT } from '../core/Loop';
+import { DEG2RAD } from '../core/MathUtil';
+import { simCos, simSin } from '../core/SimMath';
+import type { CollisionWorld, MoveOutput } from '../world/CollisionWorld';
+import { makeMoveOutput } from '../world/CollisionWorld';
+import type { EquipmentConfig } from './EquipmentConfig';
+import type { EquipmentDef } from './EquipmentDefs';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 type ProjectilePhase =
   /** In the air or rolling. */
   | 'LIVE'
@@ -84,37 +99,6 @@ export interface Projectile {
   tz: number;
 }
 
-function makeProjectile(def: EquipmentDef): Projectile {
-  return {
-    active: false,
-    serial: 0,
-    def,
-    ownerId: -1,
-    team: 'NONE',
-    phase: 'LIVE',
-    x: 0,
-    y: 0,
-    z: 0,
-    vx: 0,
-    vy: 0,
-    vz: 0,
-    px: 0,
-    py: 0,
-    pz: 0,
-    fuse: 0,
-    age: 0,
-    yaw: 0,
-    pollTimer: 0,
-    resting: false,
-    stuckTo: -1,
-    material: 0,
-    replicated: false,
-    tx: 0,
-    ty: 0,
-    tz: 0,
-  };
-}
-
 /** What one integration tick did, so the caller can turn it into sound and light. */
 export interface StepResult {
   bounced: boolean;
@@ -123,20 +107,63 @@ export interface StepResult {
   impactSpeed: number;
 }
 
+/** Where a thrown object leaves the hand, and how fast. See `LAUNCH`. */
+export interface Launch {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const RESULT: StepResult = { bounced: false, stuck: false, planted: false, impactSpeed: 0 };
 
 /** A bounce quieter than this is a roll, and rolling should not click. */
 const MIN_BOUNCE_SPEED = 1.2;
 
+/**
+ * The launch `solveLaunch` last worked out. Read it immediately; the next call overwrites it.
+ *
+ * One reused record rather than a returned object, for the reason `RESULT` above is one: both
+ * throw paths run inside a sim tick and must not allocate. The two callers consume it
+ * synchronously, in the same statement that asked for it.
+ */
+export const LAUNCH: Launch = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
+
+/** The averaged contact normal `averageContactNormal` wrote, unit length. */
+let normalX = 0;
+let normalY = 0;
+let normalZ = 0;
+
+/** The velocity `reflectOffSurface` wrote. */
+let bounceVx = 0;
+let bounceVy = 0;
+let bounceVz = 0;
+//#endregion
+
+// ==================================== CLASS ProjectilePool ==================================== \\
+//#region Class ProjectilePool
 export class ProjectilePool {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly items: Projectile[] = [];
   private nextSerial = 1;
   private readonly move: MoveOutput = makeMoveOutput();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(capacity: number, seedDef: EquipmentDef) {
     for (let i = 0; i < capacity; i++) this.items.push(makeProjectile(seedDef));
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get liveCount(): number {
     let n = 0;
     for (const p of this.items) if (p.active) n++;
@@ -226,10 +253,32 @@ export class ProjectilePool {
 
     if (p.phase !== 'LIVE' || p.resting) return RESULT;
 
+    const speedIn = this.integrate(p, cfg, world);
+    if (this.move.contactCount === 0) return RESULT;
+    // A contact whose normals cancel out is no surface to reflect about.
+    if (!averageContactNormal(this.move)) return RESULT;
+
+    if (this.move.groundIndex >= 0) p.material = world.colliders.materialAt(this.move.groundIndex);
+    RESULT.impactSpeed = speedIn;
+
+    if (settleOnImpact(p)) return RESULT;
+    bounceOffSurface(p, speedIn);
+    return RESULT;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Gravity, drag and one swept move, written into the projectile. Returns the speed it was
+   * travelling at when it arrived, which is what a bounce sound is scaled by.
+   *
+   * Drag is a fraction of speed per second, which is enough to stop a hard throw carrying half
+   * the map without needing a real drag model.
+   */
+  private integrate(p: Projectile, cfg: EquipmentConfig, world: CollisionWorld): number {
     const r = p.def.radius;
 
-    // Integrate. Drag is a fraction of speed per second, which is enough to stop a hard
-    // throw carrying half the map without needing a real drag model.
     p.vy -= cfg.gravity * DT;
     const decay = Math.max(0, 1 - cfg.drag * DT);
     p.vx *= decay;
@@ -244,81 +293,52 @@ export class ProjectilePool {
     p.y = this.move.y + r;
     p.z = this.move.z;
 
-    if (this.move.contactCount === 0) return RESULT;
-
-    // Average the contact normals. A grenade in a concave corner has two or three, and
-    // reflecting about any single one of them sends it back into the other.
-    let nx = 0;
-    let ny = 0;
-    let nz = 0;
-    for (let i = 0; i < this.move.contactCount; i++) {
-      nx += this.move.normals[i * 3] ?? 0;
-      ny += this.move.normals[i * 3 + 1] ?? 0;
-      nz += this.move.normals[i * 3 + 2] ?? 0;
-    }
-    const nlen = Math.hypot(nx, ny, nz);
-    if (nlen < 1e-6) return RESULT;
-    nx /= nlen;
-    ny /= nlen;
-    nz /= nlen;
-
-    if (this.move.groundIndex >= 0) p.material = world.colliders.materialAt(this.move.groundIndex);
-
-    RESULT.impactSpeed = speedIn;
-
-    switch (p.def.impact) {
-      case 'stick':
-        p.vx = 0;
-        p.vy = 0;
-        p.vz = 0;
-        p.phase = 'STUCK';
-        p.resting = true;
-        // Face out of the surface it landed on, so the charge reads as attached.
-        p.yaw = Math.atan2(-nx, -nz);
-        RESULT.stuck = true;
-        return RESULT;
-
-      case 'plant': {
-        // A claymore only plants on something walkable; off a wall it drops and keeps
-        // going, which is what stops one being stuck to a ceiling above a doorway.
-        if (ny < 0.6) break;
-        p.vx = 0;
-        p.vy = 0;
-        p.vz = 0;
-        p.phase = 'ARMING';
-        p.resting = true;
-        p.fuse = p.def.armSeconds;
-        RESULT.planted = true;
-        return RESULT;
-      }
-
-      case 'bounce':
-        break;
-    }
-
-    // Reflect: the component along the normal loses `restitution`, the component across it
-    // loses `friction`. That single split is the whole difference between a grenade that
-    // rolls round a corner and one that sticks where it lands.
-    const vn = p.vx * nx + p.vy * ny + p.vz * nz;
-    const tx = p.vx - vn * nx;
-    const ty = p.vy - vn * ny;
-    const tz = p.vz - vn * nz;
-    const bounce = -vn * p.def.restitution;
-    p.vx = tx * p.def.friction + nx * bounce;
-    p.vy = ty * p.def.friction + ny * bounce;
-    p.vz = tz * p.def.friction + nz * bounce;
-
-    RESULT.bounced = speedIn > MIN_BOUNCE_SPEED;
-
-    const speedOut = Math.hypot(p.vx, p.vy, p.vz);
-    if (speedOut < p.def.restSpeed && ny > 0.55) {
-      p.vx = 0;
-      p.vy = 0;
-      p.vz = 0;
-      p.resting = true;
-    }
-    return RESULT;
+    return speedIn;
   }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/**
+ * Where a thrown object leaves the hand and how fast, into `LAUNCH`.
+ *
+ * The one launch solution, shared by `EquipmentSystem.throwFrom` and by `BotThrower`'s safety
+ * check. It was written out in both, identically, and that is the one piece of the throw a
+ * preview could silently disagree with: `previewTrajectory` already guarantees the *arc* is the
+ * same, so a release offset edited on one side alone would have the bot aiming its real grenade
+ * from a point its test grenade never left.
+ *
+ * `underhand` drops it at the thrower's feet rather than lobbing it, which is what a bot must
+ * never do into its own cover and what a player wants when smoking a doorway they stand in.
+ */
+export function solveLaunch(
+  def: EquipmentDef,
+  cfg: EquipmentConfig,
+  eyeX: number,
+  eyeY: number,
+  eyeZ: number,
+  yaw: number,
+  pitch: number,
+  underhand: boolean,
+): void {
+  const loft = pitch + def.throwLoftDeg * DEG2RAD;
+  const cp = simCos(loft);
+  const sp = simSin(loft);
+  const sy = simSin(yaw);
+  const cy = simCos(yaw);
+  const dx = -sy * cp;
+  const dy = sp;
+  const dz = -cy * cp;
+
+  const speed = def.throwSpeed * (underhand ? def.dropScale : 1);
+  LAUNCH.x = eyeX + dx * cfg.throwOffsetForward;
+  LAUNCH.y = eyeY + cfg.throwOffsetUp + dy * cfg.throwOffsetForward;
+  LAUNCH.z = eyeZ + dz * cfg.throwOffsetForward;
+  LAUNCH.vx = dx * speed;
+  LAUNCH.vy = dy * speed;
+  LAUNCH.vz = dz * speed;
 }
 
 /**
@@ -372,32 +392,154 @@ export function previewTrajectory(
     out[w++] = cz;
 
     if (move.contactCount === 0) continue;
-
-    let nx = 0;
-    let ny = 0;
-    let nz = 0;
-    for (let k = 0; k < move.contactCount; k++) {
-      nx += move.normals[k * 3] ?? 0;
-      ny += move.normals[k * 3 + 1] ?? 0;
-      nz += move.normals[k * 3 + 2] ?? 0;
-    }
-    const nlen = Math.hypot(nx, ny, nz);
-    if (nlen < 1e-6) continue;
-    nx /= nlen;
-    ny /= nlen;
-    nz /= nlen;
-
+    if (!averageContactNormal(move)) continue;
     if (def.impact !== 'bounce') break;
 
-    const vn = dvx * nx + dvy * ny + dvz * nz;
-    const tx = dvx - vn * nx;
-    const ty = dvy - vn * ny;
-    const tz = dvz - vn * nz;
-    const b = -vn * def.restitution;
-    dvx = tx * def.friction + nx * b;
-    dvy = ty * def.friction + ny * b;
-    dvz = tz * def.friction + nz * b;
-    if (Math.hypot(dvx, dvy, dvz) < def.restSpeed && ny > 0.55) break;
+    reflectOffSurface(dvx, dvy, dvz, normalX, normalY, normalZ, def.restitution, def.friction);
+    dvx = bounceVx;
+    dvy = bounceVy;
+    dvz = bounceVz;
+    if (Math.hypot(dvx, dvy, dvz) < def.restSpeed && normalY > 0.55) break;
   }
   return w / 3;
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function makeProjectile(def: EquipmentDef): Projectile {
+  return {
+    active: false,
+    serial: 0,
+    def,
+    ownerId: -1,
+    team: 'NONE',
+    phase: 'LIVE',
+    x: 0,
+    y: 0,
+    z: 0,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    px: 0,
+    py: 0,
+    pz: 0,
+    fuse: 0,
+    age: 0,
+    yaw: 0,
+    pollTimer: 0,
+    resting: false,
+    stuckTo: -1,
+    material: 0,
+    replicated: false,
+    tx: 0,
+    ty: 0,
+    tz: 0,
+  };
+}
+
+/**
+ * The mean of this move's contact normals, into `normalX/Y/Z`. False when they cancel out.
+ *
+ * A grenade in a concave corner has two or three, and reflecting about any single one of them
+ * sends it back into the other. Written out in full in both `step` and `previewTrajectory`,
+ * which is fourteen lines each of the same loop; module-level state and a module-level function
+ * allocate nothing, which is the reason the two copies gave for being copies.
+ */
+function averageContactNormal(move: MoveOutput): boolean {
+  let nx = 0;
+  let ny = 0;
+  let nz = 0;
+  for (let i = 0; i < move.contactCount; i++) {
+    nx += move.normals[i * 3] ?? 0;
+    ny += move.normals[i * 3 + 1] ?? 0;
+    nz += move.normals[i * 3 + 2] ?? 0;
+  }
+  const nlen = Math.hypot(nx, ny, nz);
+  if (nlen < 1e-6) return false;
+  normalX = nx / nlen;
+  normalY = ny / nlen;
+  normalZ = nz / nlen;
+  return true;
+}
+
+/**
+ * Reflect a velocity about a surface, into `bounceVx/Vy/Vz`.
+ *
+ * The component along the normal loses `restitution`, the component across it loses `friction`.
+ * That single split is the whole difference between a grenade that rolls round a corner and one
+ * that sticks where it lands.
+ */
+function reflectOffSurface(
+  vx: number,
+  vy: number,
+  vz: number,
+  nx: number,
+  ny: number,
+  nz: number,
+  restitution: number,
+  friction: number,
+): void {
+  const vn = vx * nx + vy * ny + vz * nz;
+  const tx = vx - vn * nx;
+  const ty = vy - vn * ny;
+  const tz = vz - vn * nz;
+  const bounce = -vn * restitution;
+  bounceVx = tx * friction + nx * bounce;
+  bounceVy = ty * friction + ny * bounce;
+  bounceVz = tz * friction + nz * bounce;
+}
+
+/**
+ * The two impacts that end a flight: a semtex sticking and a claymore planting. True once the
+ * object has settled, false when it should carry on and bounce.
+ */
+function settleOnImpact(p: Projectile): boolean {
+  switch (p.def.impact) {
+    case 'stick':
+      p.vx = 0;
+      p.vy = 0;
+      p.vz = 0;
+      p.phase = 'STUCK';
+      p.resting = true;
+      // Face out of the surface it landed on, so the charge reads as attached.
+      p.yaw = Math.atan2(-normalX, -normalZ);
+      RESULT.stuck = true;
+      return true;
+
+    case 'plant':
+      // A claymore only plants on something walkable; off a wall it drops and keeps
+      // going, which is what stops one being stuck to a ceiling above a doorway.
+      if (normalY < 0.6) return false;
+      p.vx = 0;
+      p.vy = 0;
+      p.vz = 0;
+      p.phase = 'ARMING';
+      p.resting = true;
+      p.fuse = p.def.armSeconds;
+      RESULT.planted = true;
+      return true;
+
+    case 'bounce':
+      return false;
+  }
+}
+
+/** Reflect off the contact and come to rest if that left it slow enough on level ground. */
+function bounceOffSurface(p: Projectile, speedIn: number): void {
+  reflectOffSurface(p.vx, p.vy, p.vz, normalX, normalY, normalZ, p.def.restitution, p.def.friction);
+  p.vx = bounceVx;
+  p.vy = bounceVy;
+  p.vz = bounceVz;
+
+  RESULT.bounced = speedIn > MIN_BOUNCE_SPEED;
+
+  const speedOut = Math.hypot(p.vx, p.vy, p.vz);
+  if (speedOut < p.def.restSpeed && normalY > 0.55) {
+    p.vx = 0;
+    p.vy = 0;
+    p.vz = 0;
+    p.resting = true;
+  }
+}
+//#endregion

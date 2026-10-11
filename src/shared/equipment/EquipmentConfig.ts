@@ -1,11 +1,17 @@
-import type { TunableMeta } from '../player/MovementConfig';
-
 /**
  * Every number that decides how equipment feels, in one place (brief S3).
  *
  * Same contract as `MovementConfig`: the `Record<keyof EquipmentConfig, TunableMeta>` below
  * makes a field without a slider a compile error, so the tuning panel cannot drift.
  */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { TunableMeta } from '../player/MovementConfig';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface EquipmentConfig {
   /** Downward acceleration on a thrown object, m/s². */
   gravity: number;
@@ -57,7 +63,10 @@ export interface EquipmentConfig {
   /** Camera shake trauma at the centre of a blast, 0..1. */
   blastShake: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const DEFAULT_EQUIPMENT_CONFIG: EquipmentConfig = {
   gravity: 18,
   drag: 0.12,
@@ -110,7 +119,10 @@ export const EQUIPMENT_TUNABLES: Readonly<Record<keyof EquipmentConfig, TunableM
 };
 
 export const EQUIPMENT_CONFIG_KEYS = Object.keys(DEFAULT_EQUIPMENT_CONFIG) as Array<keyof EquipmentConfig>;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function cloneEquipmentConfig(src: EquipmentConfig): EquipmentConfig {
   return { ...src };
 }
@@ -131,3 +143,4 @@ export function equipmentConfigToSource(cfg: EquipmentConfig): string {
   lines.push('};');
   return lines.join('\n');
 }
+//#endregion

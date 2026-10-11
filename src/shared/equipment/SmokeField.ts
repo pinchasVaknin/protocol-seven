@@ -1,8 +1,3 @@
-import type { SightOccluder } from '../ai/Perception';
-import { DT } from '../core/Loop';
-import { clamp01 } from '../core/MathUtil';
-import type { EquipmentConfig } from './EquipmentConfig';
-
 /**
  * Smoke that actually blocks line of sight (brief S6.3).
  *
@@ -21,6 +16,16 @@ import type { EquipmentConfig } from './EquipmentConfig';
  * a glancing chord through the outer shell contributes far less than a diameter.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { SightOccluder } from '../ai/Perception';
+import { DT } from '../core/Loop';
+import { clamp01 } from '../core/MathUtil';
+import type { EquipmentConfig } from './EquipmentConfig';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface SmokeVolume {
   active: boolean;
   x: number;
@@ -36,17 +41,44 @@ export interface SmokeVolume {
   bloom: number;
   age: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Below this, a cloud is a wisp and neither blocks nor draws. */
 const MIN_DENSITY = 0.05;
+//#endregion
 
+// ====================================== CLASS SmokeField ====================================== \\
+//#region Class SmokeField
 export class SmokeField implements SightOccluder {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly volumes: SmokeVolume[] = [];
 
   /** Diagnostics: segments this field rejected since the last reset (S7). */
   blockedQueries = 0;
   totalQueries = 0;
 
+  /**
+   * The sight line `opticalDepth` is integrating along: its start, its unit direction and its
+   * length.
+   *
+   * On the instance rather than passed per cloud, because a segment is seven numbers and the
+   * per-cloud kernel needs all of them — and on the instance rather than at module level so
+   * two fields in one process, a menu skirmish beside a match, cannot read each other's line.
+   */
+  private rayX = 0;
+  private rayY = 0;
+  private rayZ = 0;
+  private rayUx = 0;
+  private rayUy = 0;
+  private rayUz = 0;
+  private rayLength = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     capacity: number,
     private readonly cfg: EquipmentConfig,
@@ -65,7 +97,10 @@ export class SmokeField implements SightOccluder {
       });
     }
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get liveCount(): number {
     let n = 0;
     for (const v of this.volumes) if (v.active) n++;
@@ -173,43 +208,20 @@ export class SmokeField implements SightOccluder {
     const len = Math.hypot(dx, dy, dz);
     if (len < 1e-5) return 0;
     const inv = 1 / len;
-    const ux = dx * inv;
-    const uy = dy * inv;
-    const uz = dz * inv;
+    this.rayX = ax;
+    this.rayY = ay;
+    this.rayZ = az;
+    this.rayUx = dx * inv;
+    this.rayUy = dy * inv;
+    this.rayUz = dz * inv;
+    this.rayLength = len;
 
     let depth = 0;
     for (const v of this.volumes) {
       if (!v.active) continue;
       const d = this.density(v);
       if (d < MIN_DENSITY) continue;
-      const r = this.currentRadius(v);
-
-      // Segment vs sphere: solve for the chord, clamped to the segment's own ends.
-      const mx = ax - v.x;
-      const my = ay - v.y;
-      const mz = az - v.z;
-      const b = mx * ux + my * uy + mz * uz;
-      const c = mx * mx + my * my + mz * mz - r * r;
-      const disc = b * b - c;
-      if (disc <= 0) continue;
-      const root = Math.sqrt(disc);
-      let t0 = -b - root;
-      let t1 = -b + root;
-      if (t1 <= 0 || t0 >= len) continue;
-      if (t0 < 0) t0 = 0;
-      if (t1 > len) t1 = len;
-      const chord = t1 - t0;
-      if (chord <= 0) continue;
-
-      // Weight by how central the chord is. A grazing chord passes through the thin rim.
-      const mid = (t0 + t1) * 0.5;
-      const cx = ax + ux * mid - v.x;
-      const cy = ay + uy * mid - v.y;
-      const cz = az + uz * mid - v.z;
-      const offset = Math.hypot(cx, cy, cz) / r;
-      const shell = Math.max(0, 1 - offset * offset);
-
-      depth += chord * d * shell * this.cfg.smokeDepthScale;
+      depth += this.depthThrough(v, d);
     }
     return depth;
   }
@@ -231,4 +243,49 @@ export class SmokeField implements SightOccluder {
     if (blocked) this.blockedQueries++;
     return blocked;
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * What one cloud of density `d` adds to the depth along the current sight line.
+   *
+   * Segment versus sphere, solved for the chord and clamped to the segment's own ends, then
+   * weighted by how central the chord is: a grazing chord passes through the thin rim and a
+   * diameter through the middle, and the midpoint radius is a cheap way to tell them apart.
+   */
+  private depthThrough(v: SmokeVolume, d: number): number {
+    const len = this.rayLength;
+    const ux = this.rayUx;
+    const uy = this.rayUy;
+    const uz = this.rayUz;
+    const r = this.currentRadius(v);
+
+    const mx = this.rayX - v.x;
+    const my = this.rayY - v.y;
+    const mz = this.rayZ - v.z;
+    const b = mx * ux + my * uy + mz * uz;
+    const c = mx * mx + my * my + mz * mz - r * r;
+    const disc = b * b - c;
+    if (disc <= 0) return 0;
+    const root = Math.sqrt(disc);
+    let t0 = -b - root;
+    let t1 = -b + root;
+    if (t1 <= 0 || t0 >= len) return 0;
+    if (t0 < 0) t0 = 0;
+    if (t1 > len) t1 = len;
+    const chord = t1 - t0;
+    if (chord <= 0) return 0;
+
+    const mid = (t0 + t1) * 0.5;
+    const cx = this.rayX + ux * mid - v.x;
+    const cy = this.rayY + uy * mid - v.y;
+    const cz = this.rayZ + uz * mid - v.z;
+    const offset = Math.hypot(cx, cy, cz) / r;
+    const shell = Math.max(0, 1 - offset * offset);
+
+    return chord * d * shell * this.cfg.smokeDepthScale;
+  }
+  //#endregion
 }
+//#endregion

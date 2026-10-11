@@ -1,11 +1,3 @@
-import type { BlindSource } from '../ai/Perception';
-import type { Combatant } from '../ai/Combatant';
-import { EV, type GameBus } from '../core/Events';
-import { DT } from '../core/Loop';
-import { clamp01, RAD2DEG } from '../core/MathUtil';
-import type { EquipmentConfig } from './EquipmentConfig';
-import { simCos, simSin } from '../core/SimMath';
-
 /**
  * Who is flashed, and how badly (brief S6.3).
  *
@@ -25,6 +17,19 @@ import { simCos, simSin } from '../core/SimMath';
  * that started fading immediately reads as a bright light rather than as being blinded.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { BlindSource } from '../ai/Perception';
+import type { Combatant } from '../ai/Combatant';
+import { EV, type GameBus } from '../core/Events';
+import { DT } from '../core/Loop';
+import { clamp01, RAD2DEG } from '../core/MathUtil';
+import type { EquipmentConfig } from './EquipmentConfig';
+import { simCos, simSin } from '../core/SimMath';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface FlashState {
   /** Seconds of effect remaining. */
   remaining: number;
@@ -41,7 +46,10 @@ export interface FlashSample {
   readonly intensity: number;
   readonly seconds: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const evFlash = {
   targetId: 0,
   sourceId: 0,
@@ -50,8 +58,13 @@ const evFlash = {
   distance: 0,
   hadLos: true,
 };
+//#endregion
 
+// ====================================== CLASS FlashField ====================================== \\
+//#region Class FlashField
 export class FlashField implements BlindSource {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly states = new Map<number, FlashState>();
 
   /** Every application since the last reset, newest last. Read by the debug panel. */
@@ -69,12 +82,18 @@ export class FlashField implements BlindSource {
    * Null means "nobody resists", which is what every M5 flash measurement described.
    */
   resistance: ((entityId: number) => number) | null = null;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     private readonly bus: GameBus,
     private readonly cfg: EquipmentConfig,
   ) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** 0 = unaffected, 1 = fully blind. The `BlindSource` contract `Perception` consumes. */
   blindness(entityId: number): number {
     const state = this.states.get(entityId);
@@ -184,4 +203,6 @@ export class FlashField implements BlindSource {
     const losTerm = hadLos ? 1 : cfg.flashNoLosFraction;
     return clamp01(angleTerm * distanceTerm * losTerm);
   }
+  //#endregion
 }
+//#endregion

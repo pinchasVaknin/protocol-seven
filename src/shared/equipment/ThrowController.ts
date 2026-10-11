@@ -1,12 +1,3 @@
-import type { BotTeam } from '../ai/Combatant';
-import { Btn, isDown, justPressed, justReleased, type InputCommand } from '../core/InputCommand';
-import { DT } from '../core/Loop';
-import type { PlayerSim } from '../player/PlayerState';
-import type { EquipmentConfig } from './EquipmentConfig';
-import type { EquipmentDef, EquipmentSlot } from './EquipmentDefs';
-import { EquipmentSystem, type EquipmentInventory } from './EquipmentSystem';
-import { simCos, simSin } from '../core/SimMath';
-
 /**
  * The player's half of throwing: drawing, cooking, releasing and running out (brief S6.3).
  *
@@ -44,8 +35,25 @@ import { simCos, simSin } from '../core/SimMath';
  * Runs on sim ticks and reads only the `InputCommand` bitfield (S4.2).
  */
 
-export type ThrowPhase = 'IDLE' | 'READY' | 'COOKING' | 'THROWING';
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { BotTeam } from '../ai/Combatant';
+import { Btn, isDown, justPressed, justReleased, type InputCommand } from '../core/InputCommand';
+import { DT } from '../core/Loop';
+import type { PlayerSim } from '../player/PlayerState';
+import type { EquipmentConfig } from './EquipmentConfig';
+import type { EquipmentDef, EquipmentSlot } from './EquipmentDefs';
+import { EquipmentSystem, type EquipmentInventory } from './EquipmentSystem';
+import { simCos, simSin } from '../core/SimMath';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type ThrowPhase = 'IDLE' | 'READY' | 'COOKING' | 'THROWING';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Looking down past this angle drops it at your feet instead of lobbing it. */
 const UNDERHAND_PITCH_RAD = -0.6;
 
@@ -80,8 +88,13 @@ export const THROW_FOLLOW_THROUGH = 0.24;
 const HAND_FORWARD = 0.42;
 const HAND_RIGHT = 0.22;
 const HAND_DOWN = 0.12;
+//#endregion
 
+// =================================== CLASS ThrowController ==================================== \\
+//#region Class ThrowController
 export class ThrowController {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   phase: ThrowPhase = 'IDLE';
   /** Seconds the current cook has burned. */
   cook = 0;
@@ -100,16 +113,20 @@ export class ThrowController {
   release = 0;
 
   private prevButtons = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     private readonly system: EquipmentSystem,
     private readonly cfg: EquipmentConfig,
   ) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   reset(): void {
-    this.phase = 'IDLE';
-    this.cook = 0;
-    this.release = 0;
+    this.toIdle();
     this.followThrough = 0;
     this.prevButtons = 0;
   }
@@ -165,9 +182,7 @@ export class ThrowController {
     this.prevButtons = buttons;
 
     if (!alive) {
-      this.phase = 'IDLE';
-      this.cook = 0;
-      this.release = 0;
+      this.toIdle();
       // A corpse is not following through. Without this the flag survives the respawn and
       // the weapon comes back blocked.
       this.followThrough = 0;
@@ -181,34 +196,14 @@ export class ThrowController {
     if (this.followThrough > 0) this.followThrough = Math.max(0, this.followThrough - DT);
 
     if (this.phase === 'IDLE') {
-      if (justPressed(buttons, prev, Btn.Lethal)) this.draw('lethal', inv);
-      else if (justPressed(buttons, prev, Btn.Tactical)) this.draw('tactical', inv);
+      this.stepIdle(buttons, prev, inv);
       return;
     }
 
     const def = EquipmentSystem.slotDef(inv, this.slot);
 
     if (this.phase === 'READY') {
-      // The equipment keys: the one that is out puts it away, the other swaps to it.
-      if (justPressed(buttons, prev, Btn.Lethal)) {
-        if (this.slot === 'lethal') this.stow();
-        else this.draw('lethal', inv);
-        return;
-      }
-      if (justPressed(buttons, prev, Btn.Tactical)) {
-        if (this.slot === 'tactical') this.stow();
-        else this.draw('tactical', inv);
-        return;
-      }
-      // Reaching for a weapon puts the grenade away; it does not throw it.
-      if (justPressed(buttons, prev, Btn.Slot1) || justPressed(buttons, prev, Btn.Slot2)) {
-        this.stow();
-        return;
-      }
-      if (justPressed(buttons, prev, Btn.Fire)) {
-        this.phase = 'COOKING';
-        this.cook = 0;
-      }
+      this.stepReady(buttons, prev, inv);
       return;
     }
 
@@ -229,10 +224,7 @@ export class ThrowController {
     }
 
     if (this.phase === 'COOKING') {
-      if (justReleased(buttons, prev, Btn.Fire) || !isDown(buttons, Btn.Fire)) {
-        this.phase = 'THROWING';
-        this.release = THROW_RELEASE_TIME;
-      }
+      this.stepCooking(buttons, prev);
       return;
     }
 
@@ -240,6 +232,55 @@ export class ThrowController {
     this.release = Math.max(0, this.release - DT);
     if (this.release <= 0) {
       this.throwNow(def, sim, entityId, cmd, inv, team, def.cookable ? this.cook : 0);
+    }
+  }
+
+  /** Seconds between indicator beeps, exposed so the HUD and the audio agree. */
+  get beepInterval(): number {
+    return this.cfg.beepInterval;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** Holding a weapon: either equipment key takes a grenade out. */
+  private stepIdle(buttons: number, prev: number, inv: EquipmentInventory): void {
+    if (justPressed(buttons, prev, Btn.Lethal)) this.draw('lethal', inv);
+    else if (justPressed(buttons, prev, Btn.Tactical)) this.draw('tactical', inv);
+  }
+
+  /**
+   * A grenade in the hand with the pin still in. Four ways out, and only the last one is a
+   * commitment: nothing has been spent until the fire button pulls the pin.
+   */
+  private stepReady(buttons: number, prev: number, inv: EquipmentInventory): void {
+    // The equipment keys: the one that is out puts it away, the other swaps to it.
+    if (justPressed(buttons, prev, Btn.Lethal)) {
+      if (this.slot === 'lethal') this.stow();
+      else this.draw('lethal', inv);
+      return;
+    }
+    if (justPressed(buttons, prev, Btn.Tactical)) {
+      if (this.slot === 'tactical') this.stow();
+      else this.draw('tactical', inv);
+      return;
+    }
+    // Reaching for a weapon puts the grenade away; it does not throw it.
+    if (justPressed(buttons, prev, Btn.Slot1) || justPressed(buttons, prev, Btn.Slot2)) {
+      this.stow();
+      return;
+    }
+    if (justPressed(buttons, prev, Btn.Fire)) {
+      this.phase = 'COOKING';
+      this.cook = 0;
+    }
+  }
+
+  /** The pin is out. Letting the fire button go starts the arm swinging. */
+  private stepCooking(buttons: number, prev: number): void {
+    if (justReleased(buttons, prev, Btn.Fire) || !isDown(buttons, Btn.Fire)) {
+      this.phase = 'THROWING';
+      this.release = THROW_RELEASE_TIME;
     }
   }
 
@@ -254,9 +295,7 @@ export class ThrowController {
 
   /** Put it back. No follow-through: nothing was thrown, so the weapon comes straight back up. */
   private stow(): void {
-    this.phase = 'IDLE';
-    this.cook = 0;
-    this.release = 0;
+    this.toIdle();
   }
 
   private throwNow(
@@ -268,9 +307,7 @@ export class ThrowController {
     team: BotTeam,
     cooked: number,
   ): void {
-    this.phase = 'IDLE';
-    this.cook = 0;
-    this.release = 0;
+    this.toIdle();
     this.followThrough = THROW_FOLLOW_THROUGH;
     if (EquipmentSystem.slotCount(inv, this.slot) <= 0) return;
 
@@ -301,8 +338,18 @@ export class ThrowController {
     if (thrown !== null) EquipmentSystem.spendSlot(inv, this.slot);
   }
 
-  /** Seconds between indicator beeps, exposed so the HUD and the audio agree. */
-  get beepInterval(): number {
-    return this.cfg.beepInterval;
+  /**
+   * Back to holding a weapon, with no grenade and no cook.
+   *
+   * The three fields that have to move together, in the one place: a reset, a stow, a death and
+   * a throw all land here and each adds only what is its own. They were four copies, and the
+   * follow-through is deliberately *not* among them — a stow leaves it alone and a throw sets it.
+   */
+  private toIdle(): void {
+    this.phase = 'IDLE';
+    this.cook = 0;
+    this.release = 0;
   }
+  //#endregion
 }
+//#endregion

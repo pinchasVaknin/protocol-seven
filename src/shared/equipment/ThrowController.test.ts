@@ -181,4 +181,104 @@ describe('ThrowController', () => {
     h.step(Btn.Lethal);
     expect(h.controller.phase).toBe('IDLE');
   });
+
+  it('runs the follow-through down from IDLE, so one grenade does not block the weapon', () => {
+    // The decrement is deliberately in front of every phase branch: the follow-through *begins*
+    // when the phase returns to IDLE, so a decrement inside a branch could never run and the
+    // weapon stayed blocked for the rest of the life. Measured once, pinned here.
+    const h = harness();
+    h.step(Btn.Lethal);
+    h.step(Btn.Fire);
+    h.step(0, TICKS(THROW_RELEASE_TIME) + 1);
+    expect(h.thrown).toHaveLength(1);
+    expect(h.controller.phase).toBe('IDLE');
+    expect(h.controller.busy).toBe(true);
+
+    h.step(0, TICKS(THROW_FOLLOW_THROUGH) + 1);
+    expect(h.controller.followThrough).toBe(0);
+    expect(h.controller.busy).toBe(false);
+
+    // And a second grenade still works, which is what the bug took away.
+    h.step(Btn.Tactical);
+    expect(h.controller.phase).toBe('READY');
+  });
+
+  it('reports the fuse it would be thrown with, and nothing when it is not cooking', () => {
+    const h = harness();
+    expect(h.controller.remainingFuse(h.inv)).toBe(0);
+    h.step(Btn.Lethal);
+    expect(h.controller.remainingFuse(h.inv)).toBe(0);
+    h.step(Btn.Fire);
+    h.step(Btn.Fire, 30);
+    const def = equipmentDef('frag');
+    expect(h.controller.remainingFuse(h.inv)).toBe(def.fuseSeconds - h.controller.cook);
+    expect(h.controller.remainingFuse(h.inv)).toBeLessThan(def.fuseSeconds);
+    expect(h.controller.remainingFuse(h.inv)).toBeGreaterThan(0);
+  });
+
+  it('never reports a negative fuse once the cook has outrun it', () => {
+    const h = harness('smoke');
+    h.step(Btn.Tactical);
+    h.step(Btn.Fire);
+    // Smoke cannot be cooked, so nothing stops the clock before the throw lands.
+    h.controller.cook = 99;
+    expect(h.controller.remainingFuse(h.inv)).toBe(0);
+  });
+
+  it('poses nothing before the throw and holds the arm out through the recovery', () => {
+    const h = harness();
+    expect(h.controller.releaseFraction).toBe(0);
+    h.step(Btn.Lethal);
+    expect(h.controller.releaseFraction).toBe(0);
+    h.step(Btn.Fire);
+    expect(h.controller.releaseFraction).toBe(0);
+
+    // The button comes up: the arm swings over THROW_RELEASE_TIME.
+    h.step(0);
+    expect(h.controller.phase).toBe('THROWING');
+    // Still exactly 0 on the tick the state is entered: `release` is set to the full time and
+    // the first decrement is the next tick.
+    expect(h.controller.releaseFraction).toBe(0);
+    h.step(0);
+    expect(h.controller.releaseFraction).toBeGreaterThan(0);
+    expect(h.controller.releaseFraction).toBeLessThan(1);
+
+    h.step(0, TICKS(THROW_RELEASE_TIME) + 1);
+    expect(h.thrown).toHaveLength(1);
+    // Still 1 through the follow-through: the hand is coming back from the pose it threw in.
+    expect(h.controller.releaseFraction).toBe(1);
+    h.step(0, TICKS(THROW_FOLLOW_THROUGH) + 1);
+    expect(h.controller.releaseFraction).toBe(0);
+  });
+
+  it('hands the HUD and the audio one beep interval', () => {
+    const h = harness();
+    expect(h.controller.beepInterval).toBe(0.25);
+  });
+
+  it('comes back to nothing on reset, mid-cook', () => {
+    const h = harness();
+    h.step(Btn.Lethal);
+    h.step(Btn.Fire, 10);
+    expect(h.controller.phase).toBe('COOKING');
+    h.controller.reset();
+    expect(h.controller.phase).toBe('IDLE');
+    expect(h.controller.cook).toBe(0);
+    expect(h.controller.release).toBe(0);
+    expect(h.controller.followThrough).toBe(0);
+    expect(h.controller.busy).toBe(false);
+    // The button state is forgotten too, so a held fire button does not instantly re-cook.
+    h.step(Btn.Fire);
+    expect(h.controller.phase).toBe('IDLE');
+  });
+
+  it('is not throwing while dead, however long the button is held', () => {
+    const h = harness();
+    for (let i = 0; i < 40; i++) {
+      h.controller.step(cmdWith(Btn.Lethal | Btn.Fire), SIM, 1, h.inv, 'A', false);
+    }
+    expect(h.controller.phase).toBe('IDLE');
+    expect(h.thrown).toHaveLength(0);
+    expect(h.inv.lethalCount).toBe(equipmentDef('frag').count);
+  });
 });

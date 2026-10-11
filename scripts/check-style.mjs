@@ -192,6 +192,17 @@ const FINISHED = {
     'src/shared/combat/ScoreSystem.ts',
     'src/shared/combat/ShotAccounting.ts',
   ],
+  A10: [
+    'src/shared/equipment/BotThrower.ts',
+    'src/shared/equipment/EquipmentConfig.ts',
+    'src/shared/equipment/EquipmentDefs.ts',
+    'src/shared/equipment/EquipmentSystem.ts',
+    'src/shared/equipment/FlashField.ts',
+    'src/shared/equipment/LifeStockAudit.ts',
+    'src/shared/equipment/Projectile.ts',
+    'src/shared/equipment/SmokeField.ts',
+    'src/shared/equipment/ThrowController.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

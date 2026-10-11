@@ -1,6 +1,3 @@
-import { HUMANOID_RIG } from '../combat/HitboxRig';
-import { simCos, simSin } from '../core/SimMath';
-
 /**
  * The walk cycle, as arithmetic (playtest round 5, F4).
  *
@@ -51,10 +48,39 @@ import { simCos, simSin } from '../core/SimMath';
  * extremes of the stride, so the artefact is in the direction of the truth.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { HUMANOID_RIG } from '../combat/HitboxRig';
+import { simCos, simSin } from '../core/SimMath';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+export interface LegPose {
+  /** Hip rotation, radians. Positive carries the sole forward, along the body's -Z. */
+  readonly swing: number;
+}
+
+export interface GaitPose {
+  readonly left: LegPose;
+  readonly right: LegPose;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** The boxes this poses. Read from the rig so the animation and the hitboxes cannot drift. */
 const LEG_BOX = HUMANOID_RIG.boxes.find((box) => box.name === 'legL');
 const ARM_BOX = HUMANOID_RIG.boxes.find((box) => box.name === 'armL');
 
+/**
+ * Stays here, between the two lookups and the constants derived from them, rather than moving
+ * to a MODULE INITIALISATION section at the foot of the file.
+ *
+ * It is what narrows `LEG_BOX` to non-undefined for `LEG_PIVOT_Y` and `LEG_LENGTH` below.
+ * Moved down, those two would need `LEG_BOX?.oy ?? 0`, which turns a loud failure at load into
+ * a silent zero in a measurement — a behaviour change, and behaviour outranks the section order.
+ */
 if (LEG_BOX === undefined || ARM_BOX === undefined) {
   throw new Error('HUMANOID_RIG has no "legL"/"armL" box; there is nothing here to pose.');
 }
@@ -108,17 +134,10 @@ const FULL_SWING_SPEED = 4.0;
 
 /** How fast the drawn amplitude chases the measured one, per second. */
 export const AMPLITUDE_RESPONSE = 9;
+//#endregion
 
-export interface LegPose {
-  /** Hip rotation, radians. Positive carries the sole forward, along the body's -Z. */
-  readonly swing: number;
-}
-
-export interface GaitPose {
-  readonly left: LegPose;
-  readonly right: LegPose;
-}
-
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Advance the phase by the distance the body was drawn to move. Returns a phase in [0, 1).
  *
@@ -145,10 +164,6 @@ export function gaitAmplitude(speedMetresPerSecond: number): number {
  */
 export function gaitAt(phase: number, amplitude: number): GaitPose {
   return { left: legAt(phase, amplitude), right: legAt(phase + 0.5, amplitude) };
-}
-
-function legAt(phase: number, amplitude: number): LegPose {
-  return { swing: MAX_SWING * amplitude * simSin(2 * Math.PI * phase) };
 }
 
 /**
@@ -207,6 +222,13 @@ export function legDivergence(swing: number): number {
 export function armDivergence(): number {
   return limbDivergence(ARM_BOX?.sy ?? 0, ARM_BOX?.sz ?? 0, ARM_PITCH);
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function legAt(phase: number, amplitude: number): LegPose {
+  return { swing: MAX_SWING * amplitude * simSin(2 * Math.PI * phase) };
+}
 
 /**
  * How far the far end of a rigid limb of length `length` gets from an upright box `depth` deep.
@@ -220,3 +242,4 @@ function limbDivergence(length: number, depth: number, angle: number): number {
   const rise = length * (1 - simCos(angle));
   return Math.max(0, Math.hypot(forward, rise) - depth * 0.5);
 }
+//#endregion

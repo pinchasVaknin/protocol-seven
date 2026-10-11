@@ -1,5 +1,3 @@
-import type { Damageable } from '../combat/DamageSystem';
-
 /**
  * A participant in a firefight.
  *
@@ -11,11 +9,14 @@ import type { Damageable } from '../combat/DamageSystem';
  * piece of code rather than two that drift apart.
  */
 
-export type BotTeam = 'A' | 'B';
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { Damageable } from '../combat/DamageSystem';
+//#endregion
 
-export function opposingTeam(team: BotTeam): BotTeam {
-  return team === 'A' ? 'B' : 'A';
-}
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type BotTeam = 'A' | 'B';
 
 export interface Combatant extends Damageable {
   readonly team: BotTeam;
@@ -47,3 +48,11 @@ export interface Combatant extends Damageable {
    */
   readonly glinting: boolean;
 }
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function opposingTeam(team: BotTeam): BotTeam {
+  return team === 'A' ? 'B' : 'A';
+}
+//#endregion

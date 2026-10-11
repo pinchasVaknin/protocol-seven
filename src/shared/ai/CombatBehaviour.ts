@@ -1,11 +1,3 @@
-import { DT } from '../core/Loop';
-import { angleDelta, clamp, damp, DEG2RAD, RAD2DEG, TAU } from '../core/MathUtil';
-import type { Rng } from '../core/Rng';
-import type { BotBlackboard } from './BotBlackboard';
-import type { TierConfig } from './DifficultyTiers';
-import type { WeaponCombatProfile } from './WeaponProfile';
-import { simCos, simSin } from '../core/SimMath';
-
 /**
  * How a bot aims and when it pulls the trigger (brief S6.4).
  *
@@ -35,6 +27,19 @@ import { simCos, simSin } from '../core/SimMath';
  * and the convergence above is the only thing pulling back against it.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { DT } from '../core/Loop';
+import { angleDelta, clamp, damp, DEG2RAD, RAD2DEG, TAU } from '../core/MathUtil';
+import type { Rng } from '../core/Rng';
+import type { BotBlackboard } from './BotBlackboard';
+import type { TierConfig } from './DifficultyTiers';
+import type { WeaponCombatProfile } from './WeaponProfile';
+import { simCos, simSin } from '../core/SimMath';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Player speed ceiling from M1's slide-cancel rules. S6.4 permits assuming it. */
 const MAX_TARGET_SPEED = 8.2;
 
@@ -43,8 +48,13 @@ const LEAD_TIME = 0.14;
 
 /** The aim must be within this of its solution before the trigger is permitted. */
 const FIRE_GATE_DEG = 11;
+//#endregion
 
+// =================================== CLASS CombatBehaviour ==================================== \\
+//#region Class CombatBehaviour
 export class CombatBehaviour {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Absolute commanded view angles, radians. What goes into the bot's command. */
   aimYaw = 0;
   aimPitch = 0;
@@ -68,7 +78,10 @@ export class CombatBehaviour {
 
   private pauseTimer = 0;
   private lastMag = -1;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   reset(yaw: number, pitch: number): void {
     this.aimYaw = yaw;
     this.aimPitch = pitch;
@@ -145,18 +158,7 @@ export class CombatBehaviour {
       Math.max(0, range - tier.rangeErrorStart) * (tier.rangeErrorPerTenM / 10);
     const settled =
       tier.aimConeDeg + tier.trackingErrorDeg * Math.min(speed, MAX_TARGET_SPEED) + rangeError;
-    const wide = this.holdTimer > 0;
-    if (this.holdTimer > 0) this.holdTimer -= DT;
-    this.wanderTimer -= DT;
-    if (this.wanderTimer <= 0) {
-      const cone = wide ? tier.firstBurstConeDeg : settled;
-      const angle = rng.float() * TAU;
-      // sqrt weighting keeps the point uniform over the disc rather than centre-heavy.
-      const radius = Math.sqrt(rng.float()) * cone;
-      this.wanderYaw = simCos(angle) * radius;
-      this.wanderPitch = simSin(angle) * radius;
-      this.wanderTimer = wide ? tier.jitterPeriod * 1.5 : tier.jitterPeriod;
-    }
+    this.redrawWander(tier, rng, settled);
 
     this.errYaw = damp(this.errYaw, this.wanderYaw, tier.convergeRate, DT);
     this.errPitch = damp(this.errPitch, this.wanderPitch, tier.convergeRate, DT);
@@ -173,7 +175,8 @@ export class CombatBehaviour {
     this.aimPitch += clamp(targetPitch - this.aimPitch, -maxStep, maxStep);
 
     // How far the aim still is from its own solution, ignoring the deliberate error.
-    // This is the trigger gate: it is zero once the bot has finished turning.
+    // This is the trigger gate: it comes down to the aim error once the bot has finished
+    // turning, which is well inside the gate and never exactly zero.
     this.aimOffSolutionDeg =
       Math.hypot(angleDelta(this.aimYaw, solutionYaw), this.aimPitch - solutionPitch) * RAD2DEG;
   }
@@ -242,4 +245,31 @@ export class CombatBehaviour {
     this.aimYaw += yaw;
     this.aimPitch = clamp(this.aimPitch + pitch, -89 * DEG2RAD, 89 * DEG2RAD);
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Redraw the point the aim error is damping toward, if its timer has run out.
+   *
+   * Wide while the first-burst hold is running and `settled` afterwards. The radius is
+   * sqrt-weighted, which keeps the point uniform over the disc rather than centre-heavy — a
+   * centre-heavy draw would quietly undo the miss-first-burst rule by pulling the opening
+   * error back toward the target.
+   */
+  private redrawWander(tier: TierConfig, rng: Rng, settled: number): void {
+    const wide = this.holdTimer > 0;
+    if (this.holdTimer > 0) this.holdTimer -= DT;
+    this.wanderTimer -= DT;
+    if (this.wanderTimer > 0) return;
+
+    const cone = wide ? tier.firstBurstConeDeg : settled;
+    const angle = rng.float() * TAU;
+    const radius = Math.sqrt(rng.float()) * cone;
+    this.wanderYaw = simCos(angle) * radius;
+    this.wanderPitch = simSin(angle) * radius;
+    this.wanderTimer = wide ? tier.jitterPeriod * 1.5 : tier.jitterPeriod;
+  }
+  //#endregion
 }
+//#endregion

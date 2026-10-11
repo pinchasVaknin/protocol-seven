@@ -1,5 +1,3 @@
-import type { Combatant } from './Combatant';
-
 /**
  * The seam that lets a bot play the objective without `ai/` knowing what a mode is (M7).
  *
@@ -19,6 +17,13 @@ import type { Combatant } from './Combatant';
  * expected to be cheap: it is a lookup against state the mode is already maintaining.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { Combatant } from './Combatant';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** What a bot should do with the point it has been sent to. */
 type ObjectiveAction = 'capture' | 'defend' | 'plant' | 'defuse' | 'collect';
 
@@ -43,6 +48,10 @@ export interface ObjectiveTarget {
   readonly priority: number;
 }
 
+export type MutableObjectiveTarget = {
+  -readonly [K in keyof ObjectiveTarget]: ObjectiveTarget[K];
+};
+
 /**
  * Implemented by a mode. `assign` is called for one combatant at a time and may return the
  * same target for several of them — the mode decides how many bodies an objective is worth.
@@ -56,18 +65,20 @@ export interface ObjectiveProvider {
    */
   onArrived(bot: Combatant, target: ObjectiveTarget): void;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Below this priority a bot in contact keeps shooting rather than walking away. */
 export const OBJECTIVE_IGNORE_BELOW = 0.5;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** Scratch target, reused so `assign` implementations can avoid allocating per call. */
 export function makeObjectiveTarget(): MutableObjectiveTarget {
   return { id: '', label: '', x: 0, y: 0, z: 0, radius: 2, action: 'capture', priority: 0 };
 }
-
-export type MutableObjectiveTarget = {
-  -readonly [K in keyof ObjectiveTarget]: ObjectiveTarget[K];
-};
 
 /**
  * Whether a mode also plays the objective-provider role.
@@ -86,3 +97,4 @@ export function isObjectiveProvider<T extends object>(mode: T): mode is T & Obje
   const candidate = mode as Partial<ObjectiveProvider>;
   return typeof candidate.assign === 'function' && typeof candidate.onArrived === 'function';
 }
+//#endregion

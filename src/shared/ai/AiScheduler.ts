@@ -1,8 +1,3 @@
-import { nowMs } from '../core/Clock';
-import { SIM_HZ } from '../core/Loop';
-import type { TunableMeta } from '../player/MovementConfig';
-import type { Pathfinder } from './Pathing';
-
 /**
  * The AI work scheduler (brief S6.6 — REQUIRED).
  *
@@ -34,6 +29,16 @@ import type { Pathfinder } from './Pathing';
  * one-minute ring so p50 and p99 are real percentiles rather than a running average.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { nowMs } from '../core/Clock';
+import { SIM_HZ } from '../core/Loop';
+import type { TunableMeta } from '../player/MovementConfig';
+import type { Pathfinder } from './Pathing';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface SchedulerConfig {
   /** Perception samples per second, per bot. */
   perceptionHz: number;
@@ -44,7 +49,10 @@ export interface SchedulerConfig {
   /** A* node expansions permitted across all bots per tick. */
   astarNodesPerTick: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const DEFAULT_SCHEDULER: SchedulerConfig = {
   perceptionHz: 10,
   tacticalHz: 4,
@@ -61,17 +69,15 @@ export const SCHEDULER_TUNABLES: Readonly<Record<keyof SchedulerConfig, TunableM
 
 export const SCHEDULER_CONFIG_KEYS = Object.keys(DEFAULT_SCHEDULER) as Array<keyof SchedulerConfig>;
 
-export function schedulerConfigToSource(cfg: SchedulerConfig): string {
-  const lines = ['export const DEFAULT_SCHEDULER: SchedulerConfig = {'];
-  for (const key of SCHEDULER_CONFIG_KEYS) lines.push(`  ${key}: ${Math.round(cfg[key] * 1e4) / 1e4},`);
-  lines.push('};');
-  return lines.join('\n');
-}
-
 /** One minute of ticks. Long enough for p99 to mean something at 60 Hz. */
 const HISTORY = SIM_HZ * 60;
+//#endregion
 
+// ===================================== CLASS AiScheduler ====================================== \\
+//#region Class AiScheduler
 export class AiScheduler {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly config: SchedulerConfig;
 
   /** Last tick's AI wall time, ms. */
@@ -93,11 +99,17 @@ export class AiScheduler {
   private startMs = 0;
   private tick = 0;
   private count = 1;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(config: SchedulerConfig) {
     this.config = config;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Call at the top of the AI block. `botCount` sizes the stagger. */
   beginTick(tick: number, botCount: number): void {
     this.tick = tick;
@@ -174,7 +186,10 @@ export class AiScheduler {
   get sampleCount(): number {
     return this.filled;
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * Is `index`'s slot up this tick, for work that wants to run `hz` times a second?
    *
@@ -188,4 +203,16 @@ export class AiScheduler {
     const phase = Math.floor((index * period) / this.count) % period;
     return this.tick % period === phase;
   }
+  //#endregion
 }
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function schedulerConfigToSource(cfg: SchedulerConfig): string {
+  const lines = ['export const DEFAULT_SCHEDULER: SchedulerConfig = {'];
+  for (const key of SCHEDULER_CONFIG_KEYS) lines.push(`  ${key}: ${Math.round(cfg[key] * 1e4) / 1e4},`);
+  lines.push('};');
+  return lines.join('\n');
+}
+//#endregion

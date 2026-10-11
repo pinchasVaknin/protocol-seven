@@ -1,9 +1,14 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { HitboxRig, HUMANOID_RIG, rigLayoutFor } from '../combat/HitboxRig';
 import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
 import type { Health } from '../player/Health';
 import type { PlayerController } from '../player/PlayerController';
 import type { BotTeam, Combatant } from './Combatant';
+//#endregion
 
+// =================================== CLASS PlayerCombatant ==================================== \\
+//#region Class PlayerCombatant
 /**
  * The local player, seen from the AI's side of the fence.
  *
@@ -17,6 +22,8 @@ import type { BotTeam, Combatant } from './Combatant';
  * and no spawn is scored against it.
  */
 export class PlayerCombatant implements Combatant {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /**
    * Which entity this body **is** (M11 Gate B playtest).
    *
@@ -81,7 +88,10 @@ export class PlayerCombatant implements Combatant {
    * half of what `weaponIndex` tells the server about everybody else.
    */
   pistol = false;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     readonly health: Health,
     readonly team: BotTeam,
@@ -92,7 +102,10 @@ export class PlayerCombatant implements Combatant {
     this.entityId = entityId;
     this.displayName = displayName;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get px(): number {
     return this.player.sim.x;
   }
@@ -134,4 +147,6 @@ export class PlayerCombatant implements Combatant {
     this.rig.setLayout(rigLayoutFor(sim.stance, sim.vx, sim.vz, this.pistol));
     this.rig.setTransform(sim.x, sim.y, sim.z, sim.yaw);
   }
+  //#endregion
 }
+//#endregion

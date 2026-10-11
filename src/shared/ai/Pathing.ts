@@ -1,5 +1,3 @@
-import { NAV_DIRS, type NavGrid } from '../world/Navmesh';
-
 /**
  * A* over the navmesh grid, with string-pulled smoothing (brief S6.5 / S6.6).
  *
@@ -24,6 +22,37 @@ import { NAV_DIRS, type NavGrid } from '../world/Navmesh';
  * sawtooth in a ten-minute soak.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { NAV_DIRS, type NavGrid } from '../world/Navmesh';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+export const enum SearchState {
+  Idle = 0,
+  Running = 1,
+  Found = 2,
+  Failed = 3,
+}
+
+export interface PathClient {
+  /** Entity id, for the debug read-out and for de-duplicating queued requests. */
+  readonly pathClientId: number;
+  readonly path: Path;
+  /** Called on the tick the search finished, before the bot's next steering tick. */
+  onPathReady(found: boolean): void;
+}
+
+interface QueuedRequest {
+  client: PathClient | null;
+  start: number;
+  goal: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Waypoints a smoothed path may hold. Well past the diagonal of any M4 map at 0.5 m. */
 export const MAX_WAYPOINTS = 64;
 
@@ -37,13 +66,12 @@ export const MAX_WAYPOINTS = 64;
  */
 const CLIMB_COST_METRES = 3.5;
 
-export const enum SearchState {
-  Idle = 0,
-  Running = 1,
-  Found = 2,
-  Failed = 3,
-}
+/** How many outstanding requests are held. One per bot plus slack. */
+const QUEUE_CAPACITY = 32;
+//#endregion
 
+// ========================================= CLASS Path ========================================= \\
+//#region Class Path
 /**
  * A smoothed path, owned by its client and rewritten in place.
  *
@@ -51,6 +79,8 @@ export const enum SearchState {
  * and a path written with an older serial is discarded rather than followed.
  */
 export class Path {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly x = new Float32Array(MAX_WAYPOINTS);
   readonly y = new Float32Array(MAX_WAYPOINTS);
   readonly z = new Float32Array(MAX_WAYPOINTS);
@@ -59,7 +89,10 @@ export class Path {
   cursor = 0;
   /** Grid cell the path was built toward, for "is my goal still current" tests. */
   goalIndex = -1;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get complete(): boolean {
     return this.count > 0 && this.cursor >= this.count;
   }
@@ -89,26 +122,15 @@ export class Path {
     }
     return total;
   }
+  //#endregion
 }
+//#endregion
 
-export interface PathClient {
-  /** Entity id, for the debug read-out and for de-duplicating queued requests. */
-  readonly pathClientId: number;
-  readonly path: Path;
-  /** Called on the tick the search finished, before the bot's next steering tick. */
-  onPathReady(found: boolean): void;
-}
-
-interface QueuedRequest {
-  client: PathClient | null;
-  start: number;
-  goal: number;
-}
-
-/** How many outstanding requests are held. One per bot plus slack. */
-const QUEUE_CAPACITY = 32;
-
+// ====================================== CLASS Pathfinder ====================================== \\
+//#region Class Pathfinder
 export class Pathfinder {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Nodes expanded during the current tick. Reset by `beginTick`. */
   nodesThisTick = 0;
   /** Requests still queued at the end of the last tick. Instrumentation (S7). */
@@ -143,7 +165,10 @@ export class Pathfinder {
   private activeStart = -1;
   private activeGoal = -1;
   private expansionsThisSearch = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(grid: NavGrid, stepHeight: number, maxDrop: number) {
     this.grid = grid;
     this.stepHeight = stepHeight;
@@ -158,7 +183,10 @@ export class Pathfinder {
     this.rawPath = new Int32Array(n);
     for (let i = 0; i < QUEUE_CAPACITY; i++) this.queue.push({ client: null, start: -1, goal: -1 });
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get busy(): boolean {
     return this.state === SearchState.Running;
   }
@@ -245,9 +273,10 @@ export class Pathfinder {
     this.deferredRequests = this.queueCount + (this.state === SearchState.Running ? 1 : 0);
     if (this.deferredRequests > 0 && budget <= 0) this.budgetExhaustedTicks++;
   }
+  //#endregion
 
-  // -- search ---------------------------------------------------------------
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private beginNext(): boolean {
     if (this.queueCount === 0) return false;
     const entry = this.queue[0];
@@ -295,7 +324,6 @@ export class Pathfinder {
 
   /** Expand at most `budget` nodes. Returns how many were actually expanded. */
   private expand(budget: number): number {
-    const grid = this.grid;
     const goal = this.activeGoal;
     let spent = 0;
 
@@ -314,41 +342,47 @@ export class Pathfinder {
       this.expansionsThisSearch++;
 
       const gHere = this.gScore[current] ?? 0;
-
-      for (let d = 0; d < 8; d++) {
-        const dir = NAV_DIRS[d];
-        if (dir === undefined) continue;
-        // The grid resolves which *layer* of the neighbour column the link lands on, so
-        // stepping onto a catwalk and walking underneath it are different edges.
-        const next = grid.neighbour(current, d);
-        if (next < 0) continue;
-        this.touch(next);
-        if (this.nodeState[next] === 2) continue;
-
-        // Climbing costs more than flat ground so a bot prefers the ramp to the step
-        // when both reach the same place, which reads as picking the sensible route.
-        const rise = Math.abs((grid.height[next] ?? 0) - (grid.height[current] ?? 0));
-        // A mantle is roughly half a second of not moving and not shooting (M8). Charged
-        // as the distance a sprint would have covered in that time, so A* trades a climb
-        // against a detour in the same units — which is what makes a bot walk round to the
-        // gantry stair when it is close and haul itself up a container when it is not.
-        const climb = grid.isClimb(current, d) ? CLIMB_COST_METRES : 0;
-        const cost = dir.cost * grid.cellSize + rise * 1.5 + climb;
-        const tentative = gHere + cost;
-        if (this.nodeState[next] === 1 && tentative >= (this.gScore[next] ?? Infinity)) continue;
-
-        this.cameFrom[next] = current;
-        this.gScore[next] = tentative;
-        this.fScore[next] = tentative + this.heuristic(next, goal);
-        if (this.nodeState[next] === 1) {
-          this.heapUpdate(next);
-        } else {
-          this.nodeState[next] = 1;
-          this.heapPush(next);
-        }
-      }
+      for (let d = 0; d < 8; d++) this.expandNeighbour(current, d, gHere, goal);
     }
     return spent;
+  }
+
+  /**
+   * One of the eight edges out of `current`: cost it, and open or improve the node it leads to.
+   *
+   * Climbing costs more than flat ground so a bot prefers the ramp to the step when both reach
+   * the same place, which reads as picking the sensible route.
+   */
+  private expandNeighbour(current: number, d: number, gHere: number, goal: number): void {
+    const grid = this.grid;
+    const dir = NAV_DIRS[d];
+    if (dir === undefined) return;
+    // The grid resolves which *layer* of the neighbour column the link lands on, so
+    // stepping onto a catwalk and walking underneath it are different edges.
+    const next = grid.neighbour(current, d);
+    if (next < 0) return;
+    this.touch(next);
+    if (this.nodeState[next] === 2) return;
+
+    const rise = Math.abs((grid.height[next] ?? 0) - (grid.height[current] ?? 0));
+    // A mantle is roughly half a second of not moving and not shooting (M8). Charged
+    // as the distance a sprint would have covered in that time, so A* trades a climb
+    // against a detour in the same units — which is what makes a bot walk round to the
+    // gantry stair when it is close and haul itself up a container when it is not.
+    const climb = grid.isClimb(current, d) ? CLIMB_COST_METRES : 0;
+    const cost = dir.cost * grid.cellSize + rise * 1.5 + climb;
+    const tentative = gHere + cost;
+    if (this.nodeState[next] === 1 && tentative >= (this.gScore[next] ?? Infinity)) return;
+
+    this.cameFrom[next] = current;
+    this.gScore[next] = tentative;
+    this.fScore[next] = tentative + this.heuristic(next, goal);
+    if (this.nodeState[next] === 1) {
+      this.heapUpdate(next);
+    } else {
+      this.nodeState[next] = 1;
+      this.heapPush(next);
+    }
   }
 
   private finishActive(): void {
@@ -460,8 +494,13 @@ export class Pathfinder {
     this.nodeState[node] = 0;
   }
 
-  // -- binary min-heap over fScore -------------------------------------------
-
+  /**
+   * Push onto the open set, which is a binary min-heap over `fScore` rooted at index 1.
+   *
+   * Hand-written rather than a library structure because it lives on the instance beside the
+   * score arrays and must not allocate: one search at a time means one heap for the lifetime
+   * of the match.
+   */
   private heapPush(node: number): void {
     let i = ++this.heapCount;
     this.heap[i] = node;
@@ -507,14 +546,8 @@ export class Pathfinder {
     const node = this.heap[i] ?? 0;
     const score = this.fScore[node] ?? 0;
     for (;;) {
-      let child = i << 1;
-      if (child > this.heapCount) break;
-      const rightChild = child + 1;
-      if (rightChild <= this.heapCount) {
-        const l = this.heap[child] ?? 0;
-        const r = this.heap[rightChild] ?? 0;
-        if ((this.fScore[r] ?? 0) < (this.fScore[l] ?? 0)) child = rightChild;
-      }
+      const child = this.smallerChild(i);
+      if (child === 0) break;
       const cNode = this.heap[child] ?? 0;
       if ((this.fScore[cNode] ?? 0) >= score) break;
       this.heap[i] = cNode;
@@ -522,4 +555,24 @@ export class Pathfinder {
     }
     this.heap[i] = node;
   }
+
+  /**
+   * The index of `i`'s cheaper child, or 0 when it has none.
+   *
+   * Zero is never a heap index — the root is 1 — so it serves as the absence, which keeps the
+   * sift loop above a comparison and a swap with no nesting of its own.
+   */
+  private smallerChild(i: number): number {
+    const child = i << 1;
+    if (child > this.heapCount) return 0;
+    const rightChild = child + 1;
+    if (rightChild <= this.heapCount) {
+      const l = this.heap[child] ?? 0;
+      const r = this.heap[rightChild] ?? 0;
+      if ((this.fScore[r] ?? 0) < (this.fScore[l] ?? 0)) return rightChild;
+    }
+    return child;
+  }
+  //#endregion
 }
+//#endregion

@@ -1,8 +1,13 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { EquipmentId } from '../equipment/EquipmentDefs';
 import type { ThrowPhase } from '../equipment/ThrowController';
 import type { SkinId } from '../meta/Skins';
 import type { StanceId } from '../player/Stance';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * The cosmetic side of a bot, as plain replicable data (M9).
  *
@@ -165,7 +170,30 @@ export interface RenderableActor {
   /** Stance compression, 1 standing. */
   renderScale(alpha: number): number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * How many fall animations exist.
+ *
+ * The number lives here rather than in `client/ai/BotMesh.ts` because the *choice* is made
+ * in the simulation and has to be identical on a server that has no meshes to count. The
+ * mesh asserts against it — see `BotMesh.beginDeath`.
+ *
+ * **Six, not the count of any one slot.** The client indexes a slot's clips by this modulo their
+ * number, so the figure has to divide evenly by every death slot's count or the low variants are
+ * dealt more often than the high ones and nothing says so; `check:animations` is the thing that
+ * refuses it. With three standing falls and two kneeling ones (2026-09-25), six is the smallest
+ * that works for both. It is not replicated — every client derives the variant from
+ * `(entityId, deathSerial)` through `deathVariantFor` — so two clients on different builds would
+ * draw the same body falling two different ways, which is the reason it lives in `shared/`.
+ */
+export const DEATH_VARIANTS = 6;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function makeBotVisualState(): BotVisualState {
   return {
     deathSerial: 0,
@@ -207,20 +235,4 @@ export function cosmeticVariantFor(entityId: number, serial: number, variants: n
   z = (z ^ (z >>> 15)) >>> 0;
   return variants <= 0 ? 0 : z % variants;
 }
-
-/**
- * How many fall animations exist.
- *
- * The number lives here rather than in `client/ai/BotMesh.ts` because the *choice* is made
- * in the simulation and has to be identical on a server that has no meshes to count. The
- * mesh asserts against it — see `BotMesh.beginDeath`.
- *
- * **Six, not the count of any one slot.** The client indexes a slot's clips by this modulo their
- * number, so the figure has to divide evenly by every death slot's count or the low variants are
- * dealt more often than the high ones and nothing says so; `check:animations` is the thing that
- * refuses it. With three standing falls and two kneeling ones (2026-09-25), six is the smallest
- * that works for both. It is not replicated — every client derives the variant from
- * `(entityId, deathSerial)` through `deathVariantFor` — so two clients on different builds would
- * draw the same body falling two different ways, which is the reason it lives in `shared/`.
- */
-export const DEATH_VARIANTS = 6;
+//#endregion

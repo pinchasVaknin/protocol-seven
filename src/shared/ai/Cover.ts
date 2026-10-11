@@ -1,8 +1,3 @@
-import type { NavGrid } from '../world/Navmesh';
-import type { CoverPoint } from '../world/maps/types';
-import type { Perception } from './Perception';
-import { simCos, simSin } from '../core/SimMath';
-
 /**
  * Cover points, validated and scored (brief S6.5).
  *
@@ -21,6 +16,16 @@ import { simCos, simSin } from '../core/SimMath';
  * single most obvious tell that cover selection is per-bot and blind.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { NavGrid } from '../world/Navmesh';
+import type { CoverPoint } from '../world/maps/types';
+import type { Perception } from './Perception';
+import { simCos, simSin } from '../core/SimMath';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface CoverSlot {
   readonly x: number;
   readonly y: number;
@@ -33,7 +38,10 @@ export interface CoverSlot {
   /** Entity id of the bot that has claimed this slot, or -1. */
   occupantId: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Torso height a bot presents while using low cover (crouched) and high cover. */
 const CROUCH_TORSO = 0.77;
 const STAND_TORSO = 1.26;
@@ -51,11 +59,40 @@ const MAX_HEIGHT_DELTA = 1.6;
 const candidateIndex = new Int32Array(MAX_SCORED);
 const candidateDist = new Float64Array(MAX_SCORED);
 
+/**
+ * The furthest candidate currently held, and where it sits in the two arrays above.
+ *
+ * Module-level beside the arrays they describe, and written only by `findWorstCandidate`
+ * during one `gatherNearest` call. The scan that fills them is written once now; it used to
+ * be written twice, identically, which was the whole of that function's complexity.
+ */
+let worstDist = -Infinity;
+let worstAt = -1;
+//#endregion
+
+// ====================================== CLASS CoverIndex ====================================== \\
+//#region Class CoverIndex
 export class CoverIndex {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly slots: CoverSlot[] = [];
   /** Authored points the navmesh rejected. Reported at load so bad data is visible. */
   readonly rejected: number;
 
+  /**
+   * The threat one `select` call is hiding from.
+   *
+   * On the instance between `select` and the per-candidate scorer it calls, rather than passed
+   * as three more arguments: a scorer that already takes a slot, a distance and a perception
+   * has no room for a position as well.
+   */
+  private threatX = 0;
+  private threatY = 0;
+  private threatZ = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(points: readonly CoverPoint[], nav: NavGrid) {
     let rejected = 0;
     for (const p of points) {
@@ -79,7 +116,10 @@ export class CoverIndex {
     }
     this.rejected = rejected;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get count(): number {
     return this.slots.length;
   }
@@ -129,6 +169,10 @@ export class CoverIndex {
     const nearest = this.gatherNearest(botId, x, y, z, maxRange);
     if (nearest === 0) return -1;
 
+    this.threatX = tx;
+    this.threatY = ty;
+    this.threatZ = tz;
+
     let best = -1;
     let bestScore = -Infinity;
 
@@ -136,82 +180,13 @@ export class CoverIndex {
       const index = candidateIndex[k] ?? -1;
       const slot = this.slots[index];
       if (slot === undefined) continue;
-
-      const toThreatX = tx - slot.x;
-      const toThreatZ = tz - slot.z;
-      const threatDist = Math.hypot(toThreatX, toThreatZ);
-      if (threatDist < 1.5) continue;
-
-      // The cover has to be oriented against the threat, not merely near it.
-      const fx = -simSin(slot.facingYaw);
-      const fz = -simCos(slot.facingYaw);
-      const facing = (toThreatX * fx + toThreatZ * fz) / threatDist;
-      if (facing < 0.15) continue;
-
-      // The test that matters: standing here, can the threat see me?
-      const torso = slot.height === 'low' ? CROUCH_TORSO : STAND_TORSO;
-      if (perception.clearLine(tx, ty, tz, slot.x, slot.y + torso, slot.z)) continue;
-
-      // Close to me, still facing the fight, and not so far from the threat that taking
-      // it means leaving the engagement entirely.
-      const myDist = candidateDist[k] ?? 0;
-      const score =
-        30 - myDist * 1.6 + facing * 8 - Math.abs(threatDist - 12) * 0.35 + (slot.height === 'high' ? 2 : 0);
+      const score = this.scoreAgainstThreat(slot, candidateDist[k] ?? 0, perception);
       if (score <= bestScore) continue;
       bestScore = score;
       best = index;
     }
 
     return best;
-  }
-
-  /** Nearest free slots within range, unsorted beyond "these are the closest few". */
-  private gatherNearest(botId: number, x: number, y: number, z: number, maxRange: number): number {
-    let count = 0;
-    let worst = Infinity;
-    let worstAt = -1;
-
-    for (let i = 0; i < this.slots.length; i++) {
-      const slot = this.slots[i];
-      if (slot === undefined) continue;
-      if (slot.occupantId >= 0 && slot.occupantId !== botId) continue;
-      if (Math.abs(slot.y - y) > MAX_HEIGHT_DELTA) continue;
-      const dist = Math.hypot(slot.x - x, slot.z - z);
-      if (dist > maxRange) continue;
-
-      if (count < MAX_SCORED) {
-        candidateIndex[count] = i;
-        candidateDist[count] = dist;
-        count++;
-        if (count === MAX_SCORED) {
-          worst = -Infinity;
-          worstAt = -1;
-          for (let k = 0; k < count; k++) {
-            const d = candidateDist[k] ?? 0;
-            if (d > worst) {
-              worst = d;
-              worstAt = k;
-            }
-          }
-        }
-        continue;
-      }
-
-      if (dist >= worst || worstAt < 0) continue;
-      candidateIndex[worstAt] = i;
-      candidateDist[worstAt] = dist;
-      // Re-find the worst slot; the array is 16 long so this is cheaper than a heap.
-      worst = -Infinity;
-      worstAt = -1;
-      for (let k = 0; k < count; k++) {
-        const d = candidateDist[k] ?? 0;
-        if (d > worst) {
-          worst = d;
-          worstAt = k;
-        }
-      }
-    }
-    return count;
   }
 
   /**
@@ -232,4 +207,114 @@ export class CoverIndex {
     if (slot === undefined) return 0;
     return -simSin(slot.facingYaw) * side;
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Nearest free slots within range, unsorted beyond "these are the closest few".
+   *
+   * Four filters and nothing else: a slot somebody else has claimed, one on another level, one
+   * out of range, and then whether this one is near enough to displace what is already held.
+   */
+  private gatherNearest(botId: number, x: number, y: number, z: number, maxRange: number): number {
+    let count = 0;
+    worstDist = Infinity;
+    worstAt = -1;
+
+    for (let i = 0; i < this.slots.length; i++) {
+      const slot = this.slots[i];
+      if (slot === undefined) continue;
+      if (slot.occupantId >= 0 && slot.occupantId !== botId) continue;
+      if (Math.abs(slot.y - y) > MAX_HEIGHT_DELTA) continue;
+      const dist = Math.hypot(slot.x - x, slot.z - z);
+      if (dist > maxRange) continue;
+      count = offerCandidate(i, dist, count);
+    }
+    return count;
+  }
+
+  /**
+   * What this candidate is worth to a bot `myDist` away from it, or `-Infinity` for one that
+   * is not cover at all.
+   *
+   * Three refusals and then an arithmetic preference. The refusals are the rules: a slot has
+   * to be far enough from the threat to be worth walking to, oriented *against* it rather than
+   * merely near it, and — the test that matters — it has to actually break the line to the
+   * pose the bot would stand in there.
+   *
+   * What the score then prefers is close to the bot, still facing the fight, and not so far
+   * from the threat that taking it means leaving the engagement entirely.
+   */
+  private scoreAgainstThreat(slot: CoverSlot, myDist: number, perception: Perception): number {
+    const toThreatX = this.threatX - slot.x;
+    const toThreatZ = this.threatZ - slot.z;
+    const threatDist = Math.hypot(toThreatX, toThreatZ);
+    if (threatDist < 1.5) return -Infinity;
+
+    // The cover has to be oriented against the threat, not merely near it.
+    const fx = -simSin(slot.facingYaw);
+    const fz = -simCos(slot.facingYaw);
+    const facing = (toThreatX * fx + toThreatZ * fz) / threatDist;
+    if (facing < 0.15) return -Infinity;
+
+    // The test that matters: standing here, can the threat see me?
+    const torso = slot.height === 'low' ? CROUCH_TORSO : STAND_TORSO;
+    if (perception.clearLine(this.threatX, this.threatY, this.threatZ, slot.x, slot.y + torso, slot.z)) {
+      return -Infinity;
+    }
+
+    return (
+      30 - myDist * 1.6 + facing * 8 - Math.abs(threatDist - 12) * 0.35 + (slot.height === 'high' ? 2 : 0)
+    );
+  }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Keep slot `i` if it is one of the nearest few. Returns how many are held afterwards.
+ *
+ * Two ways in: there is room, or it is nearer than the furthest one held and takes that slot's
+ * place. Either way the furthest is re-found, because which candidate is now the one to beat
+ * has changed.
+ */
+function offerCandidate(i: number, dist: number, count: number): number {
+  if (count < MAX_SCORED) {
+    candidateIndex[count] = i;
+    candidateDist[count] = dist;
+    const held = count + 1;
+    if (held === MAX_SCORED) findWorstCandidate(held);
+    return held;
+  }
+
+  if (dist >= worstDist || worstAt < 0) return count;
+  candidateIndex[worstAt] = i;
+  candidateDist[worstAt] = dist;
+  // Re-find the worst slot; the array is 16 long so this is cheaper than a heap.
+  findWorstCandidate(count);
+  return count;
+}
+
+/**
+ * Find the furthest of the `count` candidates held, into `worstDist`/`worstAt`.
+ *
+ * Written out twice before — once on filling the array and once on every replacement after
+ * that — which was identical both times and the whole of `gatherNearest`'s complexity and
+ * depth. A module-level function over the module-level arrays allocates nothing, which is the
+ * property the two inline copies were protecting.
+ */
+function findWorstCandidate(count: number): void {
+  worstDist = -Infinity;
+  worstAt = -1;
+  for (let k = 0; k < count; k++) {
+    const d = candidateDist[k] ?? 0;
+    if (d > worstDist) {
+      worstDist = d;
+      worstAt = k;
+    }
+  }
+}
+//#endregion

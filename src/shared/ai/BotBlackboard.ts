@@ -1,6 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { DT } from '../core/Loop';
 import { clamp01 } from '../core/MathUtil';
+//#endregion
 
+// ==================================== CLASS BotBlackboard ===================================== \\
+//#region Class BotBlackboard
 /**
  * What one bot believes (brief S6.3).
  *
@@ -15,6 +20,8 @@ import { clamp01 } from '../core/MathUtil';
  * decays from there. A bot shooting at a doorway you left two seconds ago is not a bug.
  */
 export class BotBlackboard {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Entity id of the enemy currently believed to be in play, or -1. */
   targetId = -1;
   /** True on the most recent perception sample. */
@@ -66,7 +73,10 @@ export class BotBlackboard {
 
   /** Sightings so far, so the velocity estimate can be skipped on the first one. */
   private sightings = 0;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   reset(): void {
     this.targetId = -1;
     this.hasLos = false;
@@ -193,4 +203,6 @@ export class BotBlackboard {
   get hasKnownTarget(): boolean {
     return this.targetId >= 0 && this.confidence > 0.05;
   }
+  //#endregion
 }
+//#endregion

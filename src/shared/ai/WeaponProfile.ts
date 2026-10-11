@@ -1,5 +1,3 @@
-import type { WeaponClass } from '../weapons/WeaponDefs';
-
 /**
  * How a bot fights with the weapon it happens to be holding (M6 playtest item).
  *
@@ -20,6 +18,13 @@ import type { WeaponClass } from '../weapons/WeaponDefs';
  * weapon's own damage falloff does the rest.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { WeaponClass } from '../weapons/WeaponDefs';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface WeaponCombatProfile {
   /**
    * The distance this weapon wants to fight at, metres. A bot further away than this pushes;
@@ -38,7 +43,10 @@ export interface WeaponCombatProfile {
   /** Multiplier on the tier's `adsRange`. Below 1 aims earlier, above 1 hip-fires longer. */
   readonly adsScale: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * One row per class.
  *
@@ -59,7 +67,11 @@ const WEAPON_PROFILES: Readonly<Record<WeaponClass, WeaponCombatProfile>> = {
   // be total, and the rifle profile is the right answer if one is ever handed over by hand.
   LAUNCHER: { preferredRange: 21, minComfortRange: 4, pushScale: 1.0, engageScale: 1.0, adsScale: 1.0 },
 };
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function weaponProfileFor(cls: WeaponClass): WeaponCombatProfile {
   return WEAPON_PROFILES[cls];
 }
+//#endregion

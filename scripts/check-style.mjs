@@ -203,6 +203,22 @@ const FINISHED = {
     'src/shared/equipment/SmokeField.ts',
     'src/shared/equipment/ThrowController.ts',
   ],
+  A11: [
+    'src/shared/ai/AiScheduler.ts',
+    'src/shared/ai/BotBlackboard.ts',
+    'src/shared/ai/BotVisualState.ts',
+    'src/shared/ai/CombatBehaviour.ts',
+    'src/shared/ai/Combatant.ts',
+    'src/shared/ai/Cover.ts',
+    // The guard between `LEG_BOX` and `LEG_PIVOT_Y` stays inside CONSTANTS: moving it to a
+    // MODULE INITIALISATION section would lose the narrowing the two derived constants rely on.
+    'src/shared/ai/Gait.ts',
+    'src/shared/ai/ObjectiveIntent.ts',
+    'src/shared/ai/Pathing.ts',
+    'src/shared/ai/Perception.ts',
+    'src/shared/ai/PlayerCombatant.ts',
+    'src/shared/ai/WeaponProfile.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

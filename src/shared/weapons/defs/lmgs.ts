@@ -1,5 +1,3 @@
-import type { WeaponDef } from '../WeaponDefs';
-
 /**
  * The two light machine guns (brief S6.1): 100+ round magazines, 4 s reloads, 2x wall
  * penetration, the slowest ADS in the game.
@@ -17,6 +15,13 @@ import type { WeaponDef } from '../WeaponDefs';
  * The 4 s reload is the balance. Both are effectively out of the fight twice a minute.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { WeaponDef } from '../WeaponDefs';
+//#endregion
+
+// ============================================ DATA ============================================ \\
+//#region Data
 export const LMG_BASTION: WeaponDef = {
   id: 'lmg_bastion',
   name: 'BASTION 249',
@@ -272,3 +277,4 @@ export const LMG_MONOLITH: WeaponDef = {
 };
 
 export const LMGS: readonly WeaponDef[] = [LMG_BASTION, LMG_MONOLITH];
+//#endregion

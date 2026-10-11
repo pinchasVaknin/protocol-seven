@@ -1,5 +1,3 @@
-import type { WeaponDef } from '../WeaponDefs';
-
 /**
  * The four assault rifles (brief S6.1).
  *
@@ -19,6 +17,13 @@ import type { WeaponDef } from '../WeaponDefs';
  * Every pattern below is hand-authored. None is generated, and no two share a shape.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { WeaponDef } from '../WeaponDefs';
+//#endregion
+
+// ============================================ DATA ============================================ \\
+//#region Data
 export const AR_CARBINE: WeaponDef = {
   id: 'ar_carbine',
   name: 'M4 CARBINE',
@@ -487,3 +492,4 @@ export const AR_LONGBOW: WeaponDef = {
 };
 
 export const ASSAULT_RIFLES: readonly WeaponDef[] = [AR_CARBINE, AR_VULCAN, AR_HALCYON, AR_LONGBOW];
+//#endregion

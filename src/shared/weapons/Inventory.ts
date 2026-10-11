@@ -1,8 +1,3 @@
-import { EV, type GameBus } from '../core/Events';
-import { DT } from '../core/Loop';
-import { Weapon, type WeaponInput } from './WeaponBase';
-import type { WeaponDef, WeaponSlot } from './WeaponDefs';
-
 /**
  * Primary and secondary, and the swap between them (brief S6.4).
  *
@@ -22,8 +17,21 @@ import type { WeaponDef, WeaponSlot } from './WeaponDefs';
  * on completion, so an interrupted reload leaves the magazine exactly as it was.
  */
 
-export type SwapPhase = 'READY' | 'PUT_AWAY' | 'TAKE_OUT';
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { EV, type GameBus } from '../core/Events';
+import { DT } from '../core/Loop';
+import { Weapon, type WeaponInput } from './WeaponBase';
+import type { WeaponDef, WeaponSlot } from './WeaponDefs';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type SwapPhase = 'READY' | 'PUT_AWAY' | 'TAKE_OUT';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The slot a carried killstreak weapon occupies while one is live.
  *
@@ -36,8 +44,13 @@ export type SwapPhase = 'READY' | 'PUT_AWAY' | 'TAKE_OUT';
 const STREAK_SLOT = 2;
 
 const evSwap = { fromId: '', toId: '', sourceId: 0, slot: 'primary' as WeaponSlot };
+//#endregion
 
+// ====================================== CLASS Inventory ======================================= \\
+//#region Class Inventory
 export class Inventory {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Index 0 is the primary, 1 the secondary. Fixed length for the whole match. */
   private readonly weapons: Weapon[] = [];
   private activeIndex = 0;
@@ -48,6 +61,11 @@ export class Inventory {
   /** The slot to go back to when the streak weapon is taken away. See `holdStreakWeapon`. */
   private restoreIndex = 0;
 
+  private infiniteReserveOn = false;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     primary: WeaponDef,
     secondary: WeaponDef | null,
@@ -57,7 +75,10 @@ export class Inventory {
     this.weapons.push(new Weapon(primary, bus, sourceId));
     if (secondary !== null) this.weapons.push(new Weapon(secondary, bus, sourceId));
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get active(): Weapon {
     const weapon = this.weapons[this.activeIndex];
     if (weapon === undefined) throw new Error('Inventory has no active weapon');
@@ -75,8 +96,6 @@ export class Inventory {
   get swapping(): boolean {
     return this.phase !== 'READY';
   }
-
-  private infiniteReserveOn = false;
 
   /**
    * The class's two guns never run out of spare magazines: the Shooting Range (2026-10-03).
@@ -318,4 +337,6 @@ export class Inventory {
   get swapRemaining(): number {
     return Math.max(0, this.timer);
   }
+  //#endregion
 }
+//#endregion

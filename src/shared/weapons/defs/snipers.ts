@@ -1,5 +1,3 @@
-import type { WeaponDef } from '../WeaponDefs';
-
 /**
  * The two sniper rifles (brief S6.1): one-shot to upper torso and head, scope glint, a
  * 0.35 s scope-in with visible breath sway, and hold-breath on Shift.
@@ -16,6 +14,13 @@ import type { WeaponDef } from '../WeaponDefs';
  *    real; it is just not free.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { WeaponDef } from '../WeaponDefs';
+//#endregion
+
+// ============================================ DATA ============================================ \\
+//#region Data
 export const SNIPER_KESTREL: WeaponDef = {
   id: 'sniper_kestrel',
   name: 'KESTREL .338',
@@ -233,3 +238,4 @@ export const SNIPER_VANTAGE: WeaponDef = {
 };
 
 export const SNIPERS: readonly WeaponDef[] = [SNIPER_KESTREL, SNIPER_VANTAGE];
+//#endregion

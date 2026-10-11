@@ -1,5 +1,3 @@
-import { cloneWeaponDef, type AttachmentSlot, type WeaponDef } from './WeaponDefs';
-
 /**
  * Attachments (brief S6.2).
  *
@@ -20,6 +18,13 @@ import { cloneWeaponDef, type AttachmentSlot, type WeaponDef } from './WeaponDef
  * report, and by anyone deciding whether the foregrip is worth its ADS time.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { cloneWeaponDef, type AttachmentSlot, type WeaponDef } from './WeaponDefs';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * What an attachment does, as multipliers and flags.
  *
@@ -74,6 +79,31 @@ export type AttachmentId =
   | 'grip_foregrip'
   | 'laser_tactical';
 
+export interface PurityFinding {
+  readonly check: string;
+  readonly ok: boolean;
+  readonly detail: string;
+}
+
+/** What one attachment measurably costs on one weapon. Feeds the S8.4 report. */
+export interface AttachmentDelta {
+  readonly weaponId: string;
+  readonly attachment: AttachmentId;
+  readonly adsMs: number;
+  readonly adsDeltaMs: number;
+  readonly hipSpreadDeg: number;
+  readonly hipSpreadDeltaDeg: number;
+  readonly adsSpreadDeg: number;
+  readonly adsSpreadDeltaDeg: number;
+  readonly magSize: number;
+  readonly reloadS: number;
+  readonly rangeEndM: number;
+  readonly recoilVertical: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The five from S6.2's table.
  *
@@ -141,7 +171,10 @@ const APPLY_ORDER: readonly AttachmentId[] = [
   'grip_foregrip',
   'laser_tactical',
 ];
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function attachmentDef(id: AttachmentId): AttachmentDef {
   return ATTACHMENTS[id];
 }
@@ -190,52 +223,6 @@ export function resolveWeaponDef(
   // loadouts with the same set must produce byte-identical defs.
   for (const fx of extra) applyEffects(out, fx);
   return out;
-}
-
-/**
- * Apply one modifier record in place.
- *
- * Exported so `PerkState` and the debug panel can describe a single modifier's effect on
- * a def without re-deriving the rules; the *only* writer of a `WeaponDef` field in this
- * project is this function.
- */
-function applyEffects(def: WeaponDef, fx: AttachmentEffects): void {
-  if (fx.adsTimeMult !== undefined) def.adsTime *= fx.adsTimeMult;
-  if (fx.reloadMult !== undefined) {
-    def.reloadTime *= fx.reloadMult;
-    def.reloadEmptyTime *= fx.reloadMult;
-  }
-  if (fx.magSizeMult !== undefined) {
-    def.magSize = Math.max(1, Math.round(def.magSize * fx.magSizeMult));
-  }
-  if (fx.rangeMult !== undefined) {
-    def.damageFalloff.start *= fx.rangeMult;
-    def.damageFalloff.end *= fx.rangeMult;
-  }
-  if (fx.recoilVerticalMult !== undefined) def.recoil.verticalScale *= fx.recoilVerticalMult;
-  if (fx.recoilHorizontalMult !== undefined) def.recoil.horizontalScale *= fx.recoilHorizontalMult;
-  if (fx.hipSpreadMult !== undefined) {
-    def.spread.hipStand *= fx.hipSpreadMult;
-    def.spread.hipMove *= fx.hipSpreadMult;
-  }
-  if (fx.adsSpreadMult !== undefined) def.spread.ads *= fx.adsSpreadMult;
-  if (fx.scopeSwayMult !== undefined && def.scope !== undefined) def.scope.swayDeg *= fx.scopeSwayMult;
-  if (fx.sprintOutMult !== undefined) def.sprintOutTime *= fx.sprintOutMult;
-  if (fx.swapMult !== undefined) {
-    def.swapInTime *= fx.swapMult;
-    def.swapOutTime *= fx.swapMult;
-  }
-  if (fx.muzzleFlashMult !== undefined) def.muzzleFlashScale *= fx.muzzleFlashMult;
-  if (fx.minimapPing !== undefined) def.minimapPing = fx.minimapPing;
-  if (fx.laserVisible !== undefined) def.laserVisible = fx.laserVisible;
-}
-
-// -- verification ------------------------------------------------------------
-
-export interface PurityFinding {
-  readonly check: string;
-  readonly ok: boolean;
-  readonly detail: string;
 }
 
 /**
@@ -297,22 +284,6 @@ export function verifyAttachmentPurity(base: WeaponDef): PurityFinding[] {
   return out;
 }
 
-/** What one attachment measurably costs on one weapon. Feeds the S8.4 report. */
-export interface AttachmentDelta {
-  readonly weaponId: string;
-  readonly attachment: AttachmentId;
-  readonly adsMs: number;
-  readonly adsDeltaMs: number;
-  readonly hipSpreadDeg: number;
-  readonly hipSpreadDeltaDeg: number;
-  readonly adsSpreadDeg: number;
-  readonly adsSpreadDeltaDeg: number;
-  readonly magSize: number;
-  readonly reloadS: number;
-  readonly rangeEndM: number;
-  readonly recoilVertical: number;
-}
-
 export function measureAttachment(base: WeaponDef, id: AttachmentId): AttachmentDelta {
   const on = resolveWeaponDef(base, [id]);
   return {
@@ -330,3 +301,44 @@ export function measureAttachment(base: WeaponDef, id: AttachmentId): Attachment
     recoilVertical: on.recoil.verticalScale,
   };
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Apply one modifier record in place.
+ *
+ * The *only* writer of a `WeaponDef` field in this project, which is what lets the purity
+ * check below make a claim about the whole module rather than about one function.
+ */
+function applyEffects(def: WeaponDef, fx: AttachmentEffects): void {
+  if (fx.adsTimeMult !== undefined) def.adsTime *= fx.adsTimeMult;
+  if (fx.reloadMult !== undefined) {
+    def.reloadTime *= fx.reloadMult;
+    def.reloadEmptyTime *= fx.reloadMult;
+  }
+  if (fx.magSizeMult !== undefined) {
+    def.magSize = Math.max(1, Math.round(def.magSize * fx.magSizeMult));
+  }
+  if (fx.rangeMult !== undefined) {
+    def.damageFalloff.start *= fx.rangeMult;
+    def.damageFalloff.end *= fx.rangeMult;
+  }
+  if (fx.recoilVerticalMult !== undefined) def.recoil.verticalScale *= fx.recoilVerticalMult;
+  if (fx.recoilHorizontalMult !== undefined) def.recoil.horizontalScale *= fx.recoilHorizontalMult;
+  if (fx.hipSpreadMult !== undefined) {
+    def.spread.hipStand *= fx.hipSpreadMult;
+    def.spread.hipMove *= fx.hipSpreadMult;
+  }
+  if (fx.adsSpreadMult !== undefined) def.spread.ads *= fx.adsSpreadMult;
+  if (fx.scopeSwayMult !== undefined && def.scope !== undefined) def.scope.swayDeg *= fx.scopeSwayMult;
+  if (fx.sprintOutMult !== undefined) def.sprintOutTime *= fx.sprintOutMult;
+  if (fx.swapMult !== undefined) {
+    def.swapInTime *= fx.swapMult;
+    def.swapOutTime *= fx.swapMult;
+  }
+  if (fx.muzzleFlashMult !== undefined) def.muzzleFlashScale *= fx.muzzleFlashMult;
+  if (fx.minimapPing !== undefined) def.minimapPing = fx.minimapPing;
+  if (fx.laserVisible !== undefined) def.laserVisible = fx.laserVisible;
+}
+//#endregion

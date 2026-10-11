@@ -1,18 +1,35 @@
-﻿import type { TunableMeta } from '../player/MovementConfig';
-import type { RecoilPattern, ScopeProfile, SpreadProfile, WeaponDef, WeaponVoice } from './WeaponDefs';
-
 /**
  * The live tuning surface for a `WeaponDef` (brief S7).
  *
- * Split out of `WeaponDefs.ts` so the schema and the AR's data stay readable: the two
- * exhaustive switches below are most of this file, and they are machinery, not content.
+ * Split out of `WeaponDefs.ts` so the schema and the AR's data stay readable: the accessor
+ * table below is most of this file, and it is machinery, not content.
  *
  * The point of the derivation is that it is checked in both directions. `WeaponNumberKey`
  * is computed *from* the schema, so a numeric field added to `WeaponDef` with no slider
  * metadata is a type error at `WEAPON_TUNABLES`, and a key that no accessor handles is a
- * type error at the switches. The panel cannot drift out of date with the weapon.
+ * type error at `WEAPON_NUMBERS`. The panel cannot drift out of date with the weapon.
+ *
+ * **One table rather than two switches.** This was a pair of 63-case `switch` statements, one
+ * reading and one writing: 320 lines of machinery whose only real property was that the two
+ * agreed. They agreed by inspection, and only halfway — `readWeaponNumber` returns a `number`,
+ * so `noImplicitReturns` caught a missing case, but `writeWeaponNumber` returns `void`, and a
+ * key it did not handle fell through in silence while the slider did nothing.
+ * `satisfies Record<WeaponNumberKey, WeaponNumberAccessor>` refuses a missing key *and* an
+ * extra one, for the read and the write at once, which is the guarantee the paragraph above
+ * claims. It is also where the six repetitions of the scope's absent-weapon rule went.
+ *
+ * Nothing here is on a hot path: the callers are the F1 panel's sliders and the COPY CONFIG
+ * button, which run at the speed of a human hand.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { TunableMeta } from '../player/MovementConfig';
+import type { RecoilPattern, ScopeProfile, SpreadProfile, WeaponDef, WeaponVoice } from './WeaponDefs';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * Keys of `T` whose value is a number.
  *
@@ -51,6 +68,20 @@ export type WeaponNumberKey =
   | VoiceKey
   | ScopeKey;
 
+/**
+ * A number on a `WeaponDef`, as the pair of operations a slider needs.
+ *
+ * Both are closures built once at module load, one pair per key. What matters about the pair
+ * is that it cannot disagree with itself about which field it names.
+ */
+interface WeaponNumberAccessor {
+  readonly read: (def: WeaponDef) => number;
+  readonly write: (def: WeaponDef, v: number) => void;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Keys that only mean anything on a weapon with a `scope`. */
 const SCOPE_KEY_PREFIX = 'scope.';
 
@@ -128,331 +159,89 @@ export const WEAPON_TUNABLES: Readonly<Record<WeaponNumberKey, TunableMeta>> = {
 
 export const WEAPON_NUMBER_KEYS = Object.keys(WEAPON_TUNABLES) as WeaponNumberKey[];
 
+/**
+ * Every tunable number, as the field it is.
+ *
+ * `satisfies` rather than a type annotation on purpose: it checks the object against
+ * `Record<WeaponNumberKey, WeaponNumberAccessor>` — so a key the schema gained and this table
+ * has not is a compile error, and a key here the schema does not have is one too — while
+ * leaving the literal's own keys visible, which is what `WEAPON_NUMBER_KEYS` above is read off.
+ */
+const WEAPON_NUMBERS = {
+  'damage.near':            field((d: WeaponDef) => d.damage, 'near'),
+  'damage.far':             field((d: WeaponDef) => d.damage, 'far'),
+  'falloff.start':          field((d: WeaponDef) => d.damageFalloff, 'start'),
+  'falloff.end':            field((d: WeaponDef) => d.damageFalloff, 'end'),
+  'headshotMult':           field((d: WeaponDef) => d, 'headshotMult'),
+  'limbMult':               field((d: WeaponDef) => d, 'limbMult'),
+  'upperTorsoMult':         field((d: WeaponDef) => d, 'upperTorsoMult'),
+  'penetration':            field((d: WeaponDef) => d, 'penetration'),
+  'pellets':                field((d: WeaponDef) => d, 'pellets'),
+  'pelletSpread':           field((d: WeaponDef) => d, 'pelletSpread'),
+  'rpm':                    field((d: WeaponDef) => d, 'rpm'),
+  'magSize':                field((d: WeaponDef) => d, 'magSize'),
+  'reserveAmmo':            field((d: WeaponDef) => d, 'reserveAmmo'),
+  'reloadTime':             field((d: WeaponDef) => d, 'reloadTime'),
+  'reloadEmptyTime':        field((d: WeaponDef) => d, 'reloadEmptyTime'),
+  'adsTime':                field((d: WeaponDef) => d, 'adsTime'),
+  'sprintOutTime':          field((d: WeaponDef) => d, 'sprintOutTime'),
+  'moveSpeedMult':          field((d: WeaponDef) => d, 'moveSpeedMult'),
+  'swapInTime':             field((d: WeaponDef) => d, 'swapInTime'),
+  'swapOutTime':            field((d: WeaponDef) => d, 'swapOutTime'),
+  'spread.hipStand':        field((d: WeaponDef) => d.spread, 'hipStand'),
+  'spread.hipMove':         field((d: WeaponDef) => d.spread, 'hipMove'),
+  'spread.ads':             field((d: WeaponDef) => d.spread, 'ads'),
+  'spread.crouchScale':     field((d: WeaponDef) => d.spread, 'crouchScale'),
+  'spread.airScale':        field((d: WeaponDef) => d.spread, 'airScale'),
+  'spread.perShot':         field((d: WeaponDef) => d.spread, 'perShot'),
+  'spread.perShotMax':      field((d: WeaponDef) => d.spread, 'perShotMax'),
+  'spread.recover':         field((d: WeaponDef) => d.spread, 'recover'),
+  'recoil.verticalScale':   field((d: WeaponDef) => d.recoil, 'verticalScale'),
+  'recoil.horizontalScale': field((d: WeaponDef) => d.recoil, 'horizontalScale'),
+  'recoil.firstShotScale':  field((d: WeaponDef) => d.recoil, 'firstShotScale'),
+  'recoil.recoverFraction': field((d: WeaponDef) => d.recoil, 'recoverFraction'),
+  'recoil.recoverRate':     field((d: WeaponDef) => d.recoil, 'recoverRate'),
+  'recoil.recoverDelay':    field((d: WeaponDef) => d.recoil, 'recoverDelay'),
+  'recoil.adsScale':        field((d: WeaponDef) => d.recoil, 'adsScale'),
+  'recoil.visualScale':     field((d: WeaponDef) => d.recoil, 'visualScale'),
+  'recoil.visualAttack':    field((d: WeaponDef) => d.recoil, 'visualAttack'),
+  'recoil.visualSettle':    field((d: WeaponDef) => d.recoil, 'visualSettle'),
+  'adsFovScale':            field((d: WeaponDef) => d, 'adsFovScale'),
+  'adsViewmodelFovScale':   field((d: WeaponDef) => d, 'adsViewmodelFovScale'),
+  'tracerFraction':         field((d: WeaponDef) => d, 'tracerFraction'),
+  'shakePerShot':           field((d: WeaponDef) => d, 'shakePerShot'),
+  'muzzleFlashScale':       field((d: WeaponDef) => d, 'muzzleFlashScale'),
+  'unlockLevel':            field((d: WeaponDef) => d, 'unlockLevel'),
+  'voice.level':            field((d: WeaponDef) => d.voice, 'level'),
+  'voice.bodyFreq':         field((d: WeaponDef) => d.voice, 'bodyFreq'),
+  'voice.bodyQ':            field((d: WeaponDef) => d.voice, 'bodyQ'),
+  'voice.bodyDecay':        field((d: WeaponDef) => d.voice, 'bodyDecay'),
+  'voice.bodyRatio':        field((d: WeaponDef) => d.voice, 'bodyRatio'),
+  'voice.tailDecay':        field((d: WeaponDef) => d.voice, 'tailDecay'),
+  'voice.tailLevel':        field((d: WeaponDef) => d.voice, 'tailLevel'),
+  'voice.tailFreq':         field((d: WeaponDef) => d.voice, 'tailFreq'),
+  'voice.clickFreq':        field((d: WeaponDef) => d.voice, 'clickFreq'),
+  'voice.clickLevel':       field((d: WeaponDef) => d.voice, 'clickLevel'),
+  'voice.thumpFreq':        field((d: WeaponDef) => d.voice, 'thumpFreq'),
+  'voice.thumpLevel':       field((d: WeaponDef) => d.voice, 'thumpLevel'),
+  'voice.wet':              field((d: WeaponDef) => d.voice, 'wet'),
+  'scope.swayDeg':          scopeField('swayDeg', 0),
+  'scope.swayRate':         scopeField('swayRate', 0),
+  'scope.breathSeconds':    scopeField('breathSeconds', 0),
+  'scope.breathRecovery':   scopeField('breathRecovery', 0),
+  'scope.breathHoldScale':  scopeField('breathHoldScale', 0),
+  'scope.magnification':    scopeField('magnification', 1),
+} satisfies Record<WeaponNumberKey, WeaponNumberAccessor>;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function readWeaponNumber(def: WeaponDef, key: WeaponNumberKey): number {
-  switch (key) {
-    case 'damage.near':
-      return def.damage.near;
-    case 'damage.far':
-      return def.damage.far;
-    case 'falloff.start':
-      return def.damageFalloff.start;
-    case 'falloff.end':
-      return def.damageFalloff.end;
-    case 'headshotMult':
-      return def.headshotMult;
-    case 'limbMult':
-      return def.limbMult;
-    case 'upperTorsoMult':
-      return def.upperTorsoMult;
-    case 'penetration':
-      return def.penetration;
-    case 'pellets':
-      return def.pellets;
-    case 'pelletSpread':
-      return def.pelletSpread;
-    case 'rpm':
-      return def.rpm;
-    case 'magSize':
-      return def.magSize;
-    case 'reserveAmmo':
-      return def.reserveAmmo;
-    case 'reloadTime':
-      return def.reloadTime;
-    case 'reloadEmptyTime':
-      return def.reloadEmptyTime;
-    case 'adsTime':
-      return def.adsTime;
-    case 'sprintOutTime':
-      return def.sprintOutTime;
-    case 'moveSpeedMult':
-      return def.moveSpeedMult;
-    case 'swapInTime':
-      return def.swapInTime;
-    case 'swapOutTime':
-      return def.swapOutTime;
-    case 'spread.hipStand':
-      return def.spread.hipStand;
-    case 'spread.hipMove':
-      return def.spread.hipMove;
-    case 'spread.ads':
-      return def.spread.ads;
-    case 'spread.crouchScale':
-      return def.spread.crouchScale;
-    case 'spread.airScale':
-      return def.spread.airScale;
-    case 'spread.perShot':
-      return def.spread.perShot;
-    case 'spread.perShotMax':
-      return def.spread.perShotMax;
-    case 'spread.recover':
-      return def.spread.recover;
-    case 'recoil.verticalScale':
-      return def.recoil.verticalScale;
-    case 'recoil.horizontalScale':
-      return def.recoil.horizontalScale;
-    case 'recoil.firstShotScale':
-      return def.recoil.firstShotScale;
-    case 'recoil.recoverFraction':
-      return def.recoil.recoverFraction;
-    case 'recoil.recoverRate':
-      return def.recoil.recoverRate;
-    case 'recoil.recoverDelay':
-      return def.recoil.recoverDelay;
-    case 'recoil.adsScale':
-      return def.recoil.adsScale;
-    case 'recoil.visualScale':
-      return def.recoil.visualScale;
-    case 'recoil.visualAttack':
-      return def.recoil.visualAttack;
-    case 'recoil.visualSettle':
-      return def.recoil.visualSettle;
-    case 'adsFovScale':
-      return def.adsFovScale;
-    case 'adsViewmodelFovScale':
-      return def.adsViewmodelFovScale;
-    case 'tracerFraction':
-      return def.tracerFraction;
-    case 'shakePerShot':
-      return def.shakePerShot;
-    case 'muzzleFlashScale':
-      return def.muzzleFlashScale;
-    case 'unlockLevel':
-      return def.unlockLevel;
-    case 'voice.level':
-      return def.voice.level;
-    case 'voice.bodyFreq':
-      return def.voice.bodyFreq;
-    case 'voice.bodyQ':
-      return def.voice.bodyQ;
-    case 'voice.bodyDecay':
-      return def.voice.bodyDecay;
-    case 'voice.bodyRatio':
-      return def.voice.bodyRatio;
-    case 'voice.tailDecay':
-      return def.voice.tailDecay;
-    case 'voice.tailLevel':
-      return def.voice.tailLevel;
-    case 'voice.tailFreq':
-      return def.voice.tailFreq;
-    case 'voice.clickFreq':
-      return def.voice.clickFreq;
-    case 'voice.clickLevel':
-      return def.voice.clickLevel;
-    case 'voice.thumpFreq':
-      return def.voice.thumpFreq;
-    case 'voice.thumpLevel':
-      return def.voice.thumpLevel;
-    case 'voice.wet':
-      return def.voice.wet;
-    case 'scope.swayDeg':
-      return def.scope?.swayDeg ?? 0;
-    case 'scope.swayRate':
-      return def.scope?.swayRate ?? 0;
-    case 'scope.breathSeconds':
-      return def.scope?.breathSeconds ?? 0;
-    case 'scope.breathRecovery':
-      return def.scope?.breathRecovery ?? 0;
-    case 'scope.breathHoldScale':
-      return def.scope?.breathHoldScale ?? 0;
-    case 'scope.magnification':
-      return def.scope?.magnification ?? 1;
-  }
+  return WEAPON_NUMBERS[key].read(def);
 }
 
 export function writeWeaponNumber(def: WeaponDef, key: WeaponNumberKey, v: number): void {
-  switch (key) {
-    case 'damage.near':
-      def.damage.near = v;
-      return;
-    case 'damage.far':
-      def.damage.far = v;
-      return;
-    case 'falloff.start':
-      def.damageFalloff.start = v;
-      return;
-    case 'falloff.end':
-      def.damageFalloff.end = v;
-      return;
-    case 'headshotMult':
-      def.headshotMult = v;
-      return;
-    case 'limbMult':
-      def.limbMult = v;
-      return;
-    case 'upperTorsoMult':
-      def.upperTorsoMult = v;
-      return;
-    case 'penetration':
-      def.penetration = v;
-      return;
-    case 'pellets':
-      def.pellets = v;
-      return;
-    case 'pelletSpread':
-      def.pelletSpread = v;
-      return;
-    case 'rpm':
-      def.rpm = v;
-      return;
-    case 'magSize':
-      def.magSize = v;
-      return;
-    case 'reserveAmmo':
-      def.reserveAmmo = v;
-      return;
-    case 'reloadTime':
-      def.reloadTime = v;
-      return;
-    case 'reloadEmptyTime':
-      def.reloadEmptyTime = v;
-      return;
-    case 'adsTime':
-      def.adsTime = v;
-      return;
-    case 'sprintOutTime':
-      def.sprintOutTime = v;
-      return;
-    case 'moveSpeedMult':
-      def.moveSpeedMult = v;
-      return;
-    case 'swapInTime':
-      def.swapInTime = v;
-      return;
-    case 'swapOutTime':
-      def.swapOutTime = v;
-      return;
-    case 'spread.hipStand':
-      def.spread.hipStand = v;
-      return;
-    case 'spread.hipMove':
-      def.spread.hipMove = v;
-      return;
-    case 'spread.ads':
-      def.spread.ads = v;
-      return;
-    case 'spread.crouchScale':
-      def.spread.crouchScale = v;
-      return;
-    case 'spread.airScale':
-      def.spread.airScale = v;
-      return;
-    case 'spread.perShot':
-      def.spread.perShot = v;
-      return;
-    case 'spread.perShotMax':
-      def.spread.perShotMax = v;
-      return;
-    case 'spread.recover':
-      def.spread.recover = v;
-      return;
-    case 'recoil.verticalScale':
-      def.recoil.verticalScale = v;
-      return;
-    case 'recoil.horizontalScale':
-      def.recoil.horizontalScale = v;
-      return;
-    case 'recoil.firstShotScale':
-      def.recoil.firstShotScale = v;
-      return;
-    case 'recoil.recoverFraction':
-      def.recoil.recoverFraction = v;
-      return;
-    case 'recoil.recoverRate':
-      def.recoil.recoverRate = v;
-      return;
-    case 'recoil.recoverDelay':
-      def.recoil.recoverDelay = v;
-      return;
-    case 'recoil.adsScale':
-      def.recoil.adsScale = v;
-      return;
-    case 'recoil.visualScale':
-      def.recoil.visualScale = v;
-      return;
-    case 'recoil.visualAttack':
-      def.recoil.visualAttack = v;
-      return;
-    case 'recoil.visualSettle':
-      def.recoil.visualSettle = v;
-      return;
-    case 'adsFovScale':
-      def.adsFovScale = v;
-      return;
-    case 'adsViewmodelFovScale':
-      def.adsViewmodelFovScale = v;
-      return;
-    case 'tracerFraction':
-      def.tracerFraction = v;
-      return;
-    case 'shakePerShot':
-      def.shakePerShot = v;
-      return;
-    case 'muzzleFlashScale':
-      def.muzzleFlashScale = v;
-      return;
-    case 'unlockLevel':
-      def.unlockLevel = v;
-      return;
-    case 'voice.level':
-      def.voice.level = v;
-      return;
-    case 'voice.bodyFreq':
-      def.voice.bodyFreq = v;
-      return;
-    case 'voice.bodyQ':
-      def.voice.bodyQ = v;
-      return;
-    case 'voice.bodyDecay':
-      def.voice.bodyDecay = v;
-      return;
-    case 'voice.bodyRatio':
-      def.voice.bodyRatio = v;
-      return;
-    case 'voice.tailDecay':
-      def.voice.tailDecay = v;
-      return;
-    case 'voice.tailLevel':
-      def.voice.tailLevel = v;
-      return;
-    case 'voice.tailFreq':
-      def.voice.tailFreq = v;
-      return;
-    case 'voice.clickFreq':
-      def.voice.clickFreq = v;
-      return;
-    case 'voice.clickLevel':
-      def.voice.clickLevel = v;
-      return;
-    case 'voice.thumpFreq':
-      def.voice.thumpFreq = v;
-      return;
-    case 'voice.thumpLevel':
-      def.voice.thumpLevel = v;
-      return;
-    case 'voice.wet':
-      def.voice.wet = v;
-      return;
-    // Writing a scope number on a weapon that has no scope is a no-op rather than an
-    // error: the panel hides the group, but the copy-config path walks every key.
-    case 'scope.swayDeg':
-      if (def.scope !== undefined) def.scope.swayDeg = v;
-      return;
-    case 'scope.swayRate':
-      if (def.scope !== undefined) def.scope.swayRate = v;
-      return;
-    case 'scope.breathSeconds':
-      if (def.scope !== undefined) def.scope.breathSeconds = v;
-      return;
-    case 'scope.breathRecovery':
-      if (def.scope !== undefined) def.scope.breathRecovery = v;
-      return;
-    case 'scope.breathHoldScale':
-      if (def.scope !== undefined) def.scope.breathHoldScale = v;
-      return;
-    case 'scope.magnification':
-      if (def.scope !== undefined) def.scope.magnification = v;
-      return;
-  }
+  WEAPON_NUMBERS[key].write(def, v);
 }
 
 /** Serialise a tuned weapon back into pasteable TypeScript source. */
@@ -473,3 +262,46 @@ export function weaponDefToSource(def: WeaponDef): string {
   lines.push('};');
   return lines.join('\n');
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * A number that lives on the def itself, or on one of its always-present records.
+ *
+ * `owner` picks the record out of the def and `key` names the field in it, which is what lets
+ * one row describe `def.rpm` and `def.recoil.visualScale` in the same shape. `key` is
+ * constrained to the record's *numeric* fields, so naming `recoil.kicks` here does not compile.
+ */
+function field<T extends object, K extends NumberKeysOf<T> & keyof T>(
+  owner: (def: WeaponDef) => T,
+  key: K,
+): WeaponNumberAccessor {
+  return {
+    read: (def) => owner(def)[key] as number,
+    write: (def, v) => {
+      owner(def)[key] = v as T[K];
+    },
+  };
+}
+
+/**
+ * A number inside the optional `scope` record.
+ *
+ * `scope` is absent on ten of the twelve weapons, so reading one of these returns `fallback`
+ * and writing one is a no-op rather than inventing a scope. `WeaponDebug` hides the whole
+ * group when `def.scope` is undefined rather than showing sliders that do nothing, so the
+ * fallback is only ever what is behind a group nobody sees.
+ */
+function scopeField(
+  key: NumberKeysOf<ScopeProfile> & keyof ScopeProfile,
+  fallback: number,
+): WeaponNumberAccessor {
+  return {
+    read: (def) => def.scope?.[key] ?? fallback,
+    write: (def, v) => {
+      if (def.scope !== undefined) def.scope[key] = v;
+    },
+  };
+}
+//#endregion

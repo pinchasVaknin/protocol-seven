@@ -1,5 +1,3 @@
-import type { TunableMeta } from '../player/MovementConfig';
-
 /**
  * Every number that decides how the gun *looks* while it does what WeaponBase says it
  * is doing (brief S6.6). Balance lives in `WeaponDefs`; this is presentation.
@@ -11,6 +9,14 @@ import type { TunableMeta } from '../player/MovementConfig';
  * Positions are metres in viewmodel-camera space (+X right, +Y up, -Z forward);
  * rotations are degrees.
  */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { TunableMeta } from '../player/MovementConfig';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface ViewmodelConfig {
   // -- hip pose ----------------------------------------------------------
   hipX: number;
@@ -114,7 +120,10 @@ export interface ViewmodelConfig {
   muzzleUp: number;
   muzzleForward: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const DEFAULT_VIEWMODEL_CONFIG: ViewmodelConfig = {
   hipX: 0.152,
   hipY: -0.132,
@@ -240,7 +249,10 @@ export const VIEWMODEL_TUNABLES: Readonly<Record<keyof ViewmodelConfig, TunableM
 };
 
 export const VIEWMODEL_CONFIG_KEYS = Object.keys(DEFAULT_VIEWMODEL_CONFIG) as Array<keyof ViewmodelConfig>;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function cloneViewmodelConfig(src: ViewmodelConfig): ViewmodelConfig {
   return { ...src };
 }
@@ -260,3 +272,4 @@ export function viewmodelConfigToSource(cfg: ViewmodelConfig): string {
   lines.push('};');
   return lines.join('\n');
 }
+//#endregion

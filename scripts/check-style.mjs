@@ -168,6 +168,20 @@ const FINISHED = {
     'src/shared/weapons/WeaponBase.ts',
     'src/shared/weapons/WeaponSystem.ts',
   ],
+  A8: [
+    'src/shared/weapons/Attachments.ts',
+    'src/shared/weapons/Inventory.ts',
+    'src/shared/weapons/ViewmodelConfig.ts',
+    'src/shared/weapons/WeaponDefs.ts',
+    'src/shared/weapons/WeaponTuning.ts',
+    // The arsenal's data: no function and no class anywhere, so IMPORTS -> DATA and nothing else.
+    'src/shared/weapons/defs/assaultRifles.ts',
+    'src/shared/weapons/defs/lmgs.ts',
+    'src/shared/weapons/defs/pistols.ts',
+    'src/shared/weapons/defs/shotguns.ts',
+    'src/shared/weapons/defs/smgs.ts',
+    'src/shared/weapons/defs/snipers.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

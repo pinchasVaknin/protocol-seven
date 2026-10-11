@@ -1,5 +1,3 @@
-import type { WeaponDef } from '../WeaponDefs';
-
 /**
  * The two submachine guns (brief S6.1): fastest ADS (~180 ms), high RPM, brutal falloff
  * past 18 m.
@@ -17,6 +15,13 @@ import type { WeaponDef } from '../WeaponDefs';
  * be controllable at the range where it is supposed to be losing.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { WeaponDef } from '../WeaponDefs';
+//#endregion
+
+// ============================================ DATA ============================================ \\
+//#region Data
 export const SMG_WASP: WeaponDef = {
   id: 'smg_wasp',
   name: 'WASP 9',
@@ -292,3 +297,4 @@ export const SMG_MERIDIAN: WeaponDef = {
 };
 
 export const SMGS: readonly WeaponDef[] = [SMG_WASP, SMG_MERIDIAN];
+//#endregion

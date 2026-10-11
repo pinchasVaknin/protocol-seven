@@ -17,6 +17,8 @@
  * these types rather than hand-listed alongside them.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { Btn, isDown } from '../core/InputCommand';
 import { ASSAULT_RIFLES } from './defs/assaultRifles';
 import { LMGS } from './defs/lmgs';
@@ -24,7 +26,10 @@ import { PISTOLS } from './defs/pistols';
 import { SHOTGUNS } from './defs/shotguns';
 import { SMGS } from './defs/smgs';
 import { SNIPERS } from './defs/snipers';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type WeaponClass = 'AR' | 'SMG' | 'LMG' | 'MARKSMAN' | 'SNIPER' | 'SHOTGUN' | 'PISTOL' | 'LAUNCHER';
 
 /** Which inventory slot a weapon occupies (S6.4). */
@@ -143,17 +148,6 @@ export interface ScopeProfile {
   /** Whether the objective lens throws a glint an enemy can see. */
   glint: boolean;
 }
-
-/**
- * The most rays one trigger pull may send.
- *
- * The shotgun's 8 is the only value above 1 in the shipped table, but `pellets` is writable —
- * the M5 tuning panel moves it live — and it is the denominator of every accuracy figure in
- * the game, so the number that bounds it lives beside the field rather than inside the one
- * subsystem that happened to need it first. `WeaponSystem` clamps the fire loop to it, and
- * `combat/ShotAccounting` clamps everything that counts what came out.
- */
-export const MAX_PELLETS = 16;
 
 export interface WeaponDef {
   id: string;
@@ -345,6 +339,20 @@ export interface ShieldProfile {
    */
   readonly blastRetain: number;
 }
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * The most rays one trigger pull may send.
+ *
+ * The shotgun's 8 is the only value above 1 in the shipped table, but `pellets` is writable —
+ * the M5 tuning panel moves it live — and it is the denominator of every accuracy figure in
+ * the game, so the number that bounds it lives beside the field rather than inside the one
+ * subsystem that happened to need it first. `WeaponSystem` clamps the fire loop to it, and
+ * `combat/ShotAccounting` clamps everything that counts what came out.
+ */
+export const MAX_PELLETS = 16;
 
 /**
  * The arsenal (S6.1). Twelve weapons across five classes plus a sidearm.
@@ -370,7 +378,10 @@ export const AR_DEFAULT: WeaponDef = requireWeapon('ar_carbine');
 
 /** The default secondary. Every loadout carries one. */
 export const PISTOL_DEFAULT: WeaponDef = requireWeapon('pistol_talon');
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function requireWeapon(id: string): WeaponDef {
   const def = WEAPON_DEFS[id];
   if (def === undefined) throw new Error(`Unknown weapon id "${id}"`);
@@ -408,3 +419,4 @@ export function heldMoveScale(def: WeaponDef, buttons: number): number {
 export function shotInterval(def: WeaponDef): number {
   return 60 / Math.max(def.rpm, 1);
 }
+//#endregion

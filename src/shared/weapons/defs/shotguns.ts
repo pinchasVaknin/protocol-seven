@@ -1,5 +1,3 @@
-import type { WeaponDef } from '../WeaponDefs';
-
 /**
  * The shotgun (brief S6.1): 8 pellets, per-pellet damage, one-shot inside 6 m.
  *
@@ -16,6 +14,13 @@ import type { WeaponDef } from '../WeaponDefs';
  * against a 90 RPM pump.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { WeaponDef } from '../WeaponDefs';
+//#endregion
+
+// ============================================ DATA ============================================ \\
+//#region Data
 export const SHOTGUN_BREACHER: WeaponDef = {
   id: 'shotgun_breacher',
   name: 'BREACHER 12',
@@ -125,3 +130,4 @@ export const SHOTGUN_BREACHER: WeaponDef = {
 };
 
 export const SHOTGUNS: readonly WeaponDef[] = [SHOTGUN_BREACHER];
+//#endregion

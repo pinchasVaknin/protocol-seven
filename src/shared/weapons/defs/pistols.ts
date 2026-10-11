@@ -1,5 +1,3 @@
-import type { WeaponDef } from '../WeaponDefs';
-
 /**
  * The sidearm (brief S6.1): fast swap, secondary slot.
  *
@@ -11,6 +9,13 @@ import type { WeaponDef } from '../WeaponDefs';
  * 12-round magazine that runs out during a single engagement.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { WeaponDef } from '../WeaponDefs';
+//#endregion
+
+// ============================================ DATA ============================================ \\
+//#region Data
 export const PISTOL_TALON: WeaponDef = {
   id: 'pistol_talon',
   name: 'TALON 9',
@@ -114,3 +119,4 @@ export const PISTOL_TALON: WeaponDef = {
 };
 
 export const PISTOLS: readonly WeaponDef[] = [PISTOL_TALON];
+//#endregion

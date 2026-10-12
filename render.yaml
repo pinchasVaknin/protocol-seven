@@ -24,9 +24,9 @@ services:
     # the disk, so it stays true even if the client build is missing.
     healthCheckPath: /healthz
     envVars:
-      # The build targets node22 and the code uses APIs that assume it.
+      # The build targets node24 and the code uses APIs that assume it.
       - key: NODE_VERSION
-        value: "22"
+        value: "24"
       # Read at BUILD time by Vite and baked into the client. "1" means "connect to the origin
       # this page was served from", which is the only answer that survives Render assigning
       # the hostname after the fact.

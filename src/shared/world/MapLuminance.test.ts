@@ -44,8 +44,12 @@ describe('the linear luminance of an authored colour', () => {
   it('is the number F9 turns on', () => {
     // These two look like near neighbours in a palette and are a factor of five apart in the
     // space the renderer multiplies in. That sentence is the whole of the finding.
-    expect(linearLuminance(0x24262b)).toBe(0.019357125143412927);
-    expect(linearLuminance(0x555a63)).toBe(0.10144476053010315);
+    //
+    // Both channels are above the sRGB threshold, so both go through `Math.pow` — the same
+    // implementation-approximated call as the irradiance figures below, and so the same
+    // tolerance for the same reason. See `IRRADIANCE_DIGITS`.
+    expect(linearLuminance(0x24262b)).toBeCloseTo(0.019357125143412927, 13);
+    expect(linearLuminance(0x555a63)).toBeCloseTo(0.10144476053010315, 13);
     expect(linearLuminance(0x555a63) / linearLuminance(0x24262b)).toBeGreaterThan(5);
   });
 
@@ -69,27 +73,49 @@ describe('the linear luminance of an authored colour', () => {
   });
 });
 
+/**
+ * How precisely a reading can be pinned, and why the two halves differ.
+ *
+ * The screen values are pinned exactly. `screenValue` ends in `Math.round`, `mean` is a sum of
+ * those integers over their count, and IEEE 754 specifies `/` exactly — so every conformant
+ * engine must produce these same numbers, and they are the reading the instrument is actually
+ * for.
+ *
+ * The raw irradiance figures cannot be, and the reason is measured rather than assumed. The
+ * only operations in that path the ECMAScript spec leaves *implementation-approximated* are
+ * `Math.pow` (the sRGB decode, and both halves of the distance falloff) and `Math.hypot`;
+ * everything else is `+ - * /` and `Math.min`/`Math.max`, which are exact. On 2026-10-12 a
+ * Render build on Node 22 reported `irradianceMax` for the second case below as
+ * 1.4897219552777616 against this machine's 1.4897219552777619 — **adjacent doubles, one ULP
+ * apart**, which is the signature of exactly those two functions and of nothing else.
+ *
+ * That extends the M9 table in `shared/core/SimMath.ts`, which measured `pow` and `hypot` as
+ * agreeing — between Node 24 (V8 13.6) and Chrome 148 (V8 14.x). Node 22 is V8 12.4, an engine
+ * that table never covered. `render.yaml` now pins NODE_VERSION to 24, but it pins the *major*:
+ * V8 still moves inside 24.x, so an exact literal here is a test that depends on a number
+ * nobody controls.
+ *
+ * 13 digits is 5e-14, about 225 ULP at this magnitude: some thirteen orders of magnitude
+ * tighter than any real change to the arithmetic — a moved formula shifts these by percent —
+ * and far above engine noise. The instrument still cannot drift silently, which is this file's
+ * whole purpose. Note that none of this reaches `npm run readability`, whose own figures go
+ * through `toFixed(3)` and `toFixed(4)`.
+ */
+const IRRADIANCE_DIGITS = 13;
+
 describe('reading what a map floor reads at', () => {
   it('reports the same screen values it has always reported', () => {
-    expect(readFloor(lit(LIGHTS), 0x24262b)).toEqual({
-      min: 7,
-      max: 8,
-      mean: 7.2,
-      samples: 25,
-      irradianceMin: 1.3725407647139893,
-      irradianceMax: 1.603151215470804,
-    });
+    const { irradianceMin, irradianceMax, ...screen } = readFloor(lit(LIGHTS), 0x24262b);
+    expect(screen).toEqual({ min: 7, max: 8, mean: 7.2, samples: 25 });
+    expect(irradianceMin).toBeCloseTo(1.3725407647139893, IRRADIANCE_DIGITS);
+    expect(irradianceMax).toBeCloseTo(1.603151215470804, IRRADIANCE_DIGITS);
   });
 
   it('takes the step it is given, and the albedo it is given', () => {
-    expect(readFloor(lit(LIGHTS), 0x555a63, 4)).toEqual({
-      min: 42,
-      max: 45,
-      mean: 43.333333333333336,
-      samples: 9,
-      irradianceMin: 1.3725407647139893,
-      irradianceMax: 1.4897219552777619,
-    });
+    const { irradianceMin, irradianceMax, ...screen } = readFloor(lit(LIGHTS), 0x555a63, 4);
+    expect(screen).toEqual({ min: 42, max: 45, mean: 43.333333333333336, samples: 9 });
+    expect(irradianceMin).toBeCloseTo(1.3725407647139893, IRRADIANCE_DIGITS);
+    expect(irradianceMax).toBeCloseTo(1.4897219552777619, IRRADIANCE_DIGITS);
     // 20/255 is "I cannot see anything" and 42/255 is a lit floor: the same lights over a
     // brighter ground, which is the lever two failed Depot passes argued about.
     expect(readFloor(lit(LIGHTS), 0x555a63).mean).toBeGreaterThan(readFloor(lit(LIGHTS), 0x24262b).mean);

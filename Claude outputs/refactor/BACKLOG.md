@@ -56,10 +56,26 @@ block as the counters it does reset. So a reading taken after a reset covers the
 that one number and the window since the reset for every other, and the block's whole purpose is
 that its numbers are comparable.
 
+**The open question is answered (2026-10-12, Step 0 of A13).** The task as first written assumed
+the published read-out was affected. It is not, and the scope is smaller than it looked:
+
+- `climbs` is printed by `locomotionSummary` in `src/server/main.ts` (~line 313), in the same
+  block as `sprintFlips`, `flipsPerTravelSecond`, `sprintShare` and `meanSprintSeconds` — so the
+  grouping the task describes is real.
+- But **the only caller of `resetCounters()` is `src/client/debug/BotHarness.ts:182`**. The server
+  read-out never calls it, so there every number in that block is a match total and they already
+  agree.
+
+So the inconsistency is reachable from exactly one place: the bot harness, which resets seven of
+the eight. That consumer is in `src/client/debug/`, which section 10 puts out of scope
+permanently — the fix is still one line in `BotDirector.ts`, which A13 owns, but its justification
+is "the one caller of this method gets a block it cannot read", not "the published measurement is
+wrong". Worth stating in A13's Step 2 that way, so the change is not oversold.
+
 **Do it inside A13**, which rewrites this function anyway; fixing one line now and reshaping the
-function next session is the same code twice. Confirm first by reading how the Depot read-out
-consumes the stats. `BotBrain.test.ts` (A12) asserts that a diagnostic *survives* `brain.reset()`
-— the director owns when these are zeroed, which is why the fix is here and not in the brain.
+function next session is the same code twice. `BotBrain.test.ts` (A12) asserts that a diagnostic
+*survives* `brain.reset()` — the director owns when these are zeroed, which is why the fix is here
+and not in the brain.
 
 **Verify** `npm run check`, plus the SIM snapshot/compare pair: a reset firing on a different tick
 would move the bot matches.

@@ -1,8 +1,25 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { isHostile } from '../combat/Hostility';
 import { DT } from '../core/Loop';
 import { TAU } from '../core/MathUtil';
 import { Killstreak } from './KillstreakBase';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+export interface UavContact {
+  entityId: number;
+  x: number;
+  z: number;
+  /** Seconds since the beam crossed this contact. Drives the fade. */
+  age: number;
+  active: boolean;
+}
+//#endregion
+
+// ========================================= CLASS Uav ========================================== \\
+//#region Class Uav
 /**
  * UAV (brief S6.1): enemies pinged on the minimap for 30 s, **sweeping rather than continuous**.
  *
@@ -19,17 +36,9 @@ import { Killstreak } from './KillstreakBase';
  * The contact array is allocated once at activation and reused; the sweep runs in the sim tick
  * and allocates nothing.
  */
-
-export interface UavContact {
-  entityId: number;
-  x: number;
-  z: number;
-  /** Seconds since the beam crossed this contact. Drives the fade. */
-  age: number;
-  active: boolean;
-}
-
 export class Uav extends Killstreak {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Bearing of the sweep line, radians. Read by the minimap to draw the beam. */
   sweepAngle = 0;
 
@@ -37,7 +46,10 @@ export class Uav extends Killstreak {
   readonly contacts: UavContact[] = [];
 
   private previousAngle = 0;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   override onActivate(): void {
     for (const c of this.ctx.roster) {
       this.contacts.push({ entityId: c.entityId, x: 0, z: 0, age: Infinity, active: false });
@@ -46,41 +58,10 @@ export class Uav extends Killstreak {
   }
 
   override onTick(_tick: number): boolean {
-    this.age += DT;
-    this.previousAngle = this.sweepAngle;
-    this.sweepAngle = (this.sweepAngle + (TAU / this.ctx.cfg.uavSweepSeconds) * DT) % TAU;
-
-    // A revolution wrapped: that is one audible sweep.
-    if (this.sweepAngle < this.previousAngle) this.ctx.present.uavSweep(this.age);
-
-    for (const contact of this.contacts) contact.age += DT;
-
-    // Record anything the beam crossed this tick. The beam is a bearing from the map centre,
-    // so "crossed" is the angular interval [previous, current] containing the contact.
-    //
-    // "Enemy" is `isHostile`'s answer — in Free-for-All, everybody but the owner, who is
-    // skipped by id because the substrate cannot tell them apart from a same-side opponent
-    // (M13 Phase A). Before that a UAV in FFA showed half the lobby.
-    for (const c of this.ctx.roster) {
-      if (!c.participating || c.entityId === this.ownerId) continue;
-      if (!isHostile(this.ownerTeam, c.team, this.ctx.freeForAll)) continue;
-      // Ghost (M6). The contact is never recorded, so nothing downstream has to filter.
-      if (!this.ctx.visibleToUav(c.entityId)) continue;
-      const bearing = normalise(Math.atan2(c.pz, c.px));
-      if (!crossed(this.previousAngle, this.sweepAngle, bearing)) continue;
-      const slot = this.contactFor(c.entityId);
-      if (slot === undefined) continue;
-      slot.x = c.px;
-      slot.z = c.pz;
-      slot.age = 0;
-      slot.active = true;
-    }
-
-    // Age contacts out so a dead enemy does not leave a permanent dot.
-    for (const contact of this.contacts) {
-      if (contact.age > this.ctx.cfg.uavContactFadeSeconds) contact.active = false;
-    }
-
+    this.advanceSweep();
+    this.ageContacts();
+    this.recordSweptContacts();
+    this.expireFadedContacts();
     return this.age < this.def.durationSeconds;
   }
 
@@ -94,20 +75,76 @@ export class Uav extends Killstreak {
     for (const c of this.contacts) if (c.active) lit++;
     return `UAV ${this.secondsRemaining.toFixed(1)}s · sweep ${((this.sweepAngle * 180) / Math.PI).toFixed(0)}° · ${lit} contacts`;
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** Turn the beam one tick's worth, and sound it if the revolution wrapped. */
+  private advanceSweep(): void {
+    this.age += DT;
+    this.previousAngle = this.sweepAngle;
+    this.sweepAngle = (this.sweepAngle + (TAU / this.ctx.cfg.uavSweepSeconds) * DT) % TAU;
+
+    // A revolution wrapped: that is one audible sweep.
+    if (this.sweepAngle < this.previousAngle) this.ctx.present.uavSweep(this.age);
+  }
+
+  private ageContacts(): void {
+    for (const contact of this.contacts) contact.age += DT;
+  }
+
+  /**
+   * Record anything the beam crossed this tick.
+   *
+   * The beam is a bearing from the map centre, so "crossed" is the angular interval
+   * [previous, current] containing the contact.
+   *
+   * "Enemy" is `isHostile`'s answer — in Free-for-All, everybody but the owner, who is
+   * skipped by id because the substrate cannot tell them apart from a same-side opponent
+   * (M13 Phase A). Before that a UAV in FFA showed half the lobby.
+   */
+  private recordSweptContacts(): void {
+    for (const c of this.ctx.roster) {
+      if (!c.participating || c.entityId === this.ownerId) continue;
+      if (!isHostile(this.ownerTeam, c.team, this.ctx.freeForAll)) continue;
+      // Ghost (M6). The contact is never recorded, so nothing downstream has to filter.
+      if (!this.ctx.visibleToUav(c.entityId)) continue;
+      const bearing = normaliseBearing(Math.atan2(c.pz, c.px));
+      if (!isInSweptArc(this.previousAngle, this.sweepAngle, bearing)) continue;
+      const slot = this.contactFor(c.entityId);
+      if (slot === undefined) continue;
+      slot.x = c.px;
+      slot.z = c.pz;
+      slot.age = 0;
+      slot.active = true;
+    }
+  }
+
+  /** Age contacts out so a dead enemy does not leave a permanent dot. */
+  private expireFadedContacts(): void {
+    for (const contact of this.contacts) {
+      if (contact.age > this.ctx.cfg.uavContactFadeSeconds) contact.active = false;
+    }
+  }
 
   private contactFor(entityId: number): UavContact | undefined {
     for (const c of this.contacts) if (c.entityId === entityId) return c;
     return undefined;
   }
+  //#endregion
 }
+//#endregion
 
-function normalise(angle: number): number {
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function normaliseBearing(angle: number): number {
   const a = angle % TAU;
   return a < 0 ? a + TAU : a;
 }
 
 /** Whether `target` lies in the swept interval, handling the wrap at TAU. */
-function crossed(from: number, to: number, target: number): boolean {
+function isInSweptArc(from: number, to: number, target: number): boolean {
   if (from <= to) return target >= from && target <= to;
   return target >= from || target <= to;
 }
+//#endregion

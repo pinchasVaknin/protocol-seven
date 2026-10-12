@@ -1,4 +1,7 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { makeDamageRequest, type DamageRequest } from '../combat/DamageSystem';
+import type { BotTeam } from '../ai/Combatant';
 import { Btn, isDown, type InputCommand } from '../core/InputCommand';
 import { DT } from '../core/Loop';
 import { clamp, DEG2RAD } from '../core/MathUtil';
@@ -7,7 +10,10 @@ import { Killstreak, type StreakContext } from './KillstreakBase';
 import type { StreakDef } from './StreakDefs';
 import { chopperWeapon } from './StreakWeapons';
 import { simCos, simSin } from '../core/SimMath';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * The gunship's view, as data (M9). Filled by `ChopperGunner.activeView`.
  *
@@ -23,11 +29,25 @@ export interface ChopperView {
   /** Vertical field of view, degrees. Interpolated between wide and zoomed. */
   fov: number;
 }
+//#endregion
 
-export function makeChopperView(): ChopperView {
-  return { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, fov: 55 };
-}
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * The optic, in degrees of vertical FOV (post-M8).
+ *
+ * 55 is what M7 shipped and is the wide setting. 22 is a little over a 2.5x magnification,
+ * which is enough to pick a single operator out of a container yard from the orbit radius
+ * and not so much that the orbital drift makes the picture unusable.
+ */
+const FOV_WIDE = 55;
+const FOV_ZOOMED = 22;
+/** How fast the zoom travels, per second. Brisk enough to use mid-burst. */
+const ZOOM_RATE = 7;
+//#endregion
 
+// ==================================== CLASS ChopperGunner ===================================== \\
+//#region Class ChopperGunner
 /**
  * Chopper Gunner (brief S6.1): full camera takeover, thermal view, tracking minigun.
  *
@@ -57,19 +77,9 @@ export function makeChopperView(): ChopperView {
  * pass decides what each object *is* and gets a legible grey map with orange contacts on it
  * even at night, which is the post-M8 requirement Depot forced.
  */
-/**
- * The optic, in degrees of vertical FOV (post-M8).
- *
- * 55 is what M7 shipped and is the wide setting. 22 is a little over a 2.5x magnification,
- * which is enough to pick a single operator out of a container yard from the orbit radius
- * and not so much that the orbital drift makes the picture unusable.
- */
-const FOV_WIDE = 55;
-const FOV_ZOOMED = 22;
-/** How fast the zoom travels, per second. Brisk enough to use mid-burst. */
-const ZOOM_RATE = 7;
-
 export class ChopperGunner extends Killstreak {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Where the gun is. Orbits the map centre. */
   x = 0;
   y = 0;
@@ -123,11 +133,14 @@ export class ChopperGunner extends Killstreak {
   private readonly ballistics: Ballistics;
   private readonly request: DamageRequest;
   private readonly trace: ShotTrace = makeShotTrace();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     def: StreakDef,
     ownerId: number,
-    ownerTeam: 'A' | 'B',
+    ownerTeam: BotTeam,
     instanceId: number,
     ctx: StreakContext,
   ) {
@@ -137,23 +150,10 @@ export class ChopperGunner extends Killstreak {
     this.request.sourceId = ownerId;
     this.mag = ctx.cfg.chopperMagSize;
   }
+  //#endregion
 
-  /** Belt size, so the HUD can draw "27 / 50" without knowing where the config lives. */
-  get magSize(): number {
-    return this.ctx.cfg.chopperMagSize;
-  }
-
-  /** True while the belt is being fed. The gun cannot fire and the barrels wind down. */
-  get reloading(): boolean {
-    return this.reloadTimer > 0;
-  }
-
-  /** 0..1 through the feed, for the HUD's progress bar. 0 when not reloading. */
-  get reloadFraction(): number {
-    const total = Math.max(0.05, this.ctx.cfg.chopperReloadSeconds);
-    return this.reloadTimer > 0 ? clamp(1 - this.reloadTimer / total, 0, 1) : 0;
-  }
-
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   override onActivate(): void {
     const cfg = this.ctx.cfg;
     // Start on the owner's side of the map so the first thing they see is their own half.
@@ -180,27 +180,10 @@ export class ChopperGunner extends Killstreak {
     this.pitch = clamp(cmd.pitch, -80 * DEG2RAD, -6 * DEG2RAD);
 
     const cfg = this.ctx.cfg;
-    // The optic. Held, not toggled, matching every other ADS in the game.
-    const zoomTarget = isDown(cmd.buttons, Btn.Ads) ? 1 : 0;
-    this.zoom = clamp(this.zoom + (zoomTarget - this.zoom) * ZOOM_RATE * DT, 0, 1);
-
-    // The belt (round 2). A feed is a hard gate on the trigger, not a modifier on it: the
-    // button is read the same way, and the gun simply is not able to answer it.
-    if (this.reloadTimer > 0) {
-      this.reloadTimer -= DT;
-      if (this.reloadTimer <= 0) {
-        this.reloadTimer = 0;
-        this.mag = cfg.chopperMagSize;
-      }
-    }
+    this.updateZoom(isDown(cmd.buttons, Btn.Ads));
+    this.stepFeed(cfg.chopperMagSize);
     const firing = isDown(cmd.buttons, Btn.Fire) && this.reloadTimer <= 0 && this.mag > 0;
-
-    // Heat-up: the barrels wind toward full rate while held and unwind when released, so the
-    // first half-second of a burst is deliberately slower than the rest. A feed unwinds them
-    // too, which is what makes the reload something the gunner hears and feels rather than
-    // reads — and it means the round after a feed costs the same spin-up the first one did.
-    const rate = 1 / Math.max(0.05, cfg.chopperSpinUpSeconds);
-    this.spin = clamp(this.spin + (firing ? rate : -rate * 1.6) * DT, 0, 1);
+    this.updateSpin(firing, cfg.chopperSpinUpSeconds);
 
     if (this.spin > 0.02) this.ctx.present.chopperSpin(this.spin);
     if (firing && this.spin > 0.2) this.stepFiring();
@@ -258,11 +241,59 @@ export class ChopperGunner extends Killstreak {
     return `CHOPPER ${this.secondsRemaining.toFixed(1)}s · spin ${(this.spin * 100).toFixed(0)}% · ${belt} · ${this.shotsHit}/${this.shotsFired} (${hitRate}%)`;
   }
 
+  /** Belt size, so the HUD can draw "27 / 50" without knowing where the config lives. */
+  get magSize(): number {
+    return this.ctx.cfg.chopperMagSize;
+  }
+
+  /** True while the belt is being fed. The gun cannot fire and the barrels wind down. */
+  get reloading(): boolean {
+    return this.reloadTimer > 0;
+  }
+
+  /** 0..1 through the feed, for the HUD's progress bar. 0 when not reloading. */
+  get reloadFraction(): number {
+    const total = Math.max(0.05, this.ctx.cfg.chopperReloadSeconds);
+    return this.reloadTimer > 0 ? clamp(1 - this.reloadTimer / total, 0, 1) : 0;
+  }
+
   get isRestored(): boolean {
     return this.restored;
   }
+  //#endregion
 
-  // -- internals --------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** The optic. Held, not toggled, matching every other ADS in the game. */
+  private updateZoom(wantsZoom: boolean): void {
+    const zoomTarget = wantsZoom ? 1 : 0;
+    this.zoom = clamp(this.zoom + (zoomTarget - this.zoom) * ZOOM_RATE * DT, 0, 1);
+  }
+
+  /**
+   * The belt (round 2). A feed is a hard gate on the trigger, not a modifier on it: the
+   * button is read the same way, and the gun simply is not able to answer it.
+   */
+  private stepFeed(magSize: number): void {
+    if (this.reloadTimer > 0) {
+      this.reloadTimer -= DT;
+      if (this.reloadTimer <= 0) {
+        this.reloadTimer = 0;
+        this.mag = magSize;
+      }
+    }
+  }
+
+  /**
+   * Heat-up: the barrels wind toward full rate while held and unwind when released, so the
+   * first half-second of a burst is deliberately slower than the rest. A feed unwinds them
+   * too, which is what makes the reload something the gunner hears and feels rather than
+   * reads — and it means the round after a feed costs the same spin-up the first one did.
+   */
+  private updateSpin(firing: boolean, spinUpSeconds: number): void {
+    const rate = 1 / Math.max(0.05, spinUpSeconds);
+    this.spin = clamp(this.spin + (firing ? rate : -rate * 1.6) * DT, 0, 1);
+  }
 
   private updateOrbit(): void {
     const cfg = this.ctx.cfg;
@@ -281,14 +312,7 @@ export class ChopperGunner extends Killstreak {
     if (this.fireTimer > 0) return;
     this.fireTimer = interval;
 
-    // Spend the round first, and start the feed on the one that empties the belt rather than
-    // on the next trigger pull: an empty gun that waits to be asked is an empty gun that
-    // silently eats a click.
-    this.mag--;
-    if (this.mag <= 0) {
-      this.mag = 0;
-      this.reloadTimer = cfg.chopperReloadSeconds;
-    }
+    this.spendRound(cfg.chopperReloadSeconds);
 
     const cp = simCos(this.pitch);
     const dx = -simSin(this.yaw) * cp;
@@ -309,4 +333,26 @@ export class ChopperGunner extends Killstreak {
       this.ctx.present.blast(this.trace.endX, this.trace.endY, this.trace.endZ, 1.1, false);
     }
   }
+
+  /**
+   * Spend the round, and start the feed on the one that empties the belt rather than on the
+   * next trigger pull: an empty gun that waits to be asked is an empty gun that silently eats
+   * a click.
+   */
+  private spendRound(reloadSeconds: number): void {
+    this.mag--;
+    if (this.mag <= 0) {
+      this.mag = 0;
+      this.reloadTimer = reloadSeconds;
+    }
+  }
+  //#endregion
 }
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeChopperView(): ChopperView {
+  return { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, fov: 55 };
+}
+//#endregion

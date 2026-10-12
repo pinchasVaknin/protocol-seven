@@ -1,9 +1,14 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { BotTeam } from '../ai/Combatant';
 import { DT } from '../core/Loop';
 import { Killstreak, type StreakContext } from './KillstreakBase';
 import type { StreakDef } from './StreakDefs';
 import type { WeaponDef } from '../weapons/WeaponDefs';
+//#endregion
 
+// ================================= CLASS CarriedWeaponStreak ================================== \\
+//#region Class CarriedWeaponStreak
 /**
  * A killstreak that is a **weapon in the owner's hands** for as long as it lasts.
  *
@@ -34,6 +39,8 @@ import type { WeaponDef } from '../weapons/WeaponDefs';
  * settled when the sentry's kills were, and none of them needed a line here.
  */
 export class CarriedWeaponStreak extends Killstreak {
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     def: StreakDef,
     ownerId: number,
@@ -45,7 +52,10 @@ export class CarriedWeaponStreak extends Killstreak {
   ) {
     super(def, ownerId, ownerTeam, instanceId, context);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   override onActivate(): void {
     /* Nothing to build: the weapon is not an object in the world, it is an answer. */
   }
@@ -62,4 +72,6 @@ export class CarriedWeaponStreak extends Killstreak {
   override describe(): string {
     return `${this.def.name} #${this.instanceId} owner=${this.ownerId} ${this.secondsRemaining.toFixed(1)}s left`;
   }
+  //#endregion
 }
+//#endregion

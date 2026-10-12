@@ -1,7 +1,3 @@
-import { DT } from '../core/Loop';
-import { registerWeaponDef } from '../weapons/AnyWeapon';
-import { AR_DEFAULT, PISTOL_DEFAULT, cloneWeaponDef, type WeaponDef } from '../weapons/WeaponDefs';
-
 /**
  * Weapons that belong to killstreaks rather than to a player (M7).
  *
@@ -18,6 +14,15 @@ import { AR_DEFAULT, PISTOL_DEFAULT, cloneWeaponDef, type WeaponDef } from '../w
  * attachments against them — so sharing one object across every sentry on the map is safe.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { DT } from '../core/Loop';
+import { registerWeaponDef } from '../weapons/AnyWeapon';
+import { AR_DEFAULT, PISTOL_DEFAULT, cloneWeaponDef, type WeaponDef } from '../weapons/WeaponDefs';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The prefix every streak weapon id carries, and the reason it is a constant.
  *
@@ -28,6 +33,28 @@ import { AR_DEFAULT, PISTOL_DEFAULT, cloneWeaponDef, type WeaponDef } from '../w
  */
 export const STREAK_WEAPON_PREFIX = 'streak_';
 
+/** Every streak weapon id, in a fixed order. The wire's weapon table appends these. */
+export const STREAK_WEAPON_IDS: readonly string[] = [
+  'streak_mortar',
+  'streak_sentry',
+  'streak_chopper',
+  'streak_minigun',
+  'streak_flamethrower',
+  'streak_burn',
+  'streak_shield',
+];
+
+let minigun: WeaponDef | null = null;
+let flamethrower: WeaponDef | null = null;
+let burn: WeaponDef | null = null;
+let shieldPistol: WeaponDef | null = null;
+let mortar: WeaponDef | null = null;
+let sentry: WeaponDef | null = null;
+let chopper: WeaponDef | null = null;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** Whether a weapon id belongs to a killstreak rather than to anybody's loadout. */
 export function isStreakWeapon(weaponId: string): boolean {
   return weaponId.startsWith(STREAK_WEAPON_PREFIX);
@@ -44,42 +71,6 @@ export function streakWeaponTag(weaponId: string): string {
   if (!isStreakWeapon(weaponId)) return '';
   return weaponId.slice(STREAK_WEAPON_PREFIX.length).toUpperCase();
 }
-
-/** Every streak weapon id, in a fixed order. The wire's weapon table appends these. */
-export const STREAK_WEAPON_IDS: readonly string[] = [
-  'streak_mortar',
-  'streak_sentry',
-  'streak_chopper',
-  'streak_minigun',
-  'streak_flamethrower',
-  'streak_burn',
-  'streak_shield',
-];
-
-function synthetic(id: string, name: string, damage: number, headshotMult: number): WeaponDef {
-  const def = cloneWeaponDef(AR_DEFAULT);
-  def.id = id;
-  def.name = name;
-  def.damage.near = damage;
-  def.damage.far = damage;
-  def.headshotMult = headshotMult;
-  def.limbMult = 1;
-  // No distance term of their own: the mortar applies a radial falloff through
-  // `penetrationRetain`, and a sentry's shots are already range-limited by its own arc.
-  def.damageFalloff.start = 1000;
-  def.damageFalloff.end = 1001;
-  // The one place a streak weapon is built is the one place it is catalogued. See `anyWeaponDef`.
-  registerWeaponDef(def);
-  return def;
-}
-
-let minigun: WeaponDef | null = null;
-let flamethrower: WeaponDef | null = null;
-let burn: WeaponDef | null = null;
-let shieldPistol: WeaponDef | null = null;
-let mortar: WeaponDef | null = null;
-let sentry: WeaponDef | null = null;
-let chopper: WeaponDef | null = null;
 
 /** Flat damage, no falloff. The blast radius is the only distance term. */
 export function mortarWeapon(damage: number): WeaponDef {
@@ -429,3 +420,24 @@ export function shieldPistolWeapon(): WeaponDef {
   shieldPistol = def;
   return shieldPistol;
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function synthetic(id: string, name: string, damage: number, headshotMult: number): WeaponDef {
+  const def = cloneWeaponDef(AR_DEFAULT);
+  def.id = id;
+  def.name = name;
+  def.damage.near = damage;
+  def.damage.far = damage;
+  def.headshotMult = headshotMult;
+  def.limbMult = 1;
+  // No distance term of their own: the mortar applies a radial falloff through
+  // `penetrationRetain`, and a sentry's shots are already range-limited by its own arc.
+  def.damageFalloff.start = 1000;
+  def.damageFalloff.end = 1001;
+  // The one place a streak weapon is built is the one place it is catalogued. See `anyWeaponDef`.
+  registerWeaponDef(def);
+  return def;
+}
+//#endregion

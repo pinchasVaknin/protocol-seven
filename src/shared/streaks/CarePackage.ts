@@ -1,4 +1,6 @@
-import type { Combatant } from '../ai/Combatant';
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { BotTeam, Combatant } from '../ai/Combatant';
 import type { ObjectiveTarget } from '../ai/ObjectiveIntent';
 import { makeObjectiveTarget, type MutableObjectiveTarget } from '../ai/ObjectiveIntent';
 import { EV } from '../core/Events';
@@ -6,7 +8,10 @@ import { DT } from '../core/Loop';
 import { makeRayHit } from '../world/Geometry';
 import { Killstreak, type StreakContext } from './KillstreakBase';
 import { STREAK_DEFS, type StreakDef } from './StreakDefs';
+//#endregion
 
+// ===================================== CLASS CarePackage ====================================== \\
+//#region Class CarePackage
 /**
  * Care Package (brief S6.1): drops a random higher streak, **contestable by bots**.
  *
@@ -25,6 +30,8 @@ import { STREAK_DEFS, type StreakDef } from './StreakDefs';
  * `DT`, not an animation.
  */
 export class CarePackage extends Killstreak {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Where the crate is heading, and where it will sit once landed. */
   readonly x: number;
   readonly z: number;
@@ -40,11 +47,14 @@ export class CarePackage extends Killstreak {
   private readonly target: MutableObjectiveTarget = makeObjectiveTarget();
   private readonly packageId: number;
   private groundY = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     def: StreakDef,
     ownerId: number,
-    ownerTeam: 'A' | 'B',
+    ownerTeam: BotTeam,
     instanceId: number,
     ctx: StreakContext,
     x: number,
@@ -57,7 +67,10 @@ export class CarePackage extends Killstreak {
     this.packageId = instanceId;
     this.contents = rollContents(ctx);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   override onActivate(): void {
     const cfg = this.ctx.cfg;
     // Where the ground is under the drop point, so the crate has somewhere to land.
@@ -71,38 +84,12 @@ export class CarePackage extends Killstreak {
 
   override onTick(_tick: number): boolean {
     this.age += DT;
-    const cfg = this.ctx.cfg;
 
     if (!this.landed) {
-      this.y -= cfg.packageDropSpeed * DT;
-      if (this.y <= this.groundY) {
-        this.y = this.groundY;
-        this.landed = true;
-        this.ctx.present.packageLand(this.x, this.y, this.z);
-      }
+      this.stepFall();
       return true;
     }
-
-    // Claim: one claimant at a time, and contesting resets rather than sharing. A crate two
-    // people are standing on is a fight, not a co-operative unlock.
-    const claimants = this.claimantsOn();
-    if (claimants.length !== 1) {
-      this.claimFraction = 0;
-      this.claimantId = -1;
-      return this.age < this.def.durationSeconds;
-    }
-    const claimant = claimants[0];
-    if (claimant === undefined) return true;
-
-    if (claimant.entityId !== this.claimantId) {
-      this.claimantId = claimant.entityId;
-      this.claimFraction = 0;
-    }
-    this.claimFraction += DT / cfg.packageCaptureSeconds;
-    if (this.claimFraction < 1) return this.age < this.def.durationSeconds;
-
-    this.grant(claimant);
-    return false;
+    return this.stepClaim();
   }
 
   override onExpire(): void {
@@ -136,8 +123,48 @@ export class CarePackage extends Killstreak {
     t.priority = 0.75;
     return t;
   }
+  //#endregion
 
-  // -- internals --------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** One tick of the descent, and the landing when the floor arrives. */
+  private stepFall(): void {
+    const cfg = this.ctx.cfg;
+    this.y -= cfg.packageDropSpeed * DT;
+    if (this.y <= this.groundY) {
+      this.y = this.groundY;
+      this.landed = true;
+      this.ctx.present.packageLand(this.x, this.y, this.z);
+    }
+  }
+
+  /**
+   * One tick of the claim, and whether the crate is still in play.
+   *
+   * One claimant at a time, and contesting resets rather than sharing. A crate two people are
+   * standing on is a fight, not a co-operative unlock.
+   */
+  private stepClaim(): boolean {
+    const cfg = this.ctx.cfg;
+    const claimants = this.claimantsOn();
+    if (claimants.length !== 1) {
+      this.claimFraction = 0;
+      this.claimantId = -1;
+      return this.age < this.def.durationSeconds;
+    }
+    const claimant = claimants[0];
+    if (claimant === undefined) return true;
+
+    if (claimant.entityId !== this.claimantId) {
+      this.claimantId = claimant.entityId;
+      this.claimFraction = 0;
+    }
+    this.claimFraction += DT / cfg.packageCaptureSeconds;
+    if (this.claimFraction < 1) return this.age < this.def.durationSeconds;
+
+    this.announceClaim(claimant);
+    return false;
+  }
 
   private claimantsOn(): Combatant[] {
     const cfg = this.ctx.cfg;
@@ -153,7 +180,8 @@ export class CarePackage extends Killstreak {
     return out;
   }
 
-  private grant(claimant: Combatant): void {
+  /** Say that the crate has been taken. `StreakSystem` listens and hands out what was inside. */
+  private announceClaim(claimant: Combatant): void {
     const ev = {
       packageId: this.packageId,
       entityId: claimant.entityId,
@@ -178,8 +206,12 @@ export class CarePackage extends Killstreak {
     if (!this.ctx.world.raycast(x, from, z, 0, -1, 0, from + 8, hit)) return 0;
     return from - hit.t;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /**
  * Roll the contents.
  *
@@ -200,3 +232,4 @@ function rollContents(ctx: StreakContext): StreakDef {
   if (last === undefined) throw new Error('No care-package contents are eligible');
   return last;
 }
+//#endregion

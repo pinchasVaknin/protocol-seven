@@ -9,13 +9,14 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**22 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since. Three numbers are gone and are not reused: **#19** is folded into #2
-(the same defect from both ends), **#23** was closed by A13 and **#25** by A15, both on
-2026-10-12.
+**24 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+and #24 were opened since, and **#26 and #27 by A16** on 2026-10-12. Three numbers are gone and
+are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
+A13 and **#25** by A15, both on 2026-10-12.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
-original list is missing**; §6 records where to look for it.
+original list is missing**; §6 records where to look for it. (#22, #24, #26 and #27 were opened by
+units since and are not from that list.)
 
 Status values: `open`, `bound to <unit>` (the next unit that owns these files — do it there),
 `blocked on <task>`, `needs measurement`, `needs a decision from the user`.
@@ -32,7 +33,8 @@ and belong in its Step 2 plan.
 | ~~A13~~ | `shared/ai/BotDirector.ts` | **closed** — #23 was absorbed by A13 on 2026-10-12 |
 | ~~A14~~ | `shared/modes/` | none were bound; A14 opened #24 and #25 |
 | ~~A15~~ | `shared/modes/` SND, MatchFlow, ModeRegistry | **closed** — #25 was absorbed by A15 on 2026-10-12, under an approved fence exception |
-| A16/A17 | `shared/streaks/` | #1 (`SentryGun` is a caller of `angleDelta`) |
+| ~~A16~~ | `shared/streaks/` | **declined with a reason** — #1 cannot be closed from inside a unit; see its entry. A16 opened #26 and #27 |
+| ~~A17~~ | `shared/streaks/` StreakSystem, StreakLedger, StreakDefs, StreakPresentation | none — A16 checked: nothing in A17's four files calls `angleDelta` or `shortestAngle` |
 | A20–A23 | `shared/net/` | #1 (`Interpolation` is a caller of `shortestAngle`) |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local `angleDelta` copy) |
@@ -262,10 +264,23 @@ changed, and all fifteen columns through `applyReplicated` and `reset`. Do not w
 
 ## 4. Independent — one decision each
 
-### #1 — Retire the duplicate angle helper export · `needs a decision from the user`
+### #1 — Retire the duplicate angle helper export · `open` · **the survivor is `angleDelta`**
 
-**Files** `src/shared/core/MathUtil.ts` and every caller. **Origin** A1. **Touches four upcoming
+**Files** `src/shared/core/MathUtil.ts` and every caller. **Origin** A1. **Touches three upcoming
 units** — see §1.
+
+**Decided 2026-10-12 (the user, at A16's Step 2): the name that stays is `angleDelta`.** That was
+the open question, and it is now closed — the work itself is not.
+
+**Why no unit can close this, which A16 established by trying.** The edit is in `MathUtil.ts`,
+which belongs to A1: finished, in the `check:style` ratchet, and outside every later unit's fence
+(R3). A16 owned the only caller in `shared/streaks/` and still could do nothing, in either
+direction — with `angleDelta` surviving, `SentryGun` is *already* on the survivor and the unit has
+no edit to make; had `shortestAngle` won, A16 would have had to change two call sites that only
+make sense after a `MathUtil` change it is not allowed to make. So this is an **unbound task that
+needs its own session** (§7.2), and what is left of it is mechanical:
+delete the `shortestAngle` export, move the two callers below onto `angleDelta`, and merge the two
+JSDoc blocks onto the survivor.
 
 `MathUtil` exports two names for one function: `angleDelta(from, to)` and
 `shortestAngle(from, to)`. Before A1 their bodies were byte-identical, five lines each. The JSDoc
@@ -275,16 +290,20 @@ while sitting directly below the other copy. A1 merged the bodies (`shortestAngl
 `angleDelta(from, to)`) so they can no longer drift, and the SIM oracles confirmed bit-identical
 output. What A1 could not do is remove the redundant export, because R2 freezes the public surface.
 
-**Pick the name to keep.** `angleDelta` is the better one: `wrapAngle` already delegates to it and
-`shortestAngle`'s range comment duplicates what `angleDelta` documents. `shortestAngle` is arguably
-more descriptive at its call sites — **the user chooses.**
+**Why `angleDelta` was the right pick**: `wrapAngle` already delegates to it and `shortestAngle`'s
+range comment duplicates what `angleDelta` documents.
 
-Callers of `shortestAngle`: `shared/net/Interpolation.ts` (`sample`, `extrapolate`),
-`shared/ai/Bot.ts` (`renderYaw`). Callers of `angleDelta`: `shared/ai/CombatBehaviour.ts`
-(`updateAim`, `lookToward`), `shared/streaks/SentryGun.ts` (`acquire`, `applyPose`),
+Callers of `shortestAngle`, which are the two sites to move: `shared/net/Interpolation.ts`
+(`sample`, `extrapolate`), `shared/ai/Bot.ts` (`renderYaw`). Callers of `angleDelta`, which do not
+change: `shared/ai/CombatBehaviour.ts` (`updateAim`, `lookToward`), `shared/streaks/SentryGun.ts`
+(`isInWatchedArc`, `applyPose` — renamed from `acquire` by A16, same two calls),
 `client/weapons/ViewmodelAnim.ts` (`updateSway`), and `wrapAngle` in `MathUtil` itself.
-`client/cinematic/IntroCamera.ts` and `shared/cinematic/IntroPlan.ts` define their **own local
-`angleDelta`** — decide whether those fold into the shared one.
+
+**Three local copies**, not two — A16 found the third while checking the call sites:
+`client/cinematic/IntroCamera.ts:83` and `shared/cinematic/IntroPlan.ts:237` both define their own
+`angleDelta`, and `client/ClientMatch.ts:3438` defines the same function as `angleDeltaRad`
+(used at line 2193 for the mortar overlay's yaw). Decide whether those fold into the shared one.
+Note that the third lands in **C24**, a unit the §1 lookup did not list for this task.
 
 Merge the two JSDoc blocks so the survivor keeps the history both carry, including the M10
 provenance note. Both call sites are hot paths (per-entity per-tick), so the result must stay a
@@ -600,6 +619,75 @@ against a Node 24 run, and write the result into the table with the engine versi
 **Also record there** that a SIM snapshot/compare pair is only meaningful on **one machine and one
 Node build** — the state hashes depend on these functions — and that `npm run readability` is
 immune, because its figures go through `toFixed(3)`/`toFixed(4)`.
+
+---
+
+## 6b. Duplication that spans units — opened by A16
+
+### #26 — Unify the downward ground probe · `open` *(opened 2026-10-12 by A16)*
+
+**Files** `src/shared/streaks/CarePackage.ts` (`probeGround`), `src/shared/streaks/MortarStrike.ts`
+(`groundAt`), plus a home for one helper — `src/shared/world/CollisionWorld.ts` or
+`src/shared/world/Geometry.ts`. **Origin** A16.
+
+Two functions in the same unit cast the same ray straight down to find the floor under a point, and
+differ only in where they start and how far they look: `probeGround` from `packageDropHeight + 12`
+for `from + 8` metres and allocating a `RayHit` per call (it runs once, at activation);
+`groundAt` from a hard 40 for `from + 10` and reading a module-level scratch ray (it runs once per
+shell, on the sim path). Both answer "where is the floor here" and both return 0 on a miss.
+
+**Why A16 did not merge them.** A helper shared by two files in the unit has nowhere to live:
+R3 forbids a new source file outside a design unit, and putting it in one of the two and importing
+it from the other means adding a public export — an API change under R2 that would have to be
+approved for a helper whose real home is neither file. The right home is `world/`, where the
+raycaster is, and the right scope is wider than this unit: the same probe pattern recurs across the
+project, which is exactly the cross-unit duplication R4.3 sends here.
+
+**While there**: decide whether the two start heights and ranges are two facts or one. They are
+unlikely to be one — a crate is placed from above the drop height and a blast is placed on the
+floor under an impact — so the helper probably takes them as parameters rather than hiding them.
+
+**Verify** `npm run check` + SIM snapshot/compare → `PASS`. `CarePackage.test.ts` and
+`MortarStrike.test.ts` (both A16) pin the landing height and the impact height respectively.
+
+### #27 — Unify the streak shot pipeline · `open` *(opened 2026-10-12 by A16)*
+
+**Files** `src/shared/streaks/SentryGun.ts` (`stepFiring`), `src/shared/streaks/ChopperGunner.ts`
+(`stepFiring`), reading `src/shared/weapons/Ballistics.ts`. **Origin** A16.
+
+The two machine guns fire by the same six steps in the same order: turn `yaw`/`pitch` into a
+direction, count the shot, announce it, point the shared `DamageRequest` at the streak's weapon
+def, call `ballistics.fire`, draw a tracer, then read `hitTarget`/`lethal` off the trace into
+counters. The direction triple is identical character for character —
+
+```
+const cp = simCos(pitch);
+const dx = -simSin(yaw) * cp;
+const dy = simSin(pitch);
+const dz = -simCos(yaw) * cp;
+```
+
+— and the same four lines appear again in `shared/weapons/`. The hit-rate line in the two
+`describe()` methods is the same expression as well.
+
+**Why A16 did not merge them.** Same fence as #26: one helper for two files in the unit needs a
+home that is not either of them, and the direction triple's real home is `core/SimMath` or
+`weapons/Ballistics`, both outside A16. It is also the one merge in this unit where **R5 bites**:
+the four lines must stay in that order, with those signs and that `cp` factored out exactly as it
+is, because `simSin`/`simCos` and the multiplication order are what make a shot land in the same
+place on two engines. A helper is fine; re-deriving the maths inside it is not.
+
+**Do not merge the surrounding method.** The two differ in what gates the trigger — a sentry asks
+`combat.wantsFire` and a chopper asks the spin and the belt — and in what they count
+(`killsOnOwnSubstrate` is the sentry's alone). Those change for different reasons, so R4.3's second
+rule applies: the direction triple and perhaps the trace read-out are the shared parts, and the
+methods around them are not.
+
+**Verify** `npm run check` + SIM snapshot/compare → `PASS` — the 3,600-tick hash is what proves a
+round still goes where it went. `SentryGun.test.ts` and `ChopperGunner.test.ts` (both A16) pin the
+shot counters, the eye height a sentry fires from and the chopper's belt.
+
+---
 
 ### The missing item
 The chat list was counted as 24 and this file received 22 of them. Neither #19 (folded into #2) nor

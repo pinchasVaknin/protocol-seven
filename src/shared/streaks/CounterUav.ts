@@ -1,6 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { DT } from '../core/Loop';
 import { Killstreak } from './KillstreakBase';
+//#endregion
 
+// ====================================== CLASS CounterUav ====================================== \\
+//#region Class CounterUav
 /**
  * Counter-UAV (brief S6.1): the enemy minimap is scrambled.
  *
@@ -18,6 +23,8 @@ import { Killstreak } from './KillstreakBase';
  * on perception and the navmesh, so there is nothing further to take away from them.
  */
 export class CounterUav extends Killstreak {
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   override onActivate(): void {
     this.ctx.present.counterUav();
   }
@@ -34,4 +41,6 @@ export class CounterUav extends Killstreak {
   override describe(): string {
     return `COUNTER-UAV ${this.secondsRemaining.toFixed(1)}s · scrambling team ${this.ownerTeam === 'A' ? 'B' : 'A'}`;
   }
+  //#endregion
 }
+//#endregion

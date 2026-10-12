@@ -1,14 +1,3 @@
-import type { BotDirector } from '../ai/BotDirector';
-import type { BotTeam, Combatant } from '../ai/Combatant';
-import type { DamageSystem } from '../combat/DamageSystem';
-import type { GameBus } from '../core/Events';
-import type { Rng } from '../core/Rng';
-import type { TierTable } from '../ai/DifficultyTiers';
-import type { CollisionWorld } from '../world/CollisionWorld';
-import type { MapDef } from '../world/maps/types';
-import type { StreakConfig, StreakDef } from './StreakDefs';
-import type { StreakPresentation } from './StreakPresentation';
-
 /**
  * What a killstreak is (brief S6.1).
  *
@@ -36,6 +25,22 @@ import type { StreakPresentation } from './StreakPresentation';
  * `onRender` is the one place a streak may use a real `dt`, and it is presentation only.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { BotDirector } from '../ai/BotDirector';
+import type { BotTeam, Combatant } from '../ai/Combatant';
+import type { DamageSystem } from '../combat/DamageSystem';
+import type { GameBus } from '../core/Events';
+import type { Rng } from '../core/Rng';
+import type { TierTable } from '../ai/DifficultyTiers';
+import type { CollisionWorld } from '../world/CollisionWorld';
+import type { MapDef } from '../world/maps/types';
+import type { StreakConfig, StreakDef } from './StreakDefs';
+import type { StreakPresentation } from './StreakPresentation';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** Everything a streak is allowed to touch. Handed in; never reached for. */
 export interface StreakContext {
   readonly bus: GameBus;
@@ -80,8 +85,13 @@ export interface StreakContext {
 
 /** Live state, for the debug panel and the HUD. */
 export type StreakPhase = 'ACTIVE' | 'EXPIRED';
+//#endregion
 
+// ====================================== CLASS Killstreak ====================================== \\
+//#region Class Killstreak
 export abstract class Killstreak {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly def: StreakDef;
   /** Who called it in. Kills are credited here. */
   readonly ownerId: number;
@@ -94,7 +104,10 @@ export abstract class Killstreak {
   age = 0;
 
   protected readonly ctx: StreakContext;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(def: StreakDef, ownerId: number, ownerTeam: BotTeam, instanceId: number, ctx: StreakContext) {
     this.def = def;
     this.ownerId = ownerId;
@@ -102,7 +115,10 @@ export abstract class Killstreak {
     this.instanceId = instanceId;
     this.ctx = ctx;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Seconds left, or Infinity for a streak that ends on its own terms. */
   get secondsRemaining(): number {
     if (this.def.durationSeconds <= 0) return Infinity;
@@ -140,4 +156,6 @@ export abstract class Killstreak {
 
   /** One line for the streak debug panel (S7). */
   abstract describe(): string;
+  //#endregion
 }
+//#endregion

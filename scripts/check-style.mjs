@@ -251,6 +251,17 @@ const FINISHED = {
     'src/shared/modes/MatchFlow.ts',
     'src/shared/modes/ModeRegistry.ts',
   ],
+  A16: [
+    'src/shared/streaks/KillstreakBase.ts',
+    'src/shared/streaks/CarePackage.ts',
+    'src/shared/streaks/CarriedWeapon.ts',
+    'src/shared/streaks/ChopperGunner.ts',
+    'src/shared/streaks/CounterUav.ts',
+    'src/shared/streaks/MortarStrike.ts',
+    'src/shared/streaks/SentryGun.ts',
+    'src/shared/streaks/Uav.ts',
+    'src/shared/streaks/StreakWeapons.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

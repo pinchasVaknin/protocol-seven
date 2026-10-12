@@ -1,4 +1,7 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { makeDamageRequest, type DamageRequest } from '../combat/DamageSystem';
+import type { BotTeam } from '../ai/Combatant';
 import { DT } from '../core/Loop';
 import { TAU } from '../core/MathUtil';
 import { makeRayHit, type RayHit } from '../world/Geometry';
@@ -6,10 +9,16 @@ import { Killstreak, type StreakContext } from './KillstreakBase';
 import type { StreakDef } from './StreakDefs';
 import { mortarWeapon } from './StreakWeapons';
 import { simCos, simSin } from '../core/SimMath';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Module-level scratch: the sim path allocates nothing (S4.7). */
 const scratchRay: RayHit = makeRayHit();
+//#endregion
 
+// ===================================== CLASS MortarStrike ===================================== \\
+//#region Class MortarStrike
 /**
  * Mortar Strike (brief S6.1): the player marks a zone, delayed shells land in sequence.
  *
@@ -33,6 +42,8 @@ const scratchRay: RayHit = makeRayHit();
  * where it was left.
  */
 export class MortarStrike extends Killstreak {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly markX: number;
   readonly markZ: number;
 
@@ -41,11 +52,14 @@ export class MortarStrike extends Killstreak {
 
   private timer: number;
   private readonly request: DamageRequest;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     def: StreakDef,
     ownerId: number,
-    ownerTeam: 'A' | 'B',
+    ownerTeam: BotTeam,
     instanceId: number,
     ctx: StreakContext,
     markX: number,
@@ -60,7 +74,10 @@ export class MortarStrike extends Killstreak {
     this.request = makeDamageRequest(mortarWeapon(ctx.cfg.mortarDamage));
     this.request.sourceId = ownerId;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   override onActivate(): void {
     this.ctx.present.mortarInbound(this.markX, 0, this.markZ);
   }
@@ -76,7 +93,7 @@ export class MortarStrike extends Killstreak {
 
     this.timer += this.ctx.cfg.mortarInterval;
     this.fired++;
-    this.land();
+    this.landShell();
     return true;
   }
 
@@ -87,7 +104,10 @@ export class MortarStrike extends Killstreak {
   override describe(): string {
     return `MORTAR ${this.fired}/${this.ctx.cfg.mortarShells} · mark ${this.markX.toFixed(0)},${this.markZ.toFixed(0)}`;
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * One shell.
    *
@@ -95,7 +115,7 @@ export class MortarStrike extends Killstreak {
    * rather than clustering on the mark — a centre-heavy distribution makes the middle lethal
    * and the edge decorative, which is the opposite of zone denial.
    */
-  private land(): void {
+  private landShell(): void {
     const cfg = this.ctx.cfg;
     const angle = this.ctx.rng.float() * TAU;
     const radius = Math.sqrt(this.ctx.rng.float()) * cfg.mortarScatter;
@@ -106,8 +126,17 @@ export class MortarStrike extends Killstreak {
     this.ctx.present.blast(x, y + 0.4, z, cfg.mortarRadius, true);
     this.ctx.present.mortarImpact(x, y, z);
 
-    // Everything inside the blast, friend or foe. A mortar does not check dog tags — and the
-    // brief explicitly wants a chopper gunner's abandoned body to be catchable by one.
+    this.applyBlast(x, y, z);
+  }
+
+  /**
+   * Everything inside the blast, friend or foe.
+   *
+   * A mortar does not check dog tags — and the brief explicitly wants a chopper gunner's
+   * abandoned body to be catchable by one.
+   */
+  private applyBlast(x: number, y: number, z: number): void {
+    const cfg = this.ctx.cfg;
     const r2 = cfg.mortarRadius * cfg.mortarRadius;
     for (const c of this.ctx.roster) {
       if (!c.participating) continue;
@@ -135,11 +164,16 @@ export class MortarStrike extends Killstreak {
       this.ctx.damage.apply(req);
     }
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /** Where the floor is under a point, for placing the burst. */
 function groundAt(ctx: StreakContext, x: number, z: number): number {
   const from = 40;
   if (!ctx.world.raycast(x, from, z, 0, -1, 0, from + 10, scratchRay)) return 0;
   return from - scratchRay.t;
 }
+//#endregion

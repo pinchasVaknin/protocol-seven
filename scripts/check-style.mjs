@@ -235,6 +235,17 @@ const FINISHED = {
     'src/shared/ai/SpawnSelector.ts',
     'src/shared/ai/BotDirector.ts',
   ],
+  A14: [
+    'src/shared/modes/GameMode.ts',
+    'src/shared/modes/Tdm.ts',
+    'src/shared/modes/FreeForAll.ts',
+    'src/shared/modes/Range.ts',
+    'src/shared/modes/KillConfirmed.ts',
+    'src/shared/modes/Domination.ts',
+    'src/shared/modes/ObjectiveZone.ts',
+    'src/shared/modes/MatchOutcome.ts',
+    'src/shared/modes/SpectatorTarget.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,18 @@
+/**
+ * Team Deathmatch (brief S6.2): first to 75 kills or ten minutes.
+ *
+ * The mode is small, and that is the result the round abstraction was built for. TDM's
+ * answer to every round question is "one round, no swap, unlimited lives" — three constants
+ * — and `MatchFlow` runs the same machine it will run for a best-of-nine. Nothing here
+ * knows what a round *is*.
+ *
+ * The only real decisions in the file are what a kill is worth and what the scoreboard shows,
+ * and both live in `TDM_CONFIG` because S3 says every number that affects feel belongs in a
+ * config rather than inline in logic.
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { ScoreTeam } from '../combat/ScoreSystem';
 import {
   COL_ACC,
@@ -16,20 +31,10 @@ import {
   type ModeDeps,
   type RoundResult,
 } from './GameMode';
+//#endregion
 
-/**
- * Team Deathmatch (brief S6.2): first to 75 kills or ten minutes.
- *
- * The mode is small, and that is the result the round abstraction was built for. TDM's
- * answer to every round question is "one round, no swap, unlimited lives" — three constants
- * — and `MatchFlow` runs the same machine it will run for a best-of-nine. Nothing here
- * knows what a round *is*.
- *
- * The only real decisions in the file are what a kill is worth and what the scoreboard shows,
- * and both live in `TDM_CONFIG` because S3 says every number that affects feel belongs in a
- * config rather than inline in logic.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface TdmConfig {
   /**
    * Kills that win the match. The team score in TDM *is* a kill count, which is why nothing
@@ -45,7 +50,10 @@ export interface TdmConfig {
   /** Team kills deducted for killing your own. Only reachable with friendly fire on. */
   readonly teamKillPenalty: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const TDM_CONFIG: TdmConfig = {
   scoreLimit: 75,
   timeLimitSeconds: 600,
@@ -53,8 +61,13 @@ const TDM_CONFIG: TdmConfig = {
   pointsHeadshotBonus: 50,
   teamKillPenalty: 1,
 };
+//#endregion
 
+// ========================================= CLASS Tdm ========================================== \\
+//#region Class Tdm
 export class Tdm extends GameMode {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   override readonly id: GameModeId = 'TDM';
   override readonly name = 'TEAM DEATHMATCH';
 
@@ -65,23 +78,29 @@ export class Tdm extends GameMode {
   override readonly roundSeconds: number;
   override readonly scoreLimit: number;
 
+  private readonly config: TdmConfig;
+  /** Ticks left, owned here because the win condition is the only thing that reads it. */
+  private ticksLeft = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  constructor(deps: ModeDeps, config: TdmConfig = TDM_CONFIG) {
+    super(deps);
+    this.config = config;
+    this.roundSeconds = config.timeLimitSeconds;
+    this.scoreLimit = config.scoreLimit;
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * F10. The limit is in the sentence because in TDM it is the objective: there is nothing to
    * stand on and nothing to carry, so what is worth saying is where the finish line is.
    */
   override get brief(): string {
     return `ELIMINATE THE ENEMY TEAM · FIRST TO ${this.config.scoreLimit} KILLS`;
-  }
-
-  private readonly config: TdmConfig;
-  /** Ticks left, owned here because the win condition is the only thing that reads it. */
-  private ticksLeft = 0;
-
-  constructor(deps: ModeDeps, config: TdmConfig = TDM_CONFIG) {
-    super(deps);
-    this.config = config;
-    this.roundSeconds = config.timeLimitSeconds;
-    this.scoreLimit = config.scoreLimit;
   }
 
   /**
@@ -155,4 +174,6 @@ export class Tdm extends GameMode {
   override teamScore(team: ScoreTeam): number {
     return this.deps.score.team(team).score;
   }
+  //#endregion
 }
+//#endregion

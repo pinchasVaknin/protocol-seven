@@ -1,8 +1,3 @@
-import type { Combatant } from '../ai/Combatant';
-import type { BotTeam } from '../ai/Combatant';
-import { DT } from '../core/Loop';
-import type { ObjectiveDef } from '../world/maps/types';
-
 /**
  * A capture zone: who is standing in it, and how far along the capture is (M7).
  *
@@ -29,6 +24,16 @@ import type { ObjectiveDef } from '../world/maps/types';
  * Everything advances on `DT`, never on a frame delta (S4.1).
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { Combatant } from '../ai/Combatant';
+import type { BotTeam } from '../ai/Combatant';
+import { DT } from '../core/Loop';
+import type { ObjectiveDef } from '../world/maps/types';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface ZoneConfig {
   /** Seconds for one attacker alone to take a neutral zone. */
   readonly captureSeconds: number;
@@ -39,15 +44,23 @@ export interface ZoneConfig {
   /** Vertical tolerance, metres. A catwalk above a flag is not standing on it. */
   readonly heightTolerance: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const DEFAULT_ZONE_CONFIG: ZoneConfig = {
   captureSeconds: 6,
   stackFalloff: 0.6,
   decayRate: 0.5,
   heightTolerance: 2.6,
 };
+//#endregion
 
+// ==================================== CLASS ObjectiveZone ===================================== \\
+//#region Class ObjectiveZone
 export class ObjectiveZone {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly def: ObjectiveDef;
   /** Who owns it, or 'NONE' while neutral. */
   owner: BotTeam | 'NONE' = 'NONE';
@@ -66,12 +79,18 @@ export class ObjectiveZone {
   countB = 0;
 
   private readonly cfg: ZoneConfig;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(def: ObjectiveDef, cfg: ZoneConfig = DEFAULT_ZONE_CONFIG) {
     this.def = def;
     this.cfg = cfg;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get id(): string {
     return this.def.id;
   }
@@ -152,8 +171,12 @@ export class ObjectiveZone {
     this.owner = team;
     return team;
   }
+  //#endregion
 }
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Effective capture rate for `n` bodies: 1 + f + f^2 + ... — the geometric series, which is
  * why stacking helps and then stops helping.
@@ -183,3 +206,4 @@ export function recountZones(zones: readonly ObjectiveZone[], roster: readonly C
     }
   }
 }
+//#endregion

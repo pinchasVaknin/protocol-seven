@@ -1,3 +1,29 @@
+/**
+ * Kill Confirmed (brief S6.2): kills drop dog tags, and only collected tags score.
+ *
+ * The mode is a comment on Team Deathmatch: killing somebody is necessary and not sufficient,
+ * so the ground where a fight happened stays dangerous after it ends. Two collection rules,
+ * and the second is the one that makes it a mode rather than a chore:
+ *
+ *  - Picking up an **enemy** tag confirms the kill and scores your team a point.
+ *  - Picking up a **friendly** tag *denies* it — no point for anybody, and the enemy's kill
+ *    is wasted. It is worth personal score, because a player who runs into the open to deny
+ *    a tag has taken the same risk as one who confirms.
+ *
+ * Tags are plain records rather than world entities. They need a position, an owner team and
+ * a lifetime, and nothing else — the mesh is `MatchObjectives`' problem and the pickup test is
+ * a distance check that already has to run on the sim tick.
+ *
+ * ## Bots
+ *
+ * The brief is explicit: bots collect friendly tags to deny and enemy tags to score. Both are
+ * offered through `ObjectiveProvider`, with enemy tags weighted higher — a confirm is worth a
+ * point and a deny only removes one — and both scaled by distance so a bot goes for the tag at
+ * its feet rather than the theoretically better one across the map.
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { Combatant } from '../ai/Combatant';
 import { opposingTeam, type BotTeam } from '../ai/Combatant';
 import {
@@ -26,31 +52,10 @@ import {
   type RoundResult,
   type TagInfo,
 } from './GameMode';
+//#endregion
 
-/**
- * Kill Confirmed (brief S6.2): kills drop dog tags, and only collected tags score.
- *
- * The mode is a comment on Team Deathmatch: killing somebody is necessary and not sufficient,
- * so the ground where a fight happened stays dangerous after it ends. Two collection rules,
- * and the second is the one that makes it a mode rather than a chore:
- *
- *  - Picking up an **enemy** tag confirms the kill and scores your team a point.
- *  - Picking up a **friendly** tag *denies* it — no point for anybody, and the enemy's kill
- *    is wasted. It is worth personal score, because a player who runs into the open to deny
- *    a tag has taken the same risk as one who confirms.
- *
- * Tags are plain records rather than world entities. They need a position, an owner team and
- * a lifetime, and nothing else — the mesh is `MatchObjectives`' problem and the pickup test is
- * a distance check that already has to run on the sim tick.
- *
- * ## Bots
- *
- * The brief is explicit: bots collect friendly tags to deny and enemy tags to score. Both are
- * offered through `ObjectiveProvider`, with enemy tags weighted higher — a confirm is worth a
- * point and a deny only removes one — and both scaled by distance so a bot goes for the tag at
- * its feet rather than the theoretically better one across the map.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface KillConfirmedConfig {
   /** Tags that win the match. */
   readonly scoreLimit: number;
@@ -67,18 +72,6 @@ export interface KillConfirmedConfig {
   readonly pointsPerDeny: number;
 }
 
-const KILL_CONFIRMED_CONFIG: KillConfirmedConfig = {
-  scoreLimit: 65,
-  timeLimitSeconds: 600,
-  tagLifetimeSeconds: 20,
-  pickupRadius: 1.9,
-  pickupHeight: 2.2,
-  pointsPerKill: 100,
-  pointsHeadshotBonus: 50,
-  pointsPerConfirm: 150,
-  pointsPerDeny: 100,
-};
-
 export interface DogTag {
   readonly id: number;
   /** The side that *died*. Enemy tags confirm; your own deny. */
@@ -90,8 +83,28 @@ export interface DogTag {
   life: number;
   claimed: boolean;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const KILL_CONFIRMED_CONFIG: KillConfirmedConfig = {
+  scoreLimit: 65,
+  timeLimitSeconds: 600,
+  tagLifetimeSeconds: 20,
+  pickupRadius: 1.9,
+  pickupHeight: 2.2,
+  pointsPerKill: 100,
+  pointsHeadshotBonus: 50,
+  pointsPerConfirm: 150,
+  pointsPerDeny: 100,
+};
+//#endregion
+
+// ==================================== CLASS KillConfirmed ===================================== \\
+//#region Class KillConfirmed
 export class KillConfirmed extends GameMode implements ObjectiveProvider {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   override readonly id: GameModeId = 'KC';
   override readonly name = 'KILL CONFIRMED';
 
@@ -100,16 +113,6 @@ export class KillConfirmed extends GameMode implements ObjectiveProvider {
   override readonly livesPerRound = Infinity;
   override readonly roundSeconds: number;
   override readonly scoreLimit: number;
-
-  /**
-   * F10, and both halves are in it because the deny is the half nobody works out unaided.
-   *
-   * *"A kill is not a point"* is the whole mode, and a player briefed only on collecting enemy
-   * tags will leave their own team-mates' on the floor for the other side to take.
-   */
-  override get brief(): string {
-    return `KILLS DROP TAGS · TAKE ENEMY TAGS TO SCORE, YOUR OWN TO DENY · ${this.config.scoreLimit} TAGS`;
-  }
 
   /** Live tags. Read by `MatchObjectives` for the meshes and by the HUD for the markers. */
   readonly tags: DogTag[] = [];
@@ -123,12 +126,28 @@ export class KillConfirmed extends GameMode implements ObjectiveProvider {
   private readonly evCollected = {
     tagId: 0, team: 'A' as BotTeam, entityId: 0, denied: false, x: 0, y: 0, z: 0,
   };
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: ModeDeps, config: KillConfirmedConfig = KILL_CONFIRMED_CONFIG) {
     super(deps);
     this.config = config;
     this.roundSeconds = config.timeLimitSeconds;
     this.scoreLimit = config.scoreLimit;
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  /**
+   * F10, and both halves are in it because the deny is the half nobody works out unaided.
+   *
+   * *"A kill is not a point"* is the whole mode, and a player briefed only on collecting enemy
+   * tags will leave their own team-mates' on the floor for the other side to take.
+   */
+  override get brief(): string {
+    return `KILLS DROP TAGS · TAKE ENEMY TAGS TO SCORE, YOUR OWN TO DENY · ${this.config.scoreLimit} TAGS`;
   }
 
   override onSpawn(_entity: Entity): void {
@@ -171,9 +190,11 @@ export class KillConfirmed extends GameMode implements ObjectiveProvider {
   override onTick(_tick: number): void {
     if (this.ticksLeft > 0) this.ticksLeft--;
 
-    const cfg = this.config;
-    const r2 = cfg.pickupRadius * cfg.pickupRadius;
+    // Squared once rather than per body per tag: the inner test is a distance comparison and
+    // this is the only reason it never takes a square root.
+    const r2 = this.config.pickupRadius * this.config.pickupRadius;
 
+    // Backwards, because both exits from the loop splice the list under it.
     for (let i = this.tags.length - 1; i >= 0; i--) {
       const tag = this.tags[i];
       if (tag === undefined) continue;
@@ -184,16 +205,7 @@ export class KillConfirmed extends GameMode implements ObjectiveProvider {
         continue;
       }
 
-      let taker: Combatant | undefined;
-      for (const c of this.deps.roster) {
-        if (!c.participating) continue;
-        if (Math.abs(c.py - tag.y) > cfg.pickupHeight) continue;
-        const dx = c.px - tag.x;
-        const dz = c.pz - tag.z;
-        if (dx * dx + dz * dz > r2) continue;
-        taker = c;
-        break;
-      }
+      const taker = this.findTaker(tag, r2);
       if (taker === undefined) continue;
 
       this.collect(tag, taker);
@@ -331,8 +343,31 @@ export class KillConfirmed extends GameMode implements ObjectiveProvider {
      * has arrived has already picked it up. Doing it again here would collect it twice.
      */
   }
+  //#endregion
 
-  // -- internals --------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * The first body standing on `tag`, or undefined.
+   *
+   * **First in roster order**, which is the tie-break when two people reach a tag on the same
+   * tick: the loop breaks rather than scoring the nearest. Changing that would change who gets
+   * the point in every contested pickup, so it is pinned by
+   * `KillConfirmed.test.ts`'s "gives a contested tag to the first body in the roster".
+   *
+   * `r2` is the squared pickup radius, hoisted by the caller.
+   */
+  private findTaker(tag: DogTag, r2: number): Combatant | undefined {
+    for (const c of this.deps.roster) {
+      if (!c.participating) continue;
+      if (Math.abs(c.py - tag.y) > this.config.pickupHeight) continue;
+      const dx = c.px - tag.x;
+      const dz = c.pz - tag.z;
+      if (dx * dx + dz * dz > r2) continue;
+      return c;
+    }
+    return undefined;
+  }
 
   private collect(tag: DogTag, taker: Combatant): void {
     const denied = tag.team === taker.team;
@@ -361,4 +396,6 @@ export class KillConfirmed extends GameMode implements ObjectiveProvider {
     for (const c of this.deps.roster) if (c.entityId === entityId) return c;
     return undefined;
   }
+  //#endregion
 }
+//#endregion

@@ -9,10 +9,9 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**21 open entries**, carried over from chat across units A1–A12 unedited in substance. Two numbers
-are already gone and are not reused: **#19** is folded into #2 (the same defect from both ends),
-and **#23** was closed by unit A13 on 2026-10-12. **#22** is the only one not from the chat list —
-it was opened on 2026-10-12 from the Render build failure.
+**23 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22,
+#24 and #25 were opened since. Two numbers are already gone and are not reused: **#19** is folded
+into #2 (the same defect from both ends), and **#23** was closed by unit A13 on 2026-10-12.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it.
@@ -30,7 +29,8 @@ and belong in its Step 2 plan.
 | Unit | Files | Tasks to fold in |
 |---|---|---|
 | ~~A13~~ | `shared/ai/BotDirector.ts` | **closed** — #23 was absorbed by A13 on 2026-10-12 |
-| A14/A15 | `shared/modes/` | — |
+| ~~A14~~ | `shared/modes/` | none were bound; A14 opened #24 and #25 |
+| A15 | `shared/modes/` SND, MatchFlow, ModeRegistry | **#25** — the `ticksLeft` move needs `SearchAndDestroy` in the same commit, so A15 is the last chance to take it cheaply |
 | A16/A17 | `shared/streaks/` | #1 (`SentryGun` is a caller of `angleDelta`) |
 | A20–A23 | `shared/net/` | #1 (`Interpolation` is a caller of `shortestAngle`) |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
@@ -420,6 +420,36 @@ those two would have to agree.
 **Verify** under (a) the oracles must be unchanged → `PASS`; under (b) they will differ and the
 difference has to be explained and re-baselined deliberately.
 
+### #25 — Share `ticksLeft` across the six game modes · `needs a decision from the user` *(opened 2026-10-12 by A14)*
+
+**Files** `src/shared/modes/GameMode.ts` plus all six modes: `Tdm.ts`, `FreeForAll.ts`, `Range.ts`,
+`Domination.ts`, `KillConfirmed.ts` and **`SearchAndDestroy.ts`** (unit A15). **Origin** A14.
+
+Each of the six declares its own `private ticksLeft = 0;` and each runs the identical line in its
+own `onTick`: `if (this.ticksLeft > 0) this.ticksLeft--;`. `GameMode.ts` already admits the
+duplication in prose, in `ModeDeps.roundSecondsOverride`: *"every mode also keeps its own
+`ticksLeft`, seeded from its own config"*.
+
+Why A14 could not do it, and why this cannot be split across two units: `SearchAndDestroy.ts`
+belongs to A15 and R3 fences a unit to its own files — but a base class declaring
+`protected ticksLeft` while a subclass still declares `private ticksLeft` **does not compile**, so
+the base field and all six subclasses have to move in one commit. On top of that, adding a
+`protected` member to an exported abstract class is a public-API change under R2.
+
+**Shape to propose** `protected ticksLeft = 0` on `GameMode` plus a `protected countDownRound()`
+holding the one line. Consider whether the `roundTicks` seeding wants the same treatment (see #24,
+which is the bug that duplication is currently hiding in `Range`).
+
+**Already checked by A14, so do not repeat it:** `ticksLeft` is not read from `src/client/`,
+`src/server/`, `public/verify/`, `probes/` or `scripts/` — the only mention outside
+`src/shared/modes/` is in `docs/archive/`. So §4.2's hazard does not apply, and `mode.ticksLeft = 0`
+(the documented way to force a debrief by hand) keeps working, because the property still lands on
+the instance.
+
+**Verify** `npm run check` + SIM snapshot/compare → `PASS`. The mode clock decides every timed match
+in the five seeded bot matches. Pinned by the clock cases in `Tdm.test.ts`, `FreeForAll.test.ts`,
+`Range.test.ts`, `Domination.test.ts` and `KillConfirmed.test.ts` (all A14).
+
 ### #18 — Share the gravity and drag integration step · `open` · *note, not a defect*
 
 **Files** `src/shared/equipment/Projectile.ts`. **Origin** A10.
@@ -541,6 +571,24 @@ minimum of 0.4. Touching either slider in the F1 debug panel snaps the value to 
 weapon's authored figure cannot be restored through the UI. **Decide**: widen the bounds in
 `WEAPON_TUNABLES` to contain the authored values, or change the weapon's base values. The second is
 a balance change.
+
+### #24 — `Range` ignores the harness clock override · `open` *(opened 2026-10-12 by A14)*
+**Files** `src/shared/modes/Range.ts`. **Origin** A14.
+
+`Range.onRoundStart` seeds its clock with `Math.round(config.timeLimitSeconds / DT)` where the
+other five modes call the inherited `this.roundTicks(...)` — the single place
+`ModeDeps.roundSecondsOverride` is read. So the range is the one mode a harness cannot shorten,
+which is the opposite of what that field's own documentation promises: *"Both are overridden from
+this one value, so they cannot be shortened apart. A harness that shortened only `MatchFlow`'s
+clock got a HUD that hit zero and a match that carried on for another nine minutes."* That is
+exactly what a shortened range run gets. `docs/archive/plan/15-m10.5-tier-1-fixes.md` line 65
+already noted it in passing, so it is long-standing.
+
+The fix is almost certainly the one line, but it changes behaviour for any harness run that
+shortens the range, so A14 pinned it instead. Pinned by `Range.test.ts`, "ignores the harness clock
+override, unlike every other mode", which carries the `// Pins current behaviour; suspected bug:`
+comment — **fixing the code means rewriting that case in the same commit, with the reason.** Check
+first whether any harness depends on the range being un-shortenable.
 
 ---
 

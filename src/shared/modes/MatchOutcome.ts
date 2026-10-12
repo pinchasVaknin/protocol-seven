@@ -1,6 +1,3 @@
-import { compareRows, type Rankable, type ScoreTeam } from '../combat/ScoreSystem';
-import type { MatchResult } from './GameMode';
-
 /**
  * What a match result means to one player (M13 Phase A, bug 4.4).
  *
@@ -30,6 +27,14 @@ import type { MatchResult } from './GameMode';
  * cosmetic oddity; a summary that shows two players "1ST" is a lie, and the pin is what stops it.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { compareRows, type Rankable, type ScoreTeam } from '../combat/ScoreSystem';
+import type { MatchResult } from './GameMode';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 type OutcomeKind = 'WIN' | 'LOSS' | 'DRAW';
 
 export interface PersonalOutcome {
@@ -45,7 +50,10 @@ export interface PlaceableRow extends Rankable {
 
 /** The two facts a result carries about who won. `MatchResult` has them; so does the server's. */
 export type WinnerFacts = Pick<MatchResult, 'winner' | 'winnerEntityId'>;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Whether the player seated on `team` as `entityId` won `result`.
  *
@@ -79,14 +87,33 @@ export function personalOutcome(
 }
 
 /**
+ * Whether `entityId` is the match's MVP: the top score on the board, with ties going to nobody
+ * (M13 Phase B, lifted from `MatchMeta`).
+ *
+ * An XP rule rather than a scoreboard fact, and one rule: the client decided it for the local
+ * player and the server now decides it per seat, and two MVPs is not what the word means.
+ */
+export function isMvp(rows: readonly PlaceableRow[], entityId: number): boolean {
+  const mine = rowOf(rows, entityId);
+  if (mine === undefined || mine.score <= 0) return false;
+  for (const row of rows) {
+    if (row === mine) continue;
+    if (row.score >= mine.score) return false;
+  }
+  return true;
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
  * 1-based rank of `entityId` on the ladder, with `winnerId` pinned to first.
  *
  * A reader with no row — a spectator, a client whose replicated rows never arrived — is last
  * plus one, which is honest about what the reader knows rather than a guess at a place.
  */
 function placeOf(rows: readonly PlaceableRow[], entityId: number, winnerId: number): number {
-  let mine: PlaceableRow | undefined;
-  for (const row of rows) if (row.entityId === entityId) mine = row;
+  const mine = rowOf(rows, entityId);
   if (mine === undefined) return rows.length + 1;
   // The winner outranks everybody by decree; among the rest, the ladder decides.
   let above = entityId === winnerId ? 0 : 1;
@@ -98,28 +125,32 @@ function placeOf(rows: readonly PlaceableRow[], entityId: number, winnerId: numb
 }
 
 /**
- * Whether `entityId` is the match's MVP: the top score on the board, with ties going to nobody
- * (M13 Phase B, lifted from `MatchMeta`).
+ * One reader's row, or undefined.
  *
- * An XP rule rather than a scoreboard fact, and one rule: the client decided it for the local
- * player and the server now decides it per seat, and two MVPs is not what the word means.
+ * The **last** match rather than the first, which is what both callers did when they each had
+ * their own copy of this loop. A ladder with two rows for one entity is a bug upstream; picking
+ * a side here would only decide which of the two symptoms it shows.
  */
-export function isMvp(rows: readonly PlaceableRow[], entityId: number): boolean {
-  let mine: PlaceableRow | undefined;
-  for (const row of rows) if (row.entityId === entityId) mine = row;
-  if (mine === undefined || mine.score <= 0) return false;
-  for (const row of rows) {
-    if (row === mine) continue;
-    if (row.score >= mine.score) return false;
-  }
-  return true;
+function rowOf(rows: readonly PlaceableRow[], entityId: number): PlaceableRow | undefined {
+  let found: PlaceableRow | undefined;
+  for (const row of rows) if (row.entityId === entityId) found = row;
+  return found;
 }
 
 /** `1ST`, `2ND`, `3RD`, `4TH` ... `11TH`, `12TH`, `13TH`, `21ST`. */
 function ordinal(place: number): string {
   const n = Math.max(1, Math.round(place));
-  const tens = n % 100;
-  const suffix =
-    tens >= 11 && tens <= 13 ? 'TH' : n % 10 === 1 ? 'ST' : n % 10 === 2 ? 'ND' : n % 10 === 3 ? 'RD' : 'TH';
-  return `${n}${suffix}`;
+  return `${n}${ordinalSuffix(n)}`;
 }
+
+/** The teens are the exception that makes this a function rather than a lookup on the units. */
+function ordinalSuffix(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return 'TH';
+  const units = n % 10;
+  if (units === 1) return 'ST';
+  if (units === 2) return 'ND';
+  if (units === 3) return 'RD';
+  return 'TH';
+}
+//#endregion

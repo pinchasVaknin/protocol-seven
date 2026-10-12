@@ -1,21 +1,3 @@
-import type { ScoreTeam } from '../combat/ScoreSystem';
-import {
-  COL_ACC,
-  COL_BEST,
-  COL_DEATHS,
-  COL_KD,
-  COL_KILLS,
-  COL_SCORE,
-  GameMode,
-  type ColumnDef,
-  type Entity,
-  type GameModeId,
-  type KillEvent,
-  type MatchResult,
-  type ModeDeps,
-  type RoundResult,
-} from './GameMode';
-
 /**
  * Free-for-All (brief S6.2): eight players, no teams, first to thirty kills.
  *
@@ -45,6 +27,29 @@ import {
  * place the seam is visible is the minimap, which is told to draw no allies.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { ScoreTeam } from '../combat/ScoreSystem';
+import {
+  COL_ACC,
+  COL_BEST,
+  COL_DEATHS,
+  COL_KD,
+  COL_KILLS,
+  COL_SCORE,
+  GameMode,
+  type ColumnDef,
+  type Entity,
+  type GameModeId,
+  type KillEvent,
+  type MatchResult,
+  type ModeDeps,
+  type RoundResult,
+} from './GameMode';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface FreeForAllConfig {
   /** Kills that win. */
   readonly scoreLimit: number;
@@ -54,7 +59,10 @@ export interface FreeForAllConfig {
   readonly pointsPerKill: number;
   readonly pointsHeadshotBonus: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const FFA_CONFIG: FreeForAllConfig = {
   scoreLimit: 30,
   timeLimitSeconds: 600,
@@ -96,8 +104,13 @@ export const FFA_WARMUP_CONFIG: FreeForAllConfig = {
   // the M1 greybox room rather than a map balanced for eight.
   playerCount: 4,
 };
+//#endregion
 
+// ====================================== CLASS FreeForAll ====================================== \\
+//#region Class FreeForAll
 export class FreeForAll extends GameMode {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   override readonly id: GameModeId = 'FFA';
   override readonly name = 'FREE-FOR-ALL';
 
@@ -107,6 +120,22 @@ export class FreeForAll extends GameMode {
   override readonly roundSeconds: number;
   override readonly scoreLimit: number;
 
+  private readonly config: FreeForAllConfig;
+  private ticksLeft = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  constructor(deps: ModeDeps, config: FreeForAllConfig = FFA_CONFIG) {
+    super(deps);
+    this.config = config;
+    this.roundSeconds = config.timeLimitSeconds;
+    this.scoreLimit = config.scoreLimit;
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * F10, and the arena is the reason the second half is conditional.
    *
@@ -119,16 +148,6 @@ export class FreeForAll extends GameMode {
     return this.config.scoreLimit > 0
       ? `NO TEAMS · EVERY OPERATOR FOR THEMSELVES · FIRST TO ${this.config.scoreLimit} KILLS`
       : 'NO TEAMS · EVERY OPERATOR FOR THEMSELVES';
-  }
-
-  private readonly config: FreeForAllConfig;
-  private ticksLeft = 0;
-
-  constructor(deps: ModeDeps, config: FreeForAllConfig = FFA_CONFIG) {
-    super(deps);
-    this.config = config;
-    this.roundSeconds = config.timeLimitSeconds;
-    this.scoreLimit = config.scoreLimit;
   }
 
   override onSpawn(_entity: Entity): void {
@@ -197,22 +216,7 @@ export class FreeForAll extends GameMode {
     return leader === null || leader.kills === runnerUp ? undefined : leader.entityId;
   }
 
-  /** The most kills on the board and the kills behind it. One scan, two callers. */
-  private ladderTop(): { leader: null | { team: ScoreTeam; entityId: number; kills: number }; runnerUp: number } {
-    let leader = null as null | { team: ScoreTeam; entityId: number; kills: number };
-    let runnerUp = -1;
-    for (const row of this.deps.score.rows) {
-      if (leader === null || row.kills > leader.kills) {
-        if (leader !== null) runnerUp = leader.kills;
-        leader = { team: row.team, entityId: row.entityId, kills: row.kills };
-      } else if (row.kills > runnerUp) {
-        runnerUp = row.kills;
-      }
-    }
-    return { leader, runnerUp };
-  }
 
-  /** No team columns: FFA's board is a straight ladder. */
   override getScoreboardColumns(): ColumnDef[] {
     return [COL_SCORE, COL_KILLS, COL_DEATHS, COL_KD, COL_ACC, COL_BEST];
   }
@@ -240,6 +244,24 @@ export class FreeForAll extends GameMode {
     }
     return best;
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private ladderTop(): { leader: null | { team: ScoreTeam; entityId: number; kills: number }; runnerUp: number } {
+    let leader = null as null | { team: ScoreTeam; entityId: number; kills: number };
+    let runnerUp = -1;
+    for (const row of this.deps.score.rows) {
+      if (leader === null || row.kills > leader.kills) {
+        if (leader !== null) runnerUp = leader.kills;
+        leader = { team: row.team, entityId: row.entityId, kills: row.kills };
+      } else if (row.kills > runnerUp) {
+        runnerUp = row.kills;
+      }
+    }
+    return { leader, runnerUp };
+  }
+
 
   private result(
     winner: { team: ScoreTeam; entityId: number } | 'DRAW',
@@ -254,4 +276,6 @@ export class FreeForAll extends GameMode {
       winnerEntityId: winner === 'DRAW' ? undefined : winner.entityId,
     };
   }
+  //#endregion
 }
+//#endregion

@@ -1,11 +1,3 @@
-import type { Combatant } from '../ai/Combatant';
-import type { ObjectiveZone } from './ObjectiveZone';
-import type { HitZone } from '../combat/HitboxRig';
-import { accuracy, killDeath, type PlayerScore, type ScoreSystem, type ScoreTeam } from '../combat/ScoreSystem';
-import type { GameBus } from '../core/Events';
-import { DT } from '../core/Loop';
-import type { MapDef } from '../world/maps/types';
-
 /**
  * What a game mode is (brief S6.2).
  *
@@ -22,6 +14,19 @@ import type { MapDef } from '../world/maps/types';
  * get a mode that only works when it is the only one implemented.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { Combatant } from '../ai/Combatant';
+import type { ObjectiveZone } from './ObjectiveZone';
+import type { HitZone } from '../combat/HitboxRig';
+import { accuracy, killDeath, type PlayerScore, type ScoreSystem, type ScoreTeam } from '../combat/ScoreSystem';
+import type { GameBus } from '../core/Events';
+import { DT } from '../core/Loop';
+import type { MapDef } from '../world/maps/types';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * The brief writes `Entity`; in this codebase the thing that spawns into a match is a
  * `Combatant` — the interface that makes the player and a bot the same thing (S6.1). Aliased
@@ -83,21 +88,6 @@ export interface ColumnDef {
   readonly align: 'left' | 'right';
   readonly value: (row: PlayerScore) => string;
 }
-
-/**
- * The columns every mode's scoreboard shares. Each mode composes its own order from these and
- * puts its objective columns where they read best — Domination's captures before K/D, Team
- * Deathmatch's best streak last — so there is no flag here, only a list to write.
- */
-export const COL_SCORE: ColumnDef = { key: 'score', label: 'Score', width: 6, align: 'right', value: (r) => String(r.score) };
-export const COL_KILLS: ColumnDef = { key: 'kills', label: 'K', width: 4, align: 'right', value: (r) => String(r.kills) };
-export const COL_DEATHS: ColumnDef = { key: 'deaths', label: 'D', width: 4, align: 'right', value: (r) => String(r.deaths) };
-export const COL_KD: ColumnDef = { key: 'kd', label: 'K/D', width: 5, align: 'right', value: (r) => killDeath(r).toFixed(2) };
-export const COL_ACC: ColumnDef = {
-  key: 'acc', label: 'Acc', width: 6, align: 'right',
-  value: (r) => { const p = accuracy(r); return p < 0 ? '—' : `${p.toFixed(0)}%`; },
-};
-export const COL_BEST: ColumnDef = { key: 'streak', label: 'Best', width: 5, align: 'right', value: (r) => String(r.bestStreak) };
 
 export interface ModeDeps {
   readonly bus: GameBus;
@@ -182,7 +172,73 @@ export interface HeaderSlot {
   readonly capturing: ScoreTeam | 'NONE';
 }
 
+/**
+ * A dropped object's replicable state, structurally.
+ *
+ * `id` is what makes a tag the same tag from one frame to the next, which the renderer's mesh
+ * pool depends on and which an index into a list that shrinks in the middle cannot give it.
+ */
+export interface TagInfo {
+  readonly id: number;
+  /** The side that died. Enemy tags confirm; your own deny. */
+  readonly team: ScoreTeam;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
+/** Everything about the bomb that a client may not work out for itself (§6.8). */
+export interface BombInfo {
+  readonly state: 'CARRIED' | 'PLANTED' | 'DEFUSED' | 'EXPLODED';
+  /** Who is carrying it, or -1 while it is on the ground. */
+  readonly carrierId: number;
+  /** Which side attacks this round. */
+  readonly attackers: ScoreTeam;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  /** Fuse remaining, seconds. Zero unless planted. */
+  readonly secondsLeft: number;
+  /** 0..1 on the plant or defuse currently running. */
+  readonly interactFraction: number;
+  /** Who is doing it, so an interrupted plant does not resume under somebody else. */
+  readonly interactEntity: number;
+  /** Index into `objectiveZones` once planted, or -1. */
+  readonly plantedSiteIndex: number;
+}
+
+/**
+ * The writable face of `BombInfo`, for the single instance a mode owns and rewrites each tick.
+ *
+ * Mapped rather than declared twice so a field added to `BombInfo` cannot be forgotten here —
+ * which is the failure mode of two hand-written interfaces that are meant to stay in step.
+ */
+export type MutableBombInfo = { -readonly [K in keyof BombInfo]: BombInfo[K] };
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * The columns every mode's scoreboard shares. Each mode composes its own order from these and
+ * puts its objective columns where they read best — Domination's captures before K/D, Team
+ * Deathmatch's best streak last — so there is no flag here, only a list to write.
+ */
+export const COL_SCORE: ColumnDef = { key: 'score', label: 'Score', width: 6, align: 'right', value: (r) => String(r.score) };
+export const COL_KILLS: ColumnDef = { key: 'kills', label: 'K', width: 4, align: 'right', value: (r) => String(r.kills) };
+export const COL_DEATHS: ColumnDef = { key: 'deaths', label: 'D', width: 4, align: 'right', value: (r) => String(r.deaths) };
+export const COL_KD: ColumnDef = { key: 'kd', label: 'K/D', width: 5, align: 'right', value: (r) => killDeath(r).toFixed(2) };
+export const COL_ACC: ColumnDef = {
+  key: 'acc', label: 'Acc', width: 6, align: 'right',
+  value: (r) => { const p = accuracy(r); return p < 0 ? '—' : `${p.toFixed(0)}%`; },
+};
+export const COL_BEST: ColumnDef = { key: 'streak', label: 'Best', width: 5, align: 'right', value: (r) => String(r.bestStreak) };
+//#endregion
+
+// ======================================= CLASS GameMode ======================================= \\
+//#region Class GameMode
 export abstract class GameMode {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   abstract readonly id: GameModeId;
   abstract readonly name: string;
 
@@ -241,21 +297,17 @@ export abstract class GameMode {
   readonly roundEndSeconds: number = 4;
 
   protected readonly deps: ModeDeps;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: ModeDeps) {
     this.deps = deps;
   }
+  //#endregion
 
-  /**
-   * How long this mode's round runs, in ticks. The authored length unless a harness said
-   * otherwise. See `ModeDeps.roundSecondsOverride` for why both clocks read this.
-   */
-  protected roundTicks(authoredSeconds: number): number {
-    const override = this.deps.roundSecondsOverride;
-    const seconds = override !== undefined && override > 0 ? override : authoredSeconds;
-    return Math.round(seconds / DT);
-  }
-
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   abstract onSpawn(entity: Entity): void;
   abstract onKill(ev: KillEvent): void;
   abstract onTick(tick: number): void;
@@ -356,66 +408,25 @@ export abstract class GameMode {
   get bombInfo(): BombInfo | null {
     return null;
   }
+  //#endregion
+
+  // ==================================== PROTECTED METHODS ===================================== \\
+  //#region Protected Methods
+  /**
+   * How long this mode's round runs, in ticks. The authored length unless a harness said
+   * otherwise. See `ModeDeps.roundSecondsOverride` for why both clocks read this.
+   */
+  protected roundTicks(authoredSeconds: number): number {
+    const override = this.deps.roundSecondsOverride;
+    const seconds = override !== undefined && override > 0 ? override : authoredSeconds;
+    return Math.round(seconds / DT);
+  }
+  //#endregion
 }
+//#endregion
 
-/**
- * A dropped object's replicable state, structurally.
- *
- * `id` is what makes a tag the same tag from one frame to the next, which the renderer's mesh
- * pool depends on and which an index into a list that shrinks in the middle cannot give it.
- */
-export interface TagInfo {
-  readonly id: number;
-  /** The side that died. Enemy tags confirm; your own deny. */
-  readonly team: ScoreTeam;
-  readonly x: number;
-  readonly y: number;
-  readonly z: number;
-}
-
-/** Everything about the bomb that a client may not work out for itself (§6.8). */
-export interface BombInfo {
-  readonly state: 'CARRIED' | 'PLANTED' | 'DEFUSED' | 'EXPLODED';
-  /** Who is carrying it, or -1 while it is on the ground. */
-  readonly carrierId: number;
-  /** Which side attacks this round. */
-  readonly attackers: ScoreTeam;
-  readonly x: number;
-  readonly y: number;
-  readonly z: number;
-  /** Fuse remaining, seconds. Zero unless planted. */
-  readonly secondsLeft: number;
-  /** 0..1 on the plant or defuse currently running. */
-  readonly interactFraction: number;
-  /** Who is doing it, so an interrupted plant does not resume under somebody else. */
-  readonly interactEntity: number;
-  /** Index into `objectiveZones` once planted, or -1. */
-  readonly plantedSiteIndex: number;
-}
-
-/**
- * The writable face of `BombInfo`, for the single instance a mode owns and rewrites each tick.
- *
- * Mapped rather than declared twice so a field added to `BombInfo` cannot be forgotten here —
- * which is the failure mode of two hand-written interfaces that are meant to stay in step.
- */
-export type MutableBombInfo = { -readonly [K in keyof BombInfo]: BombInfo[K] };
-
-/** Which of two team scores is ahead, for the result of a timed match. */
-function leaderOf(a: number, b: number): ScoreTeam | 'DRAW' {
-  if (a > b) return 'A';
-  if (b > a) return 'B';
-  return 'DRAW';
-}
-
-/** A whole-match result for a team mode, the winning side credited with its one round. */
-function teamMatchResult(winner: ScoreTeam | 'DRAW', reason: string, a: number, b: number): MatchResult {
-  return {
-    kind: 'match', winner, reason, scoreA: a, scoreB: b,
-    roundsA: winner === 'A' ? 1 : 0, roundsB: winner === 'B' ? 1 : 0,
-  };
-}
-
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * The win condition Team Deathmatch, Domination and Kill Confirmed share: the first side to
  * the limit wins, a tie at the limit is a draw, and when the mode's own clock runs out the
@@ -438,3 +449,22 @@ export function teamScoreWinCondition(
   }
   return null;
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Which of two team scores is ahead, for the result of a timed match. */
+function leaderOf(a: number, b: number): ScoreTeam | 'DRAW' {
+  if (a > b) return 'A';
+  if (b > a) return 'B';
+  return 'DRAW';
+}
+
+/** A whole-match result for a team mode, the winning side credited with its one round. */
+function teamMatchResult(winner: ScoreTeam | 'DRAW', reason: string, a: number, b: number): MatchResult {
+  return {
+    kind: 'match', winner, reason, scoreA: a, scoreB: b,
+    roundsA: winner === 'A' ? 1 : 0, roundsB: winner === 'B' ? 1 : 0,
+  };
+}
+//#endregion

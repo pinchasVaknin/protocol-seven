@@ -1,17 +1,3 @@
-import type { ScoreTeam } from '../combat/ScoreSystem';
-import { accuracy } from '../combat/ScoreSystem';
-import { DT } from '../core/Loop';
-import {
-  GameMode,
-  type ColumnDef,
-  type Entity,
-  type GameModeId,
-  type KillEvent,
-  type MatchResult,
-  type ModeDeps,
-  type RoundResult,
-} from './GameMode';
-
 /**
  * The Shooting Range — a testbed, from the M5 playtest notes.
  *
@@ -32,19 +18,46 @@ import {
  * and it ends and summarises like anything else. It simply has nothing to score against.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { ScoreTeam } from '../combat/ScoreSystem';
+import { accuracy } from '../combat/ScoreSystem';
+import { DT } from '../core/Loop';
+import {
+  GameMode,
+  type ColumnDef,
+  type Entity,
+  type GameModeId,
+  type KillEvent,
+  type MatchResult,
+  type ModeDeps,
+  type RoundResult,
+} from './GameMode';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface RangeConfig {
   /** Session length, seconds. Long enough to work through the arsenal. */
   readonly timeLimitSeconds: number;
   /** Personal score for a dummy, so the scoreboard is not permanently zero. */
   readonly pointsPerTarget: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const RANGE_CONFIG: RangeConfig = {
   timeLimitSeconds: 900,
   pointsPerTarget: 10,
 };
+//#endregion
 
+// ======================================== CLASS Range ========================================= \\
+//#region Class Range
 export class Range extends GameMode {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   override readonly id: GameModeId = 'RANGE';
   override readonly name = 'SHOOTING RANGE';
 
@@ -66,13 +79,19 @@ export class Range extends GameMode {
 
   private readonly config: RangeConfig;
   private ticksLeft = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: ModeDeps, config: RangeConfig = RANGE_CONFIG) {
     super(deps);
     this.config = config;
     this.roundSeconds = config.timeLimitSeconds;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   override onSpawn(_entity: Entity): void {
     /* Nothing to attach to a spawn on a range. */
   }
@@ -144,4 +163,6 @@ export class Range extends GameMode {
   override teamScore(_team: ScoreTeam): number {
     return 0;
   }
+  //#endregion
 }
+//#endregion

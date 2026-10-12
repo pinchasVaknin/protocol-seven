@@ -25,16 +25,24 @@
  *    so the choice does not flicker between two equally good targets as a `Map` reorders.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface SpectatorCandidate {
   readonly entityId: number;
   readonly team: 'A' | 'B';
   /** Alive and participating. A body that is down is not a camera. */
   readonly alive: boolean;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** No valid target. Distinct from entity 0, which is the server's empty spectator seat. */
 export const NO_SPECTATOR_TARGET = -1;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Pick a body to watch, or `NO_SPECTATOR_TARGET`.
  *
@@ -82,9 +90,13 @@ export function nextSpectatorTarget(
   if (at < 0) return ids[0] ?? NO_SPECTATOR_TARGET;
   return ids[(at + 1) % ids.length] ?? NO_SPECTATOR_TARGET;
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function isWatchable(c: SpectatorCandidate, localId: number, localTeam: 'A' | 'B'): boolean {
   if (c.entityId === localId) return false;
   if (c.team !== localTeam) return false;
   return c.alive;
 }
+//#endregion

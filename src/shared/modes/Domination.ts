@@ -1,3 +1,33 @@
+/**
+ * Domination (brief S6.2): three flags, 200 points, one point per flag every five seconds.
+ *
+ * The scoring rule is the whole mode and it is worth being precise about: a team with two
+ * flags scores twice as fast as a team with one, so the game is decided by *how long* you
+ * hold ground rather than by how often you take it. That is why the tick is a single shared
+ * five-second timer rather than one per flag — three independent timers would let a team that
+ * kept losing and retaking B out-score a team that quietly sat on A and C.
+ *
+ * ## Bots
+ *
+ * `ObjectiveProvider` is implemented here, and the priorities are where "bots play the
+ * objective" is actually decided:
+ *
+ *  - A flag nobody owns, or one the enemy owns, is worth taking — high priority, and higher
+ *    still when the team is behind on flag count.
+ *  - A flag the team already owns is worth *defending* at a much lower priority, which is
+ *    what keeps some of the team at home rather than all of them rotating.
+ *  - Assignments are sticky per bot: a bot that has been sent to C stays sent to C until it
+ *    arrives or the flag changes hands. Re-rolling every 4 Hz decision produced bots that
+ *    oscillated between two flags and reached neither, which looked exactly like the
+ *    "deathmatch with decoration" the brief is warning about.
+ *
+ * The home-flag rule is the one the brief calls out ("do not all leave home"): at most
+ * `MAX_ATTACKERS_PER_FLAG` bots are assigned to any one flag, and a team is never allowed to
+ * assign its last defender away from a flag it owns.
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { Combatant } from '../ai/Combatant';
 import { opposingTeam, type BotTeam } from '../ai/Combatant';
 import {
@@ -27,35 +57,10 @@ import {
   type RoundResult,
 } from './GameMode';
 import { ObjectiveZone, recountZones } from './ObjectiveZone';
+//#endregion
 
-/**
- * Domination (brief S6.2): three flags, 200 points, one point per flag every five seconds.
- *
- * The scoring rule is the whole mode and it is worth being precise about: a team with two
- * flags scores twice as fast as a team with one, so the game is decided by *how long* you
- * hold ground rather than by how often you take it. That is why the tick is a single shared
- * five-second timer rather than one per flag — three independent timers would let a team that
- * kept losing and retaking B out-score a team that quietly sat on A and C.
- *
- * ## Bots
- *
- * `ObjectiveProvider` is implemented here, and the priorities are where "bots play the
- * objective" is actually decided:
- *
- *  - A flag nobody owns, or one the enemy owns, is worth taking — high priority, and higher
- *    still when the team is behind on flag count.
- *  - A flag the team already owns is worth *defending* at a much lower priority, which is
- *    what keeps some of the team at home rather than all of them rotating.
- *  - Assignments are sticky per bot: a bot that has been sent to C stays sent to C until it
- *    arrives or the flag changes hands. Re-rolling every 4 Hz decision produced bots that
- *    oscillated between two flags and reached neither, which looked exactly like the
- *    "deathmatch with decoration" the brief is warning about.
- *
- * The home-flag rule is the one the brief calls out ("do not all leave home"): at most
- * `MAX_ATTACKERS_PER_FLAG` bots are assigned to any one flag, and a team is never allowed to
- * assign its last defender away from a flag it owns.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface DominationConfig {
   /** Points that win the match. */
   readonly scoreLimit: number;
@@ -73,7 +78,10 @@ export interface DominationConfig {
   /** Most bots sent at one flag at a time. */
   readonly maxAttackersPerFlag: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const DOMINATION_CONFIG: DominationConfig = {
   scoreLimit: 200,
   timeLimitSeconds: 600,
@@ -85,8 +93,13 @@ const DOMINATION_CONFIG: DominationConfig = {
   defendRadius: 9,
   maxAttackersPerFlag: 3,
 };
+//#endregion
 
+// ====================================== CLASS Domination ====================================== \\
+//#region Class Domination
 export class Domination extends GameMode implements ObjectiveProvider {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   override readonly id: GameModeId = 'DOM';
   override readonly name = 'DOMINATION';
 
@@ -95,18 +108,6 @@ export class Domination extends GameMode implements ObjectiveProvider {
   override readonly livesPerRound = Infinity;
   override readonly roundSeconds: number;
   override readonly scoreLimit: number;
-
-  /**
-   * F10, and it names the flags the map actually authored rather than "A, B and C".
-   *
-   * Three is the shipped count on both objective maps, and hard-coding the letters would be a
-   * sentence that is true of the content today and silently false the day a map authors two
-   * flags or four. The labels come off the same `ObjectiveZone`s the capture logic reads, so the
-   * brief cannot name a flag the player will not find.
-   */
-  override get brief(): string {
-    return `CAPTURE AND HOLD ${this.zones.map((z) => z.label).join(', ')} · ${this.config.scoreLimit} POINTS`;
-  }
 
   readonly zones: ObjectiveZone[] = [];
 
@@ -123,7 +124,10 @@ export class Domination extends GameMode implements ObjectiveProvider {
   private readonly evProgress = {
     objectiveId: '', label: '', fraction: 0, team: 'NONE' as BotTeam | 'NONE', contested: false,
   };
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: ModeDeps, config: DominationConfig = DOMINATION_CONFIG) {
     super(deps);
     this.config = config;
@@ -142,6 +146,21 @@ export class Domination extends GameMode implements ObjectiveProvider {
     let n = 0;
     for (const z of this.zones) if (z.owner === team) n++;
     return n;
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  /**
+   * F10, and it names the flags the map actually authored rather than "A, B and C".
+   *
+   * Three is the shipped count on both objective maps, and hard-coding the letters would be a
+   * sentence that is true of the content today and silently false the day a map authors two
+   * flags or four. The labels come off the same `ObjectiveZone`s the capture logic reads, so the
+   * brief cannot name a flag the player will not find.
+   */
+  override get brief(): string {
+    return `CAPTURE AND HOLD ${this.zones.map((z) => z.label).join(', ')} · ${this.config.scoreLimit} POINTS`;
   }
 
   override onSpawn(_entity: Entity): void {
@@ -276,14 +295,54 @@ export class Domination extends GameMode implements ObjectiveProvider {
   // -- ObjectiveProvider ------------------------------------------------------
 
   assign(bot: Combatant): ObjectiveTarget | null {
-    const held = this.assignment.get(bot.entityId);
-    if (held !== undefined) {
-      const zone = this.zoneById(held);
-      // Keep the assignment until the flag actually changes hands under it.
-      if (zone !== undefined && zone.owner !== bot.team) return this.target(zone, bot, 'capture');
-      this.assignment.delete(bot.entityId);
+    const kept = this.keptAssignment(bot);
+    if (kept !== null) return kept;
+
+    const best = this.pickFlagToAttack(bot);
+    if (best !== null) {
+      this.assignment.set(bot.entityId, best.id);
+      return this.target(best, bot, 'capture');
     }
 
+    // Everything is ours. Sit on the one nearest this bot and hold it — a low priority, so
+    // the bot still fights anything it meets on the way rather than jogging past it.
+    const nearest = this.nearestOwnedFlag(bot);
+    return nearest === null ? null : this.target(nearest, bot, 'defend');
+  }
+
+  onArrived(_bot: Combatant, _target: ObjectiveTarget): void {
+    /**
+     * Nothing to do: a Domination flag is taken by *standing* on it, and `onTick` already
+     * counts everybody inside every zone. Arriving is the whole interaction.
+     */
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * The flag this bot was already sent to, while that is still worth walking to.
+   *
+   * A bot keeps its assignment until the flag actually changes hands under it. `BotBrain` asks
+   * four times a second, and a bot that re-decides every quarter second never arrives anywhere
+   * — the flank commitment in `BotBrain.decide` exists for the same reason.
+   */
+  private keptAssignment(bot: Combatant): ObjectiveTarget | null {
+    const held = this.assignment.get(bot.entityId);
+    if (held === undefined) return null;
+    const zone = this.zoneById(held);
+    if (zone !== undefined && zone.owner !== bot.team) return this.target(zone, bot, 'capture');
+    this.assignment.delete(bot.entityId);
+    return null;
+  }
+
+  /**
+   * The best flag for this bot to go and take, or null when it holds them all.
+   *
+   * Strictly greater than the running best, so the first flag to reach a score keeps it — the
+   * zones are in map order, which makes the tie-break authored rather than incidental.
+   */
+  private pickFlagToAttack(bot: Combatant): ObjectiveZone | null {
     const enemy = opposingTeam(bot.team);
     const owned = this.flagsHeld(bot.team);
     let best: ObjectiveZone | null = null;
@@ -293,26 +352,16 @@ export class Domination extends GameMode implements ObjectiveProvider {
       if (zone.owner === bot.team) continue;
       const crowd = this.assignedCount(zone.id);
       if (crowd >= this.config.maxAttackersPerFlag) continue;
-      const p = zone.def.position;
-      const dist = Math.hypot(bot.px - p.x, bot.pz - p.z);
-      // Nearest first, neutral before enemy-held, and everything more urgent while behind.
-      let s = -dist;
-      if (zone.owner === 'NONE') s += 12;
-      if (zone.owner === enemy && owned === 0) s += 20;
-      if (zone.contested) s += 8;
-      s -= crowd * 6;
+      const s = scoreFlagFor(zone, bot, enemy, owned) - crowd * 6;
       if (s <= bestScore) continue;
       bestScore = s;
       best = zone;
     }
+    return best;
+  }
 
-    if (best !== null) {
-      this.assignment.set(bot.entityId, best.id);
-      return this.target(best, bot, 'capture');
-    }
-
-    // Everything is ours. Sit on the one nearest this bot and hold it — a low priority, so
-    // the bot still fights anything it meets on the way rather than jogging past it.
+  /** The flag this bot holds that is closest to it, for a bot with nothing left to take. */
+  private nearestOwnedFlag(bot: Combatant): ObjectiveZone | null {
     let nearest: ObjectiveZone | null = null;
     let nearestDist = Infinity;
     for (const zone of this.zones) {
@@ -323,17 +372,8 @@ export class Domination extends GameMode implements ObjectiveProvider {
       nearestDist = d;
       nearest = zone;
     }
-    return nearest === null ? null : this.target(nearest, bot, 'defend');
+    return nearest;
   }
-
-  onArrived(_bot: Combatant, _target: ObjectiveTarget): void {
-    /**
-     * Nothing to do: a Domination flag is taken by *standing* on it, and `onTick` already
-     * counts everybody inside every zone. Arriving is the whole interaction.
-     */
-  }
-
-  // -- internals --------------------------------------------------------------
 
   private target(zone: ObjectiveZone, bot: Combatant, action: 'capture' | 'defend'): ObjectiveTarget {
     const t = this.scratch;
@@ -402,4 +442,31 @@ export class Domination extends GameMode implements ObjectiveProvider {
     ev.contested = zone.contested;
     this.deps.bus.emit(EV.ObjectiveProgress, ev);
   }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * How badly this bot wants `zone`, before the crowding penalty.
+ *
+ * Nearest first, neutral before enemy-held, and everything more urgent while behind. The
+ * numbers are a hierarchy rather than a scale: twenty points outranks the twelve a neutral flag
+ * gets, which outranks any distance inside the map, so "we hold nothing" genuinely overrules
+ * "that one is closer".
+ */
+function scoreFlagFor(
+  zone: ObjectiveZone,
+  bot: Combatant,
+  enemy: BotTeam,
+  owned: number,
+): number {
+  const p = zone.def.position;
+  let s = -Math.hypot(bot.px - p.x, bot.pz - p.z);
+  if (zone.owner === 'NONE') s += 12;
+  if (zone.owner === enemy && owned === 0) s += 20;
+  if (zone.contested) s += 8;
+  return s;
+}
+//#endregion

@@ -112,7 +112,7 @@ export class Domination extends GameMode implements ObjectiveProvider {
   readonly zones: ObjectiveZone[] = [];
 
   private readonly config: DominationConfig;
-  private ticksLeft = 0;
+
   private scoreTimer = 0;
   /** Sticky assignment: entity id -> flag id. */
   private readonly assignment = new Map<number, string>();
@@ -192,7 +192,7 @@ export class Domination extends GameMode implements ObjectiveProvider {
   }
 
   override onTick(_tick: number): void {
-    if (this.ticksLeft > 0) this.ticksLeft--;
+    this.countDownRound();
 
     recountZones(this.zones, this.deps.roster);
     for (const zone of this.zones) {

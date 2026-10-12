@@ -121,7 +121,6 @@ export class FreeForAll extends GameMode {
   override readonly scoreLimit: number;
 
   private readonly config: FreeForAllConfig;
-  private ticksLeft = 0;
   //#endregion
 
   // ======================================= CONSTRUCTOR ======================================== \\
@@ -174,7 +173,7 @@ export class FreeForAll extends GameMode {
   }
 
   override onTick(_tick: number): void {
-    if (this.ticksLeft > 0) this.ticksLeft--;
+    this.countDownRound();
   }
 
   /**
@@ -215,7 +214,6 @@ export class FreeForAll extends GameMode {
     // A tie at the top is a draw, exactly as `checkWinCondition` says.
     return leader === null || leader.kills === runnerUp ? undefined : leader.entityId;
   }
-
 
   override getScoreboardColumns(): ColumnDef[] {
     return [COL_SCORE, COL_KILLS, COL_DEATHS, COL_KD, COL_ACC, COL_BEST];
@@ -261,7 +259,6 @@ export class FreeForAll extends GameMode {
     }
     return { leader, runnerUp };
   }
-
 
   private result(
     winner: { team: ScoreTeam; entityId: number } | 'DRAW',

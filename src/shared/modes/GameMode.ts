@@ -296,6 +296,20 @@ export abstract class GameMode {
    */
   readonly roundEndSeconds: number = 4;
 
+  /**
+   * Ticks left in this mode's own round clock (backlog #25).
+   *
+   * **The second of the two match clocks.** `MatchFlow` counts `ticksRemaining` down — that is
+   * what the HUD shows and what the snapshot header replicates — and this is the one
+   * `checkWinCondition` reads to decide a match on time. See `ModeDeps.roundSecondsOverride`
+   * for why they are two and why a harness cannot shorten one without the other.
+   *
+   * Here rather than in each mode because all six declared it privately and all six ran the
+   * same decrement line in their own `onTick`. `protected` rather than private: every subclass
+   * seeds it from its own config in `onRoundStart` and reads it in `checkWinCondition`.
+   */
+  protected ticksLeft = 0;
+
   protected readonly deps: ModeDeps;
   //#endregion
 
@@ -416,6 +430,17 @@ export abstract class GameMode {
    * How long this mode's round runs, in ticks. The authored length unless a harness said
    * otherwise. See `ModeDeps.roundSecondsOverride` for why both clocks read this.
    */
+  /**
+   * Run the mode's own round clock down by one tick, never below zero.
+   *
+   * One line, and it was written out six times — once in every mode's `onTick`. A mode that
+   * forgot it would have a clock that never reached zero, which reads as a match that will not
+   * end rather than as a missing line.
+   */
+  protected countDownRound(): void {
+    if (this.ticksLeft > 0) this.ticksLeft--;
+  }
+
   protected roundTicks(authoredSeconds: number): number {
     const override = this.deps.roundSecondsOverride;
     const seconds = override !== undefined && override > 0 ? override : authoredSeconds;

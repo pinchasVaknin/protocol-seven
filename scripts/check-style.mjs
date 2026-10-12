@@ -246,6 +246,11 @@ const FINISHED = {
     'src/shared/modes/MatchOutcome.ts',
     'src/shared/modes/SpectatorTarget.ts',
   ],
+  A15: [
+    'src/shared/modes/SearchAndDestroy.ts',
+    'src/shared/modes/MatchFlow.ts',
+    'src/shared/modes/ModeRegistry.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

@@ -1,34 +1,3 @@
-import type { Combatant } from '../ai/Combatant';
-import { opposingTeam, type BotTeam } from '../ai/Combatant';
-import {
-  makeObjectiveTarget,
-  type MutableObjectiveTarget,
-  type ObjectiveProvider,
-  type ObjectiveTarget,
-} from '../ai/ObjectiveIntent';
-import type { ScoreTeam } from '../combat/ScoreSystem';
-import { EV } from '../core/Events';
-import { DT } from '../core/Loop';
-import {
-  COL_ACC,
-  COL_DEATHS,
-  COL_KD,
-  COL_KILLS,
-  COL_SCORE,
-  GameMode,
-  type BombInfo,
-  type MutableBombInfo,
-  type ColumnDef,
-  type Entity,
-  type GameModeId,
-  type HeaderSlot,
-  type KillEvent,
-  type MatchResult,
-  type ModeDeps,
-  type RoundResult,
-} from './GameMode';
-import { ObjectiveZone } from './ObjectiveZone';
-
 /**
  * Search & Destroy (brief S6.2): one life, plant or defuse, best of nine, sides swap at five.
  *
@@ -62,6 +31,42 @@ import { ObjectiveZone } from './ObjectiveZone';
  * rather than a second AI.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { Combatant } from '../ai/Combatant';
+import { opposingTeam, type BotTeam } from '../ai/Combatant';
+import {
+  makeObjectiveTarget,
+  type MutableObjectiveTarget,
+  type ObjectiveProvider,
+  type ObjectiveTarget,
+} from '../ai/ObjectiveIntent';
+import type { ScoreTeam } from '../combat/ScoreSystem';
+import { EV } from '../core/Events';
+import { DT } from '../core/Loop';
+import {
+  COL_ACC,
+  COL_DEATHS,
+  COL_KD,
+  COL_KILLS,
+  COL_SCORE,
+  GameMode,
+  type BombInfo,
+  type MutableBombInfo,
+  type ColumnDef,
+  type Entity,
+  type GameModeId,
+  type HeaderSlot,
+  type KillEvent,
+  type MatchResult,
+  type ModeDeps,
+  type RoundResult,
+} from './GameMode';
+import { ObjectiveZone } from './ObjectiveZone';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface SearchDestroyConfig {
   /** Rounds a side must win. Best of nine. */
   readonly roundsToWin: number;
@@ -106,6 +111,11 @@ export interface SearchDestroyConfig {
   readonly cautionScale: number;
 }
 
+export type BombState = 'CARRIED' | 'PLANTED' | 'DEFUSED' | 'EXPLODED';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const SND_CONFIG: SearchDestroyConfig = {
   // Best of three: first side to two rounds takes the match (M7 playtest). Sides change
   // after round one, so in a two-round match each side attacks once.
@@ -152,19 +162,28 @@ export const SND_SKIRMISH_CONFIG: SearchDestroyConfig = {
   roundsToWin: 3,
   swapAfterRound: 2,
 };
+//#endregion
 
-export type BombState = 'CARRIED' | 'PLANTED' | 'DEFUSED' | 'EXPLODED';
-
+// =================================== CLASS SearchAndDestroy =================================== \\
+//#region Class SearchAndDestroy
 export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   override readonly id: GameModeId = 'SND';
+
   override readonly name = 'SEARCH & DESTROY';
 
   override readonly roundsToWin: number;
+
   override readonly swapSidesAfterRound: number | null;
+
   override readonly livesPerRound = 1;
+
   override readonly roundSeconds: number;
+
   /** No running score bar: the thing being counted is rounds. */
   override readonly scoreLimit = 0;
+
   /**
    * A decided S&D round is held for a beat and no longer (post-M8 playtest).
    *
@@ -178,29 +197,14 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
   override readonly roundEndSeconds = 1.5;
 
   readonly sites: ObjectiveZone[] = [];
-  readonly config: SearchDestroyConfig;
 
-  /**
-   * F10, and this is the report's own example: *"where to take the bomb"*.
-   *
-   * The sites are named from the map's own objectives, so the letters in the brief are the
-   * letters on the `SITE A` banner the objective HUD puts up when the carrier stands in one.
-   *
-   * **Both sides in one sentence, deliberately.** The brief is a property of the mode and the
-   * mode does not know which seat is reading it — and more usefully, the two halves of Search &
-   * Destroy are only legible together: a defender who is not told the attackers are carrying a
-   * bomb to one of two named places does not know what they are defending. Which side *you* are
-   * on is already said continuously by the objective banner and the alive strip; this says what
-   * the round is.
-   */
-  override get brief(): string {
-    const where = this.sites.map((s) => s.label).join(' OR ');
-    return `ONE LIFE · ATTACKERS PLANT THE BOMB AT ${where} · DEFENDERS DEFUSE IT`;
-  }
+  readonly config: SearchDestroyConfig;
 
   /** Which side is attacking this round. Flips with the side swap. */
   attackers: BotTeam = 'B';
+
   bomb: BombState = 'CARRIED';
+
   /** The site the bomb is on, once planted. */
   plantedSite: ObjectiveZone | null = null;
 
@@ -213,6 +217,7 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
    * about, which is the whole point of the mode.
    */
   carrierId = -1;
+
   /**
    * Which entities must ask before they pick the bomb up (post-M8 playtest).
    *
@@ -229,22 +234,31 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
    * learning what a human is.
    */
   manualPickup: (entityId: number) => boolean = () => false;
+
   /** Where the bomb is lying, when nobody is carrying it. */
   bombX = 0;
+
   bombY = 0;
+
   bombZ = 0;
+
   bombTimer = 0;
+
   /** 0..1 progress on the interaction currently running, for the HUD ring. */
   interactFraction = 0;
+
   /** Who is doing it, so an interrupted plant does not resume under somebody else. */
   interactEntity = -1;
+
   private interactIsDefuse = false;
 
-  private ticksLeft = 0;
   /** Ticks left of the opening window in which only a key press takes the bomb. */
   private graceTicks = 0;
+
   private roundOutcome: RoundResult | null = null;
+
   private roundIndex = 1;
+
   private readonly scratch: MutableObjectiveTarget = makeObjectiveTarget();
 
   /** The one object `bombInfo` returns. Mutated in place; never replaced. See S4.7. */
@@ -262,9 +276,14 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
   };
 
   private readonly evPlanted = { siteId: '', label: '', entityId: 0, x: 0, y: 0, z: 0 };
-  private readonly evDefused = { siteId: '', label: '', entityId: 0 };
-  private readonly evExploded = { siteId: '', label: '', x: 0, y: 0, z: 0 };
 
+  private readonly evDefused = { siteId: '', label: '', entityId: 0 };
+
+  private readonly evExploded = { siteId: '', label: '', x: 0, y: 0, z: 0 };
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: ModeDeps, config: SearchDestroyConfig = SND_CONFIG) {
     super(deps);
     this.config = config;
@@ -277,6 +296,27 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
     if (this.sites.length === 0) {
       throw new Error(`Search & Destroy needs bombsite objectives; "${deps.mapDef.id}" authors none.`);
     }
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  /**
+   * F10, and this is the report's own example: *"where to take the bomb"*.
+   *
+   * The sites are named from the map's own objectives, so the letters in the brief are the
+   * letters on the `SITE A` banner the objective HUD puts up when the carrier stands in one.
+   *
+   * **Both sides in one sentence, deliberately.** The brief is a property of the mode and the
+   * mode does not know which seat is reading it — and more usefully, the two halves of Search &
+   * Destroy are only legible together: a defender who is not told the attackers are carrying a
+   * bomb to one of two named places does not know what they are defending. Which side *you* are
+   * on is already said continuously by the objective banner and the alive strip; this says what
+   * the round is.
+   */
+  override get brief(): string {
+    const where = this.sites.map((s) => s.label).join(' OR ');
+    return `ONE LIFE · ATTACKERS PLANT THE BOMB AT ${where} · DEFENDERS DEFUSE IT`;
   }
 
   get defenders(): BotTeam {
@@ -312,7 +352,7 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
   }
 
   override onTick(_tick: number): void {
-    if (this.ticksLeft > 0) this.ticksLeft--;
+    this.countDownRound();
     if (this.graceTicks > 0) this.graceTicks--;
     if (this.roundOutcome !== null) return;
 
@@ -505,50 +545,9 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
 
   assign(bot: Combatant): ObjectiveTarget | null {
     const attacking = bot.team === this.attackers;
-
-    if (this.bomb === 'PLANTED') {
-      const site = this.plantedSite;
-      if (site === null) return null;
-      if (attacking) {
-        // Deliberately *below* `OBJECTIVE_IGNORE_BELOW`: the attackers who just planted should
-        // hold angles around the site and fight normally, not stand on the bomb. Pinning them
-        // to it made them a lethal blob that no defuse ever survived — five rounds out of five.
-        return this.targetOf(site, 'defend', 0.45);
-      }
-      // Exactly one defuser at a time, and it is the closest living defender. Every defender
-      // walking onto a held bomb one at a time is five separate one-versus-four fights, which
-      // is how the first balanced run went 0-5 the other way. The rest are told to converge at
-      // a priority low enough that they clear the site first.
-      return this.targetOf(site, 'defuse', bot.entityId === this.nearestDefuserId(site) ? 0.95 : 0.4);
-    }
-
-    if (attacking) {
-      // Somebody has to fetch the bomb before anybody can plant it. The nearest attacker goes
-      // for it; the rest push the site they will need once it is in hand.
-      if (this.carrierId < 0) {
-        if (bot.entityId === this.nearestToBombId()) return this.bombTarget();
-        const site = this.nearestSite(bot);
-        return site === null ? null : this.targetOf(site, 'plant', 0.6);
-      }
-      if (bot.entityId !== this.carrierId) {
-        // Escort: head for the site the carrier is heading for, but do not break off a fight.
-        const site = this.nearestSite(bot);
-        return site === null ? null : this.targetOf(site, 'defend', 0.45);
-      }
-      const site = this.nearestSite(bot);
-      return site === null ? null : this.targetOf(site, 'plant', 0.9);
-    }
-
-    // Defending, pre-plant: split across the sites so one is never left open. The bot's own
-    // id picks which, so the split is stable rather than re-rolled every decision.
-    //
-    // Priority is deliberately *below* `OBJECTIVE_IGNORE_BELOW`. At 0.55 the defenders stood
-    // on the site centres and won four rounds out of five without the bomb ever going down —
-    // holding the exact square metre the attackers have to walk onto is an unbeatable angle,
-    // and it is not how the site is actually defended. Below the threshold they drift toward
-    // their site when nothing is happening and otherwise fight and take cover normally.
-    const site = this.sites[bot.entityId % this.sites.length];
-    return site === undefined ? null : this.targetOf(site, 'defend', 0.45);
+    if (this.bomb === 'PLANTED') return this.assignPostPlant(bot, attacking);
+    if (attacking) return this.assignAttacker(bot);
+    return this.assignDefender(bot);
   }
 
   /**
@@ -566,6 +565,98 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
     }
   }
 
+  /**
+   * Take the bomb, if this combatant is an attacker standing on it. Returns whether they did.
+   *
+   * Public because the player's route in is a held key rather than proximity: `Match` calls
+   * it from the Use branch. The eligibility test lives here, once, so the manual and the
+   * automatic paths cannot develop different ideas of what "standing on the bomb" means.
+   */
+  tryPickup(c: Combatant): boolean {
+    if (!this.canPickup(c)) return false;
+    this.carrierId = c.entityId;
+    return true;
+  }
+
+  /**
+   * Would `tryPickup` succeed? For the HUD prompt, which has to know without doing it.
+   *
+   * Deliberately the same predicate rather than a re-derivation: a prompt that appears where
+   * the interaction does not work — or fails to appear where it does — is worse than none,
+   * and that is exactly what two copies of a proximity test drift into.
+   */
+  tryPickupPrompt(c: Combatant): boolean {
+    return this.canPickup(c);
+  }
+
+  /**
+   * Who is planting or defusing right now, or -1 (post-M8).
+   *
+   * Read by the HUD so the "hold to defuse" prompt is suppressed for everybody except the
+   * person actually doing it, and by `MatchObjectives` so the bomb shows somebody working on
+   * it. Both were previously reconstructing it from `interactEntity` plus a fraction test,
+   * which is the same question asked two ways.
+   */
+  get interactingEntity(): number {
+    return this.interactFraction > 0 ? this.interactEntity : -1;
+  }
+
+  /** True while the interaction under way is a defuse rather than a plant. */
+  get interactIsDefusing(): boolean {
+    return this.interactIsDefuse;
+  }
+
+  /** True when this combatant is the one holding the bomb. Read by the HUD and the bots. */
+  isCarrier(entityId: number): boolean {
+    return this.carrierId === entityId;
+  }
+
+  /** How many of a side are still standing. The alive-count HUD reads this (M7 playtest). */
+  aliveCount(team: BotTeam): number {
+    let n = 0;
+    for (const c of this.deps.roster) if (c.team === team && c.participating) n++;
+    return n;
+  }
+
+  /**
+   * Start (or continue) an interaction.
+   *
+   * Called every tactical decision while a bot stands on its target, and by `Match` for the
+   * player's hold. If somebody else is already on it, the newcomer is ignored rather than
+   * stealing it — two attackers cannot plant twice as fast.
+   */
+  beginInteract(actor: Combatant, defuse: boolean): void {
+    if (this.interactEntity === actor.entityId && this.interactIsDefuse === defuse) return;
+    if (this.interactEntity >= 0) {
+      const current = this.combatant(this.interactEntity);
+      if (current !== undefined && current.participating) return;
+    }
+    this.interactEntity = actor.entityId;
+    this.interactIsDefuse = defuse;
+    this.interactFraction = 0;
+  }
+
+  cancelInteract(): void {
+    this.interactEntity = -1;
+    this.interactFraction = 0;
+    this.interactIsDefuse = false;
+  }
+
+  /** The site a combatant is standing in, or null. Public: the HUD prompts from it. */
+  siteContaining(c: Combatant): ObjectiveZone | null {
+    for (const site of this.sites) {
+      const p = site.def.position;
+      const dx = c.px - p.x;
+      const dz = c.pz - p.z;
+      const r = Math.max(site.def.radius, this.config.interactRadius);
+      if (dx * dx + dz * dz <= r * r && Math.abs(c.py - p.y) < 3) return site;
+    }
+    return null;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * Put the bomb back on the ground at the attackers' base — the point the *map* names.
    *
@@ -666,30 +757,6 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
     this.bombZ = carrier.pz;
   }
 
-  /**
-   * Take the bomb, if this combatant is an attacker standing on it. Returns whether they did.
-   *
-   * Public because the player's route in is a held key rather than proximity: `Match` calls
-   * it from the Use branch. The eligibility test lives here, once, so the manual and the
-   * automatic paths cannot develop different ideas of what "standing on the bomb" means.
-   */
-  tryPickup(c: Combatant): boolean {
-    if (!this.canPickup(c)) return false;
-    this.carrierId = c.entityId;
-    return true;
-  }
-
-  /**
-   * Would `tryPickup` succeed? For the HUD prompt, which has to know without doing it.
-   *
-   * Deliberately the same predicate rather than a re-derivation: a prompt that appears where
-   * the interaction does not work — or fails to appear where it does — is worse than none,
-   * and that is exactly what two copies of a proximity test drift into.
-   */
-  tryPickupPrompt(c: Combatant): boolean {
-    return this.canPickup(c);
-  }
-
   private canPickup(c: Combatant): boolean {
     if (this.bomb !== 'CARRIED' || this.carrierId >= 0) return false;
     if (c.team !== this.attackers || !c.participating) return false;
@@ -698,35 +765,6 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
     const dz = c.pz - this.bombZ;
     if (dx * dx + dz * dz > r2) return false;
     return Math.abs(c.py - this.bombY) <= 2.5;
-  }
-
-  /**
-   * Who is planting or defusing right now, or -1 (post-M8).
-   *
-   * Read by the HUD so the "hold to defuse" prompt is suppressed for everybody except the
-   * person actually doing it, and by `MatchObjectives` so the bomb shows somebody working on
-   * it. Both were previously reconstructing it from `interactEntity` plus a fraction test,
-   * which is the same question asked two ways.
-   */
-  get interactingEntity(): number {
-    return this.interactFraction > 0 ? this.interactEntity : -1;
-  }
-
-  /** True while the interaction under way is a defuse rather than a plant. */
-  get interactIsDefusing(): boolean {
-    return this.interactIsDefuse;
-  }
-
-  /** True when this combatant is the one holding the bomb. Read by the HUD and the bots. */
-  isCarrier(entityId: number): boolean {
-    return this.carrierId === entityId;
-  }
-
-  /** How many of a side are still standing. The alive-count HUD reads this (M7 playtest). */
-  aliveCount(team: BotTeam): number {
-    let n = 0;
-    for (const c of this.deps.roster) if (c.team === team && c.participating) n++;
-    return n;
   }
 
   // -- interactions -----------------------------------------------------------
@@ -798,42 +836,6 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
     this.roundOutcome = this.round(this.defenders, 'Bomb defused');
   }
 
-  /**
-   * Start (or continue) an interaction.
-   *
-   * Called every tactical decision while a bot stands on its target, and by `Match` for the
-   * player's hold. If somebody else is already on it, the newcomer is ignored rather than
-   * stealing it — two attackers cannot plant twice as fast.
-   */
-  beginInteract(actor: Combatant, defuse: boolean): void {
-    if (this.interactEntity === actor.entityId && this.interactIsDefuse === defuse) return;
-    if (this.interactEntity >= 0) {
-      const current = this.combatant(this.interactEntity);
-      if (current !== undefined && current.participating) return;
-    }
-    this.interactEntity = actor.entityId;
-    this.interactIsDefuse = defuse;
-    this.interactFraction = 0;
-  }
-
-  cancelInteract(): void {
-    this.interactEntity = -1;
-    this.interactFraction = 0;
-    this.interactIsDefuse = false;
-  }
-
-  /** The site a combatant is standing in, or null. Public: the HUD prompts from it. */
-  siteContaining(c: Combatant): ObjectiveZone | null {
-    for (const site of this.sites) {
-      const p = site.def.position;
-      const dx = c.px - p.x;
-      const dz = c.pz - p.z;
-      const r = Math.max(site.def.radius, this.config.interactRadius);
-      if (dx * dx + dz * dz <= r * r && Math.abs(c.py - p.y) < 3) return site;
-    }
-    return null;
-  }
-
   // -- internals --------------------------------------------------------------
 
   private explode(): void {
@@ -852,31 +854,63 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
   }
 
   private anyAlive(team: BotTeam): boolean {
-    for (const c of this.deps.roster) {
-      if (c.team === team && c.participating) return true;
-    }
-    return false;
+    return this.aliveCount(team) > 0;
   }
 
   /**
-   * The living defender closest to the planted bomb — the one that actually goes for it.
+   * The bomb is down: the attackers hold the ground around it, one defender goes for it.
    *
-   * Recomputed per call rather than latched, so the job passes to somebody else the moment the
-   * current defuser dies, which is the behaviour that makes a post-plant feel like a siege
-   * rather than a queue.
+   * Both priorities are deliberately below `OBJECTIVE_IGNORE_BELOW` except the one defuser's.
+   * Pinning the attackers to the bomb made them a lethal blob that no defuse ever survived —
+   * five rounds out of five — and sending every defender onto a held bomb one at a time is
+   * five separate one-versus-four fights, which is how the first balanced run went 0-5 the
+   * other way. So the attackers fight normally and the rest of the defenders clear the site
+   * first.
    */
+  private assignPostPlant(bot: Combatant, attacking: boolean): ObjectiveTarget | null {
+    const site = this.plantedSite;
+    if (site === null) return null;
+    if (attacking) return this.targetOf(site, 'defend', 0.45);
+    const defusing = bot.entityId === this.nearestDefuserId(site);
+    return this.targetOf(site, 'defuse', defusing ? 0.95 : 0.4);
+  }
+
+  /**
+   * Pre-plant, attacking: fetch the bomb, escort it, or plant it.
+   *
+   * Somebody has to fetch it before anybody can plant it, so the nearest attacker goes for it
+   * and the rest push the site they will need once it is in hand. The escort's priority is low
+   * enough not to break off a fight; the carrier's is high enough to break off anything.
+   */
+  private assignAttacker(bot: Combatant): ObjectiveTarget | null {
+    if (this.carrierId < 0 && bot.entityId === this.nearestToBombId()) return this.bombTarget();
+
+    const site = this.nearestSite(bot);
+    if (site === null) return null;
+    if (this.carrierId < 0) return this.targetOf(site, 'plant', 0.6);
+    if (bot.entityId !== this.carrierId) return this.targetOf(site, 'defend', 0.45);
+    return this.targetOf(site, 'plant', 0.9);
+  }
+
+  /**
+   * Pre-plant, defending: split across the sites so one is never left open.
+   *
+   * The bot's own id picks which, so the split is stable rather than re-rolled every decision.
+   *
+   * Priority is deliberately *below* `OBJECTIVE_IGNORE_BELOW`. At 0.55 the defenders stood on
+   * the site centres and won four rounds out of five without the bomb ever going down —
+   * holding the exact square metre the attackers have to walk onto is an unbeatable angle, and
+   * it is not how the site is actually defended. Below the threshold they drift toward their
+   * site when nothing is happening and otherwise fight and take cover normally.
+   */
+  private assignDefender(bot: Combatant): ObjectiveTarget | null {
+    const site = this.sites[bot.entityId % this.sites.length];
+    return site === undefined ? null : this.targetOf(site, 'defend', 0.45);
+  }
+
   /** The living attacker closest to the loose bomb — the one who goes and gets it. */
   private nearestToBombId(): number {
-    let bestId = -1;
-    let bestD = Infinity;
-    for (const c of this.deps.roster) {
-      if (c.team !== this.attackers || !c.participating) continue;
-      const d = Math.hypot(c.px - this.bombX, c.pz - this.bombZ);
-      if (d >= bestD) continue;
-      bestD = d;
-      bestId = c.entityId;
-    }
-    return bestId;
+    return this.nearestOnTeamTo(this.attackers, this.bombX, this.bombZ);
   }
 
   /** The loose bomb, as something to walk to. */
@@ -894,13 +928,33 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
     return t;
   }
 
+  /**
+   * The living defender closest to the planted bomb — the one that actually goes for it.
+   *
+   * Recomputed per call rather than latched, so the job passes to somebody else the moment the
+   * current defuser dies, which is the behaviour that makes a post-plant feel like a siege
+   * rather than a queue.
+   */
   private nearestDefuserId(site: ObjectiveZone): number {
     const p = site.def.position;
+    return this.nearestOnTeamTo(this.defenders, p.x, p.z);
+  }
+
+  /**
+   * The living member of `team` closest to a point in plan, or -1.
+   *
+   * Recomputed per call rather than latched, so the job passes to somebody else the moment the
+   * current holder dies — which is what makes a post-plant feel like a siege rather than a
+   * queue, and what makes the bomb fetch pass on when the nearest attacker is shot.
+   *
+   * Strictly closer wins, so the earliest body in roster order keeps a tie.
+   */
+  private nearestOnTeamTo(team: BotTeam, x: number, z: number): number {
     let bestId = -1;
     let bestD = Infinity;
     for (const c of this.deps.roster) {
-      if (c.team !== this.defenders || !c.participating) continue;
-      const d = Math.hypot(c.px - p.x, c.pz - p.z);
+      if (c.team !== team || !c.participating) continue;
+      const d = Math.hypot(c.px - x, c.pz - z);
       if (d >= bestD) continue;
       bestD = d;
       bestId = c.entityId;
@@ -942,4 +996,6 @@ export class SearchAndDestroy extends GameMode implements ObjectiveProvider {
   private round(winner: BotTeam, reason: string): RoundResult {
     return { kind: 'round', round: this.roundIndex, winner, reason };
   }
+  //#endregion
 }
+//#endregion

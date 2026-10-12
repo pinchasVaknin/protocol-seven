@@ -1,14 +1,3 @@
-import type { Combatant } from '../ai/Combatant';
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
-import { Killfeed, type CombatantDirectory } from '../combat/Killfeed';
-import { LocalIdentity } from '../combat/LocalIdentity';
-import type { ScoreSystem, ScoreTeam } from '../combat/ScoreSystem';
-import { EV, type AnnouncerCue, type GameBus } from '../core/Events';
-import { DT } from '../core/Loop';
-import type { GameMode, KillEvent, MatchResult, RoundResult } from './GameMode';
-import { wonBy } from './MatchOutcome';
-import { Disposable } from '../core/Disposable';
-
 /**
  * Match flow: rounds, the clock, and who is allowed to come back (brief S6.2).
  *
@@ -40,6 +29,22 @@ import { Disposable } from '../core/Disposable';
  * disagree about who shot whom.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { Combatant } from '../ai/Combatant';
+import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import { Killfeed, type CombatantDirectory } from '../combat/Killfeed';
+import { LocalIdentity } from '../combat/LocalIdentity';
+import type { ScoreSystem, ScoreTeam } from '../combat/ScoreSystem';
+import { EV, type AnnouncerCue, type GameBus, type GameEvents } from '../core/Events';
+import { DT } from '../core/Loop';
+import type { GameMode, KillEvent, MatchResult, RoundResult } from './GameMode';
+import { wonBy } from './MatchOutcome';
+import { Disposable } from '../core/Disposable';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type MatchPhase = 'WARMUP' | 'LIVE' | 'ROUND_END' | 'MATCH_END';
 
 /**
@@ -61,55 +66,6 @@ export interface ReplicatedMatchState {
   /** The server's tick, so a killfeed line is stamped with game time rather than zero. */
   serverTick: number;
 }
-
-/** A zeroed record, for a caller that refills and reuses one per snapshot. */
-export function makeReplicatedMatchState(): ReplicatedMatchState {
-  return {
-    phase: 'WARMUP',
-    secondsRemaining: 0,
-    phaseSeconds: 0,
-    round: 1,
-    scoreA: 0,
-    scoreB: 0,
-    serverTick: 0,
-  };
-}
-
-/**
- * Seconds of "get ready" before the first tick of a **round** counts.
- *
- * Three, unchanged, for every round after the first: the players are already kitted, already
- * where they want to be, and the hold is only there to stop the round starting under somebody
- * still reading the last one's result.
- */
-const WARMUP_SECONDS = 3;
-
-/**
- * Seconds of "get ready" before the first tick of a **match** (M11 Gate B), when the caller
- * names none.
- *
- * Ten rather than three, because this is the window the quick class selector lives in: the
- * player has just been migrated into a map they may not have chosen, holding a class they
- * picked before they knew what mode it was, and three seconds is not long enough to read five
- * options and press a key. It is the only pre-match moment where changing class costs nothing —
- * nobody has fired, so nobody is being denied a fight by the freeze.
- *
- * Round one only. A ten-second hold between every Search & Destroy round would add a minute to
- * a best-of-five for a decision nobody is making at that point.
- *
- * Since M17 C2 every match a player is in passes `matchStartSeconds` — the intro's length on
- * that map in that mode, the return blend and the five-second countdown, from
- * `shared/cinematic/IntroPlan.ts` — and this default is what the audits and the fight behind
- * the menu run on.
- */
-export const DEFAULT_MATCH_START_SECONDS = 10;
-
-/** Remaining-time announcer cues, in seconds. Fired once each, highest first. */
-const TIME_CUES: readonly Readonly<{ at: number; cue: AnnouncerCue }>[] = [
-  { at: 120, cue: 'twoMinutes' },
-  { at: 60, cue: 'oneMinute' },
-  { at: 30, cue: 'thirtySeconds' },
-];
 
 export interface MatchFlowDeps {
   readonly bus: GameBus;
@@ -152,6 +108,45 @@ export interface MatchFlowDeps {
    */
   readonly matchStartSeconds?: number;
 }
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * Seconds of "get ready" before the first tick of a **round** counts.
+ *
+ * Three, unchanged, for every round after the first: the players are already kitted, already
+ * where they want to be, and the hold is only there to stop the round starting under somebody
+ * still reading the last one's result.
+ */
+const WARMUP_SECONDS = 3;
+
+/**
+ * Seconds of "get ready" before the first tick of a **match** (M11 Gate B), when the caller
+ * names none.
+ *
+ * Ten rather than three, because this is the window the quick class selector lives in: the
+ * player has just been migrated into a map they may not have chosen, holding a class they
+ * picked before they knew what mode it was, and three seconds is not long enough to read five
+ * options and press a key. It is the only pre-match moment where changing class costs nothing —
+ * nobody has fired, so nobody is being denied a fight by the freeze.
+ *
+ * Round one only. A ten-second hold between every Search & Destroy round would add a minute to
+ * a best-of-five for a decision nobody is making at that point.
+ *
+ * Since M17 C2 every match a player is in passes `matchStartSeconds` — the intro's length on
+ * that map in that mode, the return blend and the five-second countdown, from
+ * `shared/cinematic/IntroPlan.ts` — and this default is what the audits and the fight behind
+ * the menu run on.
+ */
+export const DEFAULT_MATCH_START_SECONDS = 10;
+
+/** Remaining-time announcer cues, in seconds. Fired once each, highest first. */
+const TIME_CUES: readonly Readonly<{ at: number; cue: AnnouncerCue }>[] = [
+  { at: 120, cue: 'twoMinutes' },
+  { at: 60, cue: 'oneMinute' },
+  { at: 30, cue: 'thirtySeconds' },
+];
 
 const evMatchStarted = { modeId: '', modeName: '', mapId: '', mapName: '', roundsToWin: 1 };
 const evRoundStarted = { round: 1, roundsToWin: 1 };
@@ -166,26 +161,59 @@ const evMatchEnded = {
 const evScore = { teamA: 0, teamB: 0, limit: 0 };
 const evSwapped = { afterRound: 0 };
 const evCue = { cue: 'fight' as AnnouncerCue };
+//#endregion
 
+// ====================================== CLASS MatchFlow ======================================= \\
+//#region Class MatchFlow
 export class MatchFlow extends Disposable {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly killfeed: Killfeed;
 
   private readonly deps: MatchFlowDeps;
+
   /** Respawns already used this round, by entity id. Only read when lives are finite. */
   private readonly livesUsed = new Map<number, number>();
 
   private phase: MatchPhase = 'WARMUP';
+
   private roundIndex = 1;
+
   private ticksRemaining = 0;
+
   private phaseTicks = 0;
+
   private tick = 0;
+
   private cuesFired = 0;
+
   private swapped = false;
+
   private outcome: MatchResult | null = null;
+
   private lastLeader: ScoreTeam | 'DRAW' = 'DRAW';
+
   private lastScoreA = -1;
+
   private lastScoreB = -1;
 
+  /** See `MatchFlowDeps.authoritative`. */
+  private readonly authoritative: boolean;
+
+  /**
+   * The replicated team scores, for a client whose own mode is not scoring.
+   *
+   * `mode.teamScore` is the right answer everywhere the mode is actually running and is
+   * always zero on a replicated client, so the summary screen and the end-of-match banner
+   * read this instead. -1 means "nothing replicated", which is what single-player reports.
+   */
+  private replicatedScoreA = -1;
+
+  private replicatedScoreB = -1;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MatchFlowDeps) {
     super();
     this.deps = deps;
@@ -193,10 +221,10 @@ export class MatchFlow extends Disposable {
     this.killfeed = new Killfeed(deps.bus, deps.roster, deps.identity ?? new LocalIdentity());
     this.subscribe();
   }
+  //#endregion
 
-  /** See `MatchFlowDeps.authoritative`. */
-  private readonly authoritative: boolean;
-
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Point the killfeed at a different name source. See `CombatantDirectory`. */
   setKillfeedDirectory(directory: CombatantDirectory): void {
     this.killfeed.setDirectory(directory);
@@ -212,29 +240,6 @@ export class MatchFlow extends Disposable {
 
   get secondsRemaining(): number {
     return this.ticksRemaining * DT;
-  }
-
-  /**
-   * How long a decided round is held before the next one, seconds.
-   *
-   * Asked of the mode (post-M8) rather than being a constant here. Search & Destroy ends on a
-   * detonation or a defuse and wants to move on quickly; a Domination round does not exist.
-   */
-  private get roundEndSeconds(): number {
-    return this.deps.mode.roundEndSeconds;
-  }
-
-  /**
-   * How long *this* warm-up is, seconds.
-   *
-   * One accessor rather than the ternary repeated at each use, for the reason `roundSeconds`
-   * gives right above: two independent reads of the same rule is how the countdown ends up
-   * being ten seconds long and three seconds' worth of banner, or the other way round. It is
-   * keyed on `roundIndex`, which the replicated path assigns *before* it back-computes
-   * `phaseTicks` — so a client and the server always agree about which of the two applies.
-   */
-  private get warmupSeconds(): number {
-    return this.roundIndex <= 1 ? (this.deps.matchStartSeconds ?? DEFAULT_MATCH_START_SECONDS) : WARMUP_SECONDS;
   }
 
   /**
@@ -325,42 +330,6 @@ export class MatchFlow extends Disposable {
     if (phase === 'MATCH_END') this.adoptReplicatedEnd(scoreA, scoreB);
   }
 
-  /**
-   * The server says the match is over. Produce the result the client's own end-of-match path
-   * needs, and announce it.
-   *
-   * The winner is derived from the replicated score rather than replicated on its own: the
-   * two cannot disagree, because they are the same number, and a `winner` byte on the wire
-   * would be a second fact to keep in step with the first. The winning *individual*, where the
-   * mode crowns one, comes from the mode's own scan of the replicated rows (M13 Phase A) — the
-   * summary that carries the server's answer lands after this, and the announcer has already
-   * spoken by then.
-   */
-  private adoptReplicatedEnd(scoreA: number, scoreB: number): void {
-    if (this.outcome !== null) return;
-    const winner: ScoreTeam | 'DRAW' = scoreA === scoreB ? 'DRAW' : scoreA > scoreB ? 'A' : 'B';
-    this.endMatch({
-      kind: 'match',
-      winner,
-      winnerEntityId: winner === 'DRAW' ? undefined : this.deps.mode.individualWinner(),
-      reason: 'Match over',
-      scoreA,
-      scoreB,
-      roundsA: this.deps.score.team('A').rounds,
-      roundsB: this.deps.score.team('B').rounds,
-    });
-  }
-
-  /**
-   * The replicated team scores, for a client whose own mode is not scoring.
-   *
-   * `mode.teamScore` is the right answer everywhere the mode is actually running and is
-   * always zero on a replicated client, so the summary screen and the end-of-match banner
-   * read this instead. -1 means "nothing replicated", which is what single-player reports.
-   */
-  private replicatedScoreA = -1;
-  private replicatedScoreB = -1;
-
   /** Team score from whichever source is authoritative for this client. */
   teamScore(team: ScoreTeam): number {
     if (this.authoritative) return this.deps.mode.teamScore(team);
@@ -382,19 +351,6 @@ export class MatchFlow extends Disposable {
 
   get sidesSwapped(): boolean {
     return this.swapped;
-  }
-
-  /**
-   * How long a round is. The mode's answer, unless a harness said otherwise.
-   *
-   * **One accessor rather than two call sites reading the same field**, so the override cannot
-   * apply to the first round and not to subsequent ones — which is exactly the bug two
-   * independent reads would produce in Search & Destroy, presenting as "the soak hangs after
-   * round one".
-   */
-  private roundSeconds(): number {
-    const override = this.deps.roundSecondsOverride;
-    return override !== undefined && override > 0 ? override : this.deps.mode.roundSeconds;
   }
 
   /** Begin the match. Announces itself, then counts the warm-up down. */
@@ -516,6 +472,71 @@ export class MatchFlow extends Disposable {
     evSwapped.afterRound = this.roundIndex;
     this.deps.bus.emit(EV.SidesSwapped, evSwapped);
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * How long a decided round is held before the next one, seconds.
+   *
+   * Asked of the mode (post-M8) rather than being a constant here. Search & Destroy ends on a
+   * detonation or a defuse and wants to move on quickly; a Domination round does not exist.
+   */
+  private get roundEndSeconds(): number {
+    return this.deps.mode.roundEndSeconds;
+  }
+
+  /**
+   * How long *this* warm-up is, seconds.
+   *
+   * One accessor rather than the ternary repeated at each use, for the reason `roundSeconds`
+   * gives right above: two independent reads of the same rule is how the countdown ends up
+   * being ten seconds long and three seconds' worth of banner, or the other way round. It is
+   * keyed on `roundIndex`, which the replicated path assigns *before* it back-computes
+   * `phaseTicks` — so a client and the server always agree about which of the two applies.
+   */
+  private get warmupSeconds(): number {
+    return this.roundIndex <= 1 ? (this.deps.matchStartSeconds ?? DEFAULT_MATCH_START_SECONDS) : WARMUP_SECONDS;
+  }
+
+  /**
+   * The server says the match is over. Produce the result the client's own end-of-match path
+   * needs, and announce it.
+   *
+   * The winner is derived from the replicated score rather than replicated on its own: the
+   * two cannot disagree, because they are the same number, and a `winner` byte on the wire
+   * would be a second fact to keep in step with the first. The winning *individual*, where the
+   * mode crowns one, comes from the mode's own scan of the replicated rows (M13 Phase A) — the
+   * summary that carries the server's answer lands after this, and the announcer has already
+   * spoken by then.
+   */
+  private adoptReplicatedEnd(scoreA: number, scoreB: number): void {
+    if (this.outcome !== null) return;
+    const winner: ScoreTeam | 'DRAW' = scoreA === scoreB ? 'DRAW' : scoreA > scoreB ? 'A' : 'B';
+    this.endMatch({
+      kind: 'match',
+      winner,
+      winnerEntityId: winner === 'DRAW' ? undefined : this.deps.mode.individualWinner(),
+      reason: 'Match over',
+      scoreA,
+      scoreB,
+      roundsA: this.deps.score.team('A').rounds,
+      roundsB: this.deps.score.team('B').rounds,
+    });
+  }
+
+  /**
+   * How long a round is. The mode's answer, unless a harness said otherwise.
+   *
+   * **One accessor rather than two call sites reading the same field**, so the override cannot
+   * apply to the first round and not to subsequent ones — which is exactly the bug two
+   * independent reads would produce in Search & Destroy, presenting as "the soak hangs after
+   * round one".
+   */
+  private roundSeconds(): number {
+    const override = this.deps.roundSecondsOverride;
+    return override !== undefined && override > 0 ? override : this.deps.mode.roundSeconds;
+  }
 
   // -- internals -------------------------------------------------------------
 
@@ -630,58 +651,7 @@ export class MatchFlow extends Disposable {
   private subscribe(): void {
     const { bus, mode, roster } = this.deps;
 
-    this.own(
-      bus.on(EV.EntityKilled, (p) => {
-        // Kills only count while the round is live. A round that ended two ticks ago is not
-        // still scoring, and neither is a match that is over.
-        if (this.phase !== 'LIVE') return;
-
-        /**
-         * Scoring is the authority's job; the feed line is everybody's (M10).
-         *
-         * On a replicated client the roster is empty — the bodies are `RemoteActor`s rebuilt
-         * from snapshots and never enter `bots.roster` — so the lookup below misses on every
-         * kill and the old code returned before it ever reached the killfeed. The result was
-         * a networked match with no killfeed at all, which is not a rendering bug and was not
-         * going to be found by looking at the renderer.
-         *
-         * The mode must not run here either, and for a stronger reason than tidiness: the
-         * server has already scored this kill and replicated the total. A client that scored
-         * it again would double every number, then have the replicated score overwrite it a
-         * few milliseconds later.
-         */
-        if (this.authoritative) {
-          const killer = find(roster, p.sourceId);
-          const victim = find(roster, p.targetId);
-          // Nobody this match is tracking: not scored, and not drawn.
-          if (victim === undefined) return;
-
-          const ev: KillEvent = {
-            killerId: p.sourceId,
-            victimId: p.targetId,
-            weaponId: p.weaponId,
-            zone: p.zone,
-            killerTeam: killer?.team ?? null,
-            victimTeam: victim.team,
-            headshot: p.zone === 'head',
-            suicide: p.sourceId === p.targetId || killer === undefined,
-            friendly: killer !== undefined && killer.team === victim.team,
-          };
-          mode.onKill(ev);
-        }
-        /**
-         * On a replicated client the kill is **not** recorded here (M13 Phase B, bug 4.3).
-         *
-         * It was, at zero points, from M10 until M13: the per-player columns were not on the
-         * wire and this was the only way a networked board showed anything. They are now —
-         * `MsgS.Scoreboard` carries the server's rows whole — and a client that also counted
-         * kills for itself would hold two answers and flicker between them. Only the feed is
-         * the client's.
-         */
-
-        this.killfeed.push(p.sourceId, p.targetId, p.weaponId, p.zone, this.tick);
-      }),
-    );
+    this.own(bus.on(EV.EntityKilled, (p) => this.onEntityKilled(p)));
 
     // Spawns reach the mode through the same events everything else does, so a mode that
     // cares (Kill Confirmed's tags, Domination's flag ownership) never needs the roster.
@@ -698,11 +668,92 @@ export class MatchFlow extends Disposable {
       }),
     );
   }
-}
 
+  /**
+   * A kill: scored by the authority, drawn by everybody.
+   *
+   * Kills only count while the round is live. A round that ended two ticks ago is not still
+   * scoring, and neither is a match that is over.
+   */
+  private onEntityKilled(p: GameEvents[typeof EV.EntityKilled]): void {
+    if (this.phase !== 'LIVE') return;
+    if (this.authoritative) this.scoreKill(p);
+
+    /**
+     * On a replicated client the kill is **not** recorded here (M13 Phase B, bug 4.3).
+     *
+     * It was, at zero points, from M10 until M13: the per-player columns were not on the wire
+     * and this was the only way a networked board showed anything. They are now —
+     * `MsgS.Scoreboard` carries the server's rows whole — and a client that also counted kills
+     * for itself would hold two answers and flicker between them. Only the feed is the
+     * client's.
+     */
+    this.killfeed.push(p.sourceId, p.targetId, p.weaponId, p.zone, this.tick);
+  }
+
+  /**
+   * Hand the kill to the mode. The authority's half.
+   *
+   * Scoring is the authority's job; the feed line is everybody's (M10).
+   *
+   * On a replicated client the roster is empty — the bodies are `RemoteActor`s rebuilt from
+   * snapshots and never enter `bots.roster` — so the lookup below misses on every kill, and
+   * the old code returned before it ever reached the killfeed. The result was a networked
+   * match with no killfeed at all, which is not a rendering bug and was not going to be found
+   * by looking at the renderer. That is why the return in here cannot be the one that guards
+   * the feed.
+   *
+   * The mode must not run on a client either, and for a stronger reason than tidiness: the
+   * server has already scored this kill and replicated the total. A client that scored it
+   * again would double every number, then have the replicated score overwrite it a few
+   * milliseconds later.
+   */
+  private scoreKill(p: GameEvents[typeof EV.EntityKilled]): void {
+    const roster = this.deps.roster;
+    const killer = find(roster, p.sourceId);
+    const victim = find(roster, p.targetId);
+    // Nobody this match is tracking: not scored, and not drawn.
+    if (victim === undefined) return;
+
+    const ev: KillEvent = {
+      killerId: p.sourceId,
+      victimId: p.targetId,
+      weaponId: p.weaponId,
+      zone: p.zone,
+      killerTeam: killer?.team ?? null,
+      victimTeam: victim.team,
+      headshot: p.zone === 'head',
+      suicide: p.sourceId === p.targetId || killer === undefined,
+      friendly: killer !== undefined && killer.team === victim.team,
+    };
+    this.deps.mode.onKill(ev);
+  }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** A zeroed record, for a caller that refills and reuses one per snapshot. */
+export function makeReplicatedMatchState(): ReplicatedMatchState {
+  return {
+    phase: 'WARMUP',
+    secondsRemaining: 0,
+    phaseSeconds: 0,
+    round: 1,
+    scoreA: 0,
+    scoreB: 0,
+    serverTick: 0,
+  };
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function find(roster: readonly Combatant[], entityId: number): Combatant | undefined {
   for (const c of roster) {
     if (c.entityId === entityId) return c;
   }
   return undefined;
 }
+//#endregion

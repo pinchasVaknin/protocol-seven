@@ -118,7 +118,7 @@ export class KillConfirmed extends GameMode implements ObjectiveProvider {
   readonly tags: DogTag[] = [];
 
   private readonly config: KillConfirmedConfig;
-  private ticksLeft = 0;
+
   private nextTagId = 1;
   private readonly scratch: MutableObjectiveTarget = makeObjectiveTarget();
 
@@ -188,7 +188,7 @@ export class KillConfirmed extends GameMode implements ObjectiveProvider {
   }
 
   override onTick(_tick: number): void {
-    if (this.ticksLeft > 0) this.ticksLeft--;
+    this.countDownRound();
 
     // Squared once rather than per body per tag: the inner test is a distance comparison and
     // this is the only reason it never takes a square root.

@@ -78,7 +78,6 @@ export class Range extends GameMode {
   override readonly brief = 'EVERY WEAPON UNLOCKED · STATIC AND POP-UP TARGETS · NOBODY SHOOTING BACK';
 
   private readonly config: RangeConfig;
-  private ticksLeft = 0;
   //#endregion
 
   // ======================================= CONSTRUCTOR ======================================== \\
@@ -107,7 +106,7 @@ export class Range extends GameMode {
   }
 
   override onTick(_tick: number): void {
-    if (this.ticksLeft > 0) this.ticksLeft--;
+    this.countDownRound();
   }
 
   override checkWinCondition(): MatchResult | RoundResult | null {

@@ -80,7 +80,6 @@ export class Tdm extends GameMode {
 
   private readonly config: TdmConfig;
   /** Ticks left, owned here because the win condition is the only thing that reads it. */
-  private ticksLeft = 0;
   //#endregion
 
   // ======================================= CONSTRUCTOR ======================================== \\
@@ -141,7 +140,7 @@ export class Tdm extends GameMode {
   }
 
   override onTick(_tick: number): void {
-    if (this.ticksLeft > 0) this.ticksLeft--;
+    this.countDownRound();
   }
 
   /**

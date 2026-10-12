@@ -1,3 +1,17 @@
+/**
+ * What the menu can offer, and how a match is built from a choice (brief S6.7).
+ *
+ * One mode and two maps. Foundry is the M4 map and the default; TESTBED is M1's grey-box
+ * room, kept selectable because the M2 weapon range and the M2/M3 acceptance scripts live
+ * in it — dropping it from the menu would have quietly retired three verification suites to
+ * make a list look tidier.
+ *
+ * The registry is the only place that knows the concrete mode classes, so `Game` and the
+ * menu both work in terms of an id and never import `Tdm`.
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { BotTier } from '../ai/DifficultyTiers';
 import { logger } from '../core/Log';
 import type { MapDef } from '../world/maps/types';
@@ -14,21 +28,10 @@ import { KillConfirmed } from './KillConfirmed';
 import { Range } from './Range';
 import { SearchAndDestroy, SND_CONFIG, SND_SKIRMISH_CONFIG } from './SearchAndDestroy';
 import { Tdm } from './Tdm';
+//#endregion
 
-const log = logger('ModeRegistry');
-
-/**
- * What the menu can offer, and how a match is built from a choice (brief S6.7).
- *
- * One mode and two maps. Foundry is the M4 map and the default; TESTBED is M1's grey-box
- * room, kept selectable because the M2 weapon range and the M2/M3 acceptance scripts live
- * in it — dropping it from the menu would have quietly retired three verification suites to
- * make a list look tidier.
- *
- * The registry is the only place that knows the concrete mode classes, so `Game` and the
- * menu both work in terms of an id and never import `Tdm`.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface ModeEntry {
   readonly id: GameModeId;
   readonly name: string;
@@ -91,6 +94,49 @@ export interface ModeEntry {
    */
   readonly usesRoundReset?: boolean;
 }
+
+export interface MapEntry {
+  readonly id: string;
+  readonly name: string;
+  readonly blurb: string;
+  /** Play Solo's line under the name (M17, C3): what kind of place, and its shape. */
+  readonly tagline: string;
+  /** Play Solo's three descriptor tags: the fight's range, the map's size, its cover. */
+  readonly tags: readonly [string, string, string];
+  /** The picture Play Solo shows, `public/maps/<id>.jpg` — `npm run maps:thumbs` makes them. */
+  readonly picture: string;
+  readonly def: MapDef;
+  /** Bots per side for a default match here. */
+  readonly teamSize: number;
+  /** Dealt round-robin, so a match is a spread of skill rather than one tier. */
+  readonly tierMix: readonly BotTier[];
+  /** Whether the M2 target range is built into this map. */
+  readonly targetRange: boolean;
+  /**
+   * A development map (M17, C2): never drawn behind the menu, and on Play Solo offered as the
+   * TESTBED card alone — entered as the Shooting Range, with no mode and no difficulty to
+   * choose (decision 5). The greybox is the one; a fourth real map is `false` here and gets
+   * everything the three have.
+   */
+  readonly testbed: boolean;
+}
+
+interface ModeBriefRow {
+  readonly id: GameModeId;
+  /** The map it was built on, because three of the briefs name that map's objectives. */
+  readonly mapId: string;
+  readonly brief: string;
+}
+
+export interface ModeBriefAudit {
+  readonly rows: readonly ModeBriefRow[];
+  readonly problems: readonly string[];
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('ModeRegistry');
 
 export const MODES: readonly ModeEntry[] = [
   {
@@ -166,32 +212,6 @@ export const MODES: readonly ModeEntry[] = [
   },
 ];
 
-export interface MapEntry {
-  readonly id: string;
-  readonly name: string;
-  readonly blurb: string;
-  /** Play Solo's line under the name (M17, C3): what kind of place, and its shape. */
-  readonly tagline: string;
-  /** Play Solo's three descriptor tags: the fight's range, the map's size, its cover. */
-  readonly tags: readonly [string, string, string];
-  /** The picture Play Solo shows, `public/maps/<id>.jpg` — `npm run maps:thumbs` makes them. */
-  readonly picture: string;
-  readonly def: MapDef;
-  /** Bots per side for a default match here. */
-  readonly teamSize: number;
-  /** Dealt round-robin, so a match is a spread of skill rather than one tier. */
-  readonly tierMix: readonly BotTier[];
-  /** Whether the M2 target range is built into this map. */
-  readonly targetRange: boolean;
-  /**
-   * A development map (M17, C2): never drawn behind the menu, and on Play Solo offered as the
-   * TESTBED card alone — entered as the Shooting Range, with no mode and no difficulty to
-   * choose (decision 5). The greybox is the one; a fourth real map is `false` here and gets
-   * everything the three have.
-   */
-  readonly testbed: boolean;
-}
-
 export const MAPS: readonly MapEntry[] = [
   {
     id: FOUNDRY_MAP.id,
@@ -253,6 +273,12 @@ export const MAPS: readonly MapEntry[] = [
 /** The maps a player is shown as maps: everything that is not a testbed. */
 export const PLAYABLE_MAPS: readonly MapEntry[] = MAPS.filter((m) => !m.testbed);
 
+export const DEFAULT_MODE_ID: GameModeId = 'TDM';
+export const DEFAULT_MAP_ID = FOUNDRY_MAP.id;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * The map to draw behind the menu (M17, C2): one of the real maps, at random, and not the one
  * that was there last.
@@ -273,9 +299,6 @@ export function rollBackdropMap(roll: number, previous: string | null): MapEntry
   const clamped = Math.min(Math.max(roll, 0), 0.999999);
   return candidates[Math.floor(clamped * candidates.length)] ?? first;
 }
-
-export const DEFAULT_MODE_ID: GameModeId = 'TDM';
-export const DEFAULT_MAP_ID = FOUNDRY_MAP.id;
 
 export function findMode(id: GameModeId): ModeEntry {
   const found = MODES.find((m) => m.id === id);
@@ -324,60 +347,12 @@ export function auditModeBriefs(): ModeBriefAudit {
   const problems: string[] = [];
   const seen = new Map<string, GameModeId>();
 
-  for (const entry of MODES) {
-    const map = MAPS.find((m) => modesForMap(m.id).some((mode) => mode.id === entry.id));
-    if (map === undefined) {
-      problems.push(`${entry.id} can be played on no registered map; its brief cannot be built.`);
-      continue;
-    }
-    let brief: string;
-    try {
-      brief = entry
-        .create({
-          bus: createGameBus(),
-          score: new ScoreSystem(createGameBus()),
-          roster: [],
-          mapDef: map.def,
-        })
-        .brief.trim();
-    } catch (err) {
-      problems.push(`${entry.id} threw while being built on ${map.id}: ${String(err)}`);
-      continue;
-    }
-    rows.push({ id: entry.id, mapId: map.id, brief });
-    if (brief === '') {
-      problems.push(
-        `${entry.id} has an empty brief. The pre-match banner would be blank for ten seconds, ` +
-          'which reads as a mode with no objective rather than as a missing string.',
-      );
-    }
-    const duplicate = seen.get(brief);
-    if (duplicate !== undefined) {
-      problems.push(
-        `${entry.id} and ${duplicate} brief identically ("${brief}"). Two modes with one ` +
-          'sentence is a copy-paste, and the second mode is the one nobody notices is wrong.',
-      );
-    } else if (brief !== '') {
-      seen.set(brief, entry.id);
-    }
-  }
+  for (const entry of MODES) auditOneBrief(rows, problems, seen, entry);
 
   if (rows.length !== MODES.length && problems.length === 0) {
     problems.push('fewer briefs than registered modes with nothing to say why — audit is broken.');
   }
   return { rows, problems };
-}
-
-interface ModeBriefRow {
-  readonly id: GameModeId;
-  /** The map it was built on, because three of the briefs name that map's objectives. */
-  readonly mapId: string;
-  readonly brief: string;
-}
-
-export interface ModeBriefAudit {
-  readonly rows: readonly ModeBriefRow[];
-  readonly problems: readonly string[];
 }
 
 export function findMap(id: string): MapEntry {
@@ -415,3 +390,61 @@ export function resolveModeId(id: string): ModeEntry {
   log.warn(`saved mode "${id}" no longer exists; falling back to ${DEFAULT_MODE_ID}.`);
   return findMode(DEFAULT_MODE_ID);
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * One mode's brief, built on a map that can actually host it, checked and recorded.
+ *
+ * Built rather than read: a brief is a getter on a live mode — `Tdm`'s names its score limit —
+ * so the only honest way to audit the sentence is to construct the mode. `seen` carries the
+ * briefs already claimed, which is what makes the duplicate check work across the sweep.
+ */
+function auditOneBrief(
+  rows: ModeBriefRow[],
+  problems: string[],
+  seen: Map<string, GameModeId>,
+  entry: ModeEntry,
+): void {
+  const map = MAPS.find((m) => modesForMap(m.id).some((mode) => mode.id === entry.id));
+  if (map === undefined) {
+    problems.push(`${entry.id} can be played on no registered map; its brief cannot be built.`);
+    return;
+  }
+
+  let brief: string;
+  try {
+    brief = entry
+      .create({
+        bus: createGameBus(),
+        score: new ScoreSystem(createGameBus()),
+        roster: [],
+        mapDef: map.def,
+      })
+      .brief.trim();
+  } catch (err) {
+    problems.push(`${entry.id} threw while being built on ${map.id}: ${String(err)}`);
+    return;
+  }
+
+  rows.push({ id: entry.id, mapId: map.id, brief });
+  if (brief === '') {
+    problems.push(
+      `${entry.id} has an empty brief. The pre-match banner would be blank for ten seconds, ` +
+        'which reads as a mode with no objective rather than as a missing string.',
+    );
+    return;
+  }
+
+  const duplicate = seen.get(brief);
+  if (duplicate !== undefined) {
+    problems.push(
+      `${entry.id} and ${duplicate} brief identically ("${brief}"). Two modes with one ` +
+        'sentence is a copy-paste, and the second mode is the one nobody notices is wrong.',
+    );
+    return;
+  }
+  seen.set(brief, entry.id);
+}
+//#endregion

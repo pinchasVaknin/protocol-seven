@@ -60,6 +60,15 @@ const PATROL_CELLS = samplePatrolCells(NAV, 7);
 /** Open floor in the middle of the greybox arena, clear of every prop. */
 const AT = { x: -20, y: 0.05, z: -14 };
 
+/**
+ * A greybox spawn with room on every side, for the two manoeuvres that need somewhere to go.
+ *
+ * `AT` is a corner, and both the retreat and the flank sweep bearings out to fourteen metres:
+ * from a corner every one of them lands off the navmesh, the manoeuvre falls through, and the
+ * test would be pinning the arena's walls rather than the decision.
+ */
+const OPEN = { x: -10.5, y: 0.05, z: 1.5 };
+
 /** Regular, with every die loaded to zero: no push roll, no flank roll, no strafe. */
 const CALM: TierTable = (() => {
   const table = cloneTierTable(DEFAULT_TIERS);
@@ -71,6 +80,16 @@ const CALM: TierTable = (() => {
   return table;
 })();
 
+/** Calm, except that the manoeuvre named here is certain rather than a roll. */
+function committedTo(move: 'push' | 'flank'): TierTable {
+  const table = cloneTierTable(CALM);
+  for (const tier of ['RECRUIT', 'REGULAR', 'HARDENED', 'VETERAN'] as const) {
+    if (move === 'push') table[tier].pushAggression = 1;
+    else table[tier].flankChance = 1;
+  }
+  return table;
+}
+
 interface Rig {
   readonly bot: Bot;
   readonly brain: BrainDeps;
@@ -79,7 +98,7 @@ interface Rig {
   setStreakObjective(provider: ObjectiveProvider | null): void;
 }
 
-function rig(tiers: TierTable = CALM, seed = 1234): Rig {
+function rig(tiers: TierTable = CALM, seed = 1234, at = AT): Rig {
   const bus = createGameBus();
   let objectives: ObjectiveProvider | null = null;
   let streakObjectives: ObjectiveProvider | null = null;
@@ -106,7 +125,7 @@ function rig(tiers: TierTable = CALM, seed = 1234): Rig {
     brain,
   };
   const bot = new Bot({ entityId: 101, displayName: 'BOT ONE', team: 'A', tier: 'REGULAR', seed }, deps);
-  bot.spawn(AT.x, AT.y, AT.z, 0);
+  bot.spawn(at.x, at.y, at.z, 0);
   return {
     bot,
     brain,
@@ -119,9 +138,9 @@ function rig(tiers: TierTable = CALM, seed = 1234): Rig {
   };
 }
 
-/** A bot that can see something `range` metres east of it. */
-function sees(bot: Bot, range: number): void {
-  bot.blackboard.noteSighting(2, AT.x + range, 1.6, AT.z, 0, range, 0);
+/** A bot that can see something `range` metres to one side of it; east by default. */
+function sees(bot: Bot, range: number, side: 1 | -1 = 1): void {
+  bot.blackboard.noteSighting(2, bot.px + side * range, 1.6, bot.pz, 0, range, 0);
 }
 
 /** A bot that believes in a target it can no longer see. */
@@ -404,6 +423,66 @@ describe('deciding, in order of urgency', () => {
     bot.brain.decide(bot);
     expect(bot.brain.goalX).toBe(goal.x);
     expect(bot.brain.goalZ).toBe(goal.z);
+  });
+});
+
+describe('the three manoeuvres a visible target can earn', () => {
+  it('closes on a target further out than the weapon wants to fight at', () => {
+    // The carbine's preferred range is 21 m, and a bot standing at 30 m with the push rolled
+    // certain walks in. The goal is a navmesh cell, never the raw sighting.
+    // ENGAGE first, because the machine refuses PUSH out of IDLE: at 12 m the weapon is
+    // already where it wants to be, so no roll happens on the way in.
+    const r = rig(committedTo('push'));
+    engaged(r, 12);
+    sees(r.bot, 30);
+    r.bot.brain.decide(r.bot);
+    expect(r.bot.brain.state).toBe('PUSH');
+    expect(r.bot.brain.goal).toBe('PUSH');
+    expect(r.bot.brain.goalY).toBeCloseTo(0, 2);
+    expect(Math.hypot(r.bot.brain.goalX - (AT.x + 30), r.bot.brain.goalZ - AT.z)).toBeLessThan(4);
+  });
+
+  it('gives ground when a target gets inside its comfortable range', () => {
+    // Three metres is inside the carbine's 4 m floor, so the bot backs off toward 21 m rather
+    // than stand there and lose. The retreat is a PUSH goal: a cell, swept by bearing.
+    const r = rig(CALM, 1234, OPEN);
+    engaged(r, 12);
+    sees(r.bot, 3, -1);
+    r.bot.brain.decide(r.bot);
+    expect(r.bot.brain.state).toBe('PUSH');
+    expect(r.bot.brain.goal).toBe('PUSH');
+    // Away from the target, which is three metres west of the bot.
+    expect(r.bot.brain.goalX).toBeGreaterThan(r.bot.px);
+    expect(Math.hypot(r.bot.brain.goalX - r.bot.px, r.bot.brain.goalZ - r.bot.pz)).toBeGreaterThan(3);
+  });
+
+  it('takes a wide route to the side when the flank comes up', () => {
+    const r = rig(committedTo('flank'), 1234, OPEN);
+    // ENGAGE first, by way of a sighting no flanking bearing can be pathed to — which is
+    // the case the test below this one is about.
+    r.bot.blackboard.noteSighting(2, 400, 1.6, 400, 0, 560, 0);
+    r.bot.brain.decide(r.bot);
+    expect(r.bot.brain.state).toBe('ENGAGE');
+
+    sees(r.bot, 12);
+    r.bot.brain.decide(r.bot);
+    expect(r.bot.brain.state).toBe('FLANK');
+    expect(r.bot.brain.goal).toBe('FLANK');
+    // Around the target rather than at it: the goal is well off the line between the two.
+    const toTarget = Math.atan2(0, 12);
+    const toGoal = Math.atan2(r.bot.brain.goalZ - r.bot.pz, r.bot.brain.goalX - r.bot.px);
+    expect(Math.abs(toGoal - toTarget)).toBeGreaterThan(0.4);
+    // On the flat: the greybox has no deck, so the high route finds nothing to take.
+    expect(r.bot.brain.goalY).toBeLessThan(OPEN.y + 1.5);
+  });
+
+  it('fights where it stands when no bearing the sweep tries is walkable', () => {
+    const r = rig(committedTo('flank'));
+    // A target far outside the arena: every flanking bearing lands off the navmesh.
+    r.bot.blackboard.noteSighting(2, 400, 1.6, 400, 0, 560, 0);
+    r.bot.brain.decide(r.bot);
+    expect(r.bot.brain.state).toBe('ENGAGE');
+    expect(r.bot.brain.goal).toBe('NONE');
   });
 });
 

@@ -1,5 +1,3 @@
-import type { TunableMeta } from '../player/MovementConfig';
-
 /**
  * Difficulty tiers (brief S6.7).
  *
@@ -16,7 +14,13 @@ import type { TunableMeta } from '../player/MovementConfig';
  * what guarantees that: adding a field without metadata is a compile error.
  */
 
-export const BOT_TIERS = ['RECRUIT', 'REGULAR', 'HARDENED', 'VETERAN'] as const;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { TunableMeta } from '../player/MovementConfig';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type BotTier = (typeof BOT_TIERS)[number];
 
 export interface TierConfig {
@@ -126,6 +130,34 @@ export type TierTable = Record<BotTier, TierConfig>;
  */
 export type BotDifficulty = BotTier | 'MIX';
 
+/**
+ * Perception, and everything else that is the same for every bot.
+ *
+ * Tiered values live above; these are properties of the *world*, not of skill, so a
+ * Veteran and a Recruit share them. S6.3 fixes the vision cone and both hearing radii.
+ */
+export interface PerceptionConfig {
+  /** Total field of view, degrees. S6.3 fixes this at 110. */
+  visionConeDeg: number;
+  /** Maximum sight range, metres. */
+  visionRange: number;
+  /** A target this close is noticed regardless of the cone — you feel someone behind you. */
+  proximityRadius: number;
+  /** Unsuppressed gunfire is heard this far, metres (S6.3). */
+  gunfireHearing: number;
+  /** Non-crouch footsteps are heard this far, metres (S6.3). */
+  footstepHearing: number;
+  /** Seconds a heard noise stays in the blackboard as an investigate target. */
+  noiseMemory: number;
+  /** Confidence decay per second once line of sight is lost, 0..1 per second. */
+  confidenceDecay: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+export const BOT_TIERS = ['RECRUIT', 'REGULAR', 'HARDENED', 'VETERAN'] as const;
+
 /** Every legal choice, in the order a picker should offer them. Easiest first, mix last. */
 export const BOT_DIFFICULTIES: readonly BotDifficulty[] = [...BOT_TIERS, 'MIX'];
 
@@ -152,33 +184,6 @@ export const BOT_DIFFICULTY_BLURBS: Readonly<Record<BotDifficulty, string>> = {
   VETERAN: 'Short controlled bursts, leads a moving target, grenades often',
   MIX: 'The authored spread of all four across the roster — the default',
 };
-
-/**
- * The one place a difficulty becomes a list of tiers.
- *
- * Three call sites read this and they are the three that used to disagree: the server's
- * `ServerMatch.populate`, the client's `ClientMatch.populateDefault`, and the bot that takes
- * over a leaver's seat mid-match. The third is why this is a function rather than an
- * expression repeated twice — `replacePlayerWithBot` dealt from the map's authored mix and
- * never looked at what the match was configured for, so a Recruit match handed a leaver's seat
- * to whichever tier the round-robin had reached. It was invisible because the two agreed
- * whenever the choice was `'MIX'`, which until this session it always was.
- *
- * `authoredMix` is `MapEntry.tierMix` at every call site. It is passed rather than imported so
- * this stays a pure function of its arguments and `shared/ai/` keeps not knowing about the mode
- * registry.
- */
-export function tiersFor(
-  difficulty: BotDifficulty,
-  authoredMix: readonly BotTier[],
-): readonly BotTier[] {
-  return difficulty === 'MIX' ? authoredMix : [difficulty];
-}
-
-/** Whether a string off the environment, a save or a command line names a difficulty. */
-export function isBotDifficulty(raw: string): raw is BotDifficulty {
-  return (BOT_DIFFICULTIES as readonly string[]).includes(raw);
-}
 
 /**
  * The shipped tiers.
@@ -367,58 +372,6 @@ export const TIER_TUNABLES: Readonly<Record<keyof TierConfig, TunableMeta>> = {
 
 export const TIER_CONFIG_KEYS = Object.keys(DEFAULT_TIERS.REGULAR) as Array<keyof TierConfig>;
 
-export function cloneTierTable(src: TierTable): TierTable {
-  return {
-    RECRUIT: { ...src.RECRUIT },
-    REGULAR: { ...src.REGULAR },
-    HARDENED: { ...src.HARDENED },
-    VETERAN: { ...src.VETERAN },
-  };
-}
-
-/** Serialise the whole table back out as pasteable source (COPY CONFIG). */
-export function tierTableToSource(table: TierTable): string {
-  const lines: string[] = ['export const DEFAULT_TIERS: TierTable = {'];
-  for (const tier of BOT_TIERS) {
-    lines.push(`  ${tier}: {`);
-    let lastGroup = '';
-    for (const key of TIER_CONFIG_KEYS) {
-      const meta = TIER_TUNABLES[key];
-      if (meta.group !== lastGroup) {
-        if (lastGroup !== '') lines.push('');
-        lastGroup = meta.group;
-      }
-      lines.push(`    ${key}: ${Math.round(table[tier][key] * 1e4) / 1e4},`);
-    }
-    lines.push('  },');
-  }
-  lines.push('};');
-  return lines.join('\n');
-}
-
-/**
- * Perception, and everything else that is the same for every bot.
- *
- * Tiered values live above; these are properties of the *world*, not of skill, so a
- * Veteran and a Recruit share them. S6.3 fixes the vision cone and both hearing radii.
- */
-export interface PerceptionConfig {
-  /** Total field of view, degrees. S6.3 fixes this at 110. */
-  visionConeDeg: number;
-  /** Maximum sight range, metres. */
-  visionRange: number;
-  /** A target this close is noticed regardless of the cone — you feel someone behind you. */
-  proximityRadius: number;
-  /** Unsuppressed gunfire is heard this far, metres (S6.3). */
-  gunfireHearing: number;
-  /** Non-crouch footsteps are heard this far, metres (S6.3). */
-  footstepHearing: number;
-  /** Seconds a heard noise stays in the blackboard as an investigate target. */
-  noiseMemory: number;
-  /** Confidence decay per second once line of sight is lost, 0..1 per second. */
-  confidenceDecay: number;
-}
-
 export const DEFAULT_PERCEPTION: PerceptionConfig = {
   visionConeDeg: 110,
   visionRange: 60,
@@ -440,12 +393,91 @@ export const PERCEPTION_TUNABLES: Readonly<Record<keyof PerceptionConfig, Tunabl
 };
 
 export const PERCEPTION_CONFIG_KEYS = Object.keys(DEFAULT_PERCEPTION) as Array<keyof PerceptionConfig>;
+//#endregion
 
-export function perceptionConfigToSource(cfg: PerceptionConfig): string {
-  const lines = ['export const DEFAULT_PERCEPTION: PerceptionConfig = {'];
-  for (const key of PERCEPTION_CONFIG_KEYS) {
-    lines.push(`  ${key}: ${Math.round(cfg[key] * 1e4) / 1e4},`);
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/**
+ * The tiers a match is dealt from, for one difficulty choice.
+ *
+ * `MIX` is the authored spread; a named tier is a one-entry mix, which `dealTiers` then cycles
+ * to fill both sides. It used to ignore the choice and hand back the authored spread
+ * whenever the choice was `'MIX'`, which until this session it always was.
+ *
+ * `authoredMix` is `MapEntry.tierMix` at every call site. It is passed rather than imported so
+ * this stays a pure function of its arguments and `shared/ai/` keeps not knowing about the mode
+ * registry.
+ */
+export function tiersFor(
+  difficulty: BotDifficulty,
+  authoredMix: readonly BotTier[],
+): readonly BotTier[] {
+  return difficulty === 'MIX' ? authoredMix : [difficulty];
+}
+
+/** Whether a string off the environment, a save or a command line names a difficulty. */
+export function isBotDifficulty(raw: string): raw is BotDifficulty {
+  return (BOT_DIFFICULTIES as readonly string[]).includes(raw);
+}
+
+export function cloneTierTable(src: TierTable): TierTable {
+  return {
+    RECRUIT: { ...src.RECRUIT },
+    REGULAR: { ...src.REGULAR },
+    HARDENED: { ...src.HARDENED },
+    VETERAN: { ...src.VETERAN },
+  };
+}
+
+/** Serialise the whole table back out as pasteable source (COPY CONFIG). */
+export function tierTableToSource(table: TierTable): string {
+  const lines: string[] = ['export const DEFAULT_TIERS: TierTable = {'];
+  for (const tier of BOT_TIERS) {
+    lines.push(`  ${tier}: {`);
+    appendTierValues(lines, table[tier]);
+    lines.push('  },');
   }
   lines.push('};');
   return lines.join('\n');
 }
+
+export function perceptionConfigToSource(cfg: PerceptionConfig): string {
+  const lines = ['export const DEFAULT_PERCEPTION: PerceptionConfig = {'];
+  for (const key of PERCEPTION_CONFIG_KEYS) {
+    lines.push(`  ${key}: ${roundForSource(cfg[key])},`);
+  }
+  lines.push('};');
+  return lines.join('\n');
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * One tier's values, in declaration order, with a blank line between slider groups.
+ *
+ * The groups are the panel's own, so a pasted table reads the way the panel is laid out
+ * rather than as thirty-one flat lines.
+ */
+function appendTierValues(lines: string[], cfg: TierConfig): void {
+  let lastGroup = '';
+  for (const key of TIER_CONFIG_KEYS) {
+    const group = TIER_TUNABLES[key].group;
+    if (group !== lastGroup) {
+      if (lastGroup !== '') lines.push('');
+      lastGroup = group;
+    }
+    lines.push(`    ${key}: ${roundForSource(cfg[key])},`);
+  }
+}
+
+/**
+ * Four decimal places, so a dragged slider pastes as a number somebody would have typed.
+ *
+ * Both serialisers round the same way; the figure is a tuning value and not a measurement,
+ * and seventeen digits of it in a source file is noise that hides the edit.
+ */
+function roundForSource(value: number): number {
+  return Math.round(value * 1e4) / 1e4;
+}
+//#endregion

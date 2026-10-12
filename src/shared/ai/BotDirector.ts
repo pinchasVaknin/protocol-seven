@@ -1,40 +1,3 @@
-import type { DamageSystem } from '../combat/DamageSystem';
-import { logger } from '../core/Log';
-import { EV, type GameBus } from '../core/Events';
-import { DT } from '../core/Loop';
-import { Rng } from '../core/Rng';
-import type { HealthConfig } from '../player/Health';
-import type { MovementConfig } from '../player/MovementConfig';
-import type { ViewmodelConfig } from '../weapons/ViewmodelConfig';
-import type { WeaponDef } from '../weapons/WeaponDefs';
-import type { CollisionWorld } from '../world/CollisionWorld';
-import {
-  bakeNavmesh,
-  NAV_DEFAULT_LAYERS,
-  samplePatrolCells,
-  type NavBakeOptions,
-  type NavGrid,
-} from '../world/Navmesh';
-import type { MapDef } from '../world/maps/types';
-import { AiScheduler, type SchedulerConfig } from './AiScheduler';
-import { Bot } from './Bot';
-import { drawBotWeapon } from './BotArsenal';
-import { cloneWeaponDef, requireWeapon } from '../weapons/WeaponDefs';
-import type { BrainDeps } from './BotBrain';
-import type { BotTeam, Combatant } from './Combatant';
-import { CoverIndex } from './Cover';
-import type { ObjectiveProvider } from './ObjectiveIntent';
-import { BOT_TIERS, type BotTier, type PerceptionConfig, type TierTable } from './DifficultyTiers';
-import { NoiseKind, Perception } from './Perception';
-import { Pathfinder } from './Pathing';
-import { dealTiers, seatToVacate } from './RosterDeal';
-import { hitsFrom, shotsFrom } from '../combat/ShotAccounting';
-import { makeSpawnChoice, SpawnSelector, type SpawnChoice } from './SpawnSelector';
-import { simCos } from '../core/SimMath';
-import { Disposable } from '../core/Disposable';
-
-const log = logger('BotDirector');
-
 /**
  * Everything that turns a pile of AI classes into a firefight.
  *
@@ -51,6 +14,182 @@ const log = logger('BotDirector');
  * Entity ids start at `BOT_ID_BASE` so they can never collide with the player (0) or M2's
  * range dummies (1-6).
  */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { DamageSystem } from '../combat/DamageSystem';
+import { logger } from '../core/Log';
+import { EV, type GameBus, type GameEvents } from '../core/Events';
+import { DT } from '../core/Loop';
+import { Rng } from '../core/Rng';
+import type { HealthConfig } from '../player/Health';
+import type { MovementConfig } from '../player/MovementConfig';
+import type { ViewmodelConfig } from '../weapons/ViewmodelConfig';
+import { cloneWeaponDef, requireWeapon, type WeaponDef } from '../weapons/WeaponDefs';
+import type { CollisionWorld } from '../world/CollisionWorld';
+import {
+  bakeNavmesh,
+  NAV_DEFAULT_LAYERS,
+  samplePatrolCells,
+  type NavBakeOptions,
+  type NavGrid,
+} from '../world/Navmesh';
+import type { MapDef } from '../world/maps/types';
+import { AiScheduler, type SchedulerConfig } from './AiScheduler';
+import { Bot } from './Bot';
+import { drawBotWeapon } from './BotArsenal';
+import type { BrainDeps } from './BotBrain';
+import type { BotTeam, Combatant } from './Combatant';
+import { CoverIndex } from './Cover';
+import type { ObjectiveProvider } from './ObjectiveIntent';
+import { BOT_TIERS, type BotTier, type PerceptionConfig, type TierTable } from './DifficultyTiers';
+import { NoiseKind, Perception } from './Perception';
+import { Pathfinder } from './Pathing';
+import { dealTiers, seatToVacate } from './RosterDeal';
+import { hitsFrom, shotsFrom } from '../combat/ShotAccounting';
+import { makeSpawnChoice, SpawnSelector, type SpawnChoice } from './SpawnSelector';
+import { simCos } from '../core/SimMath';
+import { Disposable } from '../core/Disposable';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+/**
+ * Whether somebody may come back, and a note when they do (M4).
+ *
+ * Implemented by `MatchFlow`. It is the one gate for bots and the player alike, so "no
+ * respawns once the match is over" is a single rule rather than two that can drift — and it
+ * is what stops a bot respawning behind the post-match summary screen.
+ */
+export interface RespawnPolicy {
+  allowed(entityId: number): boolean;
+  noted(entityId: number): void;
+}
+
+export interface BotDirectorDeps {
+  readonly world: CollisionWorld;
+  readonly mapDef: MapDef;
+  readonly bus: GameBus;
+  readonly damage: DamageSystem;
+  readonly movement: MovementConfig;
+  readonly healthConfig: HealthConfig;
+  readonly viewmodelConfig: ViewmodelConfig;
+  readonly tiers: TierTable;
+  readonly perceptionConfig: PerceptionConfig;
+  readonly scheduler: SchedulerConfig;
+  /** The local player, so perception and spawn safety see it like anything else. */
+  readonly player: Combatant;
+  readonly seed: number;
+  /**
+   * A navmesh baked elsewhere, or undefined to bake one here (M11, S4.19).
+   *
+   * The bake is the expensive half of building a match — it is a flood fill over every cell of
+   * the map — and S4.19 requires it to happen once at server boot rather than on the path a
+   * player experiences as a seamless transition.
+   *
+   * A `NavGrid` is safe to share: every array on it is `readonly` and filled during the bake,
+   * and the two things that search it — `Pathfinder` and `SpawnSelector` — allocate their own
+   * per-instance scratch rather than writing back into the grid. The mutable half of the AI's
+   * spatial state is the **cover reservations**, and `CoverIndex` is constructed per director
+   * below, so two instances never contend for the same piece of cover.
+   *
+   * Undefined keeps M3's behaviour exactly, which is what the browser and the single-player
+   * path still want: one match, one bake, nothing to cache it in.
+   */
+  readonly nav?: NavGrid;
+  /**
+   * Issue every bot this weapon instead of drawing from its tier's pool. Harness only.
+   *
+   * Playtest round 5 B5 asks for a run *"with a roster forced to shotguns"*, and a statistic
+   * about pellets measured on a roster that is one shotgun in eight is a statistic about
+   * carbines. It changes no balance number: `drawBotWeapon` already returns any of these, and
+   * this only removes the draw. Undefined everywhere but `--bot-weapon`.
+   */
+  readonly botWeaponId?: string;
+}
+
+export interface NavStats {
+  cells: number;
+  walkable: number;
+  pruned: number;
+  links: number;
+  /** Columns carrying two walkable surfaces. Non-zero means the map is multi-level. */
+  stacked: number;
+  bakeMs: number;
+  patrolPoints: number;
+  coverPoints: number;
+  coverRejected: number;
+  spawnCandidates: number;
+  /** M8. Surfaces per column this map baked. */
+  layers: number;
+  /** M8. Of `links`, how many need a mantle. The Depot verticality number. */
+  climbLinks: number;
+  /** M8. `walkable` as a fraction of the columns inside `navBounds`, 0..1. */
+  coverage: number;
+}
+
+interface TierReport {
+  bots: number;
+  shotsFired: number;
+  shotsHit: number;
+  hitRate: number;
+  kills: number;
+  deaths: number;
+}
+
+export interface BotReport {
+  bots: number;
+  nav: NavStats;
+  ai: {
+    lastMs: number;
+    p50Ms: number;
+    p99Ms: number;
+    worstMs: number;
+    meanMs: number;
+    samples: number;
+  };
+  astar: {
+    worstNodesPerTick: number;
+    deferred: number;
+    budgetExhaustedTicks: number;
+    completed: number;
+    failed: number;
+  };
+  spawns: {
+    selections: number;
+    safe: number;
+    hidden: number;
+    leastBad: number;
+    coneViolations: number;
+    visibleViolations: number;
+    minEnemyDistance: number;
+  };
+  perTier: Record<string, TierReport>;
+  /** The same tally, split by side (playtest round 5, B4). A tier absent from a side is absent. */
+  perTeamTier: Record<BotTeam, Record<string, TierReport>>;
+  stuckEvents: number;
+  pathFailures: number;
+  /**
+   * How the roster moved, rather than how well it shot (M13).
+   *
+   * `sprintFlips` over `travelTicks` is the sprint decision's dither rate, which is the number
+   * the Schmitt trigger in `BotBrain` exists to hold down; `sprintTicks` over `travelTicks` is
+   * the share of travel spent at sprint speed, which is what says whether holding the dither
+   * down cost the roster its pace or bought it some.
+   */
+  locomotion: {
+    sprintFlips: number;
+    sprintStarts: number;
+    sprintTicks: number;
+    travelTicks: number;
+    climbs: number;
+  };
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('BotDirector');
 
 export const BOT_ID_BASE = 100;
 
@@ -142,82 +281,13 @@ const evBotSpawn = {
   yaw: 0,
   nearestEnemy: 0,
 };
+//#endregion
 
-/**
- * Whether somebody may come back, and a note when they do (M4).
- *
- * Implemented by `MatchFlow`. It is the one gate for bots and the player alike, so "no
- * respawns once the match is over" is a single rule rather than two that can drift — and it
- * is what stops a bot respawning behind the post-match summary screen.
- */
-export interface RespawnPolicy {
-  allowed(entityId: number): boolean;
-  noted(entityId: number): void;
-}
-
-export interface BotDirectorDeps {
-  readonly world: CollisionWorld;
-  readonly mapDef: MapDef;
-  readonly bus: GameBus;
-  readonly damage: DamageSystem;
-  readonly movement: MovementConfig;
-  readonly healthConfig: HealthConfig;
-  readonly viewmodelConfig: ViewmodelConfig;
-  readonly tiers: TierTable;
-  readonly perceptionConfig: PerceptionConfig;
-  readonly scheduler: SchedulerConfig;
-  /** The local player, so perception and spawn safety see it like anything else. */
-  readonly player: Combatant;
-  readonly seed: number;
-  /**
-   * A navmesh baked elsewhere, or undefined to bake one here (M11, S4.19).
-   *
-   * The bake is the expensive half of building a match — it is a flood fill over every cell of
-   * the map — and S4.19 requires it to happen once at server boot rather than on the path a
-   * player experiences as a seamless transition.
-   *
-   * A `NavGrid` is safe to share: every array on it is `readonly` and filled during the bake,
-   * and the two things that search it — `Pathfinder` and `SpawnSelector` — allocate their own
-   * per-instance scratch rather than writing back into the grid. The mutable half of the AI's
-   * spatial state is the **cover reservations**, and `CoverIndex` is constructed per director
-   * below, so two instances never contend for the same piece of cover.
-   *
-   * Undefined keeps M3's behaviour exactly, which is what the browser and the single-player
-   * path still want: one match, one bake, nothing to cache it in.
-   */
-  readonly nav?: NavGrid;
-  /**
-   * Issue every bot this weapon instead of drawing from its tier's pool. Harness only.
-   *
-   * Playtest round 5 B5 asks for a run *"with a roster forced to shotguns"*, and a statistic
-   * about pellets measured on a roster that is one shotgun in eight is a statistic about
-   * carbines. It changes no balance number: `drawBotWeapon` already returns any of these, and
-   * this only removes the draw. Undefined everywhere but `--bot-weapon`.
-   */
-  readonly botWeaponId?: string;
-}
-
-export interface NavStats {
-  cells: number;
-  walkable: number;
-  pruned: number;
-  links: number;
-  /** Columns carrying two walkable surfaces. Non-zero means the map is multi-level. */
-  stacked: number;
-  bakeMs: number;
-  patrolPoints: number;
-  coverPoints: number;
-  coverRejected: number;
-  spawnCandidates: number;
-  /** M8. Surfaces per column this map baked. */
-  layers: number;
-  /** M8. Of `links`, how many need a mantle. The Depot verticality number. */
-  climbLinks: number;
-  /** M8. `walkable` as a fraction of the columns inside `navBounds`, 0..1. */
-  coverage: number;
-}
-
+// ===================================== CLASS BotDirector ====================================== \\
+//#region Class BotDirector
 export class BotDirector extends Disposable {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /**
    * Set by `Match` once the mode exists. Null means "always allowed", which is what the M3
    * harness and the bot-only soak want: they have no match flow to ask.
@@ -258,20 +328,6 @@ export class BotDirector extends Disposable {
    * safety scores against all seven opponents rather than the four on the other side.
    */
   private ffa = false;
-
-  /**
-   * Free-for-All (M7). Propagated to perception and spawn safety, which are the two systems
-   * that decide who counts as an enemy.
-   */
-  get freeForAll(): boolean {
-    return this.ffa;
-  }
-
-  set freeForAll(on: boolean) {
-    this.ffa = on;
-    this.perception.freeForAll = on;
-    this.spawns.freeForAll = on;
-  }
 
   /**
    * Multiplier on every tier's `pushAggression` for this match (M7).
@@ -319,7 +375,10 @@ export class BotDirector extends Disposable {
    * and its interpolation buffer.
    */
   private nextIndex = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: BotDirectorDeps) {
     super();
     this.deps = deps;
@@ -374,6 +433,23 @@ export class BotDirector extends Disposable {
     };
 
     this.subscribe();
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  /**
+   * Free-for-All (M7). Propagated to perception and spawn safety, which are the two systems
+   * that decide who counts as an enemy.
+   */
+  get freeForAll(): boolean {
+    return this.ffa;
+  }
+
+  set freeForAll(on: boolean) {
+    this.ffa = on;
+    this.perception.freeForAll = on;
+    this.spawns.freeForAll = on;
   }
 
   get botCount(): number {
@@ -455,6 +531,169 @@ export class BotDirector extends Disposable {
     return bot;
   }
 
+
+  clear(): void {
+    for (const bot of this.bots) {
+      this.deps.damage.unregister(bot.entityId);
+    }
+    this.bots.length = 0;
+    this.byId.clear();
+    this.roster.length = 0;
+    this.roster.push(this.deps.player);
+    this.cover.releaseAll();
+    this.perception.noise.reset();
+  }
+
+  setAllTiers(tier: BotTier): void {
+    for (const bot of this.bots) bot.tierName = tier;
+  }
+
+  /** Live retune from the debug panel. */
+  applyHealthConfig(cfg: HealthConfig): void {
+    for (const bot of this.bots) bot.health.setConfig(cfg);
+  }
+
+  /**
+   * Arm every bot with one weapon, overriding the per-tier draw.
+   *
+   * A measurement lever, not part of normal play. From M7 each bot draws its own weapon
+   * (`BotArsenal`), which is right for a match and wrong for a controlled experiment: M3's
+   * per-tier hit-rate table only means something if the tiers are holding the same gun.
+   * `BotHarness` and the arsenal panel call this to flatten the roster before measuring.
+   */
+  applyWeaponDef(def: WeaponDef): void {
+    for (const bot of this.bots) bot.weapons.setDefinition(def);
+  }
+
+  /**
+   * One sim tick for every bot.
+   *
+   * The order matters: perception, then the tactical decision that reads it, then the path
+   * request that reads that, then steering, which runs for every bot every tick. A bot
+   * whose decision landed this tick acts on it this tick.
+   */
+  simulate(tick: number, nowMs: number): void {
+    this.tick = tick;
+    const bots = this.bots;
+    const scheduler = this.scheduler;
+    scheduler.beginTick(tick, bots.length);
+
+    const interval = scheduler.perceptionInterval;
+    for (let i = 0; i < bots.length; i++) {
+      const bot = bots[i];
+      if (bot === undefined) continue;
+      bot.beginTick();
+
+      if (!bot.health.alive) {
+        this.tryRespawn(bot);
+        continue;
+      }
+
+      if (scheduler.perceptionDue(i)) this.sense(bot, interval);
+      if (scheduler.tacticalDue(i)) bot.brain.decide(bot);
+      if (scheduler.pathDue(i)) bot.brain.requestPath(bot);
+      bot.advance(tick, nowMs, bots, this.inputFrozen);
+    }
+
+    scheduler.runPathBudget(this.pathfinder);
+    scheduler.endTick();
+  }
+
+  /** Pick a spawn for anybody on `team`, including the player. Never fails. */
+  selectSpawn(team: BotTeam, selfId: number, out: SpawnChoice): boolean {
+    return this.spawns.select(team, this.roster, selfId, this.tick, out);
+  }
+
+  /**
+   * Put every bot back on a spawn, alive, whatever state they were in (post-M8 playtest).
+   *
+   * The start of a Search & Destroy round, and nothing else. It deliberately bypasses the
+   * respawn gate rather than asking it: with `livesPerRound = 1` the gate's answer is
+   * permanently "no", which is correct for a *death* mid-round and exactly wrong for the
+   * round boundary — a round that could not put its players back would be a round nobody can
+   * play. That is the same reason the very first spawn of a match is not gated either.
+   *
+   * Living bots are respawned too, not just dead ones. "Hard reset to the original spawn
+   * points" is the requirement, and a survivor left standing where the last round ended is
+   * the half of it that would still be broken.
+   */
+  respawnAll(): void {
+    for (const bot of this.bots) this.spawnBot(bot);
+  }
+
+  override dispose(): void {
+    super.dispose();
+    this.clear();
+  }
+
+  /** Everything acceptance criteria 3, 5 and 6 ask for, in one object. */
+  report(): BotReport {
+    this.scheduler.recompute();
+    const perTier: Record<string, TierReport> = {};
+    const perTeamTier: Record<BotTeam, Record<string, TierReport>> = { A: {}, B: {} };
+    this.tallyTierReports(perTier, perTeamTier);
+
+    return {
+      bots: this.bots.length,
+      nav: this.navStats,
+      ai: this.aiReport(),
+      astar: this.astarReport(),
+      spawns: { ...this.spawns.stats },
+      perTier,
+      perTeamTier,
+      stuckEvents: this.bots.reduce((n, b) => n + b.brain.stuckEvents, 0),
+      pathFailures: this.bots.reduce((n, b) => n + b.brain.pathFailures, 0),
+      locomotion: this.locomotionReport(),
+    };
+  }
+
+  /**
+   * Zero every figure the report sums, so a measurement covers one window.
+   *
+   * `climbsCompleted` belongs here with the rest: it is reported in the same locomotion block
+   * as the four sprint counters, and a block whose numbers cover different windows cannot be
+   * read against itself. It was the one counter this loop missed.
+   */
+  resetCounters(): void {
+    this.scheduler.reset();
+    this.pathfinder.resetCounters();
+    this.spawns.resetStats();
+    this.perception.resetStats();
+    for (const bot of this.bots) {
+      bot.shotsFired = 0;
+      bot.shotsHit = 0;
+      bot.kills = 0;
+      bot.deaths = 0;
+      bot.damageDealt = 0;
+      bot.brain.stuckEvents = 0;
+      bot.brain.pathFailures = 0;
+      bot.brain.replans = 0;
+      bot.brain.sprintFlips = 0;
+      bot.brain.sprintStarts = 0;
+      bot.brain.sprintTicks = 0;
+      bot.brain.travelTicks = 0;
+      bot.brain.climbsCompleted = 0;
+    }
+  }
+
+  /** Simulated seconds elapsed since the director started. Derived from ticks. */
+  get simSeconds(): number {
+    return this.tick * DT;
+  }
+
+  /** The tick the director last simulated. Read by the spawn visualisation. */
+  get currentTick(): number {
+    return this.tick;
+  }
+
+  /** Sprint speed from the shared movement config, for the lane-timing measurement. */
+  get sprintSpeed(): number {
+    return this.deps.movement.sprintSpeed;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * One bot, built and seated. The body of the old inline `populate` loop, extracted.
    *
@@ -496,115 +735,6 @@ export class BotDirector extends Disposable {
     return bot;
   }
 
-  clear(): void {
-    for (const bot of this.bots) {
-      this.deps.damage.unregister(bot.entityId);
-    }
-    this.bots.length = 0;
-    this.byId.clear();
-    this.roster.length = 0;
-    this.roster.push(this.deps.player);
-    this.cover.releaseAll();
-    this.perception.noise.reset();
-  }
-
-  setAllTiers(tier: BotTier): void {
-    for (const bot of this.bots) bot.tierName = tier;
-  }
-
-  /** Live retune from the debug panel. */
-  applyHealthConfig(cfg: HealthConfig): void {
-    for (const bot of this.bots) bot.health.setConfig(cfg);
-  }
-
-  /**
-   * Arm every bot with one weapon, overriding the per-tier draw.
-   *
-   * A measurement lever, not part of normal play. From M7 each bot draws its own weapon
-   * (`BotArsenal`), which is right for a match and wrong for a controlled experiment: M3's
-   * per-tier hit-rate table only means something if the tiers are holding the same gun.
-   * `BotHarness` and the arsenal panel call this to flatten the roster before measuring.
-   */
-  applyWeaponDef(def: WeaponDef): void {
-    for (const bot of this.bots) bot.weapons.setDefinition(def);
-  }
-
-  // -- the tick -------------------------------------------------------------
-
-  /**
-   * One sim tick for every bot.
-   *
-   * The order matters: perception, then the tactical decision that reads it, then the path
-   * request that reads that, then steering, which runs for every bot every tick. A bot
-   * whose decision landed this tick acts on it this tick.
-   */
-  simulate(tick: number, nowMs: number): void {
-    this.tick = tick;
-    const bots = this.bots;
-    const scheduler = this.scheduler;
-    scheduler.beginTick(tick, bots.length);
-
-    const interval = scheduler.perceptionInterval;
-    for (let i = 0; i < bots.length; i++) {
-      const bot = bots[i];
-      if (bot === undefined) continue;
-      bot.beginTick();
-
-      if (!bot.health.alive) {
-        const mayReturn = this.respawnPolicy?.allowed(bot.entityId) ?? true;
-        if (mayReturn && bot.respawnTimer <= 0 && bot.deadTime > 1.2) this.spawnBot(bot);
-        continue;
-      }
-
-      if (scheduler.perceptionDue(i)) {
-        this.perception.sense(
-          bot,
-          bot.blackboard,
-          this.roster,
-          this.deps.perceptionConfig,
-          bot.tier,
-          bot.rng,
-          interval,
-        );
-      }
-      if (scheduler.tacticalDue(i)) bot.brain.decide(bot);
-      if (scheduler.pathDue(i)) bot.brain.requestPath(bot);
-      bot.advance(tick, nowMs, bots, this.inputFrozen);
-    }
-
-    scheduler.runPathBudget(this.pathfinder);
-    scheduler.endTick();
-  }
-
-  /** Pick a spawn for anybody on `team`, including the player. Never fails. */
-  selectSpawn(team: BotTeam, selfId: number, out: SpawnChoice): boolean {
-    return this.spawns.select(team, this.roster, selfId, this.tick, out);
-  }
-
-  /**
-   * Put every bot back on a spawn, alive, whatever state they were in (post-M8 playtest).
-   *
-   * The start of a Search & Destroy round, and nothing else. It deliberately bypasses the
-   * respawn gate rather than asking it: with `livesPerRound = 1` the gate's answer is
-   * permanently "no", which is correct for a *death* mid-round and exactly wrong for the
-   * round boundary — a round that could not put its players back would be a round nobody can
-   * play. That is the same reason the very first spawn of a match is not gated either.
-   *
-   * Living bots are respawned too, not just dead ones. "Hard reset to the original spawn
-   * points" is the requirement, and a survivor left standing where the last round ended is
-   * the half of it that would still be broken.
-   */
-  respawnAll(): void {
-    for (const bot of this.bots) this.spawnBot(bot);
-  }
-
-  override dispose(): void {
-    super.dispose();
-    this.clear();
-  }
-
-  // -- internals ------------------------------------------------------------
-
   private spawnBot(bot: Bot): void {
     if (!this.selectSpawn(bot.team, bot.entityId, this.choice)) {
       log.warn(`no spawn candidate for team ${bot.team}; navmesh may be empty.`);
@@ -623,88 +753,117 @@ export class BotDirector extends Disposable {
     this.deps.bus.emit(EV.BotSpawned, evBotSpawn);
   }
 
+  /**
+   * Put a dead bot back, if the mode allows it and the fall has had time to play.
+   *
+   * The gate is asked rather than assumed: with `livesPerRound = 1` its answer is permanently
+   * "no", which is correct for a death mid-round. `respawnAll` is the round boundary and
+   * deliberately does not come through here.
+   */
+  private tryRespawn(bot: Bot): void {
+    const mayReturn = this.respawnPolicy?.allowed(bot.entityId) ?? true;
+    if (mayReturn && bot.respawnTimer <= 0 && bot.deadTime > 1.2) this.spawnBot(bot);
+  }
+
+  /** One perception sample for one bot, at the scheduler's own interval. */
+  private sense(bot: Bot, interval: number): void {
+    this.perception.sense(
+      bot,
+      bot.blackboard,
+      this.roster,
+      this.deps.perceptionConfig,
+      bot.tier,
+      bot.rng,
+      interval,
+    );
+  }
+
+  /**
+   * The only place world events become AI input.
+   *
+   * Each handler is a named method rather than a closure body, because every one of them
+   * carries a rule that is easy to lose in a wall of subscriptions — Dead Silence, the
+   * landing threshold, "a frag is not a round fired", the direction a fall takes.
+   */
   private subscribe(): void {
     const bus = this.deps.bus;
 
     // ---- hearing (S6.3) --------------------------------------------------
-    this.own(
-      bus.on(EV.WeaponFired, (p) => {
-        // Rays, not pulls, and both halves from this one event (round 5, B5). The acceptance
-        // hit-rate per tier is this divided by itself, so it was a shotgun bot away from
-        // reading over 100% — see `combat/ShotAccounting`.
-        const shooter = this.byId.get(p.sourceId);
-        if (shooter !== undefined) {
-          shooter.shotsFired += shotsFrom(p);
-          shooter.shotsHit += hitsFrom(p);
-        }
-        this.perception.noise.emit(NoiseKind.Gunfire, p.sourceId, this.teamOf(p.sourceId), p.x, p.y, p.z);
-      }),
-    );
-
-    this.own(
-      bus.on(EV.PlayerFootstep, (p) => {
-        // Crouch-walking is silent by design: S6.3 gives footsteps a 12 m radius and
-        // qualifies it with "non-crouch", which is the whole reason to ever crouch-walk.
-        if (p.quiet) return;
-        // Dead Silence (M6, S6.4). The step still sounds for the *player* — it is the
-        // enemy's hearing that is cut, so the perk is felt by them and not by you.
-        if (this.silentFootsteps?.(p.entityId) === true) return;
-        this.perception.noise.emit(
-          NoiseKind.Footstep,
-          p.entityId,
-          this.teamOf(p.entityId),
-          p.x,
-          p.y,
-          p.z,
-        );
-      }),
-    );
-
-    this.own(
-      bus.on(EV.PlayerLanded, (p) => {
-        if (p.impactSpeed < 4) return;
-        this.perception.noise.emit(
-          NoiseKind.Landing,
-          p.entityId,
-          this.teamOf(p.entityId),
-          p.x,
-          p.y,
-          p.z,
-        );
-      }),
-    );
+    this.own(bus.on(EV.WeaponFired, (p) => this.onWeaponFired(p)));
+    this.own(bus.on(EV.PlayerFootstep, (p) => this.onFootstep(p)));
+    this.own(bus.on(EV.PlayerLanded, (p) => this.onLanded(p)));
 
     // ---- damage ----------------------------------------------------------
-    this.own(
-      bus.on(EV.DamageDealt, (p) => {
-        const shooter = this.byId.get(p.sourceId);
-        // Damage only: a bot's frag is not a round it fired. Counted here it made the tier
-        // hit-rate a number about grenades.
-        if (shooter !== undefined) shooter.damageDealt += p.amount;
-        const victim = this.byId.get(p.targetId);
-        if (victim === undefined || p.lethal) return;
-        const source = this.combatant(p.sourceId);
-        const fromX = source?.px ?? p.x;
-        const fromZ = source?.pz ?? p.z;
-        // Direction the round was travelling, for the flinch.
-        const dx = p.x - fromX;
-        const dz = p.z - fromZ;
-        victim.onHurt(fromX, fromZ, dx, dz, p.amount);
-      }),
-    );
+    this.own(bus.on(EV.DamageDealt, (p) => this.onDamageDealt(p)));
+    this.own(bus.on(EV.EntityKilled, (p) => this.onEntityKilled(p)));
+  }
 
-    this.own(
-      bus.on(EV.EntityKilled, (p) => {
-        const killer = this.byId.get(p.sourceId);
-        if (killer !== undefined) killer.kills++;
-        const victim = this.byId.get(p.targetId);
-        if (victim === undefined) return;
-        const source = this.combatant(p.sourceId);
-        const dx = source === undefined ? 0 : victim.px - source.px;
-        const dz = source === undefined ? 1 : victim.pz - source.pz;
-        victim.onKilled(dx, dz, RESPAWN_SECONDS);
-      }),
+  private onWeaponFired(p: GameEvents[typeof EV.WeaponFired]): void {
+    // Rays, not pulls, and both halves from this one event (round 5, B5). The acceptance
+    // hit-rate per tier is this divided by itself, so it was a shotgun bot away from
+    // reading over 100% — see `combat/ShotAccounting`.
+    const shooter = this.byId.get(p.sourceId);
+    if (shooter !== undefined) {
+      shooter.shotsFired += shotsFrom(p);
+      shooter.shotsHit += hitsFrom(p);
+    }
+    this.perception.noise.emit(NoiseKind.Gunfire, p.sourceId, this.teamOf(p.sourceId), p.x, p.y, p.z);
+  }
+
+  private onFootstep(p: GameEvents[typeof EV.PlayerFootstep]): void {
+    // Crouch-walking is silent by design: S6.3 gives footsteps a 12 m radius and
+    // qualifies it with "non-crouch", which is the whole reason to ever crouch-walk.
+    if (p.quiet) return;
+    // Dead Silence (M6, S6.4). The step still sounds for the *player* — it is the
+    // enemy's hearing that is cut, so the perk is felt by them and not by you.
+    if (this.silentFootsteps?.(p.entityId) === true) return;
+    this.perception.noise.emit(
+      NoiseKind.Footstep,
+      p.entityId,
+      this.teamOf(p.entityId),
+      p.x,
+      p.y,
+      p.z,
     );
+  }
+
+  private onLanded(p: GameEvents[typeof EV.PlayerLanded]): void {
+    if (p.impactSpeed < 4) return;
+    this.perception.noise.emit(
+      NoiseKind.Landing,
+      p.entityId,
+      this.teamOf(p.entityId),
+      p.x,
+      p.y,
+      p.z,
+    );
+  }
+
+  private onDamageDealt(p: GameEvents[typeof EV.DamageDealt]): void {
+    const shooter = this.byId.get(p.sourceId);
+    // Damage only: a bot's frag is not a round it fired. Counted here it made the tier
+    // hit-rate a number about grenades.
+    if (shooter !== undefined) shooter.damageDealt += p.amount;
+    const victim = this.byId.get(p.targetId);
+    if (victim === undefined || p.lethal) return;
+    const source = this.combatant(p.sourceId);
+    const fromX = source?.px ?? p.x;
+    const fromZ = source?.pz ?? p.z;
+    // Direction the round was travelling, for the flinch.
+    const dx = p.x - fromX;
+    const dz = p.z - fromZ;
+    victim.onHurt(fromX, fromZ, dx, dz, p.amount);
+  }
+
+  private onEntityKilled(p: GameEvents[typeof EV.EntityKilled]): void {
+    const killer = this.byId.get(p.sourceId);
+    if (killer !== undefined) killer.kills++;
+    const victim = this.byId.get(p.targetId);
+    if (victim === undefined) return;
+    const source = this.combatant(p.sourceId);
+    const dx = source === undefined ? 0 : victim.px - source.px;
+    const dz = source === undefined ? 1 : victim.pz - source.pz;
+    victim.onKilled(dx, dz, RESPAWN_SECONDS);
   }
 
   private combatant(entityId: number): Combatant | undefined {
@@ -730,173 +889,100 @@ export class BotDirector extends Disposable {
     return 'NONE';
   }
 
-  // -- reporting ------------------------------------------------------------
-
-  /** Everything acceptance criteria 3, 5 and 6 ask for, in one object. */
-  report(): BotReport {
-    this.scheduler.recompute();
-    /**
-     * Both tables come off one pass, and the per-team one is playtest round 5's B4.
-     *
-     * "REGULAR bots went 40-38" is a number that cannot answer the question B4 asked, which was
-     * never about a tier — it was about a *side*. A tier that is only ever dealt to one team
-     * looks perfectly ordinary in a table with no team column, which is how a VETERAN going
-     * 36-5 for the opposition reads as balance rather than as a deal.
-     */
-    const perTier: Record<string, TierReport> = {};
-    const perTeamTier: Record<BotTeam, Record<string, TierReport>> = { A: {}, B: {} };
+  /**
+   * Both tier tables, off one pass over the roster.
+   *
+   * The per-team one is playtest round 5's B4: *"REGULAR bots went 40-38"* is a number that
+   * cannot answer the question B4 asked, which was never about a tier — it was about a
+   * *side*. A tier that is only ever dealt to one team looks perfectly ordinary in a table
+   * with no team column, which is how a VETERAN going 36-5 for the opposition reads as
+   * balance rather than as a deal.
+   */
+  private tallyTierReports(
+    perTier: Record<string, TierReport>,
+    perTeamTier: Record<BotTeam, Record<string, TierReport>>,
+  ): void {
     for (const tier of BOT_TIERS) {
       const both = emptyTierReport();
       const sides: Record<BotTeam, TierReport> = { A: emptyTierReport(), B: emptyTierReport() };
       for (const bot of this.bots) {
         if (bot.tierName !== tier) continue;
-        for (const into of [both, sides[bot.team]]) {
-          into.bots++;
-          into.shotsFired += bot.shotsFired;
-          into.shotsHit += bot.shotsHit;
-          into.kills += bot.kills;
-          into.deaths += bot.deaths;
-        }
+        addBotToTierReport(both, bot);
+        addBotToTierReport(sides[bot.team], bot);
       }
       if (both.bots === 0) continue;
-      both.hitRate = both.shotsFired > 0 ? both.shotsHit / both.shotsFired : 0;
+      both.hitRate = hitRateOf(both);
       perTier[tier] = both;
       for (const team of ['A', 'B'] as const) {
         const side = sides[team];
         if (side.bots === 0) continue;
-        side.hitRate = side.shotsFired > 0 ? side.shotsHit / side.shotsFired : 0;
+        side.hitRate = hitRateOf(side);
         perTeamTier[team][tier] = side;
       }
     }
+  }
 
+  /** The scheduler's own cost, which is what says whether the AI fits in a tick. */
+  private aiReport(): BotReport['ai'] {
     return {
-      bots: this.bots.length,
-      nav: this.navStats,
-      ai: {
-        lastMs: this.scheduler.lastMs,
-        p50Ms: this.scheduler.p50Ms,
-        p99Ms: this.scheduler.p99Ms,
-        worstMs: this.scheduler.worstMs,
-        meanMs: this.scheduler.meanMs,
-        samples: this.scheduler.sampleCount,
-      },
-      astar: {
-        worstNodesPerTick: this.pathfinder.worstNodesPerTick,
-        deferred: this.pathfinder.deferredRequests,
-        budgetExhaustedTicks: this.pathfinder.budgetExhaustedTicks,
-        completed: this.pathfinder.searchesCompleted,
-        failed: this.pathfinder.searchesFailed,
-      },
-      spawns: { ...this.spawns.stats },
-      perTier,
-      perTeamTier,
-      stuckEvents: this.bots.reduce((n, b) => n + b.brain.stuckEvents, 0),
-      pathFailures: this.bots.reduce((n, b) => n + b.brain.pathFailures, 0),
-      locomotion: {
-        sprintFlips: this.bots.reduce((n, b) => n + b.brain.sprintFlips, 0),
-        sprintStarts: this.bots.reduce((n, b) => n + b.brain.sprintStarts, 0),
-        sprintTicks: this.bots.reduce((n, b) => n + b.brain.sprintTicks, 0),
-        travelTicks: this.bots.reduce((n, b) => n + b.brain.travelTicks, 0),
-        climbs: this.bots.reduce((n, b) => n + b.brain.climbsCompleted, 0),
-      },
+      lastMs: this.scheduler.lastMs,
+      p50Ms: this.scheduler.p50Ms,
+      p99Ms: this.scheduler.p99Ms,
+      worstMs: this.scheduler.worstMs,
+      meanMs: this.scheduler.meanMs,
+      samples: this.scheduler.sampleCount,
     };
   }
 
-  resetCounters(): void {
-    this.scheduler.reset();
-    this.pathfinder.resetCounters();
-    this.spawns.resetStats();
-    this.perception.resetStats();
+  private astarReport(): BotReport['astar'] {
+    return {
+      worstNodesPerTick: this.pathfinder.worstNodesPerTick,
+      deferred: this.pathfinder.deferredRequests,
+      budgetExhaustedTicks: this.pathfinder.budgetExhaustedTicks,
+      completed: this.pathfinder.searchesCompleted,
+      failed: this.pathfinder.searchesFailed,
+    };
+  }
+
+  /**
+   * How the roster moved, rather than how well it shot (M13).
+   *
+   * Summed over the roster here so the four counters and the climb total come off one pass
+   * and cannot describe different populations.
+   */
+  private locomotionReport(): BotReport['locomotion'] {
+    const out = { sprintFlips: 0, sprintStarts: 0, sprintTicks: 0, travelTicks: 0, climbs: 0 };
     for (const bot of this.bots) {
-      bot.shotsFired = 0;
-      bot.shotsHit = 0;
-      bot.kills = 0;
-      bot.deaths = 0;
-      bot.damageDealt = 0;
-      bot.brain.stuckEvents = 0;
-      bot.brain.pathFailures = 0;
-      bot.brain.replans = 0;
-      bot.brain.sprintFlips = 0;
-      bot.brain.sprintStarts = 0;
-      bot.brain.sprintTicks = 0;
-      bot.brain.travelTicks = 0;
+      const brain = bot.brain;
+      out.sprintFlips += brain.sprintFlips;
+      out.sprintStarts += brain.sprintStarts;
+      out.sprintTicks += brain.sprintTicks;
+      out.travelTicks += brain.travelTicks;
+      out.climbs += brain.climbsCompleted;
     }
+    return out;
   }
-
-  /** Simulated seconds elapsed since the director started. Derived from ticks. */
-  get simSeconds(): number {
-    return this.tick * DT;
-  }
-
-  /** The tick the director last simulated. Read by the spawn visualisation. */
-  get currentTick(): number {
-    return this.tick;
-  }
-
-  /** Sprint speed from the shared movement config, for the lane-timing measurement. */
-  get sprintSpeed(): number {
-    return this.deps.movement.sprintSpeed;
-  }
+  //#endregion
 }
+//#endregion
 
-interface TierReport {
-  bots: number;
-  shotsFired: number;
-  shotsHit: number;
-  hitRate: number;
-  kills: number;
-  deaths: number;
-}
-
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function emptyTierReport(): TierReport {
   return { bots: 0, shotsFired: 0, shotsHit: 0, hitRate: 0, kills: 0, deaths: 0 };
 }
 
-export interface BotReport {
-  bots: number;
-  nav: NavStats;
-  ai: {
-    lastMs: number;
-    p50Ms: number;
-    p99Ms: number;
-    worstMs: number;
-    meanMs: number;
-    samples: number;
-  };
-  astar: {
-    worstNodesPerTick: number;
-    deferred: number;
-    budgetExhaustedTicks: number;
-    completed: number;
-    failed: number;
-  };
-  spawns: {
-    selections: number;
-    safe: number;
-    hidden: number;
-    leastBad: number;
-    coneViolations: number;
-    visibleViolations: number;
-    minEnemyDistance: number;
-  };
-  perTier: Record<string, TierReport>;
-  /** The same tally, split by side (playtest round 5, B4). A tier absent from a side is absent. */
-  perTeamTier: Record<BotTeam, Record<string, TierReport>>;
-  stuckEvents: number;
-  pathFailures: number;
-  /**
-   * How the roster moved, rather than how well it shot (M13).
-   *
-   * `sprintFlips` over `travelTicks` is the sprint decision's dither rate, which is the number
-   * the Schmitt trigger in `BotBrain` exists to hold down; `sprintTicks` over `travelTicks` is
-   * the share of travel spent at sprint speed, which is what says whether holding the dither
-   * down cost the roster its pace or bought it some.
-   */
-  locomotion: {
-    sprintFlips: number;
-    sprintStarts: number;
-    sprintTicks: number;
-    travelTicks: number;
-    climbs: number;
-  };
+/** One bot's figures folded into one row. Called once per row a bot belongs to. */
+function addBotToTierReport(into: TierReport, bot: Bot): void {
+  into.bots++;
+  into.shotsFired += bot.shotsFired;
+  into.shotsHit += bot.shotsHit;
+  into.kills += bot.kills;
+  into.deaths += bot.deaths;
 }
+
+/** Rays that connected over rays fired, and zero rather than a division by zero. */
+function hitRateOf(row: TierReport): number {
+  return row.shotsFired > 0 ? row.shotsHit / row.shotsFired : 0;
+}
+//#endregion

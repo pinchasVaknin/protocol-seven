@@ -1,7 +1,3 @@
-import type { Rng } from '../core/Rng';
-import { cloneWeaponDef, requireWeapon, type WeaponDef } from '../weapons/WeaponDefs';
-import type { BotTier } from './DifficultyTiers';
-
 /**
  * What a bot brings to the fight (M7 hotfix).
  *
@@ -32,12 +28,24 @@ import type { BotTier } from './DifficultyTiers';
  * shotgun" and cannot silently fail to sum to one.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { Rng } from '../core/Rng';
+import { cloneWeaponDef, requireWeapon, type WeaponDef } from '../weapons/WeaponDefs';
+import type { BotTier } from './DifficultyTiers';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 interface BotWeaponEntry {
   readonly weaponId: string;
   /** Relative likelihood inside this tier's pool. */
   readonly weight: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * Per-tier draw pools.
  *
@@ -73,7 +81,10 @@ const BOT_ARSENAL: Readonly<Record<BotTier, readonly BotWeaponEntry[]>> = {
     { weaponId: 'sniper_vantage', weight: 2 },
   ],
 };
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Draw one weapon for a bot of this tier.
  *
@@ -97,3 +108,4 @@ export function drawBotWeapon(tier: BotTier, rng: Rng): WeaponDef {
   const last = pool[pool.length - 1];
   return cloneWeaponDef(requireWeapon(last === undefined ? 'ar_carbine' : last.weaponId));
 }
+//#endregion

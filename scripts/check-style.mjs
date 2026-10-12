@@ -226,6 +226,15 @@ const FINISHED = {
     // the file: it is module-level state, and nothing reads it at load.
     'src/shared/ai/BotStates.ts',
   ],
+  A13: [
+    'src/shared/ai/BotArsenal.ts',
+    // `TIER_CONFIG_KEYS` and `PERCEPTION_CONFIG_KEYS` are `Object.keys` of a literal, read at
+    // load, so CONSTANTS keeps the original relative order of every value in the file.
+    'src/shared/ai/DifficultyTiers.ts',
+    'src/shared/ai/RosterDeal.ts',
+    'src/shared/ai/SpawnSelector.ts',
+    'src/shared/ai/BotDirector.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

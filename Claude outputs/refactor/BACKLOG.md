@@ -9,10 +9,13 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**23 open tasks.** They were recorded in chat across units A1–A12 and moved here unedited in
-substance. The chat count was 24; this file holds 22 from that list plus one opened on
-2026-10-12 (**#23**), so **one item from the original list is missing** — if it was a real task
-it needs re-adding, and §6 records what to look for.
+**21 open entries**, carried over from chat across units A1–A12 unedited in substance. Two numbers
+are already gone and are not reused: **#19** is folded into #2 (the same defect from both ends),
+and **#23** was closed by unit A13 on 2026-10-12. **#22** is the only one not from the chat list —
+it was opened on 2026-10-12 from the Render build failure.
+
+That accounts for 22 of the chat list's items against a count of 24, so **one item from the
+original list is missing**; §6 records where to look for it.
 
 Status values: `open`, `bound to <unit>` (the next unit that owns these files — do it there),
 `blocked on <task>`, `needs measurement`, `needs a decision from the user`.
@@ -26,7 +29,7 @@ and belong in its Step 2 plan.
 
 | Unit | Files | Tasks to fold in |
 |---|---|---|
-| **A13** | `shared/ai/BotDirector.ts` | **#23** — do it in A13, not separately |
+| ~~A13~~ | `shared/ai/BotDirector.ts` | **closed** — #23 was absorbed by A13 on 2026-10-12 |
 | A14/A15 | `shared/modes/` | — |
 | A16/A17 | `shared/streaks/` | #1 (`SentryGun` is a caller of `angleDelta`) |
 | A20–A23 | `shared/net/` | #1 (`Interpolation` is a caller of `shortestAngle`) |
@@ -38,47 +41,6 @@ and belong in its Step 2 plan.
 Everything else below lands in a **completed** unit's files and therefore needs a session of its
 own. Those sessions are not refactor units: they may change behaviour where the task says so, and
 they are not fenced by R3.
-
----
-
-## 2. Do next
-
-### #23 — Reset `climbsCompleted` in `BotDirector.resetCounters` · `bound to A13`
-
-**Files** `src/shared/ai/BotDirector.ts` (~line 805), test in `BotDirector.test.ts` style.
-**Origin** A12.
-
-`resetCounters()` zeroes seven `bot.brain` diagnostics — `stuckEvents`, `pathFailures`,
-`replans`, `sprintFlips`, `sprintStarts`, `sprintTicks`, `travelTicks` — but not
-`brain.climbsCompleted`, which `BotBrain` declares as *"M8: mantles this bot has completed, for
-the Depot verticality read-out"* and which `BotDirector` reports (~line 800) in the same stats
-block as the counters it does reset. So a reading taken after a reset covers the whole match for
-that one number and the window since the reset for every other, and the block's whole purpose is
-that its numbers are comparable.
-
-**The open question is answered (2026-10-12, Step 0 of A13).** The task as first written assumed
-the published read-out was affected. It is not, and the scope is smaller than it looked:
-
-- `climbs` is printed by `locomotionSummary` in `src/server/main.ts` (~line 313), in the same
-  block as `sprintFlips`, `flipsPerTravelSecond`, `sprintShare` and `meanSprintSeconds` — so the
-  grouping the task describes is real.
-- But **the only caller of `resetCounters()` is `src/client/debug/BotHarness.ts:182`**. The server
-  read-out never calls it, so there every number in that block is a match total and they already
-  agree.
-
-So the inconsistency is reachable from exactly one place: the bot harness, which resets seven of
-the eight. That consumer is in `src/client/debug/`, which section 10 puts out of scope
-permanently — the fix is still one line in `BotDirector.ts`, which A13 owns, but its justification
-is "the one caller of this method gets a block it cannot read", not "the published measurement is
-wrong". Worth stating in A13's Step 2 that way, so the change is not oversold.
-
-**Do it inside A13**, which rewrites this function anyway; fixing one line now and reshaping the
-function next session is the same code twice. `BotBrain.test.ts` (A12) asserts that a diagnostic
-*survives* `brain.reset()` — the director owns when these are zeroed, which is why the fix is here
-and not in the brain.
-
-**Verify** `npm run check`, plus the SIM snapshot/compare pair: a reset firing on a different tick
-would move the bot matches.
 
 ---
 
@@ -621,11 +583,10 @@ Node build** — the state hashes depend on these functions — and that `npm ru
 immune, because its figures go through `toFixed(3)`/`toFixed(4)`.
 
 ### The missing item
-The chat list was counted as 24 and this file holds 22 of them plus #22 above. The two entries that
-closed are not the gap — nothing has been closed yet. Likely candidates for the missing item are a
-task recorded during **A2** (`shared/cheats`, `shared/ui`) or **A7** (`shared/weapons`), which are
-the only two units with no entry here at all. If one of those rings true, re-add it with its unit
-and its reason.
+The chat list was counted as 24 and this file received 22 of them. Neither #19 (folded into #2) nor
+#23 (closed by A13) is the gap: both are accounted for. The likely candidates are a task recorded
+during **A2** (`shared/cheats`, `shared/ui`) or **A7** (`shared/weapons`) — the only two units with
+no entry here at all. If one of those rings true, re-add it with its unit and its reason.
 
 ---
 

@@ -1,5 +1,3 @@
-import { BOT_TIERS, type BotTier } from './DifficultyTiers';
-
 /**
  * How a `tierMix` becomes two teams (playtest round 5, B4).
  *
@@ -43,28 +41,43 @@ import { BOT_TIERS, type BotTier } from './DifficultyTiers';
  * the order the difficulty picker offers. Nothing here invents a ranking.
  */
 
-/** Weakest first. `BOT_TIERS` is authored in that order; this is the index into it. */
-function strength(tier: BotTier): number {
-  const at = BOT_TIERS.indexOf(tier);
-  return at < 0 ? 0 : at;
-}
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { BOT_TIERS, type BotTier } from './DifficultyTiers';
+//#endregion
 
-/**
- * The order a side gives bodies up in: weakest first, and among equals the latest.
- *
- * One ordering for both places a side loses a bot — `dealTiers` leaving the short side's
- * surplus out before the match, and `seatToVacate` choosing whom a joining human displaces
- * during it — so a live 5v5 with a human seated lands on exactly the roster a solo 4v5 is dealt.
- */
-function yieldOrder(lTier: BotTier, lIndex: number, rTier: BotTier, rIndex: number): number {
-  return strength(lTier) - strength(rTier) || rIndex - lIndex;
-}
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface RosterDeal {
   readonly a: readonly BotTier[];
   readonly b: readonly BotTier[];
 }
 
+/** One authored spread, named, for the audit to sweep. */
+export interface RosterMix {
+  readonly id: string;
+  readonly mix: readonly BotTier[];
+}
+
+export interface RosterDealAudit {
+  /** How many (mix, split) pairs were dealt. */
+  readonly deals: number;
+  readonly problems: string[];
+  /** One line per shipped-shaped split, for the log. */
+  readonly rows: readonly RosterDealRow[];
+}
+
+interface RosterDealRow {
+  readonly id: string;
+  readonly teamA: number;
+  readonly teamB: number;
+  readonly a: string;
+  readonly b: string;
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Deal `teamA` and `teamB` bots from `mix`.
  *
@@ -166,36 +179,6 @@ export function tierForExtraBot(
   return best ?? target[target.length - 1] ?? 'REGULAR';
 }
 
-// -- the audit ---------------------------------------------------------------
-
-/** One authored spread, named, for the audit to sweep. */
-export interface RosterMix {
-  readonly id: string;
-  readonly mix: readonly BotTier[];
-}
-
-export interface RosterDealAudit {
-  /** How many (mix, split) pairs were dealt. */
-  readonly deals: number;
-  readonly problems: string[];
-  /** One line per shipped-shaped split, for the log. */
-  readonly rows: readonly RosterDealRow[];
-}
-
-interface RosterDealRow {
-  readonly id: string;
-  readonly teamA: number;
-  readonly teamB: number;
-  readonly a: string;
-  readonly b: string;
-}
-
-function tally(roster: readonly BotTier[]): Record<BotTier, number> {
-  const out = { RECRUIT: 0, REGULAR: 0, HARDENED: 0, VETERAN: 0 };
-  for (const tier of roster) out[tier]++;
-  return out;
-}
-
 /**
  * Every authored spread, dealt at every split, checked against four properties.
  *
@@ -213,7 +196,7 @@ function tally(roster: readonly BotTier[]): Record<BotTier, number> {
  *     split up to a full roster — which is a stronger statement than a hundred samples: it is
  *     the whole domain, so one run is a fact rather than an estimate.
  *
- * The four properties, in the order they would fail:
+ * The four properties, in the order they would fail, are one function each below:
  *
  *  - **Sizes.** Each side gets exactly the count it asked for.
  *  - **Containment.** The short side's multiset is inside the long side's. This is what fails
@@ -236,129 +219,210 @@ export function auditRosterDeal(mixes: readonly RosterMix[], maxPerSide = 12): R
     for (let a = 0; a <= maxPerSide; a++) {
       for (let b = 0; b <= maxPerSide; b++) {
         deals++;
-        const deal = dealTiers(a, b, entry.mix);
-        const where = `${entry.id} ${a}v${b}`;
-
-        if (deal.a.length !== a || deal.b.length !== b) {
-          problems.push(
-            `${where}: asked for ${a} and ${b} bots, got ${deal.a.length} and ${deal.b.length}.`,
-          );
-          continue;
-        }
-
-        const [short, long] = deal.a.length <= deal.b.length ? [deal.a, deal.b] : [deal.b, deal.a];
-        const cs = tally(short);
-        const cl = tally(long);
-
-        let differing = 0;
-        for (const tier of BOT_TIERS) {
-          const s = cs[tier];
-          const l = cl[tier];
-          if (s > l) {
-            problems.push(
-              `${where}: the smaller side holds ${s} ${tier} against the larger side's ${l}; ` +
-                'a side that is a body down cannot hold more of anything.',
-            );
-          }
-          differing += Math.abs(s - l);
-          if (Math.abs(s - l) > 1 && Math.abs(a - b) <= 1) {
-            problems.push(
-              `${where}: ${tier} is ${cs[tier]} against ${cl[tier]} — the two sides differ by ` +
-                'more than one body of a single tier on an evenly split roster.',
-            );
-          }
-        }
-        if (differing !== Math.abs(a - b)) {
-          problems.push(
-            `${where}: the rosters differ by ${differing} entries where the head-count only ` +
-              `forces ${Math.abs(a - b)}.`,
-          );
-        }
-
-        // The bodies the short side does without are the weakest ones dealt.
-        const missing: BotTier[] = [];
-        for (const tier of BOT_TIERS) {
-          for (let i = 0; i < cl[tier] - cs[tier]; i++) missing.push(tier);
-        }
-        for (const gone of missing) {
-          for (const kept of short) {
-            if (strength(gone) > strength(kept)) {
-              problems.push(
-                `${where}: the smaller side does without a ${gone} while keeping a ${kept}. ` +
-                  'The side that is a body down keeps the stronger half, not the weaker one.',
-              );
-            }
-          }
-        }
-
-        /*
-         * A seat taken and given back leaves the roster where it was found.
-         *
-         * The seam round 4 already found broken once: `replacePlayerWithBot` deals a tier of
-         * its own, so it can disagree with the deal and nothing says so — a replacement at the
-         * wrong tier produces no error and no divergence, only one bot that is harder or softer
-         * than the rest. This walks the whole cycle a human puts a side through:
-         * `seatToVacate` picks the bot a joining human displaces, and `tierForExtraBot` has to
-         * name that same tier when the seat comes back.
-         */
-        for (const team of ['A', 'B'] as const) {
-          const mine = team === 'A' ? deal.a : deal.b;
-          const theirs = team === 'A' ? deal.b : deal.a;
-          const seat = seatToVacate(mine);
-          const taken = mine[seat];
-          if (taken === undefined) continue;
-          const afterJoin = mine.filter((_, index) => index !== seat);
-
-          /*
-           * The seat is taken from the weak end (playtest 2026-09-28). A human joining a side
-           * that is not the longer one leaves exactly the roster `dealTiers` makes one body
-           * shorter — which is every live server's first join, an even 5v5 — so the side the
-           * human is on keeps the stronger half by the same rule the solo deal already kept.
-           */
-          if (mine.length <= theirs.length) {
-            const expected =
-              team === 'A'
-                ? dealTiers(mine.length - 1, theirs.length, entry.mix).a
-                : dealTiers(theirs.length, mine.length - 1, entry.mix).b;
-            const got = tally(afterJoin);
-            const want = tally(expected);
-            if (BOT_TIERS.some((tier) => got[tier] !== want[tier])) {
-              problems.push(
-                `${where}: a human took team ${team}'s ${taken} seat, leaving ${afterJoin.join(' ')} ` +
-                  `where the deal one body shorter is ${expected.join(' ')}.`,
-              );
-            }
-          }
-
-          const back = tierForExtraBot(afterJoin, theirs, entry.mix);
-          if (back !== taken) {
-            problems.push(
-              `${where}: a human took team ${team}'s ${taken} seat and a ${back} came back. ` +
-                'A replacement has to restore the roster the deal made, not deal its own.',
-            );
-          }
-        }
+        auditOneDeal(problems, entry, a, b);
       }
     }
-
-    // One readable line per shipped shape: a full even roster, and the same roster with one
-    // seat taken by a human.
-    for (const [teamA, teamB] of [
-      [5, 5],
-      [4, 5],
-      [4, 4],
-      [3, 4],
-    ] as const) {
-      const deal = dealTiers(teamA, teamB, entry.mix);
-      rows.push({
-        id: entry.id,
-        teamA,
-        teamB,
-        a: deal.a.join(' '),
-        b: deal.b.join(' '),
-      });
-    }
+    appendShippedRows(rows, entry);
   }
 
   return { deals, problems, rows };
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Weakest first. `BOT_TIERS` is authored in that order; this is the index into it. */
+function strength(tier: BotTier): number {
+  const at = BOT_TIERS.indexOf(tier);
+  return at < 0 ? 0 : at;
+}
+
+/**
+ * The order a side gives bodies up in: weakest first, and among equals the latest.
+ *
+ * One ordering for both places a side loses a bot — `dealTiers` leaving the short side's
+ * surplus out before the match, and `seatToVacate` choosing whom a joining human displaces
+ * during it — so a live 5v5 with a human seated lands on exactly the roster a solo 4v5 is dealt.
+ */
+function yieldOrder(lTier: BotTier, lIndex: number, rTier: BotTier, rIndex: number): number {
+  return strength(lTier) - strength(rTier) || rIndex - lIndex;
+}
+
+function tally(roster: readonly BotTier[]): Record<BotTier, number> {
+  const out = { RECRUIT: 0, REGULAR: 0, HARDENED: 0, VETERAN: 0 };
+  for (const tier of roster) out[tier]++;
+  return out;
+}
+
+/** One (mix, split) pair against all four properties. The sizes gate the other three. */
+function auditOneDeal(problems: string[], entry: RosterMix, a: number, b: number): void {
+  const deal = dealTiers(a, b, entry.mix);
+  const where = `${entry.id} ${a}v${b}`;
+
+  if (deal.a.length !== a || deal.b.length !== b) {
+    problems.push(
+      `${where}: asked for ${a} and ${b} bots, got ${deal.a.length} and ${deal.b.length}.`,
+    );
+    return;
+  }
+
+  const [short, long] = deal.a.length <= deal.b.length ? [deal.a, deal.b] : [deal.b, deal.a];
+  auditTierParity(problems, where, short, long);
+  auditStrongerHalfKept(problems, where, short, long);
+  auditSeatRoundTrip(problems, where, deal, entry.mix);
+}
+
+/**
+ * Containment, minimality, and the brief's own per-tier parity.
+ *
+ * The head-count difference is read off the two rosters rather than passed in, because by this
+ * point the sizes have been checked and `long.length - short.length` *is* `|teamA - teamB|`.
+ */
+function auditTierParity(
+  problems: string[],
+  where: string,
+  short: readonly BotTier[],
+  long: readonly BotTier[],
+): void {
+  const cs = tally(short);
+  const cl = tally(long);
+  const forced = long.length - short.length;
+
+  let differing = 0;
+  for (const tier of BOT_TIERS) {
+    const s = cs[tier];
+    const l = cl[tier];
+    if (s > l) {
+      problems.push(
+        `${where}: the smaller side holds ${s} ${tier} against the larger side's ${l}; ` +
+          'a side that is a body down cannot hold more of anything.',
+      );
+    }
+    differing += Math.abs(s - l);
+    if (Math.abs(s - l) > 1 && forced <= 1) {
+      problems.push(
+        `${where}: ${tier} is ${cs[tier]} against ${cl[tier]} — the two sides differ by ` +
+          'more than one body of a single tier on an evenly split roster.',
+      );
+    }
+  }
+  if (differing !== forced) {
+    problems.push(
+      `${where}: the rosters differ by ${differing} entries where the head-count only ` +
+        `forces ${forced}.`,
+    );
+  }
+}
+
+/** The bodies the short side does without are the weakest ones dealt. */
+function auditStrongerHalfKept(
+  problems: string[],
+  where: string,
+  short: readonly BotTier[],
+  long: readonly BotTier[],
+): void {
+  const cs = tally(short);
+  const cl = tally(long);
+
+  const missing: BotTier[] = [];
+  for (const tier of BOT_TIERS) {
+    for (let i = 0; i < cl[tier] - cs[tier]; i++) missing.push(tier);
+  }
+  for (const gone of missing) {
+    for (const kept of short) {
+      if (strength(gone) > strength(kept)) {
+        problems.push(
+          `${where}: the smaller side does without a ${gone} while keeping a ${kept}. ` +
+            'The side that is a body down keeps the stronger half, not the weaker one.',
+        );
+      }
+    }
+  }
+}
+
+/**
+ * A seat taken and given back leaves the roster where it was found.
+ *
+ * The seam round 4 already found broken once: `replacePlayerWithBot` deals a tier of its own,
+ * so it can disagree with the deal and nothing says so — a replacement at the wrong tier
+ * produces no error and no divergence, only one bot that is harder or softer than the rest.
+ * This walks the whole cycle a human puts a side through: `seatToVacate` picks the bot a
+ * joining human displaces, and `tierForExtraBot` has to name that same tier when the seat
+ * comes back.
+ */
+function auditSeatRoundTrip(
+  problems: string[],
+  where: string,
+  deal: RosterDeal,
+  mix: readonly BotTier[],
+): void {
+  for (const team of ['A', 'B'] as const) {
+    const mine = team === 'A' ? deal.a : deal.b;
+    const theirs = team === 'A' ? deal.b : deal.a;
+    const seat = seatToVacate(mine);
+    const taken = mine[seat];
+    if (taken === undefined) continue;
+    const afterJoin = mine.filter((_, index) => index !== seat);
+
+    if (mine.length <= theirs.length) {
+      const expected =
+        team === 'A'
+          ? dealTiers(mine.length - 1, theirs.length, mix).a
+          : dealTiers(theirs.length, mine.length - 1, mix).b;
+      auditJoinLeavesShorterDeal(problems, `${where} team ${team}'s ${taken}`, afterJoin, expected);
+    }
+
+    const back = tierForExtraBot(afterJoin, theirs, mix);
+    if (back !== taken) {
+      problems.push(
+        `${where}: a human took team ${team}'s ${taken} seat and a ${back} came back. ` +
+          'A replacement has to restore the roster the deal made, not deal its own.',
+      );
+    }
+  }
+}
+
+/**
+ * The seat is taken from the weak end (playtest 2026-09-28).
+ *
+ * A human joining a side that is not the longer one leaves exactly the roster `dealTiers`
+ * makes one body shorter — which is every live server's first join, an even 5v5 — so the side
+ * the human is on keeps the stronger half by the same rule the solo deal already kept.
+ */
+function auditJoinLeavesShorterDeal(
+  problems: string[],
+  who: string,
+  afterJoin: readonly BotTier[],
+  expected: readonly BotTier[],
+): void {
+  const got = tally(afterJoin);
+  const want = tally(expected);
+  if (BOT_TIERS.every((tier) => got[tier] === want[tier])) return;
+  problems.push(
+    `${who} seat was taken by a human, leaving ${afterJoin.join(' ')} ` +
+      `where the deal one body shorter is ${expected.join(' ')}.`,
+  );
+}
+
+/**
+ * One readable line per shipped shape: a full even roster, and the same roster with one seat
+ * taken by a human.
+ */
+function appendShippedRows(rows: RosterDealRow[], entry: RosterMix): void {
+  for (const [teamA, teamB] of [
+    [5, 5],
+    [4, 5],
+    [4, 4],
+    [3, 4],
+  ] as const) {
+    const deal = dealTiers(teamA, teamB, entry.mix);
+    rows.push({
+      id: entry.id,
+      teamA,
+      teamB,
+      a: deal.a.join(' '),
+      b: deal.b.join(' '),
+    });
+  }
+}
+//#endregion

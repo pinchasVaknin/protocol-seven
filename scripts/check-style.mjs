@@ -219,6 +219,13 @@ const FINISHED = {
     'src/shared/ai/PlayerCombatant.ts',
     'src/shared/ai/WeaponProfile.ts',
   ],
+  A12: [
+    'src/shared/ai/Bot.ts',
+    'src/shared/ai/BotBrain.ts',
+    // The module scratch the path follower writes moved up into CONSTANTS from the foot of
+    // the file: it is module-level state, and nothing reads it at load.
+    'src/shared/ai/BotStates.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

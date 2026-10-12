@@ -11,6 +11,13 @@
  * single door back into the machine.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type BotState = (typeof BOT_STATES)[number];
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const BOT_STATES = [
   'IDLE',
   'PATROL',
@@ -24,8 +31,6 @@ const BOT_STATES = [
   'OBJECTIVE',
   'DEAD',
 ] as const;
-
-export type BotState = (typeof BOT_STATES)[number];
 
 /**
  * Legal edges.
@@ -59,7 +64,10 @@ const LEGAL: Readonly<Record<BotState, readonly BotState[]>> = {
   OBJECTIVE: ['ENGAGE', 'SUPPRESS', 'RELOAD', 'SEEK_COVER', 'FLANK', 'PUSH', 'INVESTIGATE', 'PATROL', 'IDLE', 'DEAD'],
   DEAD: ['IDLE'],
 };
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function isLegalBotTransition(from: BotState, to: BotState): boolean {
   return from === to || LEGAL[from].includes(to);
 }
@@ -101,3 +109,4 @@ export function isTravellingState(state: BotState): boolean {
     state === 'OBJECTIVE'
   );
 }
+//#endregion

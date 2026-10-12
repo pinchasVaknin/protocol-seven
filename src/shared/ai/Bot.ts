@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { SkinId } from '../meta/Skins';
 import { HitboxRig, HUMANOID_RIG, rigLayoutFor } from '../combat/HitboxRig';
 import type { DamageSystem } from '../combat/DamageSystem';
@@ -30,7 +32,39 @@ import { CombatBehaviour } from './CombatBehaviour';
 import type { BotTier, PerceptionConfig, TierConfig, TierTable } from './DifficultyTiers';
 import { Path, type PathClient } from './Pathing';
 import { weaponProfileFor, type WeaponCombatProfile } from './WeaponProfile';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+export interface BotSpec {
+  readonly entityId: number;
+  readonly displayName: string;
+  readonly team: BotTeam;
+  readonly tier: BotTier;
+  readonly seed: number;
+}
+
+export interface BotDeps {
+  readonly world: CollisionWorld;
+  readonly bus: GameBus;
+  readonly damage: DamageSystem;
+  readonly movement: MovementConfig;
+  readonly healthConfig: HealthConfig;
+  readonly weaponDef: WeaponDef;
+  readonly viewmodelConfig: ViewmodelConfig;
+  readonly tiers: TierTable;
+  readonly perceptionConfig: PerceptionConfig;
+  readonly brain: BrainDeps;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const evBotState = { entityId: 0, from: 'IDLE' as BotState, to: 'IDLE' as BotState, tier: 'REGULAR' as BotTier };
+//#endregion
+
+// ========================================= CLASS Bot ========================================== \\
+//#region Class Bot
 /**
  * One bot (brief S6.1).
  *
@@ -52,31 +86,9 @@ import { weaponProfileFor, type WeaponCombatProfile } from './WeaponProfile';
  * it goes into the bot's aim, which is why a bot holding the trigger climbs off target and
  * has to fight its way back down — with exactly the numbers in the weapon def.
  */
-
-export interface BotSpec {
-  readonly entityId: number;
-  readonly displayName: string;
-  readonly team: BotTeam;
-  readonly tier: BotTier;
-  readonly seed: number;
-}
-
-export interface BotDeps {
-  readonly world: CollisionWorld;
-  readonly bus: GameBus;
-  readonly damage: DamageSystem;
-  readonly movement: MovementConfig;
-  readonly healthConfig: HealthConfig;
-  readonly weaponDef: WeaponDef;
-  readonly viewmodelConfig: ViewmodelConfig;
-  readonly tiers: TierTable;
-  readonly perceptionConfig: PerceptionConfig;
-  readonly brain: BrainDeps;
-}
-
-const evBotState = { entityId: 0, from: 'IDLE' as BotState, to: 'IDLE' as BotState, tier: 'REGULAR' as BotTier };
-
 export class Bot implements Combatant, PathClient {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly entityId: number;
   readonly displayName: string;
   readonly team: BotTeam;
@@ -171,7 +183,10 @@ export class Bot implements Combatant, PathClient {
 
   private seq = 0;
   private alive = true;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(spec: BotSpec, deps: BotDeps) {
     this.entityId = spec.entityId;
     this.displayName = spec.displayName;
@@ -200,7 +215,10 @@ export class Bot implements Combatant, PathClient {
     this.weapons.reseed(spec.seed ^ 0x5bf0_3d17);
     this.brain = new BotBrain(deps.brain);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   // -- Combatant ------------------------------------------------------------
 
   get px(): number {
@@ -526,5 +544,6 @@ export class Bot implements Combatant, PathClient {
   renderZ(alpha: number): number {
     return this.prevZ + (this.currZ - this.prevZ) * alpha;
   }
-
+  //#endregion
 }
+//#endregion

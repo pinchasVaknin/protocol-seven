@@ -1,31 +1,3 @@
-import { nowMs } from '../core/Clock';
-import { SIM_HZ } from '../core/Loop';
-import type { Combatant } from '../ai/Combatant';
-import type { BotTeam } from '../ai/Combatant';
-import type { ObjectiveProvider, ObjectiveTarget } from '../ai/ObjectiveIntent';
-import type { ScoreSystem } from '../combat/ScoreSystem';
-import { EV, type GameBus } from '../core/Events';
-import { Btn, isDown, type InputCommand } from '../core/InputCommand';
-import { CarePackage } from './CarePackage';
-import { CarriedWeaponStreak } from './CarriedWeapon';
-import { ChopperGunner } from './ChopperGunner';
-import { CounterUav } from './CounterUav';
-import { Killstreak, type StreakContext } from './KillstreakBase';
-import { MortarStrike } from './MortarStrike';
-import { makeSentryTally, SentryGun, type SentryTally } from './SentryGun';
-import { carriedStreakWeapon } from './StreakWeapons';
-import type { WeaponDef } from '../weapons/WeaponDefs';
-import {
-  STREAK_COOLDOWN_SECONDS,
-  STREAK_DEFS,
-  streakDef,
-  type StreakDef,
-  type StreakId,
-} from './StreakDefs';
-import { StreakLedger, type StreakEconomyReport, type StreakPrice } from './StreakLedger';
-import { Uav } from './Uav';
-import { Disposable } from '../core/Disposable';
-
 /**
  * Who can afford what, what is currently in the world, and the three M6 perk hooks (M7).
  *
@@ -75,6 +47,39 @@ import { Disposable } from '../core/Disposable';
  * loadout and `streaks/` has no business knowing what a perk is.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { nowMs } from '../core/Clock';
+import { SIM_HZ } from '../core/Loop';
+import type { Combatant } from '../ai/Combatant';
+import type { BotTeam } from '../ai/Combatant';
+import type { ObjectiveProvider, ObjectiveTarget } from '../ai/ObjectiveIntent';
+import type { ScoreSystem } from '../combat/ScoreSystem';
+import { EV, type GameBus } from '../core/Events';
+import { Btn, isDown, type InputCommand } from '../core/InputCommand';
+import { CarePackage } from './CarePackage';
+import { CarriedWeaponStreak } from './CarriedWeapon';
+import { ChopperGunner } from './ChopperGunner';
+import { CounterUav } from './CounterUav';
+import { Killstreak, type StreakContext } from './KillstreakBase';
+import { MortarStrike } from './MortarStrike';
+import { makeSentryTally, SentryGun, type SentryTally } from './SentryGun';
+import { carriedStreakWeapon } from './StreakWeapons';
+import type { WeaponDef } from '../weapons/WeaponDefs';
+import {
+  STREAK_COOLDOWN_SECONDS,
+  STREAK_DEFS,
+  streakDef,
+  type StreakDef,
+  type StreakId,
+} from './StreakDefs';
+import { StreakLedger, type StreakEconomyReport, type StreakPrice } from './StreakLedger';
+import { Uav } from './Uav';
+import { Disposable } from '../core/Disposable';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface StreakSystemDeps {
   readonly bus: GameBus;
   readonly score: ScoreSystem;
@@ -116,14 +121,23 @@ export interface StreakSystemDeps {
    */
   readonly equippedStreaks: (entityId: number) => readonly StreakId[];
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Entity ids for streak-owned world objects. Above the bots' range, below nothing. */
 const STREAK_ENTITY_BASE = 900;
 
 /** The cooldown, in sim ticks. Seconds are the authored unit; ticks are the clock (S4.1). */
 const COOLDOWN_TICKS = Math.round(STREAK_COOLDOWN_SECONDS * SIM_HZ);
+//#endregion
 
+// ===================================== CLASS StreakSystem ===================================== \\
+//#region Class StreakSystem
 export class StreakSystem extends Disposable implements ObjectiveProvider {
+
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Everything alive in the world right now. Read by the debug panel and the frame stats. */
   readonly active: Killstreak[] = [];
 
@@ -166,7 +180,10 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
   private readonly priceScratch: StreakPrice[] = [];
   private readonly evActivated = { entityId: 0, streakId: '', name: '', instanceId: 0 };
   private readonly evExpired = { entityId: 0, streakId: '', instanceId: 0 };
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: StreakSystemDeps) {
     super();
     this.deps = deps;
@@ -184,7 +201,10 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     };
     this.subscribe();
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   // -- the wallet ------------------------------------------------------------
 
   /**
@@ -223,30 +243,6 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     return this.ledger
       .lockoutsOf(entityId, this.lastTick)
       .map((l) => ({ id: l.id, seconds: l.ticks / SIM_HZ }));
-  }
-
-  /**
-   * Ticks left on this entity's own live instance of this streak, or 0 (round 4, the pivot).
-   *
-   * The ledger's concurrency question, answered from `active` — the list that already *is* the
-   * answer to "what is in the world" — rather than from a second record that could disagree
-   * with it. The maximum is taken rather than the first match because a care package dropped
-   * before the rule existed could still have two crates down; one of them keeps the key shut.
-   *
-   * A streak with no duration reports a full cooldown's worth and keeps reporting it every tick
-   * it is alive, so "no two at once" holds for something that ends on its own terms without this
-   * having to express an infinity on a wire that has no room for one. All six shipped streaks
-   * have a duration, so today this is a guard rather than a case.
-   */
-  private liveTicksFor(entityId: number, id: StreakId): number {
-    let ticks = 0;
-    for (const streak of this.active) {
-      if (streak.ownerId !== entityId || streak.def.id !== id) continue;
-      const left = streak.secondsRemaining;
-      const t = Number.isFinite(left) ? Math.ceil(left * SIM_HZ) : COOLDOWN_TICKS;
-      if (t > ticks) ticks = t;
-    }
-    return ticks;
   }
 
   /** Everything this entity has equipped, priced. In `STREAK_DEFS` order. */
@@ -291,6 +287,43 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     return best;
   }
 
+  /**
+   * Put kills in somebody's wallet without their scoring them. Debug and verification (S7).
+   *
+   * Exposed so acceptance criterion 1 can exercise activate/function/expire for all six
+   * without first staging a twelve-kill streak, which would measure the score system rather
+   * than the streak. Credits the **price** of the named streak rather than handing the streak
+   * over, because after B9 there is nothing to hand over: the harness's "give them a chopper"
+   * is "give them what a chopper costs", and everything downstream of that is shipping code.
+   */
+  debugGrant(entityId: number, id: StreakId): void {
+    this.creditKills(entityId, this.priceOf(id, entityId));
+  }
+
+  /**
+   * Pay kills into a wallet — the one door for everything that is not a scored kill.
+   *
+   * Public since round 4's F14, which is the third caller and the one the door was named for:
+   * `MO951357` grants thirty kills of purchasing power without touching the scoreboard, and it
+   * is implementable *because* the balance is credited from `PlayerScore.kills` rather than read
+   * out of it. A model that derived the balance from the score could not have honoured that code
+   * without a compensating deduction in the match results.
+   *
+   * Applies the same aliveness rule `checkEarned` does, and for the same reason: a wallet
+   * belongs to a life, so a credit aimed at somebody who is already dead is dropped rather than
+   * waiting there for their next one. Measured — the skirmish harness's repeating top-up pays
+   * every seat including the dead ones, and without this it put 3 life-starts in 101 on the
+   * wrong side of `walletsAtLifeStart`.
+   */
+  creditKills(entityId: number, kills: number): void {
+    if (this.combatant(entityId)?.health.alive === false) {
+      this.ledger.dropCredit(kills);
+      return;
+    }
+    this.ledger.credit(entityId, kills);
+    this.publishProgress(entityId);
+  }
+
   // -- spending --------------------------------------------------------------
 
   /**
@@ -325,7 +358,7 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     if (owner === undefined) return null;
     if (this.ledger.charge(entityId, id, this.priceOf(id, entityId), this.lastTick) !== 'ok') return null;
 
-    const streak = this.build(id, entityId, owner.team, x, y, z, yaw);
+    const streak = this.buildStreak(id, entityId, owner.team, x, y, z, yaw);
     this.active.push(streak);
     this.ledger.armCooldown(entityId, id, this.lastTick + this.effectEndTicks(streak.def) + COOLDOWN_TICKS);
     streak.onActivate();
@@ -412,19 +445,10 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
       const streak = this.active[i];
       if (streak === undefined) continue;
 
-      // The chopper consumes its own owner's command, exactly as their body would. Asked per
-      // streak rather than handed one command, so two gunners in the same match fly separately.
-      if (streak instanceof ChopperGunner) {
-        const cmd = this.deps.commandFor(streak.ownerId);
-        if (cmd !== null) streak.step(cmd);
-      }
-
-      // The owner's hands on their own turret (2026-09-28), off the same command, for the same
-      // reason: whoever placed it can take it apart, and only they can. See `stepDismantle`.
-      if (streak instanceof SentryGun) {
-        const cmd = this.deps.commandFor(streak.ownerId);
-        streak.stepDismantle(this.combatant(streak.ownerId), cmd !== null && isDown(cmd.buttons, Btn.Use));
-      }
+      // Two streaks read their owner's command. The type test stays at the call site and the
+      // body of each is a named step: a lookup table per streak per tick is what R7 forbids.
+      if (streak instanceof ChopperGunner) this.flyChopper(streak);
+      if (streak instanceof SentryGun) this.stepSentryDismantle(streak);
 
       if (streak.onTick(tick)) continue;
       this.retire(i, streak);
@@ -535,8 +559,33 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     super.dispose();
     this.ledger.clear();
   }
+  //#endregion
 
-  // -- internals -------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Ticks left on this entity's own live instance of this streak, or 0 (round 4, the pivot).
+   *
+   * The ledger's concurrency question, answered from `active` — the list that already *is* the
+   * answer to "what is in the world" — rather than from a second record that could disagree
+   * with it. The maximum is taken rather than the first match because a care package dropped
+   * before the rule existed could still have two crates down; one of them keeps the key shut.
+   *
+   * A streak with no duration reports a full cooldown's worth and keeps reporting it every tick
+   * it is alive, so "no two at once" holds for something that ends on its own terms without this
+   * having to express an infinity on a wire that has no room for one. All six shipped streaks
+   * have a duration, so today this is a guard rather than a case.
+   */
+  private liveTicksFor(entityId: number, id: StreakId): number {
+    let ticks = 0;
+    for (const streak of this.active) {
+      if (streak.ownerId !== entityId || streak.def.id !== id) continue;
+      const left = streak.secondsRemaining;
+      const t = Number.isFinite(left) ? Math.ceil(left * SIM_HZ) : COOLDOWN_TICKS;
+      if (t > ticks) ticks = t;
+    }
+    return ticks;
+  }
 
   /**
    * A streak leaves the world: expired, shot down, ended by the round, or destroyed with its
@@ -555,6 +604,26 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
    * A streak whose effect ended at the press is deliberately not re-armed: an unclaimed crate
    * expiring sixty seconds later must not restart a cooldown that has long since run out.
    */
+  /**
+   * The chopper consumes its own owner's command, exactly as their body would.
+   *
+   * Asked per streak rather than handed one command, so two gunners in the same match fly
+   * separately.
+   */
+  private flyChopper(chopper: ChopperGunner): void {
+    const cmd = this.deps.commandFor(chopper.ownerId);
+    if (cmd !== null) chopper.step(cmd);
+  }
+
+  /**
+   * The owner's hands on their own turret (2026-09-28), off the same command, for the same
+   * reason: whoever placed it can take it apart, and only they can. See `stepDismantle`.
+   */
+  private stepSentryDismantle(sentry: SentryGun): void {
+    const cmd = this.deps.commandFor(sentry.ownerId);
+    sentry.stepDismantle(this.combatant(sentry.ownerId), cmd !== null && isDown(cmd.buttons, Btn.Use));
+  }
+
   private retire(index: number, streak: Killstreak): void {
     this.active.splice(index, 1);
     if (streak instanceof SentryGun) streak.tallyInto(this.retiredSentries);
@@ -581,7 +650,7 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     return def.effectEnds === 'expiry' ? Math.round(def.durationSeconds * SIM_HZ) : 0;
   }
 
-  private build(
+  private buildStreak(
     id: StreakId,
     ownerId: number,
     team: BotTeam,
@@ -617,35 +686,16 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     }
   }
 
+  /**
+   * Wire the five events this class answers.
+   *
+   * Each handler is a named method rather than a body inlined here, so the note explaining why
+   * it is subscribed at all sits on the thing it explains (A17).
+   */
   private subscribe(): void {
     const bus = this.deps.bus;
-
-    this.own(
-      bus.on(EV.EntityKilled, (p) => {
-        // Death first: whoever died loses the balance, and their cooldowns keep running. The
-        // killer is credited afterwards, from the score's own count.
-        this.onDeath(p.targetId);
-        if (p.sourceId === p.targetId) return;
-        this.checkEarned(p.sourceId);
-      }),
-    );
-
-    /**
-     * A claimed care package pays out in kills (round 4, B9).
-     *
-     * The crate used to hand over its contents directly, and under a currency that is the one
-     * shape that breaks the model: it could drop a streak the claimant has not equipped, which
-     * no key indexes and no price is shown for, and the copy it handed over would arrive having
-     * paid nothing and started no cooldown — a second door into an economy with one. Paying the
-     * roll's price into the balance keeps a single currency, and the gamble is intact: a crate
-     * is still worth between five and twelve kills depending on the roll.
-     */
-    this.own(
-      bus.on(EV.CarePackageClaimed, (p) => {
-        this.creditKills(p.entityId, this.priceOf(p.streakId as StreakId, p.entityId));
-      }),
-    );
-
+    this.own(bus.on(EV.EntityKilled, (p) => this.onEntityKilled(p.targetId, p.sourceId)));
+    this.own(bus.on(EV.CarePackageClaimed, (p) => this.onCarePackageClaimed(p.entityId, p.streakId)));
     /**
      * A new life reached the world (round 4, B10 and the pivot).
      *
@@ -664,7 +714,6 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
      * one door is also the answer P5 is looking for.
      */
     this.own(bus.on(EV.PlayerSpawned, (p) => this.ledger.noteLifeStart(p.entityId)));
-
     /**
      * A round boundary, which under this economy is **not** a life boundary (round 4, P5).
      *
@@ -678,10 +727,35 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
      * round boundary is not a life boundary and a cooldown does not care about either.
      */
     this.own(bus.on(EV.RoundStarted, () => this.ledger.noteRoundBoundary()));
-
     // Nothing survives the end of a match — see the chopper's single-exit rule.
     this.own(bus.on(EV.MatchEnded, () => this.endAll()));
     this.own(bus.on(EV.RoundEnded, () => this.endAll()));
+  }
+
+  /**
+   * Somebody died.
+   *
+   * Death first: whoever died loses the balance, and their cooldowns keep running. The killer is
+   * credited afterwards, from the score's own count.
+   */
+  private onEntityKilled(targetId: number, sourceId: number): void {
+    this.onDeath(targetId);
+    if (sourceId === targetId) return;
+    this.checkEarned(sourceId);
+  }
+
+  /**
+   * A claimed care package pays out in kills (round 4, B9).
+   *
+   * The crate used to hand over its contents directly, and under a currency that is the one
+   * shape that breaks the model: it could drop a streak the claimant has not equipped, which
+   * no key indexes and no price is shown for, and the copy it handed over would arrive having
+   * paid nothing and started no cooldown — a second door into an economy with one. Paying the
+   * roll's price into the balance keeps a single currency, and the gamble is intact: a crate
+   * is still worth between five and twelve kills depending on the roll.
+   */
+  private onCarePackageClaimed(entityId: number, streakId: string): void {
+    this.creditKills(entityId, this.priceOf(streakId as StreakId, entityId));
   }
 
   /**
@@ -723,6 +797,18 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     }
     if (this.ledger.foldKills(entityId, row.kills) === 0) return;
 
+    this.announceAffordable(entityId);
+    this.publishProgress(entityId);
+  }
+
+  /**
+   * Say, once per purchase cycle, what this entity can now buy.
+   *
+   * The ledger remembers what it has already been told and `charge` drops that record when it
+   * takes the money, so the second time a streak becomes affordable in one life is announced and
+   * the intervening kills are not.
+   */
+  private announceAffordable(entityId: number): void {
     const balance = this.ledger.balanceOf(entityId);
     for (const def of STREAK_DEFS) {
       if (!this.deps.equippedStreaks(entityId).includes(def.id)) continue;
@@ -737,44 +823,6 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
       ev.requirement = price;
       this.deps.bus.emit(EV.StreakEarned, ev);
     }
-    this.publishProgress(entityId);
-  }
-
-  /**
-   * Put kills in somebody's wallet without their scoring them. Debug and verification (S7).
-   *
-   * Exposed so acceptance criterion 1 can exercise activate/function/expire for all six
-   * without first staging a twelve-kill streak, which would measure the score system rather
-   * than the streak. Credits the **price** of the named streak rather than handing the streak
-   * over, because after B9 there is nothing to hand over: the harness's "give them a chopper"
-   * is "give them what a chopper costs", and everything downstream of that is shipping code.
-   */
-  debugGrant(entityId: number, id: StreakId): void {
-    this.creditKills(entityId, this.priceOf(id, entityId));
-  }
-
-  /**
-   * Pay kills into a wallet — the one door for everything that is not a scored kill.
-   *
-   * Public since round 4's F14, which is the third caller and the one the door was named for:
-   * `MO951357` grants thirty kills of purchasing power without touching the scoreboard, and it
-   * is implementable *because* the balance is credited from `PlayerScore.kills` rather than read
-   * out of it. A model that derived the balance from the score could not have honoured that code
-   * without a compensating deduction in the match results.
-   *
-   * Applies the same aliveness rule `checkEarned` does, and for the same reason: a wallet
-   * belongs to a life, so a credit aimed at somebody who is already dead is dropped rather than
-   * waiting there for their next one. Measured — the skirmish harness's repeating top-up pays
-   * every seat including the dead ones, and without this it put 3 life-starts in 101 on the
-   * wrong side of `walletsAtLifeStart`.
-   */
-  creditKills(entityId: number, kills: number): void {
-    if (this.combatant(entityId)?.health.alive === false) {
-      this.ledger.dropCredit(kills);
-      return;
-    }
-    this.ledger.credit(entityId, kills);
-    this.publishProgress(entityId);
   }
 
   /**
@@ -790,14 +838,20 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     this.ledger.resetLife(entityId, this.deps.score.row(entityId)?.kills ?? 0, this.lastTick);
     this.publishProgress(entityId);
 
-    // A chopper gunner who is shot out of their own body comes back to it. This is one of the
-    // two cases acceptance criterion 2 names, and it goes through the same single exit.
+    // A chopper gunner who is shot out of their own body comes back to it, and a carried weapon
+    // dies with the body carrying it (2026-09-26, the human): it does not drop, and it is not
+    // waiting in the hands of the life that comes next. Both are the same rule — a streak that
+    // is *held* ends with the hands holding it — and `StreakDef.endsWithOwnersLife` is where it
+    // is now written, so the tenth streak answers it in the table rather than falling through
+    // two `instanceof` checks here (A17). Everything placed in the world stays: a sentry and a
+    // crate already outlive their owner's death and do not care who put them there.
+    //
+    // This is one of the two cases acceptance criterion 2 names, and it goes through the same
+    // single exit.
     for (let i = this.active.length - 1; i >= 0; i--) {
       const streak = this.active[i];
-      if (streak instanceof ChopperGunner && streak.ownerId === entityId) this.retire(i, streak);
-      // A carried weapon dies with the body carrying it (2026-09-26, the human): it does not
-      // drop, and it is not waiting in the hands of the life that comes next.
-      if (streak instanceof CarriedWeaponStreak && streak.ownerId === entityId) this.retire(i, streak);
+      if (streak === undefined) continue;
+      if (streak.def.endsWithOwnersLife && streak.ownerId === entityId) this.retire(i, streak);
     }
   }
 
@@ -817,4 +871,6 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
     for (const c of this.deps.roster) if (c.entityId === entityId) return c;
     return undefined;
   }
+  //#endregion
 }
+//#endregion

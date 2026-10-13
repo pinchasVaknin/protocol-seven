@@ -19,6 +19,9 @@
  * Positional calls take world coordinates. Panning and attenuation are the client's
  * business; a streak states where a thing happened, not how loud it should be.
  */
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface StreakPresentation {
   // -- sentry ---------------------------------------------------------------
   sentryDeploy(x: number, y: number, z: number): void;
@@ -52,7 +55,10 @@ export interface StreakPresentation {
   /** Additive camera shake for the local player, 0..1-ish. Ignored where there is no camera. */
   shake(amount: number): void;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The presentation a process with no output uses.
  *
@@ -76,3 +82,4 @@ export const SILENT_PRESENTATION: StreakPresentation = {
   blast(): void {},
   shake(): void {},
 };
+//#endregion

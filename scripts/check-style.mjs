@@ -262,6 +262,12 @@ const FINISHED = {
     'src/shared/streaks/Uav.ts',
     'src/shared/streaks/StreakWeapons.ts',
   ],
+  A17: [
+    'src/shared/streaks/StreakSystem.ts',
+    'src/shared/streaks/StreakLedger.ts',
+    'src/shared/streaks/StreakDefs.ts',
+    'src/shared/streaks/StreakPresentation.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,3 @@
-import type { StreakId } from './StreakDefs';
-import { carriedStreakWeapon } from './StreakWeapons';
-
 /**
  * The killstreak economy: a balance of kills, what it has been spent on, and how long each
  * streak is locked out for (M11 Gate B, playtest round 4, B9 + B10 and the pivot that followed).
@@ -55,6 +52,14 @@ import { carriedStreakWeapon } from './StreakWeapons';
  * economy through it and audit the result — see `report`.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { StreakId } from './StreakDefs';
+import { carriedStreakWeapon } from './StreakWeapons';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** A streak this entity has equipped, and what it costs them after Hardline. */
 export interface StreakPrice {
   readonly id: StreakId;
@@ -248,18 +253,29 @@ export interface StreakEconomyReport {
    */
   balanceRepeatPurchases: number;
 }
+//#endregion
 
+// ===================================== CLASS StreakLedger ===================================== \\
+//#region Class StreakLedger
 export class StreakLedger {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly rows = new Map<number, LedgerRow>();
   private readonly deps: StreakLedgerDeps;
   private readonly totals = blankReport();
   /** Reused by the per-life audit, so closing a life allocates nothing. */
   private readonly priceScratch: number[] = [];
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: StreakLedgerDeps) {
     this.deps = deps;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   // -- the balance -----------------------------------------------------------
 
   balanceOf(entityId: number): number {
@@ -310,7 +326,7 @@ export class StreakLedger {
    * rather than from the ninety seconds it was never going to see.
    */
   armCooldown(entityId: number, id: StreakId, readyAtTick: number): void {
-    this.row(entityId).cooldowns.set(id, readyAtTick);
+    this.rowFor(entityId).cooldowns.set(id, readyAtTick);
   }
 
   /** Every streak this entity is locked out of, and by how many ticks. The debug panel's read. */
@@ -331,7 +347,7 @@ export class StreakLedger {
   }
 
   noteAnnounced(entityId: number, id: StreakId): void {
-    const row = this.row(entityId);
+    const row = this.rowFor(entityId);
     if (!row.announced.includes(id)) row.announced.push(id);
   }
 
@@ -346,7 +362,7 @@ export class StreakLedger {
    * arriving one life later and looking like nothing.
    */
   discardKills(entityId: number, kills: number): void {
-    const row = this.row(entityId);
+    const row = this.rowFor(entityId);
     if (kills > row.killMark) this.totals.postMortemKills += kills - row.killMark;
     row.killMark = kills;
   }
@@ -365,7 +381,7 @@ export class StreakLedger {
    * where it was and the balance is the difference between the two.
    */
   foldKills(entityId: number, kills: number): number {
-    const row = this.row(entityId);
+    const row = this.rowFor(entityId);
     if (kills < row.killMark) {
       this.totals.resyncs++;
       row.killMark = kills;
@@ -375,7 +391,7 @@ export class StreakLedger {
     row.killMark = kills;
     if (gained === 0) return 0;
     row.kills += gained;
-    this.observe(row);
+    this.sampleInvariants(row);
     return gained;
   }
 
@@ -395,9 +411,9 @@ export class StreakLedger {
    */
   credit(entityId: number, kills: number): void {
     if (kills <= 0) return;
-    const row = this.row(entityId);
+    const row = this.rowFor(entityId);
     row.credits += kills;
-    this.observe(row);
+    this.sampleInvariants(row);
   }
 
   // -- spending --------------------------------------------------------------
@@ -444,29 +460,17 @@ export class StreakLedger {
    */
   charge(entityId: number, id: StreakId, price: number, tick: number): StreakPurchase {
     const verdict = this.quote(entityId, id, price, tick);
-    if (verdict === 'live') {
-      this.totals.refusedLive++;
+    if (verdict !== 'ok') {
+      this.countRefusal(verdict);
       return verdict;
     }
-    if (verdict === 'handsFull') {
-      this.totals.refusedHandsFull++;
-      return verdict;
-    }
-    if (verdict === 'cooling') {
-      this.totals.refusedCooling++;
-      return verdict;
-    }
-    if (verdict === 'unaffordable') {
-      this.totals.refusedUnaffordable++;
-      return verdict;
-    }
-    const row = this.row(entityId);
+    const row = this.rowFor(entityId);
     row.spent += price;
     row.buys.set(id, (row.buys.get(id) ?? 0) + 1);
     const at = row.announced.indexOf(id);
     if (at >= 0) row.announced.splice(at, 1);
     this.totals.activations++;
-    this.observe(row);
+    this.sampleInvariants(row);
     return 'ok';
   }
 
@@ -489,7 +493,7 @@ export class StreakLedger {
   resetLife(entityId: number, kills: number, tick: number): void {
     const row = this.rows.get(entityId);
     if (row === undefined) {
-      this.row(entityId).killMark = kills;
+      this.rowFor(entityId).killMark = kills;
       return;
     }
     for (const readyAt of row.cooldowns.values()) {
@@ -558,10 +562,26 @@ export class StreakLedger {
     for (const [entityId, row] of this.rows) this.foldInto(out, entityId, row);
     return out;
   }
+  //#endregion
 
-  // -- internals -------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Count a refusal against the rule that made it.
+   *
+   * Four counters rather than one, because to a log they are four different facts: whether the
+   * last one is still up, whether the hands are full, whether the clock has not run out, or
+   * whether the money is simply not there. To a player they are one event — the key does
+   * nothing — which is what `lockoutTicks` collapses them into.
+   */
+  private countRefusal(verdict: StreakPurchase): void {
+    if (verdict === 'live') this.totals.refusedLive++;
+    else if (verdict === 'handsFull') this.totals.refusedHandsFull++;
+    else if (verdict === 'cooling') this.totals.refusedCooling++;
+    else if (verdict === 'unaffordable') this.totals.refusedUnaffordable++;
+  }
 
-  private row(entityId: number): LedgerRow {
+  private rowFor(entityId: number): LedgerRow {
     let row = this.rows.get(entityId);
     if (row === undefined) {
       row = {
@@ -580,7 +600,7 @@ export class StreakLedger {
   }
 
   /** Every mutation of a row passes here, so the invariants are sampled rather than asserted. */
-  private observe(row: LedgerRow): void {
+  private sampleInvariants(row: LedgerRow): void {
     const balance = row.kills + row.credits - row.spent;
     if (balance < 0) this.totals.negativeBalances++;
     if (balance > row.peak) row.peak = balance;
@@ -592,6 +612,12 @@ export class StreakLedger {
   }
 
   private foldInto(out: StreakEconomyReport, entityId: number, row: LedgerRow): void {
+    this.foldCounts(out, row);
+    this.foldPacingModels(out, entityId, row);
+  }
+
+  /** What this life actually did: the money, the buys, and the repeats of one streak. */
+  private foldCounts(out: StreakEconomyReport, row: LedgerRow): void {
     out.lives++;
     let buys = 0;
     for (const n of row.buys.values()) {
@@ -602,11 +628,15 @@ export class StreakLedger {
     out.killsBanked += row.kills;
     out.credited += row.credits;
     out.spent += row.spent;
+  }
 
-    // The three models, priced identically and asked the same question: what does one life's
-    // kills entitle this player to? A threshold hands over everything it reaches, all at once;
-    // the once-per-life balance buys each of them at most one time; the balance as it stands now
-    // buys the cheapest as often as the kills allow.
+  /**
+   * The three models, priced identically and asked the same question: what does one life's
+   * kills entitle this player to? A threshold hands over everything it reaches, all at once;
+   * the once-per-life balance buys each of them at most one time; the balance as it stands now
+   * buys the cheapest as often as the kills allow.
+   */
+  private foldPacingModels(out: StreakEconomyReport, entityId: number, row: LedgerRow): void {
     const prices = this.priceScratch;
     prices.length = 0;
     for (const p of this.deps.pricesOf(entityId)) prices.push(p.price);
@@ -626,8 +656,12 @@ export class StreakLedger {
       out.balanceRepeatPurchases += Math.floor(row.kills / cheapest);
     }
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function blankReport(): StreakEconomyReport {
   return {
     lives: 0,
@@ -654,3 +688,4 @@ function blankReport(): StreakEconomyReport {
     balanceRepeatPurchases: 0,
   };
 }
+//#endregion

@@ -9,14 +9,14 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**24 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, and **#26 and #27 by A16** on 2026-10-12. Three numbers are gone and
+**25 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12 and **#28 by A17** on 2026-10-13. Three numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
-original list is missing**; §6 records where to look for it. (#22, #24, #26 and #27 were opened by
-units since and are not from that list.)
+original list is missing**; §6 records where to look for it. (#22, #24, #26, #27 and #28 were opened
+by units since and are not from that list.)
 
 Status values: `open`, `bound to <unit>` (the next unit that owns these files — do it there),
 `blocked on <task>`, `needs measurement`, `needs a decision from the user`.
@@ -34,7 +34,7 @@ and belong in its Step 2 plan.
 | ~~A14~~ | `shared/modes/` | none were bound; A14 opened #24 and #25 |
 | ~~A15~~ | `shared/modes/` SND, MatchFlow, ModeRegistry | **closed** — #25 was absorbed by A15 on 2026-10-12, under an approved fence exception |
 | ~~A16~~ | `shared/streaks/` | **declined with a reason** — #1 cannot be closed from inside a unit; see its entry. A16 opened #26 and #27 |
-| ~~A17~~ | `shared/streaks/` StreakSystem, StreakLedger, StreakDefs, StreakPresentation | none — A16 checked: nothing in A17's four files calls `angleDelta` or `shortestAngle` |
+| ~~A17~~ | `shared/streaks/` StreakSystem, StreakLedger, StreakDefs, StreakPresentation | **closed** — none were bound; A17 opened #28 |
 | A20–A23 | `shared/net/` | #1 (`Interpolation` is a caller of `shortestAngle`) |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local `angleDelta` copy) |
@@ -686,6 +686,38 @@ methods around them are not.
 **Verify** `npm run check` + SIM snapshot/compare → `PASS` — the 3,600-tick hash is what proves a
 round still goes where it went. `SentryGun.test.ts` and `ChopperGunner.test.ts` (both A16) pin the
 shot counters, the eye height a sentry fires from and the chopper's belt.
+
+### #28 — Settle the "six killstreaks" the comments still describe · `open` *(opened 2026-10-13 by A17)*
+
+**Files** `src/shared/streaks/StreakDefs.ts` (the file overview), `src/shared/streaks/StreakSystem.ts`
+(the class comment), and any other `streaks/` comment that counts them. **Origin** A17.
+
+There are **nine** streaks — the six of M7 plus the minigun, the flamethrower and the riot shield
+of F16 — and several comments still say six. `StreakDefs.ts` opens with *"The six killstreaks, as
+data"*, and `StreakSystem`'s class comment says *"which `StreakDef.effectEnds` names for each of
+the six"* and *"activate/function/expire for all six"*.
+
+**Why A17 did not just change the number.** Some of them are not arithmetic, they are history, and
+a mechanical find-and-replace would make a true sentence false. The clearest case is in
+`StreakSystem`:
+
+> *"six shipped streaks against three keys **meant** a player who reached twelve kills **held** six
+> things"*
+
+That is a statement about the state of the game at playtest round 4, when there really were six,
+and it is the reason the equipped-streaks filter exists. Changing it to nine would misdate the
+decision it records. The same question has to be asked of each one: is this sentence counting the
+streaks *now*, or recording what was true when something was decided?
+
+So it is a read of every occurrence with a judgement per occurrence, which is a different kind of
+work from a refactor unit and does not belong inside one.
+
+**Do while there:** `grep -rn "six" src/shared/streaks/` is the whole corpus, and the same sweep is
+worth running for "three keys" and "all six" across `src/client/ui/` and `docs/`, where the HUD's
+strip and the acceptance criteria may count them too.
+
+**Verify** `npm run check`. Comments only, so the oracles cannot move; if they do, something other
+than a comment changed.
 
 ---
 

@@ -12,6 +12,8 @@
  * balance rather than merely reached.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type StreakId =
   | 'uav'
   | 'counter_uav'
@@ -59,6 +61,20 @@ export interface StreakDef {
    * means something else in both.
    */
   readonly effectEnds: StreakEffectEnd;
+  /**
+   * Whether this streak comes down when its owner dies or leaves the match (A17).
+   *
+   * The same kind of fact as `effectEnds` and here for the same reason: a streak that is **held**
+   * ends with the hands holding it, and one that is **placed in the world** does not care who put
+   * it there. `StreakSystem.onDeath` used to decide it with `instanceof ChopperGunner` and
+   * `instanceof CarriedWeaponStreak`, which a tenth streak would have fallen through in silence —
+   * the field makes the tenth streak answer the question in the table where every other fact
+   * about it lives.
+   *
+   * True for the gunship, whose owner is away flying it, and for the three carried weapons.
+   * False for a UAV, a Counter-UAV, a crate, a barrage already falling and a placed sentry.
+   */
+  readonly endsWithOwnersLife: boolean;
   /** One line, shown under the name in the HUD's streak strip. */
   readonly blurb: string;
   /**
@@ -66,146 +82,6 @@ export interface StreakDef {
    * can drop a package is a loop — and for the streaks the brief calls "higher".
    */
   readonly fromCarePackage: boolean;
-}
-
-export const STREAK_DEFS: readonly StreakDef[] = [
-  {
-    id: 'uav',
-    name: 'UAV',
-    requirement: 4,
-    durationSeconds: 30,
-    effectEnds: 'expiry',
-    blurb: 'Sweeping radar · enemies pinged for 30 s',
-    fromCarePackage: false,
-  },
-  {
-    id: 'counter_uav',
-    name: 'COUNTER-UAV',
-    requirement: 5,
-    durationSeconds: 25,
-    effectEnds: 'expiry',
-    blurb: 'Enemy minimap scrambled',
-    fromCarePackage: true,
-  },
-  {
-    id: 'care_package',
-    name: 'CARE PACKAGE',
-    requirement: 5,
-    // The crate lives until somebody claims it or the cap expires it.
-    durationSeconds: 60,
-    effectEnds: 'activation',
-    blurb: 'Drops a random higher streak · contestable',
-    fromCarePackage: false,
-  },
-  {
-    id: 'mortar',
-    name: 'MORTAR STRIKE',
-    requirement: 7,
-    durationSeconds: 14,
-    effectEnds: 'activation',
-    blurb: 'Mark a zone · shells land in sequence',
-    fromCarePackage: true,
-  },
-  {
-    id: 'sentry',
-    name: 'SENTRY GUN',
-    requirement: 8,
-    durationSeconds: 90,
-    effectEnds: 'expiry',
-    blurb: 'Placeable auto-turret · destructible',
-    fromCarePackage: true,
-  },
-  {
-    id: 'chopper',
-    name: 'CHOPPER GUNNER',
-    requirement: 12,
-    durationSeconds: 32,
-    effectEnds: 'expiry',
-    blurb: 'Take the gun · thermal optics',
-    fromCarePackage: true,
-  },
-  /**
-   * The first streak the player **carries** (2026-09-26, the human).
-   *
-   * `effectEnds: 'expiry'` for the reason the field exists: the effect is not dispatched by the
-   * keypress the way a mortar's shells are — the owner is getting something out of it for every
-   * one of those thirty seconds, so the cooldown starts when the belt is taken away.
-   *
-   * `fromCarePackage: false` on the human's instruction: the three carried weapons are earned in
-   * a streak and not drawn in a lottery.
-   */
-  {
-    id: 'minigun',
-    name: 'MINIGUN',
-    requirement: 8,
-    durationSeconds: 30,
-    effectEnds: 'expiry',
-    blurb: 'Belt-fed · 30 s in your hands',
-    fromCarePackage: false,
-  },
-  /**
-   * Twenty-five seconds rather than the minigun's thirty, at two kills more.
-   *
-   * Not a longer streak for a higher price, which is the shape a list like this drifts into:
-   * what ten kills buys is a weapon that holds a doorway against anything that walks into it,
-   * and the counter to it is *time* — the room it owns is the room it is standing in. Five
-   * seconds off is what keeps the answer to "wait it out" from being twenty-five seconds of
-   * waiting.
-   */
-  {
-    id: 'flamethrower',
-    name: 'FLAMETHROWER',
-    requirement: 10,
-    durationSeconds: 25,
-    effectEnds: 'expiry',
-    blurb: 'Close-range jet · they keep burning',
-    fromCarePackage: false,
-  },
-  /**
-   * The cheapest of the three carried streaks and the shortest, which is not a contradiction.
-   *
-   * Five kills is the price of a UAV's teammate — `counter_uav` and `care_package` are already
-   * there — and what it buys is not firepower but a *direction you are safe from*. Twenty
-   * seconds is the length of a push, deliberately: long enough to cross a lane somebody is
-   * holding, too short to camp a site behind. Everything that makes it fair is in
-   * `ShieldProfile`, and the whole of it is the arc.
-   *
-   * `fromCarePackage: false` with the other two, on the human's instruction.
-   */
-  {
-    id: 'shield',
-    name: 'RIOT SHIELD',
-    requirement: 5,
-    durationSeconds: 20,
-    effectEnds: 'expiry',
-    blurb: 'Frontal cover · sidearm · 20 s',
-    fromCarePackage: false,
-  },
-];
-
-/**
- * Seconds a streak is locked out for after its effect ends (round 4, the second pass).
- *
- * One number for all six rather than a per-streak field, because it is a rule about the *pace*
- * of the match rather than a property of any one streak — the same reason the respawn delay is
- * not a property of a class. A streak's own duration is already the part of the lockout that
- * differs, and it is already on the def.
- *
- * Shared because both halves read it: the server arms the cooldown with it and the HUD draws
- * its fill against it. A client that had its own copy would draw a fill that disagreed with the
- * key it describes the moment the number changed.
- */
-export const STREAK_COOLDOWN_SECONDS = 30;
-
-/** Whether an arbitrary string names a shipped streak. Used by the save repair. */
-export function isStreakId(value: string): value is StreakId {
-  return STREAK_DEFS.some((s) => s.id === value);
-}
-
-export function streakDef(id: StreakId): StreakDef {
-  const found = STREAK_DEFS.find((s) => s.id === id);
-  if (found === undefined) throw new Error(`Unknown streak "${id}"`);
-  return found;
 }
 
 /**
@@ -291,6 +167,147 @@ export interface StreakConfig {
   readonly chopperMagSize: number;
   readonly chopperReloadSeconds: number;
 }
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+export const STREAK_DEFS: readonly StreakDef[] = [
+  {
+    id: 'uav',
+    name: 'UAV',
+    requirement: 4,
+    durationSeconds: 30,
+    effectEnds: 'expiry',
+    endsWithOwnersLife: false,
+    blurb: 'Sweeping radar · enemies pinged for 30 s',
+    fromCarePackage: false,
+  },
+  {
+    id: 'counter_uav',
+    name: 'COUNTER-UAV',
+    requirement: 5,
+    durationSeconds: 25,
+    effectEnds: 'expiry',
+    endsWithOwnersLife: false,
+    blurb: 'Enemy minimap scrambled',
+    fromCarePackage: true,
+  },
+  {
+    id: 'care_package',
+    name: 'CARE PACKAGE',
+    requirement: 5,
+    // The crate lives until somebody claims it or the cap expires it.
+    durationSeconds: 60,
+    effectEnds: 'activation',
+    endsWithOwnersLife: false,
+    blurb: 'Drops a random higher streak · contestable',
+    fromCarePackage: false,
+  },
+  {
+    id: 'mortar',
+    name: 'MORTAR STRIKE',
+    requirement: 7,
+    durationSeconds: 14,
+    effectEnds: 'activation',
+    endsWithOwnersLife: false,
+    blurb: 'Mark a zone · shells land in sequence',
+    fromCarePackage: true,
+  },
+  {
+    id: 'sentry',
+    name: 'SENTRY GUN',
+    requirement: 8,
+    durationSeconds: 90,
+    effectEnds: 'expiry',
+    endsWithOwnersLife: false,
+    blurb: 'Placeable auto-turret · destructible',
+    fromCarePackage: true,
+  },
+  {
+    id: 'chopper',
+    name: 'CHOPPER GUNNER',
+    requirement: 12,
+    durationSeconds: 32,
+    effectEnds: 'expiry',
+    endsWithOwnersLife: true,
+    blurb: 'Take the gun · thermal optics',
+    fromCarePackage: true,
+  },
+  /**
+   * The first streak the player **carries** (2026-09-26, the human).
+   *
+   * `effectEnds: 'expiry'` for the reason the field exists: the effect is not dispatched by the
+   * keypress the way a mortar's shells are — the owner is getting something out of it for every
+   * one of those thirty seconds, so the cooldown starts when the belt is taken away.
+   *
+   * `fromCarePackage: false` on the human's instruction: the three carried weapons are earned in
+   * a streak and not drawn in a lottery.
+   */
+  {
+    id: 'minigun',
+    name: 'MINIGUN',
+    requirement: 8,
+    durationSeconds: 30,
+    effectEnds: 'expiry',
+    endsWithOwnersLife: true,
+    blurb: 'Belt-fed · 30 s in your hands',
+    fromCarePackage: false,
+  },
+  /**
+   * Twenty-five seconds rather than the minigun's thirty, at two kills more.
+   *
+   * Not a longer streak for a higher price, which is the shape a list like this drifts into:
+   * what ten kills buys is a weapon that holds a doorway against anything that walks into it,
+   * and the counter to it is *time* — the room it owns is the room it is standing in. Five
+   * seconds off is what keeps the answer to "wait it out" from being twenty-five seconds of
+   * waiting.
+   */
+  {
+    id: 'flamethrower',
+    name: 'FLAMETHROWER',
+    requirement: 10,
+    durationSeconds: 25,
+    effectEnds: 'expiry',
+    endsWithOwnersLife: true,
+    blurb: 'Close-range jet · they keep burning',
+    fromCarePackage: false,
+  },
+  /**
+   * The cheapest of the three carried streaks and the shortest, which is not a contradiction.
+   *
+   * Five kills is the price of a UAV's teammate — `counter_uav` and `care_package` are already
+   * there — and what it buys is not firepower but a *direction you are safe from*. Twenty
+   * seconds is the length of a push, deliberately: long enough to cross a lane somebody is
+   * holding, too short to camp a site behind. Everything that makes it fair is in
+   * `ShieldProfile`, and the whole of it is the arc.
+   *
+   * `fromCarePackage: false` with the other two, on the human's instruction.
+   */
+  {
+    id: 'shield',
+    name: 'RIOT SHIELD',
+    requirement: 5,
+    durationSeconds: 20,
+    effectEnds: 'expiry',
+    endsWithOwnersLife: true,
+    blurb: 'Frontal cover · sidearm · 20 s',
+    fromCarePackage: false,
+  },
+];
+
+/**
+ * Seconds a streak is locked out for after its effect ends (round 4, the second pass).
+ *
+ * One number for all six rather than a per-streak field, because it is a rule about the *pace*
+ * of the match rather than a property of any one streak — the same reason the respawn delay is
+ * not a property of a class. A streak's own duration is already the part of the lockout that
+ * differs, and it is already on the def.
+ *
+ * Shared because both halves read it: the server arms the cooldown with it and the HUD draws
+ * its fill against it. A client that had its own copy would draw a fill that disagreed with the
+ * key it describes the moment the number changed.
+ */
+export const STREAK_COOLDOWN_SECONDS = 30;
 
 export const DEFAULT_STREAK_CONFIG: StreakConfig = {
   uavSweepSeconds: 2.6,
@@ -341,3 +358,18 @@ export const DEFAULT_STREAK_CONFIG: StreakConfig = {
  * pair of facts that can drift when a seventh streak is added.
  */
 export const ALL_STREAK_IDS: readonly StreakId[] = STREAK_DEFS.map((d) => d.id);
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** Whether an arbitrary string names a shipped streak. Used by the save repair. */
+export function isStreakId(value: string): value is StreakId {
+  return STREAK_DEFS.some((s) => s.id === value);
+}
+
+export function streakDef(id: StreakId): StreakDef {
+  const found = STREAK_DEFS.find((s) => s.id === id);
+  if (found === undefined) throw new Error(`Unknown streak "${id}"`);
+  return found;
+}
+//#endregion

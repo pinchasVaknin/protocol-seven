@@ -1,7 +1,12 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { CamoId } from './Camos';
 import type { ChallengeId } from './Challenges';
 import type { ChallengeSaveData, SaveV2, WeaponSaveData } from './SaveData';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * What progression *rules* need from whatever is storing progression (M9).
  *
@@ -48,3 +53,4 @@ export interface ProgressionStore {
   /** Persist. A no-op for an implementation that does not persist. */
   flush(): void;
 }
+//#endregion

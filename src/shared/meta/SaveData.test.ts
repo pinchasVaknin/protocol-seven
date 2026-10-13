@@ -3,6 +3,9 @@ import { installLogSink } from '../core/Log';
 import { camosEarnedBy } from './Challenges';
 import { levelForXp, xpAtLevelStart } from './Levels';
 import { DEFAULT_SKIN_ID } from './Skins';
+import { defaultBindings } from '../core/Keybinds';
+import { PRESTIGE_MAX } from './Levels';
+import { defaultLoadouts, LOADOUT_SLOT_COUNT } from './Loadouts';
 import {
   defaultSettings,
   makeSyntheticV0Save,
@@ -270,5 +273,564 @@ describe('camosEarnedBy', () => {
     expect(four).not.toContain('obsidian');
     const five = camosEarnedBy(stats({ kills: 100, headshots: 15, longshots: 10, multikills: 5 }));
     expect(five).toContain('obsidian');
+  });
+});
+
+/**
+ * The repair, block by block (A19).
+ *
+ * `normaliseSave` is the **one door** a stored save comes through, and A19 breaks its 145 lines
+ * into seven named blocks. Two things make that riskier than it looks.
+ *
+ * The first is that no oracle sees it: nothing in the SIM set loads a save with junk in it, so
+ * these tests are the whole of the protection.
+ *
+ * The second is that **the loss lines are observable output**, not diagnostics —
+ * `Profile.loadReport` shows them to the player and `SaveInspector` returns them — so the exact
+ * wording is behaviour under R1. Every assertion below that matches a string is matching it on
+ * purpose, word for word.
+ *
+ * The saves are hand-written records rather than `defaultSave` output, for the reason the suite
+ * above gives: the point is the shape some *other* build, or a hand-edit, wrote.
+ */
+
+/** A legal save, as `normaliseSave` would leave it, to be broken one field at a time. */
+function wholeSave(): Record<string, unknown> {
+  return {
+    version: SAVE_VERSION,
+    profile: {
+      level: LEVEL,
+      xp: XP,
+      prestige: 1,
+      unlockTokens: 2,
+      permanentUnlocks: ['ar_vulcan'],
+      matchesPlayed: 40,
+      matchesWon: 21,
+    },
+    weapons: {},
+    loadouts: [{}, {}, {}, {}, {}],
+    equippedLoadout: 0,
+    challenges: {},
+    settings: {},
+  };
+}
+
+/** The five slots a clean save holds, with `first` in slot one. */
+function slots(first: Record<string, unknown>): Record<string, unknown>[] {
+  return [first, {}, {}, {}, {}];
+}
+
+/** Repair `raw` and hand back both halves. */
+function repair(raw: unknown) {
+  return normaliseSave(raw, fallback());
+}
+
+describe('normaliseSave: the profile block', () => {
+  it('keeps a profile that agrees with itself, and reports nothing about it', () => {
+    const { save, losses } = repair(wholeSave());
+    expect(save.profile.xp).toBe(XP);
+    expect(save.profile.level).toBe(LEVEL);
+    expect(save.profile.prestige).toBe(1);
+    expect(save.profile.unlockTokens).toBe(2);
+    expect(save.profile.matchesPlayed).toBe(40);
+    expect(save.profile.matchesWon).toBe(21);
+    expect(save.profile.permanentUnlocks).toEqual(['ar_vulcan']);
+    expect(losses.filter((l) => l.startsWith('profile'))).toEqual([]);
+  });
+
+  it('reports a non-numeric xp and resets it, naming what it found', () => {
+    const raw = wholeSave();
+    (raw['profile'] as Record<string, unknown>)['xp'] = 'lots';
+    const { save, losses } = repair(raw);
+    expect(save.profile.xp).toBe(0);
+    expect(losses).toContain('profile.xp was "lots"; reset to 0');
+  });
+
+  it('reports an xp of NaN the same way, because NaN is not a finite number', () => {
+    const raw = wholeSave();
+    (raw['profile'] as Record<string, unknown>)['xp'] = Number.NaN;
+    const { save, losses } = repair(raw);
+    expect(save.profile.xp).toBe(0);
+    expect(losses).toContain('profile.xp was null; reset to 0');
+  });
+
+  it('floors a negative xp at zero', () => {
+    const raw = wholeSave();
+    (raw['profile'] as Record<string, unknown>)['xp'] = -5000;
+    expect(repair(raw).save.profile.xp).toBe(0);
+  });
+
+  it('derives the level from the XP and never trusts the claim', () => {
+    const raw = wholeSave();
+    (raw['profile'] as Record<string, unknown>)['level'] = 55;
+    (raw['profile'] as Record<string, unknown>)['xp'] = 0;
+    const { save, losses } = repair(raw);
+    expect(save.profile.level).toBe(1);
+    expect(losses).toContain('profile.level 55 disagreed with 0 XP; corrected to 1');
+  });
+
+  it('says nothing when the claim happens to be right', () => {
+    const { losses } = repair(wholeSave());
+    expect(losses.some((l) => l.includes('disagreed'))).toBe(false);
+  });
+
+  it('caps the prestige at PRESTIGE_MAX and rounds it', () => {
+    const raw = wholeSave();
+    (raw['profile'] as Record<string, unknown>)['prestige'] = 99;
+    expect(repair(raw).save.profile.prestige).toBe(PRESTIGE_MAX);
+
+    const fractional = wholeSave();
+    (fractional['profile'] as Record<string, unknown>)['prestige'] = 2.6;
+    expect(repair(fractional).save.profile.prestige).toBe(3);
+  });
+
+  it('rounds the counters and floors them at zero', () => {
+    const raw = wholeSave();
+    Object.assign(raw['profile'] as Record<string, unknown>, {
+      unlockTokens: -3,
+      matchesPlayed: 12.7,
+      matchesWon: -1,
+    });
+    const { save } = repair(raw);
+    expect(save.profile.unlockTokens).toBe(0);
+    expect(save.profile.matchesPlayed).toBe(13);
+    expect(save.profile.matchesWon).toBe(0);
+  });
+
+  it('keeps only the strings out of permanentUnlocks', () => {
+    const raw = wholeSave();
+    (raw['profile'] as Record<string, unknown>)['permanentUnlocks'] = ['ar_vulcan', 7, null, 'smg_wasp'];
+    expect(repair(raw).save.profile.permanentUnlocks).toEqual(['ar_vulcan', 'smg_wasp']);
+  });
+
+  it('leaves permanentUnlocks alone when it is not an array at all', () => {
+    const raw = wholeSave();
+    (raw['profile'] as Record<string, unknown>)['permanentUnlocks'] = 'ar_vulcan';
+    expect(repair(raw).save.profile.permanentUnlocks).toEqual([]);
+  });
+
+  it('reports a missing profile block and starts at level 1', () => {
+    const raw = wholeSave();
+    delete raw['profile'];
+    const { save, losses } = repair(raw);
+    expect(save.profile.level).toBe(1);
+    expect(save.profile.xp).toBe(0);
+    expect(losses).toContain('profile block missing or malformed; reset to level 1');
+  });
+
+  it('reports an array in the profile’s place, which is not a record', () => {
+    const raw = wholeSave();
+    raw['profile'] = [1, 2, 3];
+    expect(repair(raw).losses).toContain('profile block missing or malformed; reset to level 1');
+  });
+});
+
+describe('normaliseSave: the weapons block', () => {
+  it('keeps every counter a known weapon holds', () => {
+    const raw = wholeSave();
+    raw['weapons'] = {
+      ar_carbine: {
+        xp: 1200,
+        kills: 88,
+        headshots: 9,
+        shotsFired: 500,
+        shotsHit: 210,
+        longestShot: 61.5,
+        timeUsed: 900,
+        longshots: 4,
+        multikills: 2,
+      },
+    };
+    const { save, losses } = repair(raw);
+    const weapon = save.weapons['ar_carbine'];
+    expect(weapon?.xp).toBe(1200);
+    expect(weapon?.kills).toBe(88);
+    expect(weapon?.headshots).toBe(9);
+    expect(weapon?.shotsFired).toBe(500);
+    expect(weapon?.shotsHit).toBe(210);
+    expect(weapon?.longestShot).toBe(61.5);
+    expect(weapon?.timeUsed).toBe(900);
+    expect(weapon?.longshots).toBe(4);
+    expect(weapon?.multikills).toBe(2);
+    expect(losses).toEqual([]);
+  });
+
+  it('drops a weapon the build does not ship, and names it', () => {
+    const raw = wholeSave();
+    raw['weapons'] = { ar_retired: { kills: 10 } };
+    const { save, losses } = repair(raw);
+    expect(save.weapons['ar_retired']).toBe(undefined);
+    expect(losses).toContain('dropped stats for unknown weapon "ar_retired"');
+  });
+
+  it('resets a weapon whose record is not a record, and says what it held', () => {
+    const raw = wholeSave();
+    raw['weapons'] = { ar_carbine: 42 };
+    const { save, losses } = repair(raw);
+    expect(save.weapons['ar_carbine']?.kills).toBe(0);
+    expect(losses).toContain('weapon "ar_carbine" held 42 instead of a record; stats reset');
+  });
+
+  it('rounds the whole-number counters and floors every one at zero', () => {
+    const raw = wholeSave();
+    raw['weapons'] = { ar_carbine: { kills: 8.6, headshots: -2, xp: -100, longestShot: -3 } };
+    const { save } = repair(raw);
+    const weapon = save.weapons['ar_carbine'];
+    expect(weapon?.kills).toBe(9);
+    expect(weapon?.headshots).toBe(0);
+    expect(weapon?.xp).toBe(0);
+    expect(weapon?.longestShot).toBe(0);
+  });
+
+  it('keeps only camos it owns as true, and drops an unknown one by name', () => {
+    const raw = wholeSave();
+    raw['weapons'] = {
+      ar_carbine: { camos: { gold: true, digital: false, chrome: true } },
+    };
+    const { save, losses } = repair(raw);
+    expect(save.weapons['ar_carbine']?.camos.gold).toBe(true);
+    expect(save.weapons['ar_carbine']?.camos.digital).toBe(undefined);
+    expect(losses).toContain('dropped unknown camo "chrome" on ar_carbine');
+  });
+
+  it('keeps the attachments it knows and drops the rest by name', () => {
+    const raw = wholeSave();
+    raw['weapons'] = { ar_carbine: { unlockedAttachments: ['optic_reflex', 'raygun', 7] } };
+    const { save, losses } = repair(raw);
+    expect(save.weapons['ar_carbine']?.unlockedAttachments).toEqual(['optic_reflex']);
+    expect(losses).toContain('dropped unknown attachment "raygun" on ar_carbine');
+    expect(losses).toContain('dropped unknown attachment "7" on ar_carbine');
+  });
+
+  it('reports a missing weapons block', () => {
+    const raw = wholeSave();
+    delete raw['weapons'];
+    expect(repair(raw).losses).toContain('weapons block missing or malformed; weapon progress reset');
+  });
+});
+
+describe('normaliseSave: the challenges block', () => {
+  it('keeps the progress of a live challenge', () => {
+    const raw = wholeSave();
+    raw['challenges'] = { first_blood: { progress: 1, completed: true } };
+    const { save, losses } = repair(raw);
+    expect(save.challenges['first_blood']).toEqual({ progress: 1, completed: true });
+    expect(losses).toEqual([]);
+  });
+
+  it('drops a challenge the build has retired, and names it', () => {
+    const raw = wholeSave();
+    raw['challenges'] = { old_challenge: { progress: 3 } };
+    const { save, losses } = repair(raw);
+    expect(save.challenges['old_challenge']).toBe(undefined);
+    expect(losses).toContain('dropped progress for retired challenge "old_challenge"');
+  });
+
+  it('rounds the progress, floors it, and treats anything but true as not completed', () => {
+    const raw = wholeSave();
+    raw['challenges'] = { first_blood: { progress: -4, completed: 'yes' } };
+    const { save } = repair(raw);
+    expect(save.challenges['first_blood']?.progress).toBe(0);
+    expect(save.challenges['first_blood']?.completed).toBe(false);
+  });
+
+  it('leaves a challenge alone when its value is not a record, without a loss line', () => {
+    const raw = wholeSave();
+    raw['challenges'] = { first_blood: 'done' };
+    const { save, losses } = repair(raw);
+    expect(save.challenges['first_blood']?.progress).toBe(0);
+    expect(losses).toEqual([]);
+  });
+});
+
+describe('normaliseSave: the loadout slots', () => {
+  it('reports a save holding the wrong number of slots, and resizes it', () => {
+    const raw = wholeSave();
+    raw['loadouts'] = [{}, {}];
+    const { save, losses } = repair(raw);
+    expect(save.loadouts).toHaveLength(LOADOUT_SLOT_COUNT);
+    expect(losses).toContain(`save held 2 loadouts; resized to ${LOADOUT_SLOT_COUNT}`);
+  });
+
+  it('reports loadouts that are missing entirely', () => {
+    const raw = wholeSave();
+    delete raw['loadouts'];
+    const { save, losses } = repair(raw);
+    expect(save.loadouts).toHaveLength(LOADOUT_SLOT_COUNT);
+    expect(losses).toContain('loadouts missing or malformed; restored the shipped five');
+  });
+
+  it('truncates a slot name at sixteen characters', () => {
+    const raw = wholeSave();
+    raw['loadouts'] = slots({ name: 'A VERY LONG CLASS NAME INDEED' });
+    expect(repair(raw).save.loadouts[0]?.name).toBe('A VERY LONG CLAS');
+  });
+
+  it('names the slot it is complaining about, one-based', () => {
+    const raw = wholeSave();
+    raw['loadouts'] = [{}, {}, { lethal: 'rocket' }, {}, {}];
+    expect(repair(raw).losses).toContain('loadout 3 lethal "rocket" unknown');
+  });
+
+  it('reports an unknown lethal, tactical and field upgrade, each in its own words', () => {
+    const raw = wholeSave();
+    raw['loadouts'] = slots({ lethal: 'rocket', tactical: 'siren', fieldUpgrade: 'jetpack' });
+    const { losses } = repair(raw);
+    expect(losses).toContain('loadout 1 lethal "rocket" unknown');
+    expect(losses).toContain('loadout 1 tactical "siren" unknown');
+    expect(losses).toContain('loadout 1 field upgrade "jetpack" unknown');
+  });
+
+  it('keeps a legal lethal, tactical and field upgrade', () => {
+    const raw = wholeSave();
+    raw['loadouts'] = slots({ lethal: 'semtex', tactical: 'smoke', fieldUpgrade: 'stim' });
+    const { save, losses } = repair(raw);
+    expect(save.loadouts[0]?.lethal).toBe('semtex');
+    expect(save.loadouts[0]?.tactical).toBe('smoke');
+    expect(save.loadouts[0]?.fieldUpgrade).toBe('stim');
+    expect(losses).toEqual([]);
+  });
+
+  it('says nothing about equipment the save simply does not mention', () => {
+    const raw = wholeSave();
+    raw['loadouts'] = slots({ name: 'PLAIN' });
+    expect(repair(raw).losses).toEqual([]);
+  });
+
+  it('drops an unknown killstreak and reports it', () => {
+    const raw = wholeSave();
+    raw['loadouts'] = slots({ streaks: ['uav', 'nuke', null] });
+    const { save, losses } = repair(raw);
+    expect(save.loadouts[0]?.streaks).toEqual(['uav', null, null]);
+    expect(losses).toContain('loadout 1 killstreak "nuke" unknown');
+  });
+
+  it('keeps the first of a killstreak on two keys and reports the second', () => {
+    const raw = wholeSave();
+    raw['loadouts'] = slots({ streaks: ['uav', 'uav', 'sentry'] });
+    const { save, losses } = repair(raw);
+    expect(save.loadouts[0]?.streaks).toEqual(['uav', null, 'sentry']);
+    expect(losses).toContain('loadout 1 had uav on two keys; removed the second');
+  });
+
+  it('leaves the class default when the streak array is absent, because an upgrade is not a loss', () => {
+    const raw = wholeSave();
+    raw['loadouts'] = slots({ name: 'PRE-STREAKS' });
+    const { save, losses } = repair(raw);
+    expect(save.loadouts[0]?.streaks).toEqual(defaultLoadouts()[0]?.streaks);
+    expect(losses).toEqual([]);
+  });
+
+  it('removes a perk saved in the wrong tier and names it', () => {
+    const raw = wholeSave();
+    // GHOST is tier 2; here it sits in the tier-1 slot.
+    raw['loadouts'] = slots({ perks: ['ghost', null, null] });
+    const { save, losses } = repair(raw);
+    expect(save.loadouts[0]?.perks).toEqual([null, null, null]);
+    expect(losses).toContain('loadout 1 had GHOST in tier 1; removed');
+  });
+
+  it('keeps a perk in its own tier', () => {
+    const raw = wholeSave();
+    raw['loadouts'] = slots({ perks: ['lightweight', 'ghost', 'quickdraw'] });
+    const { save, losses } = repair(raw);
+    expect(save.loadouts[0]?.perks).toEqual(['lightweight', 'ghost', 'quickdraw']);
+    expect(losses).toEqual([]);
+  });
+
+  it('drops an unknown perk and names what it was', () => {
+    const raw = wholeSave();
+    raw['loadouts'] = slots({ perks: ['juggernaut', null, null] });
+    const { losses } = repair(raw);
+    expect(losses).toContain('loadout 1 perk "juggernaut" unknown');
+  });
+
+  it('repairs the Shooting Range’s own class through the same door', () => {
+    const raw = wholeSave();
+    raw['rangeLoadout'] = { lethal: 'rocket', perks: ['lightweight', null, null] };
+    const { save, losses } = repair(raw);
+    expect(save.rangeLoadout?.name).toBe('RANGE');
+    expect(save.rangeLoadout?.perks).toEqual(['lightweight', null, null]);
+    // Reported against slot 1, because it goes through `normaliseSlot` with index 0.
+    expect(losses).toContain('loadout 1 lethal "rocket" unknown');
+  });
+
+  it('lets a stored range name win over the RANGE label', () => {
+    // Pins current behaviour; suspected bug: the range class's RANGE label is overwritten by
+    // the save. `normaliseSave` assigns `slot.name = 'RANGE'` and then calls `normaliseSlot`,
+    // which takes `source['name']` whenever the save has one — so the label only survives for
+    // a save that stored no name. Harmless for a save this build wrote (it stores 'RANGE'),
+    // and wrong for any other.
+    const raw = wholeSave();
+    raw['rangeLoadout'] = { name: 'IGNORED' };
+    expect(repair(raw).save.rangeLoadout?.name).toBe('IGNORED');
+  });
+
+  it('leaves the range class absent when the save has none', () => {
+    const { save } = repair(wholeSave());
+    expect(save.rangeLoadout).toBe(undefined);
+  });
+
+  it('clamps the equipped index into the five slots', () => {
+    for (const [given, expected] of [
+      [0, 0],
+      [4, 4],
+      [9, LOADOUT_SLOT_COUNT - 1],
+      [-3, 0],
+      [2.7, 3],
+    ] as const) {
+      const raw = wholeSave();
+      raw['equippedLoadout'] = given;
+      expect(repair(raw).save.equippedLoadout, `given ${given}`).toBe(expected);
+    }
+  });
+
+  it('falls back to the first slot when the index is not a number', () => {
+    const raw = wholeSave();
+    raw['equippedLoadout'] = 'second';
+    expect(repair(raw).save.equippedLoadout).toBe(0);
+  });
+});
+
+describe('normaliseSave: the settings block', () => {
+  it('falls back field by field, which is what lets an old save gain new settings', () => {
+    const raw = wholeSave();
+    raw['settings'] = { fov: 100 };
+    const { save } = repair(raw);
+    const defaults = fallback();
+    expect(save.settings.fov).toBe(100);
+    expect(save.settings.sensitivity).toBe(defaults.sensitivity);
+    expect(save.settings.shadowQuality).toBe(defaults.shadowQuality);
+    expect(save.settings.botDifficulty).toBe(defaults.botDifficulty);
+    expect(save.settings.colorblind).toBe(defaults.colorblind);
+  });
+
+  it('clamps the numeric settings into their own ranges', () => {
+    const raw = wholeSave();
+    raw['settings'] = {
+      fov: 400,
+      sensitivity: 99,
+      renderScale: 0.1,
+      adsSensitivity: 50,
+      masterVolume: 5,
+      sfxVolume: -1,
+    };
+    const { save } = repair(raw);
+    expect(save.settings.fov).toBe(120);
+    expect(save.settings.sensitivity).toBe(10);
+    expect(save.settings.renderScale).toBe(0.5);
+    expect(save.settings.adsSensitivity).toBe(2);
+    expect(save.settings.masterVolume).toBe(1);
+    expect(save.settings.sfxVolume).toBe(0);
+  });
+
+  it('clamps from the other side too', () => {
+    const raw = wholeSave();
+    raw['settings'] = { fov: 10, sensitivity: 0, renderScale: 4, adsSensitivity: 0 };
+    const { save } = repair(raw);
+    expect(save.settings.fov).toBe(60);
+    expect(save.settings.sensitivity).toBe(0.05);
+    expect(save.settings.renderScale).toBe(1);
+    expect(save.settings.adsSensitivity).toBe(0.1);
+  });
+
+  it('takes a closed-list setting only from its own list', () => {
+    const raw = wholeSave();
+    raw['settings'] = { shadowQuality: 'ultra', colorblind: 'none', botDifficulty: 'nightmare' };
+    const { save } = repair(raw);
+    const defaults = fallback();
+    expect(save.settings.shadowQuality).toBe(defaults.shadowQuality);
+    expect(save.settings.colorblind).toBe(defaults.colorblind);
+    expect(save.settings.botDifficulty).toBe(defaults.botDifficulty);
+  });
+
+  it('keeps a legal closed-list value', () => {
+    const raw = wholeSave();
+    raw['settings'] = { shadowQuality: 'off', colorblind: 'tritanopia' };
+    const { save } = repair(raw);
+    expect(save.settings.shadowQuality).toBe('off');
+    expect(save.settings.colorblind).toBe('tritanopia');
+  });
+
+  it('treats the booleans as true only when they are literally true', () => {
+    const raw = wholeSave();
+    raw['settings'] = { invertY: 'yes', showFps: 1, motionBlur: true };
+    const { save } = repair(raw);
+    expect(save.settings.invertY).toBe(false);
+    expect(save.settings.showFps).toBe(false);
+    expect(save.settings.motionBlur).toBe(true);
+  });
+
+  it('generates a callsign rather than leaving a pre-M11 save blank', () => {
+    // One settings object, reused: `generateCallsign` takes its entropy from the clock, so two
+    // calls to `fallback()` only agree inside the same millisecond.
+    const defaults = fallback();
+    const blank = wholeSave();
+    blank['settings'] = { callsign: '   ' };
+    expect(normaliseSave(blank, defaults).save.settings.callsign).toBe(defaults.callsign);
+
+    const missing = wholeSave();
+    missing['settings'] = {};
+    expect(normaliseSave(missing, defaults).save.settings.callsign).toBe(defaults.callsign);
+  });
+
+  it('truncates a callsign at twenty characters and a skin at thirty-two', () => {
+    const raw = wholeSave();
+    raw['settings'] = { callsign: 'X'.repeat(40), skin: 'Y'.repeat(60) };
+    const { save } = repair(raw);
+    expect(save.settings.callsign).toHaveLength(20);
+    expect(save.settings.skin).toHaveLength(32);
+  });
+
+  it('keeps the mode and map only when they are strings', () => {
+    const raw = wholeSave();
+    raw['settings'] = { modeId: 'SND', mapId: 7 };
+    const { save } = repair(raw);
+    expect(save.settings.modeId).toBe('SND');
+    expect(save.settings.mapId).toBe(fallback().mapId);
+  });
+
+  it('restores every binding the save never heard of', () => {
+    const raw = wholeSave();
+    raw['settings'] = { bindings: { jump: ['KeyJ'] } };
+    const { save } = repair(raw);
+    expect(save.settings.bindings.jump).toEqual(['KeyJ']);
+    // A pre-M8 save comes back fully bound rather than with dead killstreak keys.
+    expect(Object.keys(save.settings.bindings).sort()).toEqual(Object.keys(defaultBindings()).sort());
+  });
+
+  it('leaves the fallbacks in place when the settings block is missing', () => {
+    const defaults = fallback();
+    const raw = wholeSave();
+    delete raw['settings'];
+    const { save } = normaliseSave(raw, defaults);
+    expect(save.settings.fov).toBe(defaults.fov);
+    expect(save.settings.callsign).toBe(defaults.callsign);
+  });
+});
+
+describe('normaliseSave as a whole', () => {
+  it('is idempotent: repairing a repaired save changes nothing and reports nothing', () => {
+    const first = repair({ profile: { xp: 'junk' }, weapons: { nope: {} }, loadouts: [{}] });
+    const second = normaliseSave(first.save, fallback());
+    expect(second.losses).toEqual([]);
+    expect(second.save).toEqual(first.save);
+  });
+
+  it('reports every repair it made, in one list', () => {
+    const { losses } = repair({
+      profile: { xp: 'junk', level: 40 },
+      weapons: { ar_retired: {} },
+      challenges: { gone: {} },
+      loadouts: slots({ lethal: 'rocket' }),
+    });
+    expect(losses.length).toBeGreaterThan(3);
+    for (const line of losses) expect(typeof line).toBe('string');
+  });
+
+  it('never throws, whatever it is handed', () => {
+    for (const raw of [null, undefined, 7, 'save', [], [1, 2], { profile: null }, {}]) {
+      expect(() => repair(raw), JSON.stringify(raw ?? null)).not.toThrow();
+    }
   });
 });

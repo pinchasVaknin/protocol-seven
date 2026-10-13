@@ -1,26 +1,3 @@
-import { BOT_DIFFICULTIES, type BotDifficulty } from '../ai/DifficultyTiers';
-import { defaultBindings, normaliseBindings, type BindingMap } from '../core/Keybinds';
-import { logger } from '../core/Log';
-import { ALL_EQUIPMENT, type EquipmentId } from '../equipment/EquipmentDefs';
-import { isPerkId, perkDef, type PerkId } from '../perks/PerkDefs';
-import { isStreakId, type StreakId } from '../streaks/StreakDefs';
-import { ATTACHMENT_IDS, type AttachmentId } from '../weapons/Attachments';
-import { ALL_WEAPONS, WEAPON_DEFS } from '../weapons/WeaponDefs';
-import { isCamoId, type CamoId } from './Camos';
-import { camosEarnedBy, CHALLENGES, type ChallengeId } from './Challenges';
-import { DEFAULT_SKIN_ID } from './Skins';
-import { isFieldUpgradeId, type FieldUpgradeId } from './FieldUpgrades';
-import { levelForXp, MAX_LEVEL, PRESTIGE_MAX } from './Levels';
-import {
-  cloneLoadout,
-  defaultLoadouts,
-  LOADOUT_SLOT_COUNT,
-  type LoadoutSlot,
-  type WeaponLoadout,
-} from './Loadouts';
-
-const log = logger('Save');
-
 /**
  * The save file (brief S6.6), and the migration that must never cost anybody their unlocks.
  *
@@ -43,6 +20,32 @@ const log = logger('Save');
  * lets `verify/progression.js` hand them a hand-written older save and check the result.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { BOT_DIFFICULTIES, type BotDifficulty } from '../ai/DifficultyTiers';
+import { defaultBindings, normaliseBindings, type BindingMap } from '../core/Keybinds';
+import { logger } from '../core/Log';
+import { ALL_EQUIPMENT, type EquipmentId } from '../equipment/EquipmentDefs';
+import { isPerkId, perkDef, type PerkId } from '../perks/PerkDefs';
+import { isStreakId, type StreakId } from '../streaks/StreakDefs';
+import { ATTACHMENT_IDS, type AttachmentId } from '../weapons/Attachments';
+import { ALL_WEAPONS, WEAPON_DEFS } from '../weapons/WeaponDefs';
+import { isCamoId, type CamoId } from './Camos';
+import { camosEarnedBy, CHALLENGES, type ChallengeId } from './Challenges';
+import { DEFAULT_SKIN_ID } from './Skins';
+import { isFieldUpgradeId, type FieldUpgradeId } from './FieldUpgrades';
+import { levelForXp, MAX_LEVEL, PRESTIGE_MAX } from './Levels';
+import {
+  cloneLoadout,
+  defaultLoadouts,
+  LOADOUT_SLOT_COUNT,
+  type LoadoutSlot,
+  type WeaponLoadout,
+} from './Loadouts';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * Settings, folded into the one save object S6.6 asks for.
  *
@@ -121,10 +124,8 @@ export interface SettingsV1 {
   skin: string;
 }
 
-export const SHADOW_QUALITIES = ['off', 'low', 'medium', 'high'] as const;
 export type ShadowQuality = (typeof SHADOW_QUALITIES)[number];
 
-export const COLORBLIND_MODES = ['off', 'deuteranopia', 'protanopia', 'tritanopia'] as const;
 export type ColorblindMode = (typeof COLORBLIND_MODES)[number];
 
 interface ProfileData {
@@ -194,6 +195,38 @@ export interface SaveV2 extends Versioned {
   settings: SettingsV1;
 }
 
+/** What `normaliseSave` had to change, in human-readable lines. */
+export interface SaveRepair {
+  readonly save: SaveV2;
+  readonly losses: string[];
+}
+
+/**
+ * The pre-release layout.
+ *
+ * Flat XP with no profile block, weapon kills as bare numbers, and two-field classes with
+ * no perks or attachments. Everything V1 knows that V0 did not is defaulted, and the level
+ * is recomputed from the XP rather than carried across — which is the whole reason the
+ * level is derived in the first place.
+ */
+interface SaveV0Shape {
+  version?: number;
+  xp?: number;
+  prestige?: number;
+  weaponKills?: Record<string, number>;
+  classes?: Array<{ primary?: string; secondary?: string }>;
+  settings?: Partial<SettingsV1>;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('Save');
+
+export const SHADOW_QUALITIES = ['off', 'low', 'medium', 'high'] as const;
+
+export const COLORBLIND_MODES = ['off', 'deuteranopia', 'protanopia', 'tritanopia'] as const;
+
 /**
  * Bumped to 2 in M8, for the eleven settings fields and the binding table; to 3 in the
  * post-M8 pass, for two *broken* bindings that a normalise pass must not touch.
@@ -222,11 +255,19 @@ export interface SaveV2 extends Versioned {
  * as a consequence.
  */
 export const SAVE_VERSION = 5;
+
 export const SAVE_KEY = 'operator.save';
 
 /** The key M1-M5 wrote settings to. Read once, by the migration, then left alone. */
 export const LEGACY_SETTINGS_KEY = 'operator.settings';
 
+const EQUIPMENT_IDS = new Set<string>(ALL_EQUIPMENT.map((e) => e.id));
+
+const ATTACHMENT_SET = new Set<string>(ATTACHMENT_IDS);
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function defaultSettings(modeId: string, mapId: string, fov: number): SettingsV1 {
   return {
     fov,
@@ -250,18 +291,6 @@ export function defaultSettings(modeId: string, mapId: string, fov: number): Set
     botDifficulty: 'MIX',
     skin: DEFAULT_SKIN_ID,
   };
-}
-
-/**
- * A default name, so the callsign field is never empty (§6.1).
- *
- * Deliberately not `Math.random()` — that is banned in gameplay (§4.14) and, while this is not
- * gameplay, a second rule about where the ban applies is a rule somebody will get wrong. The
- * clock is the entropy, and a collision only means two players share a name for one session.
- */
-function generateCallsign(): string {
-  const suffix = (Date.now() % 1000).toString().padStart(3, '0');
-  return `OPERATOR-${suffix}`;
 }
 
 /**
@@ -342,16 +371,103 @@ export function defaultSave(settings: SettingsV1): SaveV2 {
   };
 }
 
-// -- repair -------------------------------------------------------------------
+/**
+ * Take whatever came out of storage and make it a legal `SaveV2`, reporting every repair.
+ *
+ * `unlockedLevel` is passed in rather than read off the payload because the profile's own
+ * level is one of the things being repaired: a save that claims level 55 with 0 XP must
+ * not be allowed to validate its own loadouts.
+ */
+export function normaliseSave(raw: unknown, fallbackSettings: SettingsV1): SaveRepair {
+  const losses: string[] = [];
+  const out = defaultSave(fallbackSettings);
+  if (!isRecord(raw)) {
+    losses.push('save was not an object; started a fresh profile');
+    return { save: out, losses };
+  }
 
-/** What `normaliseSave` had to change, in human-readable lines. */
-export interface SaveRepair {
-  readonly save: SaveV2;
-  readonly losses: string[];
+  repairProfile(out, raw, losses);
+  repairWeapons(out, raw, losses);
+  repairChallenges(out, raw, losses);
+  repairLoadouts(out, raw, losses);
+  repairSettings(out, raw, fallbackSettings);
+
+  return { save: out, losses };
 }
 
-const EQUIPMENT_IDS = new Set<string>(ALL_EQUIPMENT.map((e) => e.id));
-const ATTACHMENT_SET = new Set<string>(ATTACHMENT_IDS);
+/**
+ * Translate an older save into the current schema.
+ *
+ * There is exactly one older schema so far — the pre-release V0 below — and the point of
+ * writing the function now, with only one edge to walk, is that the *shape* is established
+ * before there is anything valuable to lose. A migration added after the first schema
+ * break is a migration written under pressure.
+ *
+ * Returns `null` only for input that is not an object at all, at which point `SaveStore`
+ * falls back to defaults and says so. Anything object-shaped is salvaged.
+ */
+export function migrateSave(raw: unknown, fromVersion: number, fallbackSettings: SettingsV1): SaveV2 | null {
+  if (!isRecord(raw)) return null;
+
+  // The edges are walked in order, so a v0 payload passes through all five upgrades.
+  const afterV0 = fromVersion < 1 ? upgradeV0(raw) : raw;
+  const afterV1 = fromVersion < 2 ? upgradeV1(afterV0) : afterV0;
+  const afterV2 = fromVersion < 3 ? upgradeV2(afterV1) : afterV1;
+  const afterV3 = fromVersion < 4 ? upgradeV3(afterV2) : afterV2;
+  const upgraded = fromVersion < 5 ? upgradeV4(afterV3) : afterV3;
+  const { save, losses } = normaliseSave(upgraded, fallbackSettings);
+  save.version = SAVE_VERSION;
+
+  log.info(
+    `migrated v${fromVersion} -> v${SAVE_VERSION}: level ${save.profile.level}, ` +
+      `${save.profile.xp} XP, ${Object.keys(save.weapons).length} weapons, ` +
+      `${losses.length} field(s) repaired.`,
+  );
+  for (const line of losses) log.info(`  ${line}`);
+  return save;
+}
+
+/**
+ * A hand-written V0 payload, for acceptance criterion 7.
+ *
+ * Lives in the source rather than in the verification script so the migration and its
+ * test input cannot be edited apart, and so the save inspector can force a migration on
+ * demand without a script loaded.
+ */
+export function makeSyntheticV0Save(): Record<string, unknown> {
+  return {
+    version: 0,
+    xp: 42_000,
+    prestige: 1,
+    weaponKills: {
+      ar_carbine: 312,
+      smg_wasp: 96,
+      // A weapon that no longer exists. The migration must drop it and say so rather
+      // than carrying a key nothing can read.
+      ar_retired_prototype: 40,
+    },
+    classes: [
+      { primary: 'ar_carbine', secondary: 'pistol_talon' },
+      { primary: 'smg_wasp', secondary: 'pistol_talon' },
+    ],
+    settings: { fov: 103, sensitivity: 1.4, masterVolume: 0.55 },
+  };
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * A default name, so the callsign field is never empty (§6.1).
+ *
+ * Deliberately not `Math.random()` — that is banned in gameplay (§4.14) and, while this is not
+ * gameplay, a second rule about where the ban applies is a rule somebody will get wrong. The
+ * clock is the entropy, and a collision only means two players share a name for one session.
+ */
+function generateCallsign(): string {
+  const suffix = (Date.now() % 1000).toString().padStart(3, '0');
+  return `OPERATOR-${suffix}`;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -381,22 +497,8 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
     : fallback;
 }
 
-/**
- * Take whatever came out of storage and make it a legal `SaveV2`, reporting every repair.
- *
- * `unlockedLevel` is passed in rather than read off the payload because the profile's own
- * level is one of the things being repaired: a save that claims level 55 with 0 XP must
- * not be allowed to validate its own loadouts.
- */
-export function normaliseSave(raw: unknown, fallbackSettings: SettingsV1): SaveRepair {
-  const losses: string[] = [];
-  const out = defaultSave(fallbackSettings);
-  if (!isRecord(raw)) {
-    losses.push('save was not an object; started a fresh profile');
-    return { save: out, losses };
-  }
-
-  // ---- profile -------------------------------------------------------------
+/** Repair the profile block of a stored save. */
+function repairProfile(out: SaveV2, raw: Record<string, unknown>, losses: string[]): void {
   const profile = raw['profile'];
   if (isRecord(profile)) {
     if (typeof profile['xp'] !== 'number' || !Number.isFinite(profile['xp'])) {
@@ -423,55 +525,86 @@ export function normaliseSave(raw: unknown, fallbackSettings: SettingsV1): SaveR
   } else {
     losses.push('profile block missing or malformed; reset to level 1');
   }
+}
 
-  // ---- weapons -------------------------------------------------------------
+/** Repair the weapons block of a stored save. */
+function repairWeapons(out: SaveV2, raw: Record<string, unknown>, losses: string[]): void {
   const weapons = raw['weapons'];
-  if (isRecord(weapons)) {
-    for (const [id, value] of Object.entries(weapons)) {
-      if (WEAPON_DEFS[id] === undefined) {
-        losses.push(`dropped stats for unknown weapon "${id}"`);
-        continue;
-      }
-      const target = out.weapons[id];
-      if (target === undefined) continue;
-      if (!isRecord(value)) {
-        losses.push(`weapon "${id}" held ${JSON.stringify(value)} instead of a record; stats reset`);
-        continue;
-      }
-      target.xp = nonNegative(value['xp'], 0);
-      target.kills = Math.round(nonNegative(value['kills'], 0));
-      target.headshots = Math.round(nonNegative(value['headshots'], 0));
-      target.shotsFired = Math.round(nonNegative(value['shotsFired'], 0));
-      target.shotsHit = Math.round(nonNegative(value['shotsHit'], 0));
-      target.longestShot = nonNegative(value['longestShot'], 0);
-      target.timeUsed = nonNegative(value['timeUsed'], 0);
-      target.longshots = Math.round(nonNegative(value['longshots'], 0));
-      target.multikills = Math.round(nonNegative(value['multikills'], 0));
-      const camos = value['camos'];
-      if (isRecord(camos)) {
-        for (const [camoId, owned] of Object.entries(camos)) {
-          if (!isCamoId(camoId)) {
-            losses.push(`dropped unknown camo "${camoId}" on ${id}`);
-            continue;
-          }
-          if (owned === true) target.camos[camoId] = true;
-        }
-      }
-      const list = value['unlockedAttachments'];
-      if (Array.isArray(list)) {
-        const kept: AttachmentId[] = [];
-        for (const entry of list) {
-          if (typeof entry === 'string' && ATTACHMENT_SET.has(entry)) kept.push(entry as AttachmentId);
-          else losses.push(`dropped unknown attachment "${String(entry)}" on ${id}`);
-        }
-        target.unlockedAttachments = kept;
-      }
-    }
-  } else {
+  if (!isRecord(weapons)) {
     losses.push('weapons block missing or malformed; weapon progress reset');
+    return;
   }
+  for (const [id, value] of Object.entries(weapons)) {
+    if (WEAPON_DEFS[id] === undefined) {
+      losses.push(`dropped stats for unknown weapon "${id}"`);
+      continue;
+    }
+    const target = out.weapons[id];
+    if (target === undefined) continue;
+    if (!isRecord(value)) {
+      losses.push(`weapon "${id}" held ${JSON.stringify(value)} instead of a record; stats reset`);
+      continue;
+    }
+    repairWeaponCounters(target, value);
+    repairWeaponCamos(target, value['camos'], id, losses);
+    repairWeaponAttachments(target, value['unlockedAttachments'], id, losses);
+  }
+}
 
-  // ---- challenges ----------------------------------------------------------
+/**
+ * One weapon's counters.
+ *
+ * Nothing here can be *lost*, only corrected, which is why it reports nothing: a counter that
+ * is not a finite number is a zero and a negative one is a zero, and neither is progress the
+ * player had. The whole-number counters are rounded; the two measurements are not.
+ */
+function repairWeaponCounters(target: WeaponSaveData, value: Record<string, unknown>): void {
+  target.xp = nonNegative(value['xp'], 0);
+  target.kills = Math.round(nonNegative(value['kills'], 0));
+  target.headshots = Math.round(nonNegative(value['headshots'], 0));
+  target.shotsFired = Math.round(nonNegative(value['shotsFired'], 0));
+  target.shotsHit = Math.round(nonNegative(value['shotsHit'], 0));
+  target.longestShot = nonNegative(value['longestShot'], 0);
+  target.timeUsed = nonNegative(value['timeUsed'], 0);
+  target.longshots = Math.round(nonNegative(value['longshots'], 0));
+  target.multikills = Math.round(nonNegative(value['multikills'], 0));
+}
+
+/** One weapon's camos. Only a finish it owns outright is kept; an unknown id is named. */
+function repairWeaponCamos(
+  target: WeaponSaveData,
+  camos: unknown,
+  id: string,
+  losses: string[],
+): void {
+  if (!isRecord(camos)) return;
+  for (const [camoId, owned] of Object.entries(camos)) {
+    if (!isCamoId(camoId)) {
+      losses.push(`dropped unknown camo "${camoId}" on ${id}`);
+      continue;
+    }
+    if (owned === true) target.camos[camoId] = true;
+  }
+}
+
+/** One weapon's earned attachments. Anything the build does not ship is named and dropped. */
+function repairWeaponAttachments(
+  target: WeaponSaveData,
+  list: unknown,
+  id: string,
+  losses: string[],
+): void {
+  if (!Array.isArray(list)) return;
+  const kept: AttachmentId[] = [];
+  for (const entry of list) {
+    if (typeof entry === 'string' && ATTACHMENT_SET.has(entry)) kept.push(entry as AttachmentId);
+    else losses.push(`dropped unknown attachment "${String(entry)}" on ${id}`);
+  }
+  target.unlockedAttachments = kept;
+}
+
+/** Repair the challenges block of a stored save. */
+function repairChallenges(out: SaveV2, raw: Record<string, unknown>, losses: string[]): void {
   const challenges = raw['challenges'];
   if (isRecord(challenges)) {
     for (const [id, value] of Object.entries(challenges)) {
@@ -485,8 +618,10 @@ export function normaliseSave(raw: unknown, fallbackSettings: SettingsV1): SaveR
       target.completed = value['completed'] === true;
     }
   }
+}
 
-  // ---- loadouts ------------------------------------------------------------
+/** Repair the loadouts block of a stored save. */
+function repairLoadouts(out: SaveV2, raw: Record<string, unknown>, losses: string[]): void {
   const loadouts = raw['loadouts'];
   if (Array.isArray(loadouts)) {
     for (let i = 0; i < LOADOUT_SLOT_COUNT; i++) {
@@ -524,8 +659,22 @@ export function normaliseSave(raw: unknown, fallbackSettings: SettingsV1): SaveR
     LOADOUT_SLOT_COUNT - 1,
     Math.max(0, Math.round(num(raw['equippedLoadout'], 0))),
   );
+}
 
-  // ---- settings ------------------------------------------------------------
+/**
+ * Repair the settings block of a stored save.
+ *
+ * The one block that reports nothing, and that is the design rather than an omission: every
+ * field falls back to the default it does not have, which is what makes a save written before
+ * M8 load with eleven new settings at sensible values rather than at `undefined` — and it is
+ * why the settings block needed no version bump of its own. Nothing was lost, so there is
+ * nothing to report.
+ */
+function repairSettings(
+  out: SaveV2,
+  raw: Record<string, unknown>,
+  fallbackSettings: SettingsV1,
+): void {
   //
   // Every field falls back to the default it does not have, which is what makes a save
   // written before M8 load with eleven new settings at sensible values rather than at
@@ -564,8 +713,6 @@ export function normaliseSave(raw: unknown, fallbackSettings: SettingsV1): SaveR
     // a pre-M8 save comes back fully bound rather than with three dead killstreak keys.
     s.bindings = normaliseBindings(settings['bindings']);
   }
-
-  return { save: out, losses };
 }
 
 /**
@@ -584,6 +731,24 @@ function normaliseSlot(slot: LoadoutSlot, source: Record<string, unknown>, index
   normaliseWeaponLoadout(slot.primary, source['primary'], `loadout ${index + 1} primary`, losses);
   normaliseWeaponLoadout(slot.secondary, source['secondary'], `loadout ${index + 1} secondary`, losses);
 
+  repairSlotEquipment(slot, source, index, losses);
+  repairSlotStreaks(slot, source, index, losses);
+  repairSlotPerks(slot, source, index, losses);
+}
+
+/**
+ * The lethal, the tactical and the field upgrade.
+ *
+ * Three slots with one rule between them: a legal id is taken, a wrong one is named and the
+ * class default is kept, and a slot the save never mentions is not a loss. Each report is worded
+ * for its own slot, because *"loadout 2 tactical"* is what the player is shown.
+ */
+function repairSlotEquipment(
+  slot: LoadoutSlot,
+  source: Record<string, unknown>,
+  index: number,
+  losses: string[],
+): void {
   const lethal = source['lethal'];
   if (typeof lethal === 'string' && EQUIPMENT_IDS.has(lethal)) slot.lethal = lethal as EquipmentId;
   else if (lethal !== undefined) losses.push(`loadout ${index + 1} lethal "${String(lethal)}" unknown`);
@@ -595,12 +760,19 @@ function normaliseSlot(slot: LoadoutSlot, source: Record<string, unknown>, index
   const upgrade = source['fieldUpgrade'];
   if (typeof upgrade === 'string' && isFieldUpgradeId(upgrade)) slot.fieldUpgrade = upgrade as FieldUpgradeId;
   else if (upgrade !== undefined) losses.push(`loadout ${index + 1} field upgrade "${String(upgrade)}" unknown`);
+}
 
-  /**
-   * Killstreaks (M7 playtest). Absent on every save written before the streak slots existed,
-   * which is why a missing array is silently left at the class default rather than reported:
-   * an upgrade is not a loss. A *present* array with junk in it is reported like anything else.
-   */
+/**
+ * Killstreaks (M7 playtest). Absent on every save written before the streak slots existed,
+ * which is why a missing array is silently left at the class default rather than reported:
+ * an upgrade is not a loss. A *present* array with junk in it is reported like anything else.
+ */
+function repairSlotStreaks(
+  slot: LoadoutSlot,
+  source: Record<string, unknown>,
+  index: number,
+  losses: string[],
+): void {
   const streaks = source['streaks'];
   if (Array.isArray(streaks)) {
     slot.streaks = [null, null, null];
@@ -619,7 +791,15 @@ function normaliseSlot(slot: LoadoutSlot, source: Record<string, unknown>, index
       slot.streaks[i] = entry as StreakId;
     }
   }
+}
 
+/** One perk per tier, in that tier's own slot. A perk in the wrong one is named and dropped. */
+function repairSlotPerks(
+  slot: LoadoutSlot,
+  source: Record<string, unknown>,
+  index: number,
+  losses: string[],
+): void {
   const perks = source['perks'];
   if (!Array.isArray(perks)) return;
   slot.perks = [null, null, null];
@@ -663,40 +843,6 @@ function normaliseWeaponLoadout(
     else losses.push(`${label} attachment "${String(entry)}" unknown`);
   }
   target.attachments = kept;
-}
-
-// -- migration ----------------------------------------------------------------
-
-/**
- * Translate an older save into the current schema.
- *
- * There is exactly one older schema so far — the pre-release V0 below — and the point of
- * writing the function now, with only one edge to walk, is that the *shape* is established
- * before there is anything valuable to lose. A migration added after the first schema
- * break is a migration written under pressure.
- *
- * Returns `null` only for input that is not an object at all, at which point `SaveStore`
- * falls back to defaults and says so. Anything object-shaped is salvaged.
- */
-export function migrateSave(raw: unknown, fromVersion: number, fallbackSettings: SettingsV1): SaveV2 | null {
-  if (!isRecord(raw)) return null;
-
-  // The edges are walked in order, so a v0 payload passes through all five upgrades.
-  const afterV0 = fromVersion < 1 ? upgradeV0(raw) : raw;
-  const afterV1 = fromVersion < 2 ? upgradeV1(afterV0) : afterV0;
-  const afterV2 = fromVersion < 3 ? upgradeV2(afterV1) : afterV1;
-  const afterV3 = fromVersion < 4 ? upgradeV3(afterV2) : afterV2;
-  const upgraded = fromVersion < 5 ? upgradeV4(afterV3) : afterV3;
-  const { save, losses } = normaliseSave(upgraded, fallbackSettings);
-  save.version = SAVE_VERSION;
-
-  log.info(
-    `migrated v${fromVersion} -> v${SAVE_VERSION}: level ${save.profile.level}, ` +
-      `${save.profile.xp} XP, ${Object.keys(save.weapons).length} weapons, ` +
-      `${losses.length} field(s) repaired.`,
-  );
-  for (const line of losses) log.info(`  ${line}`);
-  return save;
 }
 
 /**
@@ -830,23 +976,6 @@ function upgradeV1(raw: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
-/**
- * The pre-release layout.
- *
- * Flat XP with no profile block, weapon kills as bare numbers, and two-field classes with
- * no perks or attachments. Everything V1 knows that V0 did not is defaulted, and the level
- * is recomputed from the XP rather than carried across — which is the whole reason the
- * level is derived in the first place.
- */
-interface SaveV0Shape {
-  version?: number;
-  xp?: number;
-  prestige?: number;
-  weaponKills?: Record<string, number>;
-  classes?: Array<{ primary?: string; secondary?: string }>;
-  settings?: Partial<SettingsV1>;
-}
-
 function upgradeV0(raw: Record<string, unknown>): Record<string, unknown> {
   const v0 = raw as SaveV0Shape;
   const xp = nonNegative(v0.xp, 0);
@@ -882,30 +1011,4 @@ function upgradeV0(raw: Record<string, unknown>): Record<string, unknown> {
     settings: v0.settings ?? {},
   };
 }
-
-/**
- * A hand-written V0 payload, for acceptance criterion 7.
- *
- * Lives in the source rather than in the verification script so the migration and its
- * test input cannot be edited apart, and so the save inspector can force a migration on
- * demand without a script loaded.
- */
-export function makeSyntheticV0Save(): Record<string, unknown> {
-  return {
-    version: 0,
-    xp: 42_000,
-    prestige: 1,
-    weaponKills: {
-      ar_carbine: 312,
-      smg_wasp: 96,
-      // A weapon that no longer exists. The migration must drop it and say so rather
-      // than carrying a key nothing can read.
-      ar_retired_prototype: 40,
-    },
-    classes: [
-      { primary: 'ar_carbine', secondary: 'pistol_talon' },
-      { primary: 'smg_wasp', secondary: 'pistol_talon' },
-    ],
-    settings: { fov: 103, sensitivity: 1.4, masterVolume: 0.55 },
-  };
-}
+//#endregion

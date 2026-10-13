@@ -4,9 +4,12 @@ import { camoRequirementOf } from './Challenges';
 import { CAMO_IDS, CAMO_PREREQUISITES } from './Camos';
 import { levelForXp, MAX_LEVEL, XP_TO_MAX } from './Levels';
 import { defaultSave, defaultSettings, makeWeaponSave, type SaveV2, type WeaponSaveData } from './SaveData';
+import { defaultLoadouts, type LoadoutSlot } from './Loadouts';
+import { FALLBACK_PRIMARY, FALLBACK_SECONDARY } from './LoadoutRules';
 import {
   attachmentsForWeapon,
   grantEverything,
+  sanitiseLoadout,
   UnlockState,
   WEAPON_MASTERY_XP,
   WEAPON_MAX_LEVEL,
@@ -218,5 +221,245 @@ describe('grantEverything', () => {
     // Again over the *same* document — a second save would differ on its generated callsign
     // alone, which is a fact about `defaultSave` and not about this function.
     expect(JSON.stringify(applyTo(save))).toBe(once);
+  });
+});
+
+/**
+ * Sanitising a class against what the account has earned (A19).
+ *
+ * Acceptance criterion 5 in one function, and A19 breaks its sixty-three lines into one helper
+ * per kind of lock. Three things about it are behaviour and are pinned here rather than left to
+ * the structure pass beside it: a reverted weapon **loses its attachments**, because they were
+ * earned on the gun it is no longer holding; the three equipment slots revert to three named
+ * fallbacks; and the **order** matters — the unlock pass runs first and
+ * `enforceLoadoutStructure` runs last, which is what makes a locked OVERKILL take its
+ * permission with it.
+ *
+ * Every loss line is matched on substring rather than in full, because these carry a
+ * requirement sentence from the formatter the suite above already pins exactly.
+ */
+
+/** A save at level 1 with nothing earned, which is the strictest `UnlockState` there is. */
+function freshUnlocks(): UnlockState {
+  return UnlockState.fromSave(defaultSave(defaultSettings('TDM', 'mp_foundry', 90)));
+}
+
+/** A save with everything, so only the structure rules can bite. */
+function everything(): UnlockState {
+  const save = defaultSave(defaultSettings('TDM', 'mp_foundry', 90));
+  save.profile.xp = XP_TO_MAX;
+  save.profile.level = MAX_LEVEL;
+  for (const id of Object.keys(WEAPON_DEFS)) {
+    const owned: Partial<Record<string, true>> = {};
+    for (const camo of CAMO_IDS) owned[camo] = true;
+    save.weapons[id] = {
+      ...makeWeaponSave(),
+      xp: WEAPON_MASTERY_XP,
+      kills: 10_000,
+      camos: owned as WeaponSaveData['camos'],
+    };
+  }
+  return UnlockState.fromSave(save);
+}
+
+/** One loadout slot, shaped as the editor writes it. */
+function slotWith(over: Partial<LoadoutSlot> = {}): LoadoutSlot {
+  const slot = defaultLoadouts()[0];
+  if (slot === undefined) throw new Error('no default loadout');
+  return { ...slot, ...over };
+}
+
+describe('sanitiseLoadout: weapons', () => {
+  it('passes the shipped default at level 1 unchanged', () => {
+    const losses: string[] = [];
+    const slot = slotWith();
+    expect(sanitiseLoadout(slot, freshUnlocks(), losses)).toBe(false);
+    expect(losses).toEqual([]);
+  });
+
+  it('reverts a locked primary to the carbine and names the requirement', () => {
+    const losses: string[] = [];
+    // VANTAGE SR is a level-38 sniper; a fresh account cannot hold it.
+    const slot = slotWith({ primary: { weaponId: 'sniper_vantage', attachments: [], camo: null } });
+    expect(sanitiseLoadout(slot, freshUnlocks(), losses)).toBe(true);
+    expect(slot.primary.weaponId).toBe(FALLBACK_PRIMARY);
+    expect(losses.some((l) => l.includes('is locked') && l.includes('reverted to'))).toBe(true);
+  });
+
+  it('takes the attachments with the weapon it reverted, because they were earned on that gun', () => {
+    const losses: string[] = [];
+    const slot = slotWith({
+      primary: { weaponId: 'sniper_vantage', attachments: ['optic_reflex'], camo: null },
+    });
+    sanitiseLoadout(slot, freshUnlocks(), losses);
+    expect(slot.primary.attachments).toEqual([]);
+  });
+
+  it('removes an attachment the weapon can carry but has not earned', () => {
+    const losses: string[] = [];
+    const slot = slotWith({
+      primary: { weaponId: FALLBACK_PRIMARY, attachments: ['optic_reflex'], camo: null },
+    });
+    expect(sanitiseLoadout(slot, freshUnlocks(), losses)).toBe(true);
+    expect(slot.primary.attachments).toEqual([]);
+    expect(losses.some((l) => l.includes('not yet earned on'))).toBe(true);
+  });
+
+  it('keeps an attachment the weapon has earned', () => {
+    const losses: string[] = [];
+    const slot = slotWith({
+      primary: { weaponId: FALLBACK_PRIMARY, attachments: ['optic_reflex'], camo: null },
+    });
+    expect(sanitiseLoadout(slot, everything(), losses)).toBe(false);
+    expect(slot.primary.attachments).toEqual(['optic_reflex']);
+  });
+
+  it('clears a camo the weapon never earned, and keeps one it did', () => {
+    const losses: string[] = [];
+    const slot = slotWith({
+      primary: { weaponId: FALLBACK_PRIMARY, attachments: [], camo: 'gold' },
+    });
+    expect(sanitiseLoadout(slot, freshUnlocks(), losses)).toBe(true);
+    expect(slot.primary.camo).toBe(null);
+    expect(losses.some((l) => l.includes('not earned on') && l.includes('cleared'))).toBe(true);
+
+    const earned: string[] = [];
+    const owned = slotWith({ primary: { weaponId: FALLBACK_PRIMARY, attachments: [], camo: 'gold' } });
+    sanitiseLoadout(owned, everything(), earned);
+    expect(owned.primary.camo).toBe('gold');
+  });
+
+  it('sanitises the secondary by its own fallback', () => {
+    const losses: string[] = [];
+    const slot = slotWith({ secondary: { weaponId: 'sniper_vantage', attachments: [], camo: null } });
+    sanitiseLoadout(slot, freshUnlocks(), losses);
+    expect(slot.secondary.weaponId).toBe(FALLBACK_SECONDARY);
+  });
+});
+
+describe('sanitiseLoadout: equipment, perks and streaks', () => {
+  it('reverts each locked slot to its own named fallback', () => {
+    const losses: string[] = [];
+    const slot = slotWith({ lethal: 'claymore', tactical: 'smoke', fieldUpgrade: 'armour' });
+    expect(sanitiseLoadout(slot, freshUnlocks(), losses)).toBe(true);
+    expect(slot.lethal).toBe('frag');
+    expect(slot.tactical).toBe('flashbang');
+    expect(slot.fieldUpgrade).toBe('munitions');
+    expect(losses.some((l) => l.includes('lethal') && l.includes('reverted to frag'))).toBe(true);
+    expect(losses.some((l) => l.includes('tactical') && l.includes('reverted to flashbang'))).toBe(true);
+    expect(losses.some((l) => l.includes('field upgrade') && l.includes('reverted to munitions'))).toBe(true);
+  });
+
+  it('keeps every slot once the account has earned them', () => {
+    const losses: string[] = [];
+    const slot = slotWith({ lethal: 'claymore', tactical: 'smoke', fieldUpgrade: 'armour' });
+    expect(sanitiseLoadout(slot, everything(), losses)).toBe(false);
+    expect(slot.lethal).toBe('claymore');
+  });
+
+  it('removes a locked perk and names the level it wants', () => {
+    const losses: string[] = [];
+    // BATTLE HARDENED unlocks at 14; a fresh account is level 1.
+    const slot = slotWith({ perks: ['battle_hardened', null, null] });
+    expect(sanitiseLoadout(slot, freshUnlocks(), losses)).toBe(true);
+    expect(slot.perks[0]).toBe(null);
+    expect(losses.some((l) => l.includes('is locked (level 14)'))).toBe(true);
+  });
+
+  it('keeps a perk the account has reached', () => {
+    const losses: string[] = [];
+    const slot = slotWith({ perks: ['battle_hardened', null, null] });
+    expect(sanitiseLoadout(slot, everything(), losses)).toBe(false);
+    expect(slot.perks[0]).toBe('battle_hardened');
+  });
+
+  it('is idempotent once nothing is left to revert', () => {
+    const slot = slotWith({ lethal: 'claymore', perks: ['battle_hardened', null, null] });
+    const first: string[] = [];
+    expect(sanitiseLoadout(slot, freshUnlocks(), first)).toBe(true);
+    const second: string[] = [];
+    expect(sanitiseLoadout(slot, freshUnlocks(), second)).toBe(false);
+    expect(second).toEqual([]);
+  });
+
+  it('takes two passes to clear a camo off a weapon it reverted', () => {
+    // Pins current behaviour; suspected bug: a reverted weapon keeps its camo for one pass.
+    // The revert path clears `attachments` and returns, so the camo check below it never runs
+    // on that call — a save naming a locked sniper with a camo on it comes back holding the
+    // carbine *and* the camo, and only a second pass clears it.
+    const slot = slotWith({
+      primary: { weaponId: 'sniper_vantage', attachments: ['optic_reflex'], camo: 'gold' },
+    });
+    const first: string[] = [];
+    expect(sanitiseLoadout(slot, freshUnlocks(), first)).toBe(true);
+    expect(slot.primary.weaponId).toBe(FALLBACK_PRIMARY);
+    expect(slot.primary.attachments).toEqual([]);
+    // Still wearing a camo it never earned on the gun it is now holding.
+    expect(slot.primary.camo).toBe('gold');
+
+    const second: string[] = [];
+    expect(sanitiseLoadout(slot, freshUnlocks(), second)).toBe(true);
+    expect(slot.primary.camo).toBe(null);
+    expect(second).toEqual(['ASSAULT primary: camo "gold" not earned on ar_carbine; cleared']);
+
+    const third: string[] = [];
+    expect(sanitiseLoadout(slot, freshUnlocks(), third)).toBe(false);
+  });
+
+  it('runs the structure pass last, so a locked OVERKILL takes its permission with it', () => {
+    const losses: string[] = [];
+    // A primary in the secondary slot is legal only with OVERKILL, which level 1 cannot hold.
+    const slot = slotWith({
+      secondary: { weaponId: FALLBACK_PRIMARY, attachments: [], camo: null },
+      perks: [null, null, 'overkill'],
+    });
+    expect(sanitiseLoadout(slot, freshUnlocks(), losses)).toBe(true);
+    expect(slot.perks[2]).toBe(null);
+    // The permission went with the perk, so the secondary reverted too.
+    expect(slot.secondary.weaponId).toBe(FALLBACK_SECONDARY);
+  });
+
+  it('keeps a primary in the secondary slot when OVERKILL is earned', () => {
+    const losses: string[] = [];
+    const slot = slotWith({
+      secondary: { weaponId: FALLBACK_PRIMARY, attachments: [], camo: null },
+      perks: [null, null, 'overkill'],
+    });
+    sanitiseLoadout(slot, everything(), losses);
+    expect(slot.perks[2]).toBe('overkill');
+    expect(slot.secondary.weaponId).toBe(FALLBACK_PRIMARY);
+  });
+
+  it('gates nothing in the Shooting Range, where the testbed rules apply', () => {
+    const save = defaultSave(defaultSettings('TDM', 'mp_foundry', 90));
+    const unrestricted = UnlockState.fromSave(save, true);
+    const losses: string[] = [];
+    const slot = slotWith({
+      primary: { weaponId: 'sniper_vantage', attachments: [], camo: null },
+      lethal: 'claymore',
+      perks: ['battle_hardened', null, null],
+    });
+    expect(sanitiseLoadout(slot, unrestricted, losses)).toBe(false);
+    expect(slot.primary.weaponId).toBe('sniper_vantage');
+    expect(losses).toEqual([]);
+  });
+
+  it('assumes ids that normaliseSlot has already made real, and throws rather than guessing', () => {
+    // The gate table has no default on purpose — a missing row would silently unlock an item at
+    // level one, "the quietest possible failure for a progression system" (round 4, B7). So an
+    // id that is not equipment at all is a programming error here, not a runtime condition:
+    // `normaliseSlot` runs first on every load path and has already replaced it.
+    const losses: string[] = [];
+    const slot = slotWith({ lethal: 'nope' as never });
+    expect(() => sanitiseLoadout(slot, freshUnlocks(), losses)).toThrow('has no row in');
+  });
+
+  it('assumes a real weapon id too, for the same reason', () => {
+    // `weaponUnlocked` answers for a name it does not know, and `requireWeapon` below it does
+    // not — so the contract is the same as the equipment table's: `normaliseSlot` has already
+    // turned an unknown id into the shipped default before this function is ever reached.
+    const losses: string[] = [];
+    const slot = slotWith({ primary: { weaponId: 'not_a_weapon', attachments: [], camo: null } });
+    expect(() => sanitiseLoadout(slot, freshUnlocks(), losses)).toThrow('Unknown weapon id');
   });
 });

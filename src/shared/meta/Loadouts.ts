@@ -1,12 +1,3 @@
-import type { EquipmentId } from '../equipment/EquipmentDefs';
-import type { StreakId } from '../streaks/StreakDefs';
-import type { PerkId } from '../perks/PerkDefs';
-import { perkWeaponEffects, resolvePerkState, type PerkState } from '../perks/PerkState';
-import { resolveWeaponDef, type AttachmentId } from '../weapons/Attachments';
-import { requireWeapon, type WeaponDef } from '../weapons/WeaponDefs';
-import type { CamoId } from './Camos';
-import type { FieldUpgradeId } from './FieldUpgrades';
-
 /**
  * Create-a-Class (brief S6.3).
  *
@@ -24,8 +15,20 @@ import type { FieldUpgradeId } from './FieldUpgrades';
  * the code rather than a claim about it.
  */
 
-export const LOADOUT_SLOT_COUNT = 5;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { EquipmentId } from '../equipment/EquipmentDefs';
+import type { StreakId } from '../streaks/StreakDefs';
+import type { PerkId } from '../perks/PerkDefs';
+import { perkWeaponEffects, resolvePerkState, type PerkState } from '../perks/PerkState';
+import { resolveWeaponDef, type AttachmentId } from '../weapons/Attachments';
+import { requireWeapon, type WeaponDef } from '../weapons/WeaponDefs';
+import type { CamoId } from './Camos';
+import type { FieldUpgradeId } from './FieldUpgrades';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface WeaponLoadout {
   weaponId: string;
   attachments: AttachmentId[];
@@ -78,7 +81,18 @@ export interface ResolvedLoadout {
   readonly streaks: ReadonlyArray<StreakId | null>;
   readonly perkState: PerkState;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+export const LOADOUT_SLOT_COUNT = 5;
+
+/** The sidearm every profile starts with. `unlockLevel` 1, and the only one there is. */
+const STARTER_SECONDARY = 'pistol_talon';
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * The five shipped classes.
  *
@@ -120,40 +134,6 @@ export function defaultLoadouts(): LoadoutSlot[] {
   ];
 }
 
-/** The sidearm every profile starts with. `unlockLevel` 1, and the only one there is. */
-const STARTER_SECONDARY = 'pistol_talon';
-
-/**
- * Lethal and tactical are not parameters.
- *
- * At level 1 there is exactly one of each — FRAG and FLASHBANG; SMOKE is 3, SEMTEX 8 and
- * the CLAYMORE 16 — so a per-class argument here could only ever be handed the same value
- * five times, and a parameter with one legal argument is a parameter that lies about what
- * varies. The same goes for the field upgrade: MUNITIONS is the only one under level 6.
- */
-function makeSlot(
-  name: string,
-  primary: string,
-  perks: Array<PerkId | null>,
-  streaks: ReadonlyArray<StreakId | null>,
-): LoadoutSlot {
-  return {
-    name,
-    primary: { weaponId: primary, attachments: [], camo: null },
-    secondary: { weaponId: STARTER_SECONDARY, attachments: [], camo: null },
-    lethal: 'frag',
-    tactical: 'flashbang',
-    perks: [...perks],
-    fieldUpgrade: 'munitions',
-    // Streaks are gated by kills rather than by level, so all six are legal at level 1 and
-    // they are the widest axis a fresh profile has. The rule the trios keep is the one that
-    // was already here: a fresh profile should be able to *earn* everything it has equipped,
-    // so nothing above the SENTRY's eight kills appears and the CHOPPER GUNNER's twelve is
-    // in none of them.
-    streaks: [...streaks],
-  };
-}
-
 export function cloneLoadout(src: LoadoutSlot): LoadoutSlot {
   return {
     name: src.name,
@@ -165,15 +145,6 @@ export function cloneLoadout(src: LoadoutSlot): LoadoutSlot {
     fieldUpgrade: src.fieldUpgrade,
     streaks: [...src.streaks],
   };
-}
-
-/** The perks a slot actually carries, with the empty tiers dropped. */
-function activePerks(slot: LoadoutSlot): PerkId[] {
-  const out: PerkId[] = [];
-  for (const id of slot.perks) {
-    if (id !== null) out.push(id);
-  }
-  return out;
 }
 
 /**
@@ -210,3 +181,47 @@ export function resolveLoadout(slot: LoadoutSlot, slotIndex: number): ResolvedLo
     perkState,
   };
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Lethal and tactical are not parameters.
+ *
+ * At level 1 there is exactly one of each — FRAG and FLASHBANG; SMOKE is 3, SEMTEX 8 and
+ * the CLAYMORE 16 — so a per-class argument here could only ever be handed the same value
+ * five times, and a parameter with one legal argument is a parameter that lies about what
+ * varies. The same goes for the field upgrade: MUNITIONS is the only one under level 6.
+ */
+function makeSlot(
+  name: string,
+  primary: string,
+  perks: Array<PerkId | null>,
+  streaks: ReadonlyArray<StreakId | null>,
+): LoadoutSlot {
+  return {
+    name,
+    primary: { weaponId: primary, attachments: [], camo: null },
+    secondary: { weaponId: STARTER_SECONDARY, attachments: [], camo: null },
+    lethal: 'frag',
+    tactical: 'flashbang',
+    perks: [...perks],
+    fieldUpgrade: 'munitions',
+    // Streaks are gated by kills rather than by level, so all six are legal at level 1 and
+    // they are the widest axis a fresh profile has. The rule the trios keep is the one that
+    // was already here: a fresh profile should be able to *earn* everything it has equipped,
+    // so nothing above the SENTRY's eight kills appears and the CHOPPER GUNNER's twelve is
+    // in none of them.
+    streaks: [...streaks],
+  };
+}
+
+/** The perks a slot actually carries, with the empty tiers dropped. */
+function activePerks(slot: LoadoutSlot): PerkId[] {
+  const out: PerkId[] = [];
+  for (const id of slot.perks) {
+    if (id !== null) out.push(id);
+  }
+  return out;
+}
+//#endregion

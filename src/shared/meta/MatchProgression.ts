@@ -1,17 +1,3 @@
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
-import type { ScoreSystem } from '../combat/ScoreSystem';
-import { EV, type GameBus } from '../core/Events';
-import type { PlayerSim } from '../player/PlayerState';
-import { WEAPON_DEFS } from '../weapons/WeaponDefs';
-import type { WeaponSystem } from '../weapons/WeaponSystem';
-import { ChallengeTracker } from './ChallengeTracker';
-import type { MatchFact } from './Challenges';
-import { levelForXp } from './Levels';
-import { MatchLedger } from './MatchLedger';
-import type { ProgressionStore } from './ProgressionStore';
-import { weaponLevelForXp } from './Unlocks';
-import type { XpLine, XpReport } from './XpRules';
-
 /**
  * One match's worth of progression, accumulated in memory and banked once at the end.
  *
@@ -28,29 +14,62 @@ import type { XpLine, XpReport } from './XpRules';
  * that is what keeps the streak a single tally rather than a private copy that could drift.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import type { ScoreSystem } from '../combat/ScoreSystem';
+import { EV, type GameBus } from '../core/Events';
+import type { PlayerSim } from '../player/PlayerState';
+import { WEAPON_DEFS } from '../weapons/WeaponDefs';
+import type { WeaponSystem } from '../weapons/WeaponSystem';
+import { ChallengeTracker } from './ChallengeTracker';
+import type { MatchFact } from './Challenges';
+import { levelForXp } from './Levels';
+import { MatchLedger } from './MatchLedger';
+import type { ProgressionStore } from './ProgressionStore';
+import { weaponLevelForXp } from './Unlocks';
+import type { XpLine, XpReport } from './XpRules';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MatchProgressionDeps {
   readonly bus: GameBus;
   readonly profile: ProgressionStore;
   readonly score: ScoreSystem;
   readonly tracker: ChallengeTracker;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const evXp = { total: 0, xpBefore: 0, xpAfter: 0 };
-const evLevel = { level: 1, prestige: 0, unlockCount: 0 };
-const evChallenge = { id: '', name: '', xp: 0, camo: null as string | null };
-const evCamo = { camoId: '', name: '', weaponId: '' };
 
+const evLevel = { level: 1, prestige: 0, unlockCount: 0 };
+
+const evChallenge = { id: '', name: '', xp: 0, camo: null as string | null };
+
+const evCamo = { camoId: '', name: '', weaponId: '' };
+//#endregion
+
+// =================================== CLASS MatchProgression =================================== \\
+//#region Class MatchProgression
 export class MatchProgression {
+
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly ledger: MatchLedger;
   private readonly deps: MatchProgressionDeps;
-
   /**
    * What `finish` produced, so a second call answers the same thing rather than zeroes.
    *
    * Null until the match is closed out. See the note where `emptyXpReport` used to be.
    */
   private report: XpReport | null = null;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MatchProgressionDeps) {
     this.deps = deps;
     this.ledger = new MatchLedger({
@@ -61,7 +80,10 @@ export class MatchProgression {
       onFlash: () => deps.tracker.onFlash(),
     });
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** One sim tick of context. See `MatchLedger.sample`. */
   sample(sim: PlayerSim, weapons: WeaponSystem, tickIndex: number): void {
     this.ledger.sample(sim, weapons, tickIndex);
@@ -153,7 +175,10 @@ export class MatchProgression {
   }
 
   // -- internals --------------------------------------------------------------
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /** Fold the per-weapon deltas into the save. Returns weapons that gained a level. */
   private applyWeaponTallies(): string[] {
     const levelled: string[] = [];
@@ -217,4 +242,6 @@ export class MatchProgression {
     evLevel.unlockCount = levelAfter - levelBefore;
     bus.emit(EV.MetaLevelUp, evLevel);
   }
+  //#endregion
 }
+//#endregion

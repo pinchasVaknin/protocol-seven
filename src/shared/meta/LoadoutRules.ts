@@ -1,10 +1,3 @@
-import { EQUIPMENT_DEFS, type EquipmentId, type EquipmentSlot } from '../equipment/EquipmentDefs';
-import { isPerkId, perkDef, type PerkId } from '../perks/PerkDefs';
-import { STREAK_DEFS, type StreakId } from '../streaks/StreakDefs';
-import { ATTACHMENTS, fitsWeapon, type AttachmentId } from '../weapons/Attachments';
-import { WEAPON_DEFS, type WeaponDef } from '../weapons/WeaponDefs';
-import type { LoadoutSlot, WeaponLoadout } from './Loadouts';
-
 /**
  * The rules a class obeys whatever the profile has earned (security audit 2026-10-04, S1).
  *
@@ -34,6 +27,18 @@ import type { LoadoutSlot, WeaponLoadout } from './Loadouts';
  * whose content is a whole class (§4.16).
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { EQUIPMENT_DEFS, type EquipmentId, type EquipmentSlot } from '../equipment/EquipmentDefs';
+import { isPerkId, perkDef, type PerkId } from '../perks/PerkDefs';
+import { STREAK_DEFS, type StreakId } from '../streaks/StreakDefs';
+import { ATTACHMENTS, fitsWeapon, type AttachmentId } from '../weapons/Attachments';
+import { WEAPON_DEFS, type WeaponDef } from '../weapons/WeaponDefs';
+import type { LoadoutSlot, WeaponLoadout } from './Loadouts';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Perk slots on a class: one per tier, indexed 0..2 for tiers 1..3. */
 export const PERK_SLOT_COUNT = 3;
 
@@ -47,10 +52,16 @@ export const STREAK_SLOT_COUNT = 3;
  * by the unlock pass — can never itself need reverting.
  */
 export const FALLBACK_PRIMARY = 'ar_carbine';
-export const FALLBACK_SECONDARY = 'pistol_talon';
-export const FALLBACK_LETHAL: EquipmentId = 'frag';
-export const FALLBACK_TACTICAL: EquipmentId = 'flashbang';
 
+export const FALLBACK_SECONDARY = 'pistol_talon';
+
+export const FALLBACK_LETHAL: EquipmentId = 'frag';
+
+export const FALLBACK_TACTICAL: EquipmentId = 'flashbang';
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Whether this attachment exists and the weapon has a slot for it.
  *
@@ -70,15 +81,37 @@ export function attachmentFits(def: WeaponDef, id: string): boolean {
  * OVERKILL, the permission goes with it.
  */
 export function enforceLoadoutStructure(slot: LoadoutSlot, losses: string[]): boolean {
-  let changed = false;
   const label = slot.name;
+  let changed = false;
   const note = (text: string): void => {
     losses.push(`${label}${text}`);
     changed = true;
   };
 
-  // -- perks: one per tier, in that tier's slot ----------------------------------------------
+  // The order is the contract — see the note above. Each pass may drop a perk the pass after
+  // it would have read, which is the whole reason OVERKILL is answered last.
+  if (enforcePerkTiers(slot, note)) changed = true;
+  if (enforceStreakKeys(slot, note)) changed = true;
+  enforceEquipmentSlots(slot, note);
+  if (enforceWeaponSlots(slot, note)) changed = true;
 
+  return changed;
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Perks: one per tier, in that tier's slot.
+ *
+ * A perk in the wrong slot is **moved** to its own tier rather than dropped. The editor only
+ * ever writes `perks[tier - 1]`, so a misplaced perk is a save from somewhere else; keeping
+ * the choice costs nothing, and the second perk of a tier is the one that cannot be kept.
+ *
+ * Returns whether the list was rewritten, which `sameList` decides rather than the notes:
+ * a perk moved between slots changes the class without losing anything.
+ */
+function enforcePerkTiers(slot: LoadoutSlot, note: (text: string) => void): boolean {
   /**
    * A perk in the wrong slot is **moved** to its own tier rather than dropped. The editor only
    * ever writes `perks[tier - 1]`, so a misplaced perk is a save from somewhere else; keeping
@@ -103,13 +136,13 @@ export function enforceLoadoutStructure(slot: LoadoutSlot, losses: string[]): bo
     perks[at] = id;
     if (at !== i) note(`: ${def.name} moved to the tier ${def.tier} slot`);
   }
-  if (!sameList(givenPerks, perks)) {
-    slot.perks = perks;
-    changed = true;
-  }
+  if (sameList(givenPerks, perks)) return false;
+  slot.perks = perks;
+  return true;
+}
 
-  // -- streaks: three keys, each streak on at most one ---------------------------------------
-
+/** Streaks: three keys, each streak on at most one. The first copy is the one kept. */
+function enforceStreakKeys(slot: LoadoutSlot, note: (text: string) => void): boolean {
   const streaks: Array<StreakId | null> = new Array<StreakId | null>(STREAK_SLOT_COUNT).fill(null);
   const givenStreaks: readonly (string | null | undefined)[] = Array.isArray(slot.streaks) ? slot.streaks : [];
   for (let i = 0; i < Math.min(givenStreaks.length, STREAK_SLOT_COUNT); i++) {
@@ -128,13 +161,13 @@ export function enforceLoadoutStructure(slot: LoadoutSlot, losses: string[]): bo
   if (givenStreaks.slice(STREAK_SLOT_COUNT).some((id) => id !== null && id !== undefined)) {
     note(`: more than ${STREAK_SLOT_COUNT} streak keys; the extra removed`);
   }
-  if (!sameList(givenStreaks, streaks)) {
-    slot.streaks = streaks;
-    changed = true;
-  }
+  if (sameList(givenStreaks, streaks)) return false;
+  slot.streaks = streaks;
+  return true;
+}
 
-  // -- equipment: each item in the slot it was made for ---------------------------------------
-
+/** Equipment: each item in the slot it was made for. */
+function enforceEquipmentSlots(slot: LoadoutSlot, note: (text: string) => void): void {
   const lethal = fixEquipment(slot.lethal, 'lethal', FALLBACK_LETHAL);
   if (lethal !== slot.lethal) {
     note(`: "${String(slot.lethal)}" is not a lethal; reverted to ${lethal}`);
@@ -145,9 +178,15 @@ export function enforceLoadoutStructure(slot: LoadoutSlot, losses: string[]): bo
     note(`: "${String(slot.tactical)}" is not a tactical; reverted to ${tactical}`);
     slot.tactical = tactical;
   }
+}
 
-  // -- weapons: each in a slot of its class, then its attachments ----------------------------
-
+/**
+ * Weapons: each in a slot of its class, then its attachments.
+ *
+ * OVERKILL is read here, after the perk pass above has made the list legal — which is why
+ * a class whose OVERKILL was dropped loses the primary in its secondary slot with it.
+ */
+function enforceWeaponSlots(slot: LoadoutSlot, note: (text: string) => void): boolean {
   const primary = weaponOrNull(slot.primary.weaponId);
   if (primary === null || primary.slot !== 'primary') {
     const what = primary === null ? `unknown weapon "${String(slot.primary.weaponId)}"` : `${primary.name} is a sidearm`;
@@ -165,9 +204,11 @@ export function enforceLoadoutStructure(slot: LoadoutSlot, losses: string[]): bo
     revertWeapon(slot.secondary, FALLBACK_SECONDARY);
   }
 
+  // `fixAttachments` reports its own changes through `note`, except for the one total case its
+  // comment names, so its verdict is carried rather than assumed.
+  let changed = false;
   if (fixAttachments(slot.primary, 'primary', note)) changed = true;
   if (fixAttachments(slot.secondary, 'secondary', note)) changed = true;
-
   return changed;
 }
 
@@ -250,3 +291,4 @@ function sameList(a: readonly unknown[], b: readonly unknown[]): boolean {
   }
   return true;
 }
+//#endregion

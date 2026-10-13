@@ -1,19 +1,3 @@
-import { ALL_EQUIPMENT, type EquipmentId } from '../equipment/EquipmentDefs';
-import { PERK_IDS, perkDef, type PerkId } from '../perks/PerkDefs';
-import { ATTACHMENT_IDS, attachmentDef, fitsWeapon, type AttachmentId } from '../weapons/Attachments';
-import { requireWeapon, WEAPON_DEFS, type WeaponDef } from '../weapons/WeaponDefs';
-import { CAMO_IDS, CAMO_PREREQUISITES, type CamoId } from './Camos';
-import { camoRequirementOf } from './Challenges';
-import { fieldUpgradeDef, FIELD_UPGRADE_IDS, type FieldUpgradeId } from './FieldUpgrades';
-import {
-  attachmentFits,
-  enforceLoadoutStructure,
-  FALLBACK_PRIMARY,
-  FALLBACK_SECONDARY,
-} from './LoadoutRules';
-import type { LoadoutSlot } from './Loadouts';
-import type { SaveV2, WeaponSaveData } from './SaveData';
-
 /**
  * What is unlocked, and what it takes (brief S6.2).
  *
@@ -71,6 +55,45 @@ import type { SaveV2, WeaponSaveData } from './SaveData';
  * weapon: the loadout the match consumes has been through it.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { ALL_EQUIPMENT, type EquipmentId } from '../equipment/EquipmentDefs';
+import { PERK_IDS, perkDef, type PerkId } from '../perks/PerkDefs';
+import { ATTACHMENT_IDS, attachmentDef, fitsWeapon, type AttachmentId } from '../weapons/Attachments';
+import { requireWeapon, WEAPON_DEFS, type WeaponDef } from '../weapons/WeaponDefs';
+import { CAMO_IDS, CAMO_PREREQUISITES, type CamoId } from './Camos';
+import { camoRequirementOf } from './Challenges';
+import { fieldUpgradeDef, FIELD_UPGRADE_IDS, type FieldUpgradeId } from './FieldUpgrades';
+import {
+  attachmentFits,
+  enforceLoadoutStructure,
+  FALLBACK_PRIMARY,
+  FALLBACK_SECONDARY,
+} from './LoadoutRules';
+import type { LoadoutSlot, WeaponLoadout } from './Loadouts';
+import type { SaveV2, WeaponSaveData } from './SaveData';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+/**
+ * The writes `grantEverything` needs. `Profile` satisfies it structurally.
+ *
+ * An interface rather than the class, for the reason `ProgressionStore` is one: this file is
+ * the rules and `client/meta/Profile` is a `localStorage` document, and the rule about what
+ * "everything" means should not have to know which.
+ */
+export interface UnlockGrants {
+  maxAccountLevel(): void;
+  unlockPermanently(id: string): void;
+  masterWeapon(weaponId: string): void;
+  unlockAttachment(weaponId: string, attachment: AttachmentId): void;
+  grantCamo(weaponId: string, camo: CamoId): void;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Kills with a weapon that unlock each of its attachments, in unlock order. */
 const ATTACHMENT_KILL_THRESHOLDS: Readonly<Record<AttachmentId, number>> = {
   laser_tactical: 5,
@@ -97,22 +120,6 @@ const EQUIPMENT_UNLOCK_LEVEL: Readonly<Record<EquipmentId, number>> = {
 };
 
 /**
- * The level, or a throw. **Not a default** (playtest round 4, B7).
- *
- * `EQUIPMENT_UNLOCK_LEVEL[id] ?? 1` is what both readers used to say, and a `?? 1` on a table
- * of gates means a missing row silently unlocks the item at level one — the quietest possible
- * failure for a progression system. `noUncheckedIndexedAccess` forces *something* to be
- * written there; this is the version that is loud, in the same shape as `requireWeapon`.
- */
-function equipmentUnlockLevel(id: EquipmentId): number {
-  const level = EQUIPMENT_UNLOCK_LEVEL[id];
-  if (level === undefined) {
-    throw new Error(`Equipment "${id}" has no row in EQUIPMENT_UNLOCK_LEVEL.`);
-  }
-  return level;
-}
-
-/**
  * Per-weapon XP for each weapon level, 1..10.
  *
  * Flatter than the account curve on purpose: a weapon should reach its ceiling inside a
@@ -133,31 +140,10 @@ export const WEAPON_MAX_LEVEL = WEAPON_LEVEL_XP.length + 1;
  * maximum level" has to name a number, and the honest number is the one the ladder implies.
  */
 export const WEAPON_MASTERY_XP = WEAPON_LEVEL_XP.reduce((sum, step) => sum + step, 0);
+//#endregion
 
-/** The weapon level a per-weapon XP total buys. */
-export function weaponLevelForXp(xp: number): number {
-  let remaining = Math.max(0, xp);
-  let level = 1;
-  for (const step of WEAPON_LEVEL_XP) {
-    if (remaining < step) break;
-    remaining -= step;
-    level++;
-  }
-  return level;
-}
-
-/** XP into the current weapon level, and what the level costs. */
-export function weaponLevelProgress(xp: number): { level: number; into: number; span: number } {
-  let remaining = Math.max(0, xp);
-  let level = 1;
-  for (const step of WEAPON_LEVEL_XP) {
-    if (remaining < step) return { level, into: remaining, span: step };
-    remaining -= step;
-    level++;
-  }
-  return { level, into: 0, span: 0 };
-}
-
+// ===================================== CLASS UnlockState ====================================== \\
+//#region Class UnlockState
 /**
  * The unlock state a level and a save produce.
  *
@@ -166,8 +152,38 @@ export function weaponLevelProgress(xp: number): { level: number; into: number; 
  * faster and impossible to answer inconsistently mid-frame.
  */
 export class UnlockState {
-  private readonly permanent: ReadonlySet<string>;
 
+  // ========================================== STATIC ========================================== \\
+  //#region Static
+  /** Built from a save. The one constructor anything outside this file should use. */
+  static fromSave(save: SaveV2, unrestricted = false): UnlockState {
+    return new UnlockState(save.profile.level, save.weapons, save.profile.permanentUnlocks, unrestricted);
+  }
+
+  /** Human label for a token candidate id. */
+  static labelFor(id: string): string {
+    const weapon = WEAPON_DEFS[id];
+    if (weapon !== undefined) return weapon.name;
+    for (const perk of PERK_IDS) {
+      if (perk === id) return perkDef(perk).name;
+    }
+    for (const eq of ALL_EQUIPMENT) {
+      if (eq.id === id) return eq.name;
+    }
+    for (const upgrade of FIELD_UPGRADE_IDS) {
+      if (upgrade === id) return fieldUpgradeDef(upgrade).name;
+    }
+    return id;
+  }
+  //#endregion
+
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
+  private readonly permanent: ReadonlySet<string>;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     readonly level: number,
     private readonly weapons: Readonly<Record<string, WeaponSaveData>>,
@@ -177,12 +193,10 @@ export class UnlockState {
   ) {
     this.permanent = new Set(permanentUnlocks);
   }
+  //#endregion
 
-  /** Built from a save. The one constructor anything outside this file should use. */
-  static fromSave(save: SaveV2, unrestricted = false): UnlockState {
-    return new UnlockState(save.profile.level, save.weapons, save.profile.permanentUnlocks, unrestricted);
-  }
-
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** A token spent on this id overrides every other gate, at any prestige. */
   isPermanent(id: string): boolean {
     return this.permanent.has(id);
@@ -330,48 +344,34 @@ export class UnlockState {
     }
     return out;
   }
+  //#endregion
+}
+//#endregion
 
-  /** Human label for a token candidate id. */
-  static labelFor(id: string): string {
-    const weapon = WEAPON_DEFS[id];
-    if (weapon !== undefined) return weapon.name;
-    for (const perk of PERK_IDS) {
-      if (perk === id) return perkDef(perk).name;
-    }
-    for (const eq of ALL_EQUIPMENT) {
-      if (eq.id === id) return eq.name;
-    }
-    for (const upgrade of FIELD_UPGRADE_IDS) {
-      if (upgrade === id) return fieldUpgradeDef(upgrade).name;
-    }
-    return id;
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** The weapon level a per-weapon XP total buys. */
+export function weaponLevelForXp(xp: number): number {
+  let remaining = Math.max(0, xp);
+  let level = 1;
+  for (const step of WEAPON_LEVEL_XP) {
+    if (remaining < step) break;
+    remaining -= step;
+    level++;
   }
+  return level;
 }
 
-/** Attachments are unlocked per weapon, so a token has to name the pair. */
-function attachmentKey(weaponId: string, attachment: AttachmentId): string {
-  return `${weaponId}:${attachment}`;
-}
-
-/**
- * `have / need UNIT`, the one shape every locked chip prints (§6, 2026-09-24).
- *
- * Clamped at the top, because a counter can pass a bar that another condition is still
- * holding shut — a permanent unlock spent elsewhere, an attachment granted explicitly — and
- * `31 / 25 KILLS` on a locked chip reads as a bug in the gate rather than as the gate being
- * about something else.
- *
- * One function so the spacing is one decision: `18 / 25 KILLS` and `LEVEL 9 / 16` are the
- * same sentence with the noun in different places, and the challenge list's `18 / 25` is
- * where both of them get their rhythm.
- */
-function progressLabel(have: number, need: number, unit: string): string {
-  return `${Math.max(0, Math.min(have, need))} / ${need} ${unit}`;
-}
-
-/** The same, for the four gates that are an account level. */
-function levelProgressLabel(level: number, need: number): string {
-  return `LEVEL ${Math.max(0, Math.min(level, need))} / ${need}`;
+/** XP into the current weapon level, and what the level costs. */
+export function weaponLevelProgress(xp: number): { level: number; into: number; span: number } {
+  let remaining = Math.max(0, xp);
+  let level = 1;
+  for (const step of WEAPON_LEVEL_XP) {
+    if (remaining < step) return { level, into: remaining, span: step };
+    remaining -= step;
+    level++;
+  }
+  return { level, into: 0, span: 0 };
 }
 
 /**
@@ -386,69 +386,10 @@ export function sanitiseLoadout(slot: LoadoutSlot, unlocks: UnlockState, losses:
   let changed = false;
   const label = slot.name;
 
-  const fixWeapon = (which: 'primary' | 'secondary'): void => {
-    const entry = slot[which];
-    if (!unlocks.weaponUnlocked(entry.weaponId)) {
-      const was = entry.weaponId;
-      entry.weaponId = which === 'primary' ? FALLBACK_PRIMARY : FALLBACK_SECONDARY;
-      entry.attachments = [];
-      losses.push(
-        `${label} ${which} "${was}" is locked (${unlocks.weaponRequirement(was)}); reverted to ${entry.weaponId}`,
-      );
-      changed = true;
-      return;
-    }
-    const def = requireWeapon(entry.weaponId);
-    const kept: AttachmentId[] = [];
-    for (const id of entry.attachments) {
-      // An attachment the weapon cannot carry is kept here and removed by the structure pass
-      // below, with that reason: asking whether it is *earned* on this weapon would report the
-      // wrong one.
-      if (attachmentFits(def, id) && !unlocks.attachmentUnlocked(def.id, id)) {
-        losses.push(
-          `${label} ${which}: ${attachmentDef(id).name} not yet earned on ${def.name} ` +
-            `(${unlocks.attachmentRequirement(def.id, id)}); removed`,
-        );
-        changed = true;
-        continue;
-      }
-      kept.push(id);
-    }
-    entry.attachments = kept;
-    if (entry.camo !== null && !unlocks.camoUnlocked(entry.weaponId, entry.camo)) {
-      losses.push(`${label} ${which}: camo "${entry.camo}" not earned on ${entry.weaponId}; cleared`);
-      entry.camo = null;
-      changed = true;
-    }
-  };
-
-  fixWeapon('primary');
-  fixWeapon('secondary');
-
-  if (!unlocks.equipmentUnlocked(slot.lethal)) {
-    losses.push(`${label}: lethal "${slot.lethal}" is locked; reverted to frag`);
-    slot.lethal = 'frag';
-    changed = true;
-  }
-  if (!unlocks.equipmentUnlocked(slot.tactical)) {
-    losses.push(`${label}: tactical "${slot.tactical}" is locked; reverted to flashbang`);
-    slot.tactical = 'flashbang';
-    changed = true;
-  }
-  if (!unlocks.fieldUpgradeUnlocked(slot.fieldUpgrade)) {
-    losses.push(`${label}: field upgrade "${slot.fieldUpgrade}" is locked; reverted to munitions`);
-    slot.fieldUpgrade = 'munitions';
-    changed = true;
-  }
-
-  for (let tier = 0; tier < 3; tier++) {
-    const id = slot.perks[tier];
-    if (id === null || id === undefined) continue;
-    if (unlocks.perkUnlocked(id)) continue;
-    losses.push(`${label}: ${perkDef(id).name} is locked (level ${perkDef(id).unlockLevel}); removed`);
-    slot.perks[tier] = null;
-    changed = true;
-  }
+  if (revertLockedWeapon(slot, 'primary', unlocks, label, losses)) changed = true;
+  if (revertLockedWeapon(slot, 'secondary', unlocks, label, losses)) changed = true;
+  if (revertLockedEquipment(slot, unlocks, label, losses)) changed = true;
+  if (removeLockedPerks(slot, unlocks, label, losses)) changed = true;
 
   /**
    * Then the shape, which no profile can change (security audit 2026-10-04, S1).
@@ -461,21 +402,6 @@ export function sanitiseLoadout(slot: LoadoutSlot, unlocks: UnlockState, losses:
   if (enforceLoadoutStructure(slot, losses)) changed = true;
 
   return changed;
-}
-
-/**
- * The writes `grantEverything` needs. `Profile` satisfies it structurally.
- *
- * An interface rather than the class, for the reason `ProgressionStore` is one: this file is
- * the rules and `client/meta/Profile` is a `localStorage` document, and the rule about what
- * "everything" means should not have to know which.
- */
-export interface UnlockGrants {
-  maxAccountLevel(): void;
-  unlockPermanently(id: string): void;
-  masterWeapon(weaponId: string): void;
-  unlockAttachment(weaponId: string, attachment: AttachmentId): void;
-  grantCamo(weaponId: string, camo: CamoId): void;
 }
 
 /**
@@ -549,4 +475,172 @@ export function attachmentsForWeapon(def: WeaponDef): AttachmentId[] {
     (a, b) => ATTACHMENT_KILL_THRESHOLDS[a] - ATTACHMENT_KILL_THRESHOLDS[b],
   );
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * The level, or a throw. **Not a default** (playtest round 4, B7).
+ *
+ * `EQUIPMENT_UNLOCK_LEVEL[id] ?? 1` is what both readers used to say, and a `?? 1` on a table
+ * of gates means a missing row silently unlocks the item at level one — the quietest possible
+ * failure for a progression system. `noUncheckedIndexedAccess` forces *something* to be
+ * written there; this is the version that is loud, in the same shape as `requireWeapon`.
+ */
+function equipmentUnlockLevel(id: EquipmentId): number {
+  const level = EQUIPMENT_UNLOCK_LEVEL[id];
+  if (level === undefined) {
+    throw new Error(`Equipment "${id}" has no row in EQUIPMENT_UNLOCK_LEVEL.`);
+  }
+  return level;
+}
+
+/** Attachments are unlocked per weapon, so a token has to name the pair. */
+function attachmentKey(weaponId: string, attachment: AttachmentId): string {
+  return `${weaponId}:${attachment}`;
+}
+
+/**
+ * `have / need UNIT`, the one shape every locked chip prints (§6, 2026-09-24).
+ *
+ * Clamped at the top, because a counter can pass a bar that another condition is still
+ * holding shut — a permanent unlock spent elsewhere, an attachment granted explicitly — and
+ * `31 / 25 KILLS` on a locked chip reads as a bug in the gate rather than as the gate being
+ * about something else.
+ *
+ * One function so the spacing is one decision: `18 / 25 KILLS` and `LEVEL 9 / 16` are the
+ * same sentence with the noun in different places, and the challenge list's `18 / 25` is
+ * where both of them get their rhythm.
+ */
+function progressLabel(have: number, need: number, unit: string): string {
+  return `${Math.max(0, Math.min(have, need))} / ${need} ${unit}`;
+}
+
+/** The same, for the four gates that are an account level. */
+function levelProgressLabel(level: number, need: number): string {
+  return `LEVEL ${Math.max(0, Math.min(level, need))} / ${need}`;
+}
+
+/**
+ * One weapon slot, against what the account has earned.
+ *
+ * A locked weapon reverts and **takes its attachments with it**, because they were earned on the
+ * gun it is no longer holding. The camo is only asked about on the path where the weapon stayed:
+ * see the test `takes two passes to clear a camo off a weapon it reverted`, which pins that.
+ */
+function revertLockedWeapon(
+  slot: LoadoutSlot,
+  which: 'primary' | 'secondary',
+  unlocks: UnlockState,
+  label: string,
+  losses: string[],
+): boolean {
+  const entry = slot[which];
+  if (!unlocks.weaponUnlocked(entry.weaponId)) {
+    const was = entry.weaponId;
+    entry.weaponId = which === 'primary' ? FALLBACK_PRIMARY : FALLBACK_SECONDARY;
+    entry.attachments = [];
+    losses.push(
+      `${label} ${which} "${was}" is locked (${unlocks.weaponRequirement(was)}); reverted to ${entry.weaponId}`,
+    );
+    return true;
+  }
+  let changed = stripLockedAttachments(entry, which, unlocks, label, losses);
+  if (clearLockedCamo(entry, which, unlocks, label, losses)) changed = true;
+  return changed;
+}
+
+/** Attachments this weapon has not earned yet. */
+function stripLockedAttachments(
+  entry: WeaponLoadout,
+  which: 'primary' | 'secondary',
+  unlocks: UnlockState,
+  label: string,
+  losses: string[],
+): boolean {
+  const def = requireWeapon(entry.weaponId);
+  const kept: AttachmentId[] = [];
+  let changed = false;
+  for (const id of entry.attachments) {
+    // An attachment the weapon cannot carry is kept here and removed by the structure pass
+    // below, with that reason: asking whether it is *earned* on this weapon would report the
+    // wrong one.
+    if (attachmentFits(def, id) && !unlocks.attachmentUnlocked(def.id, id)) {
+      losses.push(
+        `${label} ${which}: ${attachmentDef(id).name} not yet earned on ${def.name} ` +
+          `(${unlocks.attachmentRequirement(def.id, id)}); removed`,
+      );
+      changed = true;
+      continue;
+    }
+    kept.push(id);
+  }
+  entry.attachments = kept;
+  return changed;
+}
+
+/** A finish this weapon never earned. */
+function clearLockedCamo(
+  entry: WeaponLoadout,
+  which: 'primary' | 'secondary',
+  unlocks: UnlockState,
+  label: string,
+  losses: string[],
+): boolean {
+  if (entry.camo === null || unlocks.camoUnlocked(entry.weaponId, entry.camo)) return false;
+  losses.push(`${label} ${which}: camo "${entry.camo}" not earned on ${entry.weaponId}; cleared`);
+  entry.camo = null;
+  return true;
+}
+
+/**
+ * The three equipment slots, each back to its own named fallback.
+ *
+ * The fallbacks are written out rather than looked up: they are the three items a level-1
+ * profile is guaranteed to hold, and a table lookup here could return something the account has
+ * not earned either.
+ */
+function revertLockedEquipment(
+  slot: LoadoutSlot,
+  unlocks: UnlockState,
+  label: string,
+  losses: string[],
+): boolean {
+  let changed = false;
+  if (!unlocks.equipmentUnlocked(slot.lethal)) {
+    losses.push(`${label}: lethal "${slot.lethal}" is locked; reverted to frag`);
+    slot.lethal = 'frag';
+    changed = true;
+  }
+  if (!unlocks.equipmentUnlocked(slot.tactical)) {
+    losses.push(`${label}: tactical "${slot.tactical}" is locked; reverted to flashbang`);
+    slot.tactical = 'flashbang';
+    changed = true;
+  }
+  if (!unlocks.fieldUpgradeUnlocked(slot.fieldUpgrade)) {
+    losses.push(`${label}: field upgrade "${slot.fieldUpgrade}" is locked; reverted to munitions`);
+    slot.fieldUpgrade = 'munitions';
+    changed = true;
+  }
+  return changed;
+}
+
+/** Perks the account has not reached. The tier is emptied rather than filled with another. */
+function removeLockedPerks(
+  slot: LoadoutSlot,
+  unlocks: UnlockState,
+  label: string,
+  losses: string[],
+): boolean {
+  let changed = false;
+  for (let tier = 0; tier < 3; tier++) {
+    const id = slot.perks[tier];
+    if (id === null || id === undefined) continue;
+    if (unlocks.perkUnlocked(id)) continue;
+    losses.push(`${label}: ${perkDef(id).name} is locked (level ${perkDef(id).unlockLevel}); removed`);
+    slot.perks[tier] = null;
+    changed = true;
+  }
+  return changed;
+}
+//#endregion

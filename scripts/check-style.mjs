@@ -282,6 +282,15 @@ const FINISHED = {
     'src/shared/meta/XpSimulator.ts',
     'src/shared/meta/Skins.ts',
   ],
+  A19: [
+    'src/shared/meta/SaveData.ts',
+    'src/shared/meta/Unlocks.ts',
+    'src/shared/meta/LoadoutRules.ts',
+    'src/shared/meta/Loadouts.ts',
+    'src/shared/meta/MatchLedger.ts',
+    'src/shared/meta/MatchProgression.ts',
+    'src/shared/meta/ProgressionStore.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

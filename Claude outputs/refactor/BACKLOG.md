@@ -9,14 +9,15 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**25 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12 and **#28 by A17** on 2026-10-13. Three numbers are gone and
+**26 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13 and **#29 by A19** on
+2026-10-14. Three numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
-original list is missing**; §6 records where to look for it. (#22, #24, #26, #27 and #28 were opened
-by units since and are not from that list.)
+original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28 and #29 were
+opened by units since and are not from that list.)
 
 Status values: `open`, `bound to <unit>` (the next unit that owns these files — do it there),
 `blocked on <task>`, `needs measurement`, `needs a decision from the user`.
@@ -36,6 +37,7 @@ and belong in its Step 2 plan.
 | ~~A16~~ | `shared/streaks/` | **declined with a reason** — #1 cannot be closed from inside a unit; see its entry. A16 opened #26 and #27 |
 | ~~A17~~ | `shared/streaks/` StreakSystem, StreakLedger, StreakDefs, StreakPresentation | **closed** — none were bound; A17 opened #28 |
 | ~~A18~~ | `shared/perks/`, `shared/meta/` Camos, Challenges, ChallengeTracker, FieldUpgrades, Levels, XpRules, XpSimulator, Skins | **closed** — A18 read the whole list and nothing was bound to its twelve files; it opened none, and merged `LONGSHOT_METRES`'s in-unit duplicate itself |
+| ~~A19~~ | `shared/meta/` SaveData, Unlocks, LoadoutRules, Loadouts, MatchLedger, MatchProgression, ProgressionStore | **closed** — nothing was bound to its seven files; A19 opened #29 |
 | A20–A23 | `shared/net/` | #1 (`Interpolation` is a caller of `shortestAngle`) |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local `angleDelta` copy) |
@@ -721,6 +723,38 @@ strip and the acceptance criteria may count them too.
 than a comment changed.
 
 ---
+
+### #29 — A reverted weapon keeps its camo for one pass · `open` *(opened 2026-10-14 by A19)*
+
+**Files** `src/shared/meta/Unlocks.ts` (`revertLockedWeapon`, extracted from `sanitiseLoadout` by
+A19). **Origin** A19, found by a characterization test. **Pinned**, not fixed — see
+`Unlocks.test.ts`, *"takes two passes to clear a camo off a weapon it reverted"*.
+
+`sanitiseLoadout` reverts a locked weapon to the fallback and clears its attachments, because
+they were earned on the gun it is no longer holding. It then **returns**, so the camo check that
+sits below it on the same path never runs. The result is that a save naming a locked weapon with
+a camo on it comes back holding the carbine **and still wearing the camo** — a finish the account
+never earned on the gun it is now on. A second `sanitiseLoadout` call clears it.
+
+Measured, as the test records: pass one reports the weapon revert, pass two reports
+`ASSAULT primary: camo "gold" not earned on ar_carbine; cleared`, pass three reports nothing.
+
+**Why A19 did not fix it.** It is a behaviour change, and R1 forbids one inside a refactor unit.
+It is also not obviously a one-line fix: clearing the camo on the revert path is the likely
+answer, but *which* reversion message the player should see is a decision — one line about the
+weapon, or two — and whether the camo line should appear at all when the gun it referred to is
+gone. The attachments are cleared silently on that path today, which argues the camo should be
+too.
+
+**How much it matters.** Acceptance criterion 5 says editing `localStorage` cannot put a locked
+item in the player's hands, and a camo is an item. Whether a player ever sees it depends on how
+many times the load path sanitises before drawing — worth checking `client/meta/Profile`'s
+`sanitiseAll` while fixing, because if it already runs twice the leak never surfaces and the
+entry can be closed as a tidy-up rather than a defect.
+
+**Verify** `npm run check` + SIM snapshot/compare. The oracles cannot see this — no oracle loads
+a hand-edited save — so the test above is the proof, and it will need its expectation inverted
+when the behaviour changes, which is the one case where changing a pinned assertion is correct.
 
 ### The missing item
 The chat list was counted as 24 and this file received 22 of them. Neither #19 (folded into #2) nor

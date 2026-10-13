@@ -1,27 +1,3 @@
-import type { HitZone } from '../combat/HitboxRig';
-import type { ScoreSystem } from '../combat/ScoreSystem';
-import { hitsFrom, shotsFrom } from '../combat/ShotAccounting';
-import { EV, type GameBus } from '../core/Events';
-import { DT } from '../core/Loop';
-import type { PlayerSim } from '../player/PlayerState';
-import type { WeaponClass } from '../weapons/WeaponDefs';
-import { WEAPON_DEFS } from '../weapons/WeaponDefs';
-import type { WeaponSystem } from '../weapons/WeaponSystem';
-import { isStreakWeapon } from '../streaks/StreakWeapons';
-import { MULTIKILL_WINDOW, SLIDE_KILL_GRACE, type KillFact } from './Challenges';
-import {
-  matchFloorLine,
-  matchMinutes,
-  LONGSHOT_METRES,
-  WEAPON_XP_FRACTION,
-  xpSource,
-  XP_SOURCES,
-  type XpLine,
-  type XpLines,
-  type XpSourceId,
-} from './XpRules';
-import { Disposable } from '../core/Disposable';
-
 /**
  * One seat's match, counted (M13 Phase B, bug 4.2).
  *
@@ -59,12 +35,36 @@ import { Disposable } from '../core/Disposable';
  * tallies exist, and nothing here can change what a match does.
  */
 
-/** Blast profiles carry their own weapon ids; a kill from one is an equipment kill. */
-const EQUIPMENT_WEAPON_PREFIX = 'eq_';
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { HitZone } from '../combat/HitboxRig';
+import type { ScoreSystem } from '../combat/ScoreSystem';
+import { hitsFrom, shotsFrom } from '../combat/ShotAccounting';
+import { EV, type GameBus } from '../core/Events';
+import { DT } from '../core/Loop';
+import type { PlayerSim } from '../player/PlayerState';
+import type { WeaponClass } from '../weapons/WeaponDefs';
+import { WEAPON_DEFS } from '../weapons/WeaponDefs';
+import type { WeaponSystem } from '../weapons/WeaponSystem';
+import { isStreakWeapon } from '../streaks/StreakWeapons';
+import { MULTIKILL_WINDOW, SLIDE_KILL_GRACE, type KillFact } from './Challenges';
+import {
+  matchFloorLine,
+  matchMinutes,
+  LONGSHOT_METRES,
+  WEAPON_XP_FRACTION,
+  xpSource,
+  XP_SOURCES,
+  type XpLine,
+  type XpLines,
+  type XpSourceId,
+  type XpSource,
+} from './XpRules';
+import { Disposable } from '../core/Disposable';
+//#endregion
 
-/** Kills remembered for the multikill window. Nothing in this game exceeds four. */
-const KILL_RING = 8;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MatchLedgerDeps {
   readonly bus: GameBus;
   readonly score: ScoreSystem;
@@ -89,20 +89,6 @@ export interface WeaponTally {
   xp: number;
 }
 
-function makeTally(): WeaponTally {
-  return {
-    kills: 0,
-    headshots: 0,
-    longshots: 0,
-    multikills: 0,
-    shotsFired: 0,
-    shotsHit: 0,
-    longestShot: 0,
-    timeUsed: 0,
-    xp: 0,
-  };
-}
-
 /** What the two client-only rows are worth, supplied by whoever owns a save. */
 export interface LedgerExtras {
   /** Challenges completed this match, and the XP they awarded between them. */
@@ -112,20 +98,49 @@ export interface LedgerExtras {
   readonly weaponLevels: number;
 }
 
-const NO_EXTRAS: LedgerExtras = { challenges: 0, challengeXp: 0, weaponLevels: 0 };
+/**
+ * Everything one line of the breakdown could need that is not in `counts`.
+ *
+ * Built once per `lines` call and read by `countForSource`: the five figures below are the ones
+ * that come from somewhere other than this ledger's own tally — the score row, the match length
+ * and the caller's verdict on the result.
+ */
+interface LineTotals {
+  readonly minutes: number;
+  readonly assists: number;
+  readonly objectives: number;
+  readonly bestStreak: number;
+  readonly won: boolean;
+  readonly isMvp: boolean;
+  readonly extras: LedgerExtras;
+}
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Blast profiles carry their own weapon ids; a kill from one is an equipment kill. */
+const EQUIPMENT_WEAPON_PREFIX = 'eq_';
+
+/** Kills remembered for the multikill window. Nothing in this game exceeds four. */
+const KILL_RING = 8;
+
+const NO_EXTRAS: LedgerExtras = { challenges: 0, challengeXp: 0, weaponLevels: 0 };
+//#endregion
+
+// ===================================== CLASS MatchLedger ====================================== \\
+//#region Class MatchLedger
 export class MatchLedger extends Disposable {
+
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** The seat. Written by `adopt` alone. */
   entityId: number;
-
   /** Per-source counts, keyed by XP source. */
   private readonly counts = new Map<XpSourceId, number>();
   readonly weaponTallies = new Map<string, WeaponTally>();
   private readonly killTicks: number[] = new Array<number>(KILL_RING).fill(-99999);
   private killRingHead = 0;
-
   private readonly deps: MatchLedgerDeps;
-
   // ---- context sampled once per tick, so a kill can be described ------------
   private heldWeaponId = '';
   private heldWeaponClass: WeaponClass = 'AR';
@@ -134,19 +149,20 @@ export class MatchLedger extends Disposable {
   private airborne = false;
   private sinceSlide = 999;
   private tick = 0;
-
   // ---- kill context --------------------------------------------------------
   /** Range of the most recent damage this seat dealt, metres. */
   private lastDamageDistance = 0;
   private lastDamageTarget = -1;
   private killsThisMag = 0;
   private lastKilledBy = -1;
-
   /** Objectives noted by hand — the XP simulator's door. The row's columns are the real one. */
   private objectives = 0;
   /** Ticks this ledger has been sampled through. See `sample`. */
   private ticksPlayed = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MatchLedgerDeps) {
     super();
     this.deps = deps;
@@ -186,7 +202,10 @@ export class MatchLedger extends Disposable {
       }),
     );
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * One sim tick of context.
    *
@@ -263,32 +282,53 @@ export class MatchLedger extends Disposable {
       (row === undefined ? 0 : row.captures + row.defends + row.plants + row.defuses + row.tags);
     const minutes = matchMinutes(seconds);
 
+    const totals: LineTotals = { minutes, assists, objectives, bestStreak, won, isMvp, extras };
+
     const out: XpLine[] = [];
     for (const source of XP_SOURCES) {
       // The floor is the head of the list rather than one more row the loop might drop, and
       // that is what makes `XpLines` non-empty without the renderer having to check.
       if (source.id === 'matchComplete') continue;
-      let count = this.counts.get(source.id) ?? 0;
-      if (source.id === 'matchTime') count = minutes;
-      if (source.id === 'assist') count = assists;
-      if (source.id === 'objective') count = objectives;
-      if (source.id === 'win') count = won ? 1 : 0;
-      if (source.id === 'mvp') count = isMvp ? 1 : 0;
-      if (source.id === 'streak') count = bestStreak;
-      if (source.id === 'challenge') count = extras.challenges;
-      if (source.id === 'weaponLevel') count = extras.weaponLevels;
+      const count = this.countForSource(source.id, totals);
       if (count <= 0) continue;
-      // A challenge carries its own award, so the row's total is the sum of what completed
-      // rather than `count x value` — the one source in the table whose XP is data.
-      const xp =
-        source.id === 'challenge'
-          ? extras.challengeXp
-          : source.kind === 'flat'
-            ? source.value
-            : count * source.value;
+      const xp = xpForSource(source, count, extras);
       out.push({ id: source.id, label: source.label, count, xp, kind: source.kind });
     }
     return [matchFloorLine(), ...out];
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * How many of this source the match produced.
+   *
+   * The ledger's own tally is the default and eight sources override it, because they are
+   * counted somewhere that already owns the number: the score row keeps the assists, the
+   * objectives and the best streak, the match length decides the minutes, and the caller
+   * decides the win and the MVP. Counting any of them twice is how two screens disagree.
+   */
+  private countForSource(id: XpSourceId, totals: LineTotals): number {
+    switch (id) {
+      case 'matchTime':
+        return totals.minutes;
+      case 'assist':
+        return totals.assists;
+      case 'objective':
+        return totals.objectives;
+      case 'win':
+        return totals.won ? 1 : 0;
+      case 'mvp':
+        return totals.isMvp ? 1 : 0;
+      case 'streak':
+        return totals.bestStreak;
+      case 'challenge':
+        return totals.extras.challenges;
+      case 'weaponLevel':
+        return totals.extras.weaponLevels;
+      default:
+        return this.counts.get(id) ?? 0;
+    }
   }
 
   // -- internals --------------------------------------------------------------
@@ -395,4 +435,35 @@ export class MatchLedger extends Disposable {
     this.weaponTallies.set(weaponId, fresh);
     return fresh;
   }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function makeTally(): WeaponTally {
+  return {
+    kills: 0,
+    headshots: 0,
+    longshots: 0,
+    multikills: 0,
+    shotsFired: 0,
+    shotsHit: 0,
+    longestShot: 0,
+    timeUsed: 0,
+    xp: 0,
+  };
+}
+
+/**
+ * What one row is worth.
+ *
+ * A challenge carries its own award, so the row's total is the sum of what completed rather
+ * than `count x value` — the one source in the table whose XP is data. A `flat` source pays its
+ * value once however high the count; an `each` source multiplies.
+ */
+function xpForSource(source: XpSource, count: number, extras: LedgerExtras): number {
+  if (source.id === 'challenge') return extras.challengeXp;
+  return source.kind === 'flat' ? source.value : count * source.value;
+}
+//#endregion

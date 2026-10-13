@@ -14,6 +14,15 @@
  * The check is the first thing the handshake does, before a single gameplay byte is decoded.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type MsgCId = (typeof MsgC)[keyof typeof MsgC];
+export type MsgSId = (typeof MsgS)[keyof typeof MsgS];
+export type RejectCodeId = (typeof RejectCode)[keyof typeof RejectCode];
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * Bump on any layout change to any message in this file.
  *
@@ -395,9 +404,6 @@ export const MsgS = {
   Scoreboard: 146,
 } as const;
 
-export type MsgCId = (typeof MsgC)[keyof typeof MsgC];
-export type MsgSId = (typeof MsgS)[keyof typeof MsgS];
-
 /**
  * Why a handshake was refused.
  *
@@ -411,24 +417,6 @@ export const RejectCode = {
   RateLimited: 4,
   MatchOver: 5,
 } as const;
-export type RejectCodeId = (typeof RejectCode)[keyof typeof RejectCode];
-
-export function rejectText(code: number): string {
-  switch (code) {
-    case RejectCode.BadVersion:
-      return 'protocol version mismatch';
-    case RejectCode.ServerFull:
-      return 'server full';
-    case RejectCode.Malformed:
-      return 'malformed handshake';
-    case RejectCode.RateLimited:
-      return 'rate limited';
-    case RejectCode.MatchOver:
-      return 'match is over';
-    default:
-      return 'refused';
-  }
-}
 
 // -- limits (S4.16) ----------------------------------------------------------
 //
@@ -581,6 +569,34 @@ export const VEL_SCALE = 100;
 /** Angles to 16 bits over a full turn: 2*pi/65536 = 0.0055 deg, far below aim resolution. */
 const ANGLE_SCALE = 65536 / (Math.PI * 2);
 
+/**
+ * Pitch is clamped to +/-89 deg by `InputCommand` (S4.2), so it gets a narrower, finer mapping
+ * than yaw rather than sharing the wrapping one: half the range at the same bit count is half
+ * the quantisation error on the axis where a headshot lives.
+ */
+const PITCH_LIMIT = (89 * Math.PI) / 180;
+const PITCH_SCALE = 32767 / PITCH_LIMIT;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function rejectText(code: number): string {
+  switch (code) {
+    case RejectCode.BadVersion:
+      return 'protocol version mismatch';
+    case RejectCode.ServerFull:
+      return 'server full';
+    case RejectCode.Malformed:
+      return 'malformed handshake';
+    case RejectCode.RateLimited:
+      return 'rate limited';
+    case RejectCode.MatchOver:
+      return 'match is over';
+    default:
+      return 'refused';
+  }
+}
+
 export function quantPos(v: number): number {
   return Math.round(v * POS_SCALE);
 }
@@ -607,14 +623,6 @@ export function dequantAngle(q: number): number {
   const a = (q & 0xffff) / ANGLE_SCALE;
   return a > Math.PI ? a - Math.PI * 2 : a;
 }
-
-/**
- * Pitch is clamped to +/-89 deg by `InputCommand` (S4.2), so it gets a narrower, finer mapping
- * than yaw rather than sharing the wrapping one: half the range at the same bit count is half
- * the quantisation error on the axis where a headshot lives.
- */
-const PITCH_LIMIT = (89 * Math.PI) / 180;
-const PITCH_SCALE = 32767 / PITCH_LIMIT;
 
 export function quantPitch(rad: number): number {
   const c = rad < -PITCH_LIMIT ? -PITCH_LIMIT : rad > PITCH_LIMIT ? PITCH_LIMIT : rad;
@@ -672,3 +680,4 @@ export function quantiseCommandInPlace(cmd: {
   cmd.yaw = dequantAngle(quantAngle(cmd.yaw));
   cmd.pitch = dequantPitch(quantPitch(cmd.pitch));
 }
+//#endregion

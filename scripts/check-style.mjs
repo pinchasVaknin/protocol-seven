@@ -291,6 +291,13 @@ const FINISHED = {
     'src/shared/meta/MatchProgression.ts',
     'src/shared/meta/ProgressionStore.ts',
   ],
+  A20: [
+    'src/shared/net/Wire.ts',
+    'src/shared/net/Protocol.ts',
+    'src/shared/net/Snapshot.ts',
+    'src/shared/net/UrlFlags.ts',
+    'src/shared/net/DisplayText.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

@@ -20,22 +20,35 @@
  * Little-endian throughout, because every platform this runs on is.
  */
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Grow-once cap. A frame larger than this is a bug on our side, not a big update. */
 const MAX_FRAME_BYTES = 64 * 1024;
+//#endregion
 
+// ====================================== CLASS ByteWriter ====================================== \\
+//#region Class ByteWriter
 export class ByteWriter {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly buf: ArrayBuffer;
   private readonly view: DataView;
   private readonly u8: Uint8Array;
   private at = 0;
   private overflowed_ = false;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(capacity = 8192) {
     this.buf = new ArrayBuffer(Math.min(capacity, MAX_FRAME_BYTES));
     this.view = new DataView(this.buf);
     this.u8 = new Uint8Array(this.buf);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Bytes written so far. */
   get length(): number {
     return this.at;
@@ -60,14 +73,6 @@ export class ByteWriter {
   /** A view over what has been written. Valid until the next `reset()`. */
   bytes(): Uint8Array {
     return this.u8.subarray(0, this.at);
-  }
-
-  private room(n: number): boolean {
-    if (this.at + n > this.u8.length) {
-      this.overflowed_ = true;
-      return false;
-    }
-    return true;
   }
 
   u8v(v: number): void {
@@ -144,19 +149,42 @@ export class ByteWriter {
     const s = src.u8;
     for (let i = from; i < to; i++) this.u8[this.at++] = s[i] ?? 0;
   }
-}
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private room(n: number): boolean {
+    if (this.at + n > this.u8.length) {
+      this.overflowed_ = true;
+      return false;
+    }
+    return true;
+  }
+  //#endregion
+}
+//#endregion
+
+// ====================================== CLASS ByteReader ====================================== \\
+//#region Class ByteReader
 export class ByteReader {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private view: DataView;
   private u8: Uint8Array;
   private at = 0;
   private overran_ = false;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(bytes: Uint8Array) {
     this.u8 = bytes;
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Point this reader at a different frame. Lets a decoder be reused without allocating. */
   reuse(bytes: Uint8Array): void {
     this.u8 = bytes;
@@ -181,14 +209,6 @@ export class ByteReader {
 
   get offset(): number {
     return this.at;
-  }
-
-  private room(n: number): boolean {
-    if (this.at + n > this.u8.length) {
-      this.overran_ = true;
-      return false;
-    }
-    return true;
   }
 
   u8v(): number {
@@ -289,8 +309,23 @@ export class ByteReader {
     this.at += n;
     return out;
   }
-}
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private room(n: number): boolean {
+    if (this.at + n > this.u8.length) {
+      this.overran_ = true;
+      return false;
+    }
+    return true;
+  }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function clampInt(v: number, lo: number, hi: number): number {
   const r = Math.round(v);
   if (!Number.isFinite(r)) return 0;
@@ -348,30 +383,65 @@ function decodeUtf8(bytes: Uint8Array): string {
   let out = '';
   let i = 0;
   while (i < bytes.length) {
-    const b0 = bytes[i++] ?? 0;
+    const b0 = byteAt(bytes, i++);
     let code: number;
     if (b0 < 0x80) {
       code = b0;
     } else if ((b0 & 0xe0) === 0xc0) {
-      code = ((b0 & 0x1f) << 6) | ((bytes[i++] ?? 0) & 0x3f);
+      code = twoByteCodePoint(b0, byteAt(bytes, i));
+      i += 1;
     } else if ((b0 & 0xf0) === 0xe0) {
-      code = ((b0 & 0x0f) << 12) | (((bytes[i++] ?? 0) & 0x3f) << 6) | ((bytes[i++] ?? 0) & 0x3f);
+      code = threeByteCodePoint(b0, byteAt(bytes, i), byteAt(bytes, i + 1));
+      i += 2;
     } else if ((b0 & 0xf8) === 0xf0) {
-      code =
-        ((b0 & 0x07) << 18) |
-        (((bytes[i++] ?? 0) & 0x3f) << 12) |
-        (((bytes[i++] ?? 0) & 0x3f) << 6) |
-        ((bytes[i++] ?? 0) & 0x3f);
+      code = fourByteCodePoint(b0, byteAt(bytes, i), byteAt(bytes, i + 1), byteAt(bytes, i + 2));
+      i += 3;
     } else {
       code = 0xfffd;
     }
-    if (code > 0x10ffff) code = 0xfffd;
-    if (code > 0xffff) {
-      code -= 0x10000;
-      out += String.fromCharCode(0xd800 + (code >> 10), 0xdc00 + (code & 0x3ff));
-    } else {
-      out += String.fromCharCode(code);
-    }
+    out += utf16For(code);
   }
   return out;
 }
+
+/**
+ * A byte of the frame, or zero past its end.
+ *
+ * The length is never checked against the sequence the lead byte announced: a truncated
+ * sequence reads zeroes for what is missing and decodes to whatever they make of it, which is
+ * how a cut frame stays a mangled name rather than an exception.
+ */
+function byteAt(bytes: Uint8Array, i: number): number {
+  return bytes[i] ?? 0;
+}
+
+/** U+0080..U+07FF: five bits of the lead byte, six of its continuation. */
+function twoByteCodePoint(b0: number, b1: number): number {
+  return ((b0 & 0x1f) << 6) | (b1 & 0x3f);
+}
+
+/** U+0800..U+FFFF, the plane the names in this game mostly live in. */
+function threeByteCodePoint(b0: number, b1: number, b2: number): number {
+  return ((b0 & 0x0f) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f);
+}
+
+/** Above U+FFFF: an emoji, which arrives as a surrogate pair on the way back out. */
+function fourByteCodePoint(b0: number, b1: number, b2: number, b3: number): number {
+  return ((b0 & 0x07) << 18) | ((b1 & 0x3f) << 12) | ((b2 & 0x3f) << 6) | (b3 & 0x3f);
+}
+
+/**
+ * One code point as the UTF-16 units a JavaScript string is made of.
+ *
+ * Anything past the last Unicode code point becomes U+FFFD here rather than at the four
+ * decoders, because every one of them can overshoot and the check belongs where they meet.
+ */
+function utf16For(code: number): string {
+  if (code > 0x10ffff) return String.fromCharCode(0xfffd);
+  if (code > 0xffff) {
+    const astral = code - 0x10000;
+    return String.fromCharCode(0xd800 + (astral >> 10), 0xdc00 + (astral & 0x3ff));
+  }
+  return String.fromCharCode(code);
+}
+//#endregion

@@ -24,6 +24,8 @@
  * arrives, so the two can only agree.
  */
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Characters that draw nothing or reshape what is around them. */
 const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 /** Letters (and one symbol) by category that render as blank space. */
@@ -32,7 +34,10 @@ const SPACE = /\p{Zs}/u;
 const MARK = /\p{M}/u;
 /** Combining marks kept on one base character. */
 const MAX_MARKS = 2;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * `name`, or `name (2)`, `name (3)` … — the first that none of `taken` already is (S9).
  *
@@ -61,20 +66,19 @@ export function cleanDisplayText(raw: string, cap: number): string {
   let marks = 0;
   let spaceOwed = false;
   for (const ch of raw.normalize('NFC')) {
-    if (INVISIBLE.test(ch) || BLANK_LETTERS.has(ch)) continue;
+    if (drawsNothing(ch)) continue;
     if (SPACE.test(ch)) {
       // Owed rather than written, so a run collapses to one and a trailing one never lands.
       spaceOwed = out !== '';
       continue;
     }
     if (MARK.test(ch)) {
-      // A mark with nothing to sit on, or one past the limit, is dropped.
-      if (out === '' || marks >= MAX_MARKS || out.length + ch.length > cap) continue;
+      if (!canStackMark(out, marks, ch, cap)) continue;
       marks++;
       out += ch;
       continue;
     }
-    const next = spaceOwed ? ` ${ch}` : ch;
+    const next = withOwedSpace(ch, spaceOwed);
     if (out.length + next.length > cap) break;
     out += next;
     spaceOwed = false;
@@ -82,3 +86,27 @@ export function cleanDisplayText(raw: string, cap: number): string {
   }
   return out;
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** A character that draws nothing: a control or format character, or a blank letter. */
+function drawsNothing(ch: string): boolean {
+  return INVISIBLE.test(ch) || BLANK_LETTERS.has(ch);
+}
+
+/**
+ * Whether this mark may join what is already there.
+ *
+ * A mark with nothing to sit on, or one past the limit, is dropped — and so is one that
+ * would not fit inside `cap`, which the cap's own break in `cleanDisplayText` cannot refuse.
+ */
+function canStackMark(out: string, marks: number, ch: string, cap: number): boolean {
+  return out !== '' && marks < MAX_MARKS && out.length + ch.length <= cap;
+}
+
+/** The owed space, attached to the character that earns it rather than written on its own. */
+function withOwedSpace(ch: string, spaceOwed: boolean): string {
+  return spaceOwed ? ` ${ch}` : ch;
+}
+//#endregion

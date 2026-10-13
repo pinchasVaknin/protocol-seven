@@ -1,23 +1,3 @@
-import { ALL_EQUIPMENT, type EquipmentId } from '../equipment/EquipmentDefs';
-import type { ThrowPhase } from '../equipment/ThrowController';
-import type { StanceId } from '../player/Stance';
-import { STANCES } from '../player/Stance';
-import type { PlayerSimState } from '../player/PlayerState';
-import { ALL_WEAPONS } from '../weapons/WeaponDefs';
-import { NO_SKIN_INDEX } from '../meta/Skins';
-import { STREAK_WEAPON_IDS } from '../streaks/StreakWeapons';
-import type { ByteReader, ByteWriter } from './Wire';
-import {
-  dequantAngle,
-  dequantPitch,
-  dequantPos,
-  dequantVel,
-  quantAngle,
-  quantPitch,
-  quantPos,
-  quantVel,
-} from './Protocol';
-
 /**
  * What the server replicates, and how it is packed (M10, S4.12 and S4.15).
  *
@@ -47,6 +27,102 @@ import {
  * different links are almost never acking the same snapshot.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { ALL_EQUIPMENT, type EquipmentId } from '../equipment/EquipmentDefs';
+import type { ThrowPhase } from '../equipment/ThrowController';
+import type { StanceId } from '../player/Stance';
+import { STANCES } from '../player/Stance';
+import type { PlayerSimState } from '../player/PlayerState';
+import { ALL_WEAPONS } from '../weapons/WeaponDefs';
+import { NO_SKIN_INDEX } from '../meta/Skins';
+import { STREAK_WEAPON_IDS } from '../streaks/StreakWeapons';
+import type { ByteReader, ByteWriter } from './Wire';
+import {
+  dequantAngle,
+  dequantPitch,
+  dequantPos,
+  dequantVel,
+  quantAngle,
+  quantPitch,
+  quantPos,
+  quantVel,
+} from './Protocol';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+/**
+ * One replicated actor.
+ *
+ * Deliberately flat numbers and one string. It is written by the server from a `Bot` or a
+ * connected player's controller, and read by the client into a renderable remote — neither of
+ * which this struct knows anything about.
+ */
+export interface EntitySnapshot {
+  entityId: number;
+  /** Sent once, on the entity's first appearance, then only if it changes. */
+  displayName: string;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+  vx: number;
+  vz: number;
+  stance: StanceId;
+  /**
+   * Capsule height over stand height, 1 standing.
+   *
+   * Until M13 C2 this was also the rig's compression. The rig now wears a layout chosen from
+   * `stance` and velocity (`rigLayoutFor`), both of which are on this same snapshot, so the
+   * field is redundant with them; it still drives the procedural placeholder's squash and it
+   * leaves the wire with the v13 widening rather than on its own version bump.
+   */
+  heightScale: number;
+  /** Current hit points, 0-255. */
+  health: number;
+  /** Index into `ALL_WEAPONS`. 255 means "no weapon", which a dead body has. */
+  weaponIndex: number;
+  /**
+   * Index into `SKIN_IDS` — the body this player declared at the `Hello` (M16, B6). 255
+   * (`NO_SKIN_INDEX`) means "declared none": every bot, and a client with nothing to say. The
+   * client deals a body to those from its own deck, which is what it did for everybody before
+   * this field, and what it still does for a body the server has no opinion about.
+   *
+   * Identity, not presentation (decision 5): *who is this* has a name and a team on the wire
+   * already, and the body is the third half of the same fact. How a body is drawn stays the
+   * client's.
+   */
+  characterIndex: number;
+  flags: number;
+  /**
+   * The grenade in this body's hand, as an index into `ALL_EQUIPMENT`; 255 when the hand is on
+   * the weapon or empty (protocol 24).
+   *
+   * `EFlag.Throwing` said a grenade was out and nothing else, so everybody watching drew the body
+   * throwing its rifle: the weapon stayed in the hand, because nothing on the wire said what to
+   * put there instead. It is set from the tick the grenade is drawn to the tick it leaves the
+   * hand, and cleared for the follow-through, when the hand is empty and still off the weapon.
+   */
+  heldEquipment: number;
+  /**
+   * Where the throw is, as an index into `THROW_PHASES` (protocol 24): drawn with the pin in,
+   * cooking, or the arm swinging. What the third-person arm is posed from, so it lets go on the
+   * tick the simulation's does rather than when the whole throw is over.
+   */
+  throwPhase: number;
+  /** M3 visual serials (`BotVisualState`). The animation seam, replicated verbatim. */
+  deathSerial: number;
+  deathAngle: number;
+  spawnSerial: number;
+  flinchSerial: number;
+  flinchAngle: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * Entity flags. Presentation reads these; none of them are cosmetic *state*.
  *
@@ -115,7 +191,7 @@ export const EFlag = {
   Dormant: 1 << 11,
 } as const;
 
-/** Which fields a delta carries. One bit per line of `writeEntity`. */
+/** Which fields a delta carries. One bit per line of the three `write*Fields` helpers. */
 const F = {
   Pos: 1 << 0,
   Yaw: 1 << 1,
@@ -143,6 +219,77 @@ const F = {
  */
 export const THROW_PHASES: readonly ThrowPhase[] = ['IDLE', 'READY', 'COOKING', 'THROWING'];
 
+/**
+ * The wire's weapon table: every loadout weapon, then the three killstreak weapons (v19).
+ *
+ * `EntitySnapshot.weaponIndex` only ever names something a body is holding, so for that field
+ * the tail is unreachable. `KilledEvent.weaponIndex` is the one that needed it: a sentry kill
+ * used to send 255 — *no weapon* — and the killfeed had nothing to put beside the name, so the
+ * `[SENTRY]` tag would have worked in single-player and quietly vanished over the network.
+ *
+ * **Appended, never interleaved.** Every existing index is where it was, which is what makes
+ * this a tail and not a renumbering; the version is bumped anyway, because a client that reads
+ * `streak_sentry` where a server means nothing is the skew the handshake exists to refuse.
+ */
+const WIRE_WEAPON_IDS: readonly string[] = [
+  ...ALL_WEAPONS.map((def) => def.id),
+  ...STREAK_WEAPON_IDS,
+];
+
+/**
+ * One entity's pose, rounded to what the wire carries. Scratch, not state.
+ *
+ * Module level and reused, because `writeEntity` runs per entity per seat per tick and nothing
+ * on the send path allocates (S4.7) — the same reason `ByteWriter` owns one buffer for its
+ * lifetime. The values are written by `quantiseEntityInto` and read by the mask and the bytes
+ * of the same `writeEntity` call, which never nests: the one loop that calls it, in
+ * `Messages.writeSnapshotEntities`, finishes each entity before starting the next.
+ */
+const QUANT = {
+  x: 0,
+  y: 0,
+  z: 0,
+  yaw: 0,
+  pitch: 0,
+  vx: 0,
+  vz: 0,
+  height: 0,
+};
+
+// -- the owner's own authoritative state --------------------------------------
+
+/**
+ * Optional blocks in the owner state, present only when they carry something.
+ *
+ * The split is by gameplay subsystem rather than by byte budget, and it earns its keep: a
+ * player who is running and not sliding, mantling or on a slope pays for the base block
+ * alone. Slide and mantle state is large and almost always inert, and sending it every
+ * snapshot would roughly double the owner block for the ninety-odd percent of ticks where
+ * every field in it is zero.
+ */
+const OB = {
+  Sprint: 1 << 0,
+  Slide: 1 << 1,
+  Mantle: 1 << 2,
+  /** Ground normal, when the surface underfoot is not flat. */
+  Slope: 1 << 3,
+} as const;
+
+/** Owner-state boolean flags that do not live in `PlayerSimState` as numbers. */
+const OF = {
+  Grounded: 1 << 0,
+  WasGrounded: 1 << 1,
+  SprintActive: 1 << 2,
+  TacSprintActive: 1 << 3,
+  SlideActive: 1 << 4,
+  MantleActive: 1 << 5,
+  JumpedThisTick: 1 << 6,
+  JustLanded: 1 << 7,
+} as const;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** The wire's equipment table: `ALL_EQUIPMENT`'s order, 255 for nothing. Appended, never interleaved. */
 export function equipmentIndexOf(id: EquipmentId | null): number {
   if (id === null) return 255;
@@ -152,74 +299,6 @@ export function equipmentIndexOf(id: EquipmentId | null): number {
 
 export function equipmentIdAt(index: number): EquipmentId | null {
   return ALL_EQUIPMENT[index]?.id ?? null;
-}
-
-/**
- * One replicated actor.
- *
- * Deliberately flat numbers and one string. It is written by the server from a `Bot` or a
- * connected player's controller, and read by the client into a renderable remote — neither of
- * which this struct knows anything about.
- */
-export interface EntitySnapshot {
-  entityId: number;
-  /** Sent once, on the entity's first appearance, then only if it changes. */
-  displayName: string;
-  x: number;
-  y: number;
-  z: number;
-  yaw: number;
-  pitch: number;
-  vx: number;
-  vz: number;
-  stance: StanceId;
-  /**
-   * Capsule height over stand height, 1 standing.
-   *
-   * Until M13 C2 this was also the rig's compression. The rig now wears a layout chosen from
-   * `stance` and velocity (`rigLayoutFor`), both of which are on this same snapshot, so the
-   * field is redundant with them; it still drives the procedural placeholder's squash and it
-   * leaves the wire with the v13 widening rather than on its own version bump.
-   */
-  heightScale: number;
-  /** Current hit points, 0-255. */
-  health: number;
-  /** Index into `ALL_WEAPONS`. 255 means "no weapon", which a dead body has. */
-  weaponIndex: number;
-  /**
-   * Index into `SKIN_IDS` — the body this player declared at the `Hello` (M16, B6). 255
-   * (`NO_SKIN_INDEX`) means "declared none": every bot, and a client with nothing to say. The
-   * client deals a body to those from its own deck, which is what it did for everybody before
-   * this field, and what it still does for a body the server has no opinion about.
-   *
-   * Identity, not presentation (decision 5): *who is this* has a name and a team on the wire
-   * already, and the body is the third half of the same fact. How a body is drawn stays the
-   * client's.
-   */
-  characterIndex: number;
-  flags: number;
-  /**
-   * The grenade in this body's hand, as an index into `ALL_EQUIPMENT`; 255 when the hand is on
-   * the weapon or empty (protocol 24).
-   *
-   * `EFlag.Throwing` said a grenade was out and nothing else, so everybody watching drew the body
-   * throwing its rifle: the weapon stayed in the hand, because nothing on the wire said what to
-   * put there instead. It is set from the tick the grenade is drawn to the tick it leaves the
-   * hand, and cleared for the follow-through, when the hand is empty and still off the weapon.
-   */
-  heldEquipment: number;
-  /**
-   * Where the throw is, as an index into `THROW_PHASES` (protocol 24): drawn with the pin in,
-   * cooking, or the arm swinging. What the third-person arm is posed from, so it lets go on the
-   * tick the simulation's does rather than when the whole throw is over.
-   */
-  throwPhase: number;
-  /** M3 visual serials (`BotVisualState`). The animation seam, replicated verbatim. */
-  deathSerial: number;
-  deathAngle: number;
-  spawnSerial: number;
-  flinchSerial: number;
-  flinchAngle: number;
 }
 
 export function makeEntitySnapshot(): EntitySnapshot {
@@ -274,23 +353,6 @@ export function copyEntitySnapshot(src: EntitySnapshot, dst: EntitySnapshot): vo
   dst.flinchAngle = src.flinchAngle;
 }
 
-/**
- * The wire's weapon table: every loadout weapon, then the three killstreak weapons (v19).
- *
- * `EntitySnapshot.weaponIndex` only ever names something a body is holding, so for that field
- * the tail is unreachable. `KilledEvent.weaponIndex` is the one that needed it: a sentry kill
- * used to send 255 — *no weapon* — and the killfeed had nothing to put beside the name, so the
- * `[SENTRY]` tag would have worked in single-player and quietly vanished over the network.
- *
- * **Appended, never interleaved.** Every existing index is where it was, which is what makes
- * this a tail and not a renumbering; the version is bumped anyway, because a client that reads
- * `streak_sentry` where a server means nothing is the skew the handshake exists to refuse.
- */
-const WIRE_WEAPON_IDS: readonly string[] = [
-  ...ALL_WEAPONS.map((def) => def.id),
-  ...STREAK_WEAPON_IDS,
-];
-
 /** Weapon id to wire index. The table above is the order; anything else becomes 255. */
 export function weaponIndexOf(weaponId: string): number {
   for (let i = 0; i < WIRE_WEAPON_IDS.length; i++) {
@@ -303,15 +365,6 @@ export function weaponIdAt(index: number): string | null {
   return WIRE_WEAPON_IDS[index] ?? null;
 }
 
-function stanceIndex(stance: StanceId): number {
-  const at = STANCES.indexOf(stance);
-  return at < 0 ? 0 : at;
-}
-
-function stanceAt(index: number): StanceId {
-  return STANCES[index] ?? 'STAND';
-}
-
 /**
  * Write one entity as a delta against `base`, or in full when `base` is null.
  *
@@ -321,82 +374,16 @@ function stanceAt(index: number): StanceId {
  * mask itself, because a player standing still still has floating-point noise in their pose.
  */
 export function writeEntity(w: ByteWriter, e: EntitySnapshot, base: EntitySnapshot | null): void {
-  let mask = 0;
-
-  const qx = quantPos(e.x);
-  const qy = quantPos(e.y);
-  const qz = quantPos(e.z);
-  const qyaw = quantAngle(e.yaw);
-  const qpitch = quantPitch(e.pitch);
-  const qvx = quantVel(e.vx);
-  const qvz = quantVel(e.vz);
-  const qh = Math.round(e.heightScale * 255);
-
-  if (base === null) {
-    mask =
-      F.Pos | F.Yaw | F.Pitch | F.Vel | F.Stance | F.Height | F.Health | F.Weapon | F.Flags | F.Name;
-    // The body rides every full write too, even at 255: a fresh entity's baseline says "none",
-    // and a client that never sees the field never asks its deck — see `readEntity`.
-    mask |= F.Character;
-    // Serials only ride a full write when they are non-zero: a fresh entity at zero is the
-    // client's own default, so spending three fields to say so is waste on every join.
-    if (e.deathSerial !== 0) mask |= F.Death;
-    if (e.spawnSerial !== 0) mask |= F.Spawn;
-    if (e.flinchSerial !== 0) mask |= F.Flinch;
-    // An empty hand is the default, as a zero serial is.
-    if (e.heldEquipment !== 255 || e.throwPhase !== 0) mask |= F.Hand;
-  } else {
-    if (qx !== quantPos(base.x) || qy !== quantPos(base.y) || qz !== quantPos(base.z)) mask |= F.Pos;
-    if (qyaw !== quantAngle(base.yaw)) mask |= F.Yaw;
-    if (qpitch !== quantPitch(base.pitch)) mask |= F.Pitch;
-    if (qvx !== quantVel(base.vx) || qvz !== quantVel(base.vz)) mask |= F.Vel;
-    if (e.stance !== base.stance) mask |= F.Stance;
-    if (qh !== Math.round(base.heightScale * 255)) mask |= F.Height;
-    if (e.health !== base.health) mask |= F.Health;
-    if (e.weaponIndex !== base.weaponIndex) mask |= F.Weapon;
-    if (e.characterIndex !== base.characterIndex) mask |= F.Character;
-    if (e.flags !== base.flags) mask |= F.Flags;
-    if (e.heldEquipment !== base.heldEquipment || e.throwPhase !== base.throwPhase) mask |= F.Hand;
-    if (e.deathSerial !== base.deathSerial) mask |= F.Death;
-    if (e.spawnSerial !== base.spawnSerial) mask |= F.Spawn;
-    if (e.flinchSerial !== base.flinchSerial) mask |= F.Flinch;
-    if (e.displayName !== base.displayName) mask |= F.Name;
-  }
+  quantiseEntityInto(e);
+  const mask =
+    base === null ? fullEntityMask(e) : movementDeltaBits(e, base) | stateDeltaBits(e, base);
 
   w.u8v(e.entityId);
   w.u16(mask);
 
-  if ((mask & F.Pos) !== 0) {
-    w.i16(qx);
-    w.i16(qy);
-    w.i16(qz);
-  }
-  if ((mask & F.Yaw) !== 0) w.u16(qyaw);
-  if ((mask & F.Pitch) !== 0) w.i16(qpitch);
-  if ((mask & F.Vel) !== 0) {
-    w.i16(qvx);
-    w.i16(qvz);
-  }
-  if ((mask & F.Stance) !== 0) w.u8v(stanceIndex(e.stance));
-  if ((mask & F.Height) !== 0) w.u8v(qh);
-  if ((mask & F.Health) !== 0) w.u8v(e.health);
-  if ((mask & F.Weapon) !== 0) w.u8v(e.weaponIndex);
-  if ((mask & F.Character) !== 0) w.u8v(e.characterIndex);
-  if ((mask & F.Flags) !== 0) w.u16(e.flags);
-  if ((mask & F.Hand) !== 0) {
-    w.u8v(e.heldEquipment);
-    w.u8v(e.throwPhase);
-  }
-  if ((mask & F.Death) !== 0) {
-    w.u8v(e.deathSerial & 0xff);
-    w.u16(quantAngle(e.deathAngle));
-  }
-  if ((mask & F.Spawn) !== 0) w.u8v(e.spawnSerial & 0xff);
-  if ((mask & F.Flinch) !== 0) {
-    w.u8v(e.flinchSerial & 0xff);
-    w.u16(quantAngle(e.flinchAngle));
-  }
-  if ((mask & F.Name) !== 0) w.str(e.displayName);
+  writeMovementFields(w, e, mask);
+  writeStateFields(w, e, mask);
+  writeSerialFields(w, e, mask);
 }
 
 /**
@@ -411,6 +398,201 @@ export function readEntity(r: ByteReader, out: EntitySnapshot): void {
   out.entityId = r.u8v();
   const mask = r.u16();
 
+  readMovementFields(r, out, mask);
+  readStateFields(r, out, mask);
+  readSerialFields(r, out, mask);
+}
+
+/**
+ * The authoritative simulation state of the client receiving this snapshot.
+ *
+ * Full `f32` precision — see the file header for why this one entity is different. It is the
+ * exact input to `loadPlayerSim`, so a correction restores every timer and latch the next
+ * replayed tick will read, not just a pose (S4.11).
+ */
+export function writeOwnerState(w: ByteWriter, s: PlayerSimState): void {
+  const blocks = ownerBlocksFor(s);
+  const flags = ownerFlagsFor(s);
+
+  w.u8v(blocks);
+  w.u8v(flags);
+
+  writeOwnerBase(w, s);
+
+  if ((blocks & OB.Sprint) !== 0) writeSprintBlock(w, s);
+  if ((blocks & OB.Slide) !== 0) writeSlideBlock(w, s);
+  if ((blocks & OB.Mantle) !== 0) writeMantleBlock(w, s);
+  if ((blocks & OB.Slope) !== 0) writeSlopeBlock(w, s);
+}
+
+/**
+ * Read owner state into `out`.
+ *
+ * Absent blocks are written back to their **inert** values rather than left alone. That is
+ * the opposite of the entity delta rule above and it is deliberate: an absent slide block
+ * means "not sliding", so leaving a stale `slideElapsed` behind would resume a slide the
+ * server has already ended, and the client would slide away from the authoritative position
+ * it just snapped to.
+ */
+export function readOwnerState(r: ByteReader, out: PlayerSimState): void {
+  const blocks = r.u8v();
+  const flags = r.u8v();
+
+  readOwnerBase(r, out);
+  applyOwnerFlags(out, flags);
+
+  readSprintState(r, out, (blocks & OB.Sprint) !== 0);
+  readSlideState(r, out, (blocks & OB.Slide) !== 0);
+  readMantleState(r, out, (blocks & OB.Mantle) !== 0);
+  readSlopeState(r, out, (blocks & OB.Slope) !== 0);
+
+  // Never replicated: pure per-tick scratch that the next `step` overwrites before reading.
+  out.blockedHorizontally = false;
+  out.steppedUp = false;
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function stanceIndex(stance: StanceId): number {
+  const at = STANCES.indexOf(stance);
+  return at < 0 ? 0 : at;
+}
+
+function stanceAt(index: number): StanceId {
+  return STANCES[index] ?? 'STAND';
+}
+
+/**
+ * Round one entity's pose into `QUANT`, once per write.
+ *
+ * Both halves of the write need these numbers — the mask compares them against the baseline's,
+ * and the bytes are them — and quantising twice would be two roundings of the same field on the
+ * hottest path in the file.
+ */
+function quantiseEntityInto(e: EntitySnapshot): void {
+  QUANT.x = quantPos(e.x);
+  QUANT.y = quantPos(e.y);
+  QUANT.z = quantPos(e.z);
+  QUANT.yaw = quantAngle(e.yaw);
+  QUANT.pitch = quantPitch(e.pitch);
+  QUANT.vx = quantVel(e.vx);
+  QUANT.vz = quantVel(e.vz);
+  QUANT.height = Math.round(e.heightScale * 255);
+}
+
+/** Every field a first appearance carries, which is every field that is not at its default. */
+function fullEntityMask(e: EntitySnapshot): number {
+  let mask =
+    F.Pos | F.Yaw | F.Pitch | F.Vel | F.Stance | F.Height | F.Health | F.Weapon | F.Flags | F.Name;
+  // The body rides every full write too, even at 255: a fresh entity's baseline says "none",
+  // and a client that never sees the field never asks its deck — see `readEntity`.
+  mask |= F.Character;
+  // Serials only ride a full write when they are non-zero: a fresh entity at zero is the
+  // client's own default, so spending three fields to say so is waste on every join.
+  if (e.deathSerial !== 0) mask |= F.Death;
+  if (e.spawnSerial !== 0) mask |= F.Spawn;
+  if (e.flinchSerial !== 0) mask |= F.Flinch;
+  // An empty hand is the default, as a zero serial is.
+  if (e.heldEquipment !== 255 || e.throwPhase !== 0) mask |= F.Hand;
+  return mask;
+}
+
+/**
+ * Which pose fields would encode differently from `base`.
+ *
+ * Compared *after* quantisation, which is where most of the compression comes from: two
+ * positions 2 mm apart are the same centimetre, and a body standing still has floating-point
+ * noise in its pose that would otherwise be sent every tick.
+ */
+function movementDeltaBits(e: EntitySnapshot, base: EntitySnapshot): number {
+  let mask = 0;
+  if (
+    QUANT.x !== quantPos(base.x) ||
+    QUANT.y !== quantPos(base.y) ||
+    QUANT.z !== quantPos(base.z)
+  ) {
+    mask |= F.Pos;
+  }
+  if (QUANT.yaw !== quantAngle(base.yaw)) mask |= F.Yaw;
+  if (QUANT.pitch !== quantPitch(base.pitch)) mask |= F.Pitch;
+  if (QUANT.vx !== quantVel(base.vx) || QUANT.vz !== quantVel(base.vz)) mask |= F.Vel;
+  if (e.stance !== base.stance) mask |= F.Stance;
+  if (QUANT.height !== Math.round(base.heightScale * 255)) mask |= F.Height;
+  return mask;
+}
+
+/**
+ * The rest of the delta: what this body is, carries and has just had happen to it.
+ *
+ * Not quantised, so these compare as they are — and the three serials compare as numbers even
+ * though the wire carries only their low byte, because what matters is that one moved.
+ */
+function stateDeltaBits(e: EntitySnapshot, base: EntitySnapshot): number {
+  let mask = 0;
+  if (e.health !== base.health) mask |= F.Health;
+  if (e.weaponIndex !== base.weaponIndex) mask |= F.Weapon;
+  if (e.characterIndex !== base.characterIndex) mask |= F.Character;
+  if (e.flags !== base.flags) mask |= F.Flags;
+  if (e.heldEquipment !== base.heldEquipment || e.throwPhase !== base.throwPhase) mask |= F.Hand;
+  if (e.deathSerial !== base.deathSerial) mask |= F.Death;
+  if (e.spawnSerial !== base.spawnSerial) mask |= F.Spawn;
+  if (e.flinchSerial !== base.flinchSerial) mask |= F.Flinch;
+  if (e.displayName !== base.displayName) mask |= F.Name;
+  return mask;
+}
+
+/**
+ * The pose bytes the mask selected, from `QUANT`.
+ *
+ * Mask-bit order throughout the three writers, because that is the only thing telling the
+ * reader where it is: an absent field is absent, not zero, so a writer and a reader that
+ * disagree about the order do not produce a wrong value — they produce a wrong *everything*.
+ */
+function writeMovementFields(w: ByteWriter, e: EntitySnapshot, mask: number): void {
+  if ((mask & F.Pos) !== 0) {
+    w.i16(QUANT.x);
+    w.i16(QUANT.y);
+    w.i16(QUANT.z);
+  }
+  if ((mask & F.Yaw) !== 0) w.u16(QUANT.yaw);
+  if ((mask & F.Pitch) !== 0) w.i16(QUANT.pitch);
+  if ((mask & F.Vel) !== 0) {
+    w.i16(QUANT.vx);
+    w.i16(QUANT.vz);
+  }
+  if ((mask & F.Stance) !== 0) w.u8v(stanceIndex(e.stance));
+  if ((mask & F.Height) !== 0) w.u8v(QUANT.height);
+}
+
+/** What this body is and carries: health, weapon, skin, flags and the hand. */
+function writeStateFields(w: ByteWriter, e: EntitySnapshot, mask: number): void {
+  if ((mask & F.Health) !== 0) w.u8v(e.health);
+  if ((mask & F.Weapon) !== 0) w.u8v(e.weaponIndex);
+  if ((mask & F.Character) !== 0) w.u8v(e.characterIndex);
+  if ((mask & F.Flags) !== 0) w.u16(e.flags);
+  if ((mask & F.Hand) !== 0) {
+    w.u8v(e.heldEquipment);
+    w.u8v(e.throwPhase);
+  }
+}
+
+/** The animation seam: a serial as its low byte, with the angle the one-shot plays at. */
+function writeSerialFields(w: ByteWriter, e: EntitySnapshot, mask: number): void {
+  if ((mask & F.Death) !== 0) {
+    w.u8v(e.deathSerial & 0xff);
+    w.u16(quantAngle(e.deathAngle));
+  }
+  if ((mask & F.Spawn) !== 0) w.u8v(e.spawnSerial & 0xff);
+  if ((mask & F.Flinch) !== 0) {
+    w.u8v(e.flinchSerial & 0xff);
+    w.u16(quantAngle(e.flinchAngle));
+  }
+  if ((mask & F.Name) !== 0) w.str(e.displayName);
+}
+
+/** The pose half of a delta, dequantised back into `out`. Mirrors `writeMovementFields`. */
+function readMovementFields(r: ByteReader, out: EntitySnapshot, mask: number): void {
   if ((mask & F.Pos) !== 0) {
     out.x = dequantPos(r.i16());
     out.y = dequantPos(r.i16());
@@ -424,6 +606,10 @@ export function readEntity(r: ByteReader, out: EntitySnapshot): void {
   }
   if ((mask & F.Stance) !== 0) out.stance = stanceAt(r.u8v());
   if ((mask & F.Height) !== 0) out.heightScale = r.u8v() / 255;
+}
+
+/** Mirrors `writeStateFields`. */
+function readStateFields(r: ByteReader, out: EntitySnapshot, mask: number): void {
   if ((mask & F.Health) !== 0) out.health = r.u8v();
   if ((mask & F.Weapon) !== 0) out.weaponIndex = r.u8v();
   if ((mask & F.Character) !== 0) out.characterIndex = r.u8v();
@@ -432,6 +618,10 @@ export function readEntity(r: ByteReader, out: EntitySnapshot): void {
     out.heldEquipment = r.u8v();
     out.throwPhase = r.u8v();
   }
+}
+
+/** Mirrors `writeSerialFields`. */
+function readSerialFields(r: ByteReader, out: EntitySnapshot, mask: number): void {
   if ((mask & F.Death) !== 0) {
     out.deathSerial = r.u8v();
     out.deathAngle = dequantAngle(r.u16());
@@ -444,53 +634,25 @@ export function readEntity(r: ByteReader, out: EntitySnapshot): void {
   if ((mask & F.Name) !== 0) out.displayName = r.str();
 }
 
-// -- the owner's own authoritative state --------------------------------------
-
-/**
- * Optional blocks in the owner state, present only when they carry something.
- *
- * The split is by gameplay subsystem rather than by byte budget, and it earns its keep: a
- * player who is running and not sliding, mantling or on a slope pays for the base block
- * alone. Slide and mantle state is large and almost always inert, and sending it every
- * snapshot would roughly double the owner block for the ninety-odd percent of ticks where
- * every field in it is zero.
- */
-const OB = {
-  Sprint: 1 << 0,
-  Slide: 1 << 1,
-  Mantle: 1 << 2,
-  /** Ground normal, when the surface underfoot is not flat. */
-  Slope: 1 << 3,
-} as const;
-
-/** Owner-state boolean flags that do not live in `PlayerSimState` as numbers. */
-const OF = {
-  Grounded: 1 << 0,
-  WasGrounded: 1 << 1,
-  SprintActive: 1 << 2,
-  TacSprintActive: 1 << 3,
-  SlideActive: 1 << 4,
-  MantleActive: 1 << 5,
-  JumpedThisTick: 1 << 6,
-  JustLanded: 1 << 7,
-} as const;
-
-/**
- * The authoritative simulation state of the client receiving this snapshot.
- *
- * Full `f32` precision — see the file header for why this one entity is different. It is the
- * exact input to `loadPlayerSim`, so a correction restores every timer and latch the next
- * replayed tick will read, not just a pose (S4.11).
- */
-export function writeOwnerState(w: ByteWriter, s: PlayerSimState): void {
+/** Which optional blocks carry something, and therefore ride this snapshot. */
+function ownerBlocksFor(s: PlayerSimState): number {
   let blocks = 0;
-  if (s.sprintHeldTime !== 0 || s.tacSprintElapsed !== 0 || s.tacSprintCooldown !== 0 || s.tacLockout !== 0) {
+  if (
+    s.sprintHeldTime !== 0 ||
+    s.tacSprintElapsed !== 0 ||
+    s.tacSprintCooldown !== 0 ||
+    s.tacLockout !== 0
+  ) {
     blocks |= OB.Sprint;
   }
   if (s.slideActive || s.slideElapsed !== 0 || s.slideCooldown !== 0) blocks |= OB.Slide;
   if (s.mantleActive || s.mantleCooldown !== 0) blocks |= OB.Mantle;
   if (s.groundNy !== 1 || s.groundNx !== 0 || s.groundNz !== 0) blocks |= OB.Slope;
+  return blocks;
+}
 
+/** The eight latches that are booleans rather than numbers, packed into their byte. */
+function ownerFlagsFor(s: PlayerSimState): number {
   let flags = 0;
   if (s.grounded) flags |= OF.Grounded;
   if (s.wasGrounded) flags |= OF.WasGrounded;
@@ -500,10 +662,11 @@ export function writeOwnerState(w: ByteWriter, s: PlayerSimState): void {
   if (s.mantleActive) flags |= OF.MantleActive;
   if (s.jumpedThisTick) flags |= OF.JumpedThisTick;
   if (s.justLanded) flags |= OF.JustLanded;
+  return flags;
+}
 
-  w.u8v(blocks);
-  w.u8v(flags);
-
+/** The block every owner snapshot carries: pose, surface, the bob clock and the tick. */
+function writeOwnerBase(w: ByteWriter, s: PlayerSimState): void {
   w.f32(s.x);
   w.f32(s.y);
   w.f32(s.z);
@@ -524,55 +687,51 @@ export function writeOwnerState(w: ByteWriter, s: PlayerSimState): void {
   w.f32(s.landImpact);
   w.u32(s.prevButtons);
   w.i32(s.tick);
-
-  if ((blocks & OB.Sprint) !== 0) {
-    w.f32(s.sprintHeldTime);
-    w.f32(s.tacSprintElapsed);
-    w.f32(s.tacSprintCooldown);
-    w.f32(s.tacLockout);
-    w.i32(s.lastSprintPressTick);
-  }
-  if ((blocks & OB.Slide) !== 0) {
-    w.f32(s.slideElapsed);
-    w.f32(s.slideCooldown);
-    w.f32(s.slideDirX);
-    w.f32(s.slideDirZ);
-    w.f32(s.slideSpeed);
-    w.f32(s.slideAirTime);
-  }
-  if ((blocks & OB.Mantle) !== 0) {
-    w.f32(s.mantleElapsed);
-    w.f32(s.mantleCooldown);
-    w.f32(s.mantleFromX);
-    w.f32(s.mantleFromY);
-    w.f32(s.mantleFromZ);
-    w.f32(s.mantleToX);
-    w.f32(s.mantleToY);
-    w.f32(s.mantleToZ);
-    w.f32(s.mantleDirX);
-    w.f32(s.mantleDirZ);
-    w.u8v(stanceIndex(s.mantleEndStance));
-  }
-  if ((blocks & OB.Slope) !== 0) {
-    w.f32(s.groundNx);
-    w.f32(s.groundNy);
-    w.f32(s.groundNz);
-  }
 }
 
-/**
- * Read owner state into `out`.
- *
- * Absent blocks are written back to their **inert** values rather than left alone. That is
- * the opposite of the entity delta rule above and it is deliberate: an absent slide block
- * means "not sliding", so leaving a stale `slideElapsed` behind would resume a slide the
- * server has already ended, and the client would slide away from the authoritative position
- * it just snapped to.
- */
-export function readOwnerState(r: ByteReader, out: PlayerSimState): void {
-  const blocks = r.u8v();
-  const flags = r.u8v();
+/** The sprint timers, including the double-tap tick the tactical sprint is judged from. */
+function writeSprintBlock(w: ByteWriter, s: PlayerSimState): void {
+  w.f32(s.sprintHeldTime);
+  w.f32(s.tacSprintElapsed);
+  w.f32(s.tacSprintCooldown);
+  w.f32(s.tacLockout);
+  w.i32(s.lastSprintPressTick);
+}
 
+/** A slide in progress: its clock, its direction and the speed it was entered at. */
+function writeSlideBlock(w: ByteWriter, s: PlayerSimState): void {
+  w.f32(s.slideElapsed);
+  w.f32(s.slideCooldown);
+  w.f32(s.slideDirX);
+  w.f32(s.slideDirZ);
+  w.f32(s.slideSpeed);
+  w.f32(s.slideAirTime);
+}
+
+/** A mantle in progress: both ends of the climb, its facing and the stance it lands in. */
+function writeMantleBlock(w: ByteWriter, s: PlayerSimState): void {
+  w.f32(s.mantleElapsed);
+  w.f32(s.mantleCooldown);
+  w.f32(s.mantleFromX);
+  w.f32(s.mantleFromY);
+  w.f32(s.mantleFromZ);
+  w.f32(s.mantleToX);
+  w.f32(s.mantleToY);
+  w.f32(s.mantleToZ);
+  w.f32(s.mantleDirX);
+  w.f32(s.mantleDirZ);
+  w.u8v(stanceIndex(s.mantleEndStance));
+}
+
+/** The ground normal, sent only when the surface underfoot is not flat. */
+function writeSlopeBlock(w: ByteWriter, s: PlayerSimState): void {
+  w.f32(s.groundNx);
+  w.f32(s.groundNy);
+  w.f32(s.groundNz);
+}
+
+/** Mirrors `writeOwnerBase`. */
+function readOwnerBase(r: ByteReader, out: PlayerSimState): void {
   out.x = r.f32();
   out.y = r.f32();
   out.z = r.f32();
@@ -593,7 +752,10 @@ export function readOwnerState(r: ByteReader, out: PlayerSimState): void {
   out.landImpact = r.f32();
   out.prevButtons = r.u32();
   out.tick = r.i32();
+}
 
+/** Unpack the flag byte. Every one of the eight is set from it, so none can go stale. */
+function applyOwnerFlags(out: PlayerSimState, flags: number): void {
   out.grounded = (flags & OF.Grounded) !== 0;
   out.wasGrounded = (flags & OF.WasGrounded) !== 0;
   out.sprintActive = (flags & OF.SprintActive) !== 0;
@@ -602,8 +764,16 @@ export function readOwnerState(r: ByteReader, out: PlayerSimState): void {
   out.mantleActive = (flags & OF.MantleActive) !== 0;
   out.jumpedThisTick = (flags & OF.JumpedThisTick) !== 0;
   out.justLanded = (flags & OF.JustLanded) !== 0;
+}
 
-  if ((blocks & OB.Sprint) !== 0) {
+/**
+ * The sprint timers, or the inert values that mean "not sprinting".
+ *
+ * `lastSprintPressTick` goes back to -1000 rather than 0: it is compared against the current
+ * tick to judge a double tap, and tick 0 is a tick a match actually has.
+ */
+function readSprintState(r: ByteReader, out: PlayerSimState, present: boolean): void {
+  if (present) {
     out.sprintHeldTime = r.f32();
     out.tacSprintElapsed = r.f32();
     out.tacSprintCooldown = r.f32();
@@ -616,8 +786,15 @@ export function readOwnerState(r: ByteReader, out: PlayerSimState): void {
     out.tacLockout = 0;
     out.lastSprintPressTick = -1000;
   }
+}
 
-  if ((blocks & OB.Slide) !== 0) {
+/**
+ * The slide, or the inert values that mean "not sliding".
+ *
+ * `slideDirZ` back to 1 rather than 0, because a zero direction vector is not a direction.
+ */
+function readSlideState(r: ByteReader, out: PlayerSimState, present: boolean): void {
+  if (present) {
     out.slideElapsed = r.f32();
     out.slideCooldown = r.f32();
     out.slideDirX = r.f32();
@@ -632,8 +809,16 @@ export function readOwnerState(r: ByteReader, out: PlayerSimState): void {
     out.slideSpeed = 0;
     out.slideAirTime = 0;
   }
+}
 
-  if ((blocks & OB.Mantle) !== 0) {
+/**
+ * The mantle, or the three values that end one.
+ *
+ * The climb's endpoints and facing are left where they were: with `mantleActive` false and the
+ * clock at zero nothing reads them, and the next mantle writes all ten before it starts.
+ */
+function readMantleState(r: ByteReader, out: PlayerSimState, present: boolean): void {
+  if (present) {
     out.mantleElapsed = r.f32();
     out.mantleCooldown = r.f32();
     out.mantleFromX = r.f32();
@@ -650,8 +835,11 @@ export function readOwnerState(r: ByteReader, out: PlayerSimState): void {
     out.mantleCooldown = 0;
     out.mantleEndStance = 'STAND';
   }
+}
 
-  if ((blocks & OB.Slope) !== 0) {
+/** The ground normal, or flat ground. */
+function readSlopeState(r: ByteReader, out: PlayerSimState, present: boolean): void {
+  if (present) {
     out.groundNx = r.f32();
     out.groundNy = r.f32();
     out.groundNz = r.f32();
@@ -660,9 +848,5 @@ export function readOwnerState(r: ByteReader, out: PlayerSimState): void {
     out.groundNy = 1;
     out.groundNz = 0;
   }
-
-  // Never replicated: pure per-tick scratch that the next `step` overwrites before reading.
-  out.blockedHorizontally = false;
-  out.steppedUp = false;
 }
-
+//#endregion

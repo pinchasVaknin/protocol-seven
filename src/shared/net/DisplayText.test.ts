@@ -73,3 +73,41 @@ describe('uniqueDisplayName', () => {
     expect(out.length).toBeLessThanOrEqual(20);
   });
 });
+
+/**
+ * The branches A20's split of `cleanDisplayText` moves — the cap landing in the middle of a
+ * mark, a mark with no base, an owed space the cap then refuses, and a non-string.
+ */
+describe('cleanDisplayText, at the edges', () => {
+  it('drops a combining mark that has nothing to sit on', () => {
+    expect(cleanDisplayText('́ALICE', 20)).toBe('ALICE');
+    expect(cleanDisplayText('́', 20)).toBe('');
+  });
+
+  it('drops a mark that would not fit, while the cap still holds', () => {
+    // A Hebrew point rather than an acute, which NFC would have composed into the A it sits on.
+    expect(cleanDisplayText(`${'A'.repeat(5)}ְ`, 5)).toBe('AAAAA');
+  });
+
+  it('never ends on the space it was owed', () => {
+    expect(cleanDisplayText('ALICE   ', 20)).toBe('ALICE');
+    expect(cleanDisplayText('   ALICE', 20)).toBe('ALICE');
+    expect(cleanDisplayText('A   B', 20)).toBe('A B');
+  });
+
+  it('stops before a character the owed space cannot fit beside', () => {
+    // 'AB' plus a space plus 'C' is four units against a cap of three, so 'C' never lands —
+    // and neither does the space, which was only ever owed.
+    expect(cleanDisplayText('AB C', 3)).toBe('AB');
+  });
+
+  it('is empty for anything that is not a string', () => {
+    expect(cleanDisplayText(null as never, 20)).toBe('');
+    expect(cleanDisplayText(undefined as never, 20)).toBe('');
+    expect(cleanDisplayText(7 as never, 20)).toBe('');
+  });
+
+  it('restarts the mark budget on each new base character', () => {
+    expect(cleanDisplayText('á̂b́̂', 20)).toBe('á̂b́̂'.normalize('NFC'));
+  });
+});

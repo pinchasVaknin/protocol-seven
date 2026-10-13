@@ -9,14 +9,13 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**26 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13 and **#29 by A19** on
-2026-10-14. Three numbers are gone and
+**28 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14 and **#30 and #31 by A20** on the same day. Three numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
-original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28 and #29 were
+original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
 opened by units since and are not from that list.)
 
 Status values: `open`, `bound to <unit>` (the next unit that owns these files — do it there),
@@ -38,7 +37,8 @@ and belong in its Step 2 plan.
 | ~~A17~~ | `shared/streaks/` StreakSystem, StreakLedger, StreakDefs, StreakPresentation | **closed** — none were bound; A17 opened #28 |
 | ~~A18~~ | `shared/perks/`, `shared/meta/` Camos, Challenges, ChallengeTracker, FieldUpgrades, Levels, XpRules, XpSimulator, Skins | **closed** — A18 read the whole list and nothing was bound to its twelve files; it opened none, and merged `LONGSHOT_METRES`'s in-unit duplicate itself |
 | ~~A19~~ | `shared/meta/` SaveData, Unlocks, LoadoutRules, Loadouts, MatchLedger, MatchProgression, ProgressionStore | **closed** — nothing was bound to its seven files; A19 opened #29 |
-| A20–A23 | `shared/net/` | #1 (`Interpolation` is a caller of `shortestAngle`) |
+| ~~A20~~ | `shared/net/` Wire, Protocol, Snapshot, UrlFlags, DisplayText | **declined with a reason** — #1 owns no A20 file: the edit is in `MathUtil.ts` (A1) and both call sites are A23 (`Interpolation`) and A12 (`ai/Bot`). A20 opened #30 and #31 |
+| A21–A23 | `shared/net/` | #1 (`Interpolation` is a caller of `shortestAngle`) |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local `angleDelta` copy) |
 | C6 | `client/weapons/ViewmodelAnim.ts` | #1 (caller of `angleDelta`) |
@@ -755,6 +755,52 @@ entry can be closed as a tidy-up rather than a defect.
 **Verify** `npm run check` + SIM snapshot/compare. The oracles cannot see this — no oracle loads
 a hand-edited save — so the test above is the proof, and it will need its expectation inverted
 when the behaviour changes, which is the one case where changing a pinned assertion is correct.
+
+### #30 — Give `equipmentIndexOf` the table the weapons already have · `open` *(opened 2026-10-14 by A20)*
+
+**Files** `src/shared/net/Snapshot.ts` (`equipmentIndexOf`), caller `src/server/instance/MatchInstance.ts:1060`.
+**Origin** A20.
+
+`equipmentIndexOf(id)` resolves a grenade to its wire index with `ALL_EQUIPMENT.findIndex((def) => def.id === id)`.
+That allocates a closure per call, and the call is per player per snapshot — `MatchInstance` sets
+`e.heldEquipment` on the send path, which is the hot path R7 names. The weapon side of the same
+file already has the answer: `WIRE_WEAPON_IDS` is built once at load and `weaponIndexOf` walks it
+with an index loop and no closure. One `ReadonlyMap<EquipmentId, number>` built beside it, or the
+same index loop over an `EQUIPMENT_IDS` array, removes the allocation without touching a byte of
+the wire — the order `ALL_EQUIPMENT` defines stays the order.
+
+**Why A20 did not do it.** R7 on this programme is *"do no harm"*, not *"make it faster"*:
+performance is a separate track, and this is an improvement rather than a repair of something the
+unit broke. A20 therefore left the body exactly as it was. The measurement nobody has taken is
+whether V8's escape analysis already elides the closure, which decides whether this is worth a
+commit at all.
+
+**Verify** `npm run check` + SIM snapshot/compare → `PASS`, plus `Snapshot.test.ts`'s
+*"names every piece of equipment and nothing else"*, which already pins every index both ways.
+
+### #31 — `Session.wantsRewindDebug` is written and never read · `open` *(opened 2026-10-14 by A20)*
+
+**Files** `src/server/net/Session.ts` (B3), reading `src/shared/net/UrlFlags.ts` and
+`src/shared/net/NetClient.ts`. **Origin** A20.
+
+The `?rewinddebug=1` chain is complete in every link but the last: the client appends `#rw` to its
+name (`withRewindSuffix`), the server strips it and records the request (`readIncomingName` →
+`Session.wantsRewindDebug`), and **nothing ever reads that field** — no message on the wire carries
+a per-shot rewind feed, and `NetPanel` computes all three of its Rewind fields from the client's own
+RTT. `UNDOCUMENTED_URL_KEYS` already says so in prose, which is how A20 found it; this entry is so
+that the prose has a task behind it.
+
+**Decide** one of three: build the feed the plumbing was laid for, delete the field and leave the
+name convention (the `#rw` suffix is harmless and `UrlFlags` is tested), or leave it and keep the
+note. A20 recommends the third until something wants the feed — the scaffolding is what it will be
+built on, and the comment in `UrlFlags.ts` already carries the reason.
+
+**Why A20 could not do it.** The field is in `server/net/Session.ts`, which belongs to **B3** and is
+outside A20's fence (R3). A20 owns only the shared half of the convention, and that half is correct:
+the suffix is stripped before the cap, which is the fix round 5 made.
+
+**Verify** `npm run check` + SIM + NET. `UrlFlags.test.ts` (A20) pins both halves of the suffix
+convention, including the eighteen-character callsign that the old ordering silently ignored.
 
 ### The missing item
 The chat list was counted as 24 and this file received 22 of them. Neither #19 (folded into #2) nor

@@ -1,5 +1,3 @@
-import { cleanDisplayText } from './DisplayText';
-
 /**
  * Every query-string flag this client understands, declared once (playtest round 5, B9).
  *
@@ -28,6 +26,13 @@ import { cleanDisplayText } from './DisplayText';
  * in — so it compiles under `shared/`'s no-DOM library.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { cleanDisplayText } from './DisplayText';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface UrlFlag {
   /** The query-string key. Several rows may share one: `?server` has two, `?net` has three. */
   readonly key: string;
@@ -37,6 +42,15 @@ export interface UrlFlag {
   readonly effect: string;
 }
 
+/** One incoming name, split into the name and the request that was riding on it. */
+export interface IncomingName {
+  readonly name: string;
+  readonly wantsRewindDebug: boolean;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The documented flags, in the README's order.
  *
@@ -160,26 +174,10 @@ export const MAX_NAME_LENGTH = 20;
  * drift apart, and so the interaction below is stated once rather than discovered again.
  */
 const REWIND_DEBUG_SUFFIX = '#rw';
+//#endregion
 
-/**
- * A display name safe to put on a scoreboard.
- *
- * Capped, and cleaned by `cleanDisplayText` — no controls, no direction overrides, no invisible
- * or blank characters, no stacked marks (security audit S9). The server's copy is the one that
- * matters — a client is untrusted — but sending something sane costs nothing and means the
- * player sees the name they typed rather than the name the server had to cut down.
- *
- * `fallback` is what an empty or absent name resolves to, which is the only thing the two old
- * copies of this function disagreed about: the client returned `'OPERATOR'` and the server
- * returned `''` and left the substitution to its caller. A name that cleans down to nothing —
- * all zero-widths, say — is an empty name and gets it too.
- */
-function sanitiseName(raw: string | null | undefined, fallback: string): string {
-  if (raw === null || raw === undefined) return fallback;
-  const clean = cleanDisplayText(raw, MAX_NAME_LENGTH);
-  return clean === '' ? fallback : clean;
-}
-
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Which name a join uses, and the precedence is the point (playtest round 5, B9).
  *
@@ -212,12 +210,6 @@ export function withRewindSuffix(name: string, wantRewindDebug: boolean): string
   return wantRewindDebug ? `${name}${REWIND_DEBUG_SUFFIX}` : name;
 }
 
-/** One incoming name, split into the name and the request that was riding on it. */
-export interface IncomingName {
-  readonly name: string;
-  readonly wantsRewindDebug: boolean;
-}
-
 /**
  * Undo `withRewindSuffix`, then sanitise — in that order, which is the half the server had
  * backwards. Stripping first means a full-length name keeps all twenty of its characters.
@@ -227,3 +219,26 @@ export function readIncomingName(raw: string, fallback: string): IncomingName {
   const bare = wantsRewindDebug ? raw.slice(0, -REWIND_DEBUG_SUFFIX.length) : raw;
   return { name: sanitiseName(bare, fallback), wantsRewindDebug };
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * A display name safe to put on a scoreboard.
+ *
+ * Capped, and cleaned by `cleanDisplayText` — no controls, no direction overrides, no invisible
+ * or blank characters, no stacked marks (security audit S9). The server's copy is the one that
+ * matters — a client is untrusted — but sending something sane costs nothing and means the
+ * player sees the name they typed rather than the name the server had to cut down.
+ *
+ * `fallback` is what an empty or absent name resolves to, which is the only thing the two old
+ * copies of this function disagreed about: the client returned `'OPERATOR'` and the server
+ * returned `''` and left the substitution to its caller. A name that cleans down to nothing —
+ * all zero-widths, say — is an empty name and gets it too.
+ */
+function sanitiseName(raw: string | null | undefined, fallback: string): string {
+  if (raw === null || raw === undefined) return fallback;
+  const clean = cleanDisplayText(raw, MAX_NAME_LENGTH);
+  return clean === '' ? fallback : clean;
+}
+//#endregion

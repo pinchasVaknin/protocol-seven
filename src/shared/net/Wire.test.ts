@@ -144,3 +144,72 @@ describe('ByteReader overrun', () => {
     expect(r.overran).toBe(false);
   });
 });
+
+/**
+ * The UTF-8 decoder on its own, pinned before A20 split it by sequence length.
+ *
+ * Every case here is bytes an untrusted client could send in a `Hello`, so the contract is
+ * "a mangled name, never a thrown error" — a malformed sequence becomes U+FFFD and decoding
+ * carries on with the next byte.
+ */
+function nameOf(...bytes: number[]): string {
+  const frame = new Uint8Array(bytes.length + 1);
+  frame[0] = bytes.length;
+  frame.set(bytes, 1);
+  return new ByteReader(frame).str();
+}
+
+describe('decoding a name', () => {
+  it('reads one, two, three and four byte sequences', () => {
+    expect(nameOf(0x41)).toBe('A');
+    expect(nameOf(0xc3, 0xa9)).toBe('é');
+    expect(nameOf(0xd7, 0x90)).toBe('א');
+    expect(nameOf(0xe2, 0x82, 0xac)).toBe('€');
+    expect(nameOf(0xf0, 0x9f, 0x98, 0x80)).toBe('😀');
+  });
+
+  it('decodes a mixed run in order', () => {
+    expect(nameOf(0x41, 0xc3, 0xa9, 0xe2, 0x82, 0xac, 0x42)).toBe('Aé€B');
+  });
+
+  it('turns a lead byte that leads nothing into one replacement character', () => {
+    expect(nameOf(0x80)).toBe('�');
+    expect(nameOf(0xf8)).toBe('�');
+    expect(nameOf(0xff, 0x41)).toBe('�A');
+  });
+
+  it('treats a truncated sequence as zero continuation bytes rather than overrunning', () => {
+    // The missing bytes read as 0, which is what keeps a cut frame from throwing: the
+    // sequence decodes to whatever those zeroes make of it and the loop ends.
+    expect(nameOf(0xc3)).toBe('À');
+    expect(nameOf(0xe2, 0x82)).toBe('₀');
+    // A cut astral sequence decodes as if the missing byte were a zero continuation, which is
+    // the same code point as the complete 0xf0 0x9f 0x98 0x80.
+    expect(nameOf(0xf0, 0x9f, 0x98)).toBe('😀');
+  });
+
+  it('replaces a code point above the Unicode range', () => {
+    // 0xf7 0xbf 0xbf 0xbf is U+1FFFFF, past U+10FFFF.
+    expect(nameOf(0xf7, 0xbf, 0xbf, 0xbf)).toBe('�');
+  });
+
+  it('is empty for an empty string field', () => {
+    expect(nameOf()).toBe('');
+  });
+
+  it('round-trips what the encoder produced, at every sequence length', () => {
+    for (const name of ['OPERATOR', 'é', 'א', '€', '😀', 'Aé€😀Z']) {
+      const w = new ByteWriter(64);
+      w.str(name);
+      expect(new ByteReader(w.bytes()).str()).toBe(name);
+    }
+  });
+
+  it('encodes an unpaired surrogate without consuming the next character', () => {
+    const w = new ByteWriter(64);
+    w.str('\ud83dZ');
+    const out = new ByteReader(w.bytes()).str();
+    expect(out.length).toBe(2);
+    expect(out[1]).toBe('Z');
+  });
+});

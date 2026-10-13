@@ -14,6 +14,8 @@ import type { CamoId } from './Camos';
  * board, and not dying.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * Every distinct line the end-of-match breakdown can show.
  *
@@ -69,6 +71,66 @@ export interface XpSource {
 }
 
 /**
+ * One row of the end-of-match breakdown.
+ *
+ * `count` is how many of the thing happened and `xp` is what it was worth in total, so
+ * the summary can print "12 x 100 = 1200" without recomputing anything and without
+ * being able to disagree with the total that was banked.
+ */
+export interface XpLine {
+  readonly id: XpSourceId;
+  readonly label: string;
+  readonly count: number;
+  readonly xp: number;
+  readonly kind: 'each' | 'flat';
+}
+
+/**
+ * A match's breakdown, which is never empty (playtest round 5, B6).
+ *
+ * The tuple is the point. B6's second half was the summary panel rendering as an empty box for
+ * a match that paid nothing, and the fix asked for is that the renderer *cannot be handed* an
+ * empty tally rather than that it defends against one. `matchComplete` is awarded to every
+ * match that reaches a summary, so there is always a head — and building the list as
+ * `[floor, ...rest]` is what makes the compiler agree.
+ */
+export type XpLines = readonly [XpLine, ...XpLine[]];
+
+/** A finished match's XP, ready for the summary screen and for the profile to bank. */
+export interface XpReport {
+  readonly lines: XpLines;
+  readonly total: number;
+  /** Lifetime XP before this match was banked. */
+  readonly xpBefore: number;
+  readonly levelBefore: number;
+  readonly levelAfter: number;
+  /** Weapon ids that gained a level this match, in the order they did. */
+  readonly weaponLevelUps: readonly string[];
+  /** Challenge ids completed this match. */
+  readonly challengesCompleted: readonly string[];
+  /**
+   * Camos earned this match, with the weapon that earned each one (2026-09-23).
+   *
+   * A camo belongs to a weapon now, so the line the player reads has to name it: "DIGITAL on
+   * the VULCAN" is the truth, and "DIGITAL" alone was the old, account-wide claim.
+   */
+  readonly camosUnlocked: readonly { readonly weaponId: string; readonly camo: CamoId }[];
+}
+
+/*
+ * There is deliberately no `emptyXpReport` (round 5, B6).
+ *
+ * There was one, and its only caller was `MatchProgression.finish`'s idempotence guard: a
+ * second call returned a report of zeroes. That is not idempotent, it is a lie told the second
+ * time — the match did pay something, and a caller asking twice should be told the same thing
+ * twice. `finish` caches what it produced and hands it back, which is both idempotent and true,
+ * and it is what lets `XpLines` be non-empty without an exception carved out for it.
+ */
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
  * The award table.
  *
  * Order is the order the summary animates them in, which is deliberately
@@ -105,6 +167,21 @@ export const XP_SOURCES: readonly XpSource[] = [
 
 const BY_ID = new Map<XpSourceId, XpSource>(XP_SOURCES.map((s) => [s.id, s]));
 
+/** Metres beyond which a kill counts as a longshot. Also the challenge threshold. */
+export const LONGSHOT_METRES = 38;
+
+/**
+ * Per-weapon XP is a fraction of what the *player* earns with that weapon in hand.
+ *
+ * Deriving it rather than giving weapons a second award table means a weapon can never
+ * level from something the player was not rewarded for, and there is one place to tune
+ * how fast attachments arrive relative to the account.
+ */
+export const WEAPON_XP_FRACTION = 0.6;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function xpSource(id: XpSourceId): XpSource {
   const found = BY_ID.get(id);
   if (found === undefined) throw new Error(`Unknown XP source "${id}"`);
@@ -140,44 +217,6 @@ export function matchMinutes(seconds: number): number {
   return Math.max(0, Math.floor(seconds / 60));
 }
 
-/** Metres beyond which a kill counts as a longshot. Also the challenge threshold. */
-export const LONGSHOT_METRES = 38;
-
-/**
- * Per-weapon XP is a fraction of what the *player* earns with that weapon in hand.
- *
- * Deriving it rather than giving weapons a second award table means a weapon can never
- * level from something the player was not rewarded for, and there is one place to tune
- * how fast attachments arrive relative to the account.
- */
-export const WEAPON_XP_FRACTION = 0.6;
-
-/**
- * One row of the end-of-match breakdown.
- *
- * `count` is how many of the thing happened and `xp` is what it was worth in total, so
- * the summary can print "12 x 100 = 1200" without recomputing anything and without
- * being able to disagree with the total that was banked.
- */
-export interface XpLine {
-  readonly id: XpSourceId;
-  readonly label: string;
-  readonly count: number;
-  readonly xp: number;
-  readonly kind: 'each' | 'flat';
-}
-
-/**
- * A match's breakdown, which is never empty (playtest round 5, B6).
- *
- * The tuple is the point. B6's second half was the summary panel rendering as an empty box for
- * a match that paid nothing, and the fix asked for is that the renderer *cannot be handed* an
- * empty tally rather than that it defends against one. `matchComplete` is awarded to every
- * match that reaches a summary, so there is always a head — and building the list as
- * `[floor, ...rest]` is what makes the compiler agree.
- */
-export type XpLines = readonly [XpLine, ...XpLine[]];
-
 /**
  * The row every finished match has.
  *
@@ -190,34 +229,4 @@ export function matchFloorLine(): XpLine {
   const source = xpSource('matchComplete');
   return { id: source.id, label: source.label, count: 1, xp: source.value, kind: source.kind };
 }
-
-/** A finished match's XP, ready for the summary screen and for the profile to bank. */
-export interface XpReport {
-  readonly lines: XpLines;
-  readonly total: number;
-  /** Lifetime XP before this match was banked. */
-  readonly xpBefore: number;
-  readonly levelBefore: number;
-  readonly levelAfter: number;
-  /** Weapon ids that gained a level this match, in the order they did. */
-  readonly weaponLevelUps: readonly string[];
-  /** Challenge ids completed this match. */
-  readonly challengesCompleted: readonly string[];
-  /**
-   * Camos earned this match, with the weapon that earned each one (2026-09-23).
-   *
-   * A camo belongs to a weapon now, so the line the player reads has to name it: "DIGITAL on
-   * the VULCAN" is the truth, and "DIGITAL" alone was the old, account-wide claim.
-   */
-  readonly camosUnlocked: readonly { readonly weaponId: string; readonly camo: CamoId }[];
-}
-
-/*
- * There is deliberately no `emptyXpReport` (round 5, B6).
- *
- * There was one, and its only caller was `MatchProgression.finish`'s idempotence guard: a
- * second call returned a report of zeroes. That is not idempotent, it is a lie told the second
- * time — the match did pay something, and a caller asking twice should be told the same thing
- * twice. `finish` caches what it produced and hands it back, which is both idempotent and true,
- * and it is what lets `XpLines` be non-empty without an exception carved out for it.
- */
+//#endregion

@@ -268,6 +268,20 @@ const FINISHED = {
     'src/shared/streaks/StreakDefs.ts',
     'src/shared/streaks/StreakPresentation.ts',
   ],
+  A18: [
+    'src/shared/perks/FieldUpgrade.ts',
+    'src/shared/perks/PerkDefs.ts',
+    'src/shared/perks/PerkState.ts',
+    'src/shared/perks/PerksRuntime.ts',
+    'src/shared/meta/Camos.ts',
+    'src/shared/meta/Challenges.ts',
+    'src/shared/meta/ChallengeTracker.ts',
+    'src/shared/meta/FieldUpgrades.ts',
+    'src/shared/meta/Levels.ts',
+    'src/shared/meta/XpRules.ts',
+    'src/shared/meta/XpSimulator.ts',
+    'src/shared/meta/Skins.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

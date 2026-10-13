@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ChallengeTracker } from './ChallengeTracker';
 import type { CamoId } from './Camos';
-import type { ChallengeId } from './Challenges';
+import { CHALLENGES, type ChallengeId, type KillFact, type MatchFact } from './Challenges';
 import { defaultSettings, defaultSave, makeWeaponSave, type ChallengeSaveData, type SaveV2, type WeaponSaveData } from './SaveData';
 import type { ProgressionStore } from './ProgressionStore';
 
@@ -126,5 +126,188 @@ describe('ChallengeTracker camos', () => {
     store.weapon('ar_carbine').kills = 0;
     tracker.refreshAbsolute();
     expect(store.camoOwned('ar_carbine', 'digital')).toBe(true);
+  });
+});
+
+/**
+ * The rest of the tracker (A18).
+ *
+ * The suite above is about the two awards a camo challenge pays. These cover what the tracker
+ * does with every other kind of rule, and in particular the two branches of `absoluteValue` —
+ * which A18 splits into `bestCamoSetCount` and `bestWeaponStat`. Both branches answer "the best
+ * weapon's number", and the camo-set one is the nested loop that pushed the function to depth 4.
+ */
+
+/** A kill with nothing special about it, overridden as a test needs. */
+function kill(over: Partial<KillFact> = {}): KillFact {
+  return {
+    weaponId: 'ar_carbine',
+    weaponClass: 'AR',
+    zone: 'torso',
+    headshot: false,
+    distance: 10,
+    ads: false,
+    sliding: false,
+    airborne: false,
+    equipment: false,
+    killsThisMag: 1,
+    killsInWindow: 1,
+    streak: 1,
+    revenge: false,
+    ...over,
+  };
+}
+
+function matchFact(over: Partial<MatchFact> = {}): MatchFact {
+  return { won: true, kills: 10, deaths: 5, score: 1000, bestStreak: 4, ...over };
+}
+
+describe('the tracker’s absolute rules', () => {
+  it('reads the best weapon’s counter, not the sum over the armoury', () => {
+    // Three weapons at 10 kills each is not thirty: "25 kills with a single weapon" is one gun.
+    const spread = new FakeStore({ a: { kills: 10 }, b: { kills: 10 }, c: { kills: 10 } });
+    new ChallengeTracker(spread).refreshAbsolute();
+    expect(spread.challenge('camo_digital').progress).toBe(10);
+    expect(spread.challenge('camo_digital').completed).toBe(false);
+
+    const one = new FakeStore({ a: { kills: 26 }, b: { kills: 1 } });
+    new ChallengeTracker(one).refreshAbsolute();
+    // Completed, and the stored progress is pinned to the target rather than to the 26 the
+    // weapon actually has: `checkComplete` writes `def.target`, so the bar can never read
+    // past full.
+    expect(one.challenge('camo_digital').completed).toBe(true);
+    expect(one.challenge('camo_digital').progress).toBe(25);
+  });
+
+  it('reads each counter independently', () => {
+    const store = new FakeStore({ a: { headshots: 9 }, b: { longshots: 7 }, c: { multikills: 3 } });
+    new ChallengeTracker(store).refreshAbsolute();
+    expect(store.challenge('camo_splinter').progress).toBe(9);
+    expect(store.challenge('camo_tiger').progress).toBe(7);
+    expect(store.challenge('camo_fractal').progress).toBe(3);
+  });
+
+  it('counts the camo set on the best single weapon, which is the other branch', () => {
+    // Two weapons holding two prerequisites each is not four: OBSIDIAN is earned on one gun.
+    const split = new FakeStore({
+      a: { camos: { digital: true, splinter: true } },
+      b: { camos: { tiger: true, fractal: true } },
+    });
+    new ChallengeTracker(split).refreshAbsolute();
+    expect(split.challenge('camo_obsidian').progress).toBe(2);
+    expect(split.challenge('camo_obsidian').completed).toBe(false);
+  });
+
+  it('completes the camo set once one weapon holds all five', () => {
+    const store = new FakeStore({
+      a: { camos: { digital: true, splinter: true, tiger: true, fractal: true, gold: true } },
+    });
+    new ChallengeTracker(store).refreshAbsolute();
+    expect(store.challenge('camo_obsidian').progress).toBe(5);
+    expect(store.challenge('camo_obsidian').completed).toBe(true);
+  });
+
+  it('reports nothing above zero for an empty armoury', () => {
+    const store = new FakeStore({});
+    new ChallengeTracker(store).refreshAbsolute();
+    expect(store.challenge('camo_digital').progress).toBe(0);
+    expect(store.challenge('camo_obsidian').progress).toBe(0);
+  });
+
+  it('is idempotent: a second refresh neither double-pays nor regresses', () => {
+    const store = new FakeStore({ a: { kills: 30 } });
+    const tracker = new ChallengeTracker(store);
+    tracker.refreshAbsolute();
+    const awards = tracker.awardsThisMatch.length;
+    const xp = tracker.xpThisMatch;
+    tracker.refreshAbsolute();
+    expect(tracker.awardsThisMatch).toHaveLength(awards);
+    expect(tracker.xpThisMatch).toBe(xp);
+  });
+});
+
+describe('the tracker’s kill rules', () => {
+  it('advances every rule a kill satisfies, by one', () => {
+    const store = new FakeStore({});
+    const tracker = new ChallengeTracker(store);
+    tracker.onKill(kill());
+    expect(store.challenge('first_blood').completed).toBe(true);
+    expect(store.challenge('centurion').progress).toBe(1);
+  });
+
+  it('counts a multikill by the window the kill arrived in', () => {
+    const store = new FakeStore({});
+    const tracker = new ChallengeTracker(store);
+    tracker.onKill(kill({ killsInWindow: 2 }));
+    expect(store.challenge('double_kill').progress).toBe(1);
+    expect(store.challenge('triple_kill').progress).toBe(0);
+
+    tracker.onKill(kill({ killsInWindow: 3 }));
+    expect(store.challenge('triple_kill').progress).toBe(1);
+    // A triple is not also a double: the rules test the exact count.
+    expect(store.challenge('double_kill').progress).toBe(1);
+  });
+
+  it('stops advancing a rule once it is complete', () => {
+    const store = new FakeStore({});
+    const tracker = new ChallengeTracker(store);
+    for (let i = 0; i < 5; i++) tracker.onKill(kill());
+    expect(store.challenge('first_blood').progress).toBe(1);
+    expect(store.challenge('centurion').progress).toBe(5);
+  });
+
+  it('pays each completion once, with its own XP', () => {
+    const store = new FakeStore({});
+    const tracker = new ChallengeTracker(store);
+    tracker.onKill(kill());
+    const first = tracker.awardsThisMatch.filter((a) => a.id === 'first_blood');
+    expect(first).toHaveLength(1);
+    expect(tracker.xpThisMatch).toBeGreaterThan(0);
+    tracker.onKill(kill());
+    expect(tracker.awardsThisMatch.filter((a) => a.id === 'first_blood')).toHaveLength(1);
+  });
+});
+
+describe('the tracker’s other rules', () => {
+  it('advances the flash rules one blinded enemy at a time', () => {
+    const store = new FakeStore({});
+    const tracker = new ChallengeTracker(store);
+    const flashId = CHALLENGES.find((c) => c.rule.kind === 'flash')?.id;
+    if (flashId === undefined) throw new Error('no flash challenge in the table');
+    tracker.onFlash();
+    tracker.onFlash();
+    expect(store.challenge(flashId).progress).toBe(2);
+  });
+
+  it('advances the match rules on the end of a match, and refreshes the absolutes with it', () => {
+    const store = new FakeStore({ a: { kills: 30 } });
+    const tracker = new ChallengeTracker(store);
+    tracker.onMatchEnd(matchFact({ won: true }));
+    // The camo rules ran as part of the same call.
+    expect(store.camoOwned('a', 'digital')).toBe(true);
+  });
+
+  it('forgets the match’s awards on reset, and keeps the progress', () => {
+    const store = new FakeStore({});
+    const tracker = new ChallengeTracker(store);
+    tracker.onKill(kill());
+    expect(tracker.awardsThisMatch.length).toBeGreaterThan(0);
+    tracker.reset();
+    expect(tracker.awardsThisMatch).toEqual([]);
+    expect(tracker.camoGrantsThisMatch).toEqual([]);
+    expect(tracker.xpThisMatch).toBe(0);
+    expect(store.challenge('first_blood').completed).toBe(true);
+  });
+
+  it('reports one challenge’s live progress for the debug panel', () => {
+    const store = new FakeStore({});
+    const tracker = new ChallengeTracker(store);
+    tracker.onKill(kill());
+    expect(tracker.progressOf('centurion')).toEqual({
+      progress: 1,
+      target: 100,
+      completed: false,
+    });
+    expect(tracker.progressOf('not_a_challenge')).toBe(null);
   });
 });

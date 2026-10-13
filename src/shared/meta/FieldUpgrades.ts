@@ -17,6 +17,8 @@
  * streak plumbing S9 defers. One key (`X`), one charge, one activation.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type FieldUpgradeId = 'munitions' | 'stim' | 'smokescreen' | 'armour';
 
 export interface FieldUpgradeDef {
@@ -36,7 +38,10 @@ export interface FieldUpgradeDef {
   /** Whether activation restores health outright. */
   readonly heal: boolean;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const FIELD_UPGRADES: Readonly<Record<FieldUpgradeId, FieldUpgradeDef>> = {
   munitions: {
     id: 'munitions',
@@ -90,7 +95,10 @@ export const FIELD_UPGRADES: Readonly<Record<FieldUpgradeId, FieldUpgradeDef>> =
 };
 
 export const FIELD_UPGRADE_IDS = Object.keys(FIELD_UPGRADES) as FieldUpgradeId[];
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function fieldUpgradeDef(id: FieldUpgradeId): FieldUpgradeDef {
   return FIELD_UPGRADES[id];
 }
@@ -98,3 +106,4 @@ export function fieldUpgradeDef(id: FieldUpgradeId): FieldUpgradeDef {
 export function isFieldUpgradeId(value: string): value is FieldUpgradeId {
   return Object.prototype.hasOwnProperty.call(FIELD_UPGRADES, value);
 }
+//#endregion

@@ -1,4 +1,7 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { AttachmentEffects } from '../weapons/Attachments';
+//#endregion
 
 /**
  * Perks (brief S6.4). Twelve, three tiers of four, each with a real effect hook.
@@ -25,6 +28,8 @@ import type { AttachmentEffects } from '../weapons/Attachments';
  * is the killstreak that would ask.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type PerkId =
   | 'lightweight'
   | 'scavenger'
@@ -88,7 +93,10 @@ export interface PerkDef {
   /** True while the effect has no consumer yet (S9). Surfaced in the editor and the panel. */
   readonly inert?: boolean;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The twelve.
  *
@@ -231,6 +239,11 @@ export const PERKS: Readonly<Record<PerkId, PerkDef>> = {
 
 export const PERK_IDS = Object.keys(PERKS) as PerkId[];
 
+export const PERK_TIERS: readonly PerkTier[] = [1, 2, 3];
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function perkDef(id: PerkId): PerkDef {
   return PERKS[id];
 }
@@ -243,5 +256,4 @@ export function perksOfTier(tier: PerkTier): PerkDef[] {
 export function isPerkId(value: string): value is PerkId {
   return Object.prototype.hasOwnProperty.call(PERKS, value);
 }
-
-export const PERK_TIERS: readonly PerkTier[] = [1, 2, 3];
+//#endregion

@@ -1,15 +1,3 @@
-import type { CamoId } from './Camos';
-import {
-  camosEarnedBy,
-  CHALLENGES,
-  type ChallengeDef,
-  type ChallengeId,
-  type KillFact,
-  type MatchFact,
-  type WeaponStatKey,
-} from './Challenges';
-import type { ProgressionStore } from './ProgressionStore';
-
 /**
  * Challenge progress, driven off facts rather than off a clock (brief S6.5).
  *
@@ -38,6 +26,23 @@ import type { ProgressionStore } from './ProgressionStore';
  * banks it once, at the end of the match (S6.6: "write on match end… never every frame").
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { CamoId } from './Camos';
+import {
+  camosEarnedBy,
+  CHALLENGES,
+  type ChallengeDef,
+  type ChallengeId,
+  type KillFact,
+  type MatchFact,
+  type WeaponStatKey,
+} from './Challenges';
+import type { ProgressionStore } from './ProgressionStore';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface ChallengeAward {
   readonly id: ChallengeId;
   readonly name: string;
@@ -50,8 +55,14 @@ export interface CamoGrant {
   readonly weaponId: string;
   readonly camo: CamoId;
 }
+//#endregion
 
+// =================================== CLASS ChallengeTracker =================================== \\
+//#region Class ChallengeTracker
 export class ChallengeTracker {
+
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Completions since the last `reset`. Drives the summary's challenge lines. */
   readonly awardsThisMatch: ChallengeAward[] = [];
 
@@ -59,10 +70,16 @@ export class ChallengeTracker {
   readonly camoGrantsThisMatch: CamoGrant[] = [];
 
   private readonly killRules: ChallengeDef[] = [];
-  private readonly flashRules: ChallengeDef[] = [];
-  private readonly matchRules: ChallengeDef[] = [];
-  private readonly absoluteRules: ChallengeDef[] = [];
 
+  private readonly flashRules: ChallengeDef[] = [];
+
+  private readonly matchRules: ChallengeDef[] = [];
+
+  private readonly absoluteRules: ChallengeDef[] = [];
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly profile: ProgressionStore) {
     for (const def of CHALLENGES) {
       switch (def.rule.kind) {
@@ -82,7 +99,10 @@ export class ChallengeTracker {
       }
     }
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   reset(): void {
     this.awardsThisMatch.length = 0;
     this.camoGrantsThisMatch.length = 0;
@@ -136,6 +156,17 @@ export class ChallengeTracker {
     }
   }
 
+  /** Live progress for one challenge, for the debug panel. */
+  progressOf(id: ChallengeId): { progress: number; target: number; completed: boolean } | null {
+    const def = CHALLENGES.find((c) => c.id === id);
+    if (def === undefined) return null;
+    const state = this.profile.challenge(id);
+    return { progress: state.progress, target: def.target, completed: state.completed };
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * Every weapon gets the camos its own counters have earned.
    *
@@ -154,32 +185,33 @@ export class ChallengeTracker {
     }
   }
 
-  /** Live progress for one challenge, for the debug panel. */
-  progressOf(id: ChallengeId): { progress: number; target: number; completed: boolean } | null {
-    const def = CHALLENGES.find((c) => c.id === id);
-    if (def === undefined) return null;
-    const state = this.profile.challenge(id);
-    return { progress: state.progress, target: def.target, completed: state.completed };
+  private absoluteValue(def: ChallengeDef): number {
+    if (def.rule.kind === 'camoSet') return this.bestCamoSetCount(def.rule.camos);
+    if (def.rule.kind === 'weaponBest') return this.bestWeaponStat(def.rule.stat);
+    return 0;
   }
 
-  // -- internals --------------------------------------------------------------
-
-  private absoluteValue(def: ChallengeDef): number {
-    if (def.rule.kind === 'camoSet') {
-      // The best weapon's count, for the same reason `weaponBest` reads the best weapon: the
-      // challenge is "earn every other camouflage", and it is earned on one gun or not at all.
-      let best = 0;
-      for (const weaponId of Object.keys(this.profile.save.weapons)) {
-        let count = 0;
-        for (const id of def.rule.camos) {
-          if (this.profile.camoOwned(weaponId, id)) count++;
-        }
-        if (count > best) best = count;
+  /**
+   * The most of this camo set any one weapon holds.
+   *
+   * The best weapon's count, for the same reason `bestWeaponStat` reads the best weapon: the
+   * challenge is "earn every other camouflage", and it is earned on one gun or not at all. Two
+   * weapons holding two each is two, never four.
+   */
+  private bestCamoSetCount(camos: readonly CamoId[]): number {
+    let best = 0;
+    for (const weaponId of Object.keys(this.profile.save.weapons)) {
+      let count = 0;
+      for (const id of camos) {
+        if (this.profile.camoOwned(weaponId, id)) count++;
       }
-      return best;
+      if (count > best) best = count;
     }
-    if (def.rule.kind !== 'weaponBest') return 0;
-    const stat: WeaponStatKey = def.rule.stat;
+    return best;
+  }
+
+  /** The highest this counter has reached on any single weapon. */
+  private bestWeaponStat(stat: WeaponStatKey): number {
     let best = 0;
     for (const weapon of Object.values(this.profile.save.weapons)) {
       const value = weapon[stat];
@@ -224,4 +256,6 @@ export class ChallengeTracker {
     });
     return true;
   }
+  //#endregion
 }
+//#endregion

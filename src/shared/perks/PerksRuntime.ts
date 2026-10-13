@@ -1,12 +1,3 @@
-import type { Combatant } from '../ai/Combatant';
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
-import { EV, type GameBus } from '../core/Events';
-import { DT } from '../core/Loop';
-import type { PlayerSim } from '../player/PlayerState';
-import type { WeaponSystem } from '../weapons/WeaponSystem';
-import { NO_PERKS, type PerkState } from './PerkState';
-import { Disposable } from '../core/Disposable';
-
 /**
  * The two perks that need a world presence: Scavenger and Tracker.
  *
@@ -31,15 +22,20 @@ import { Disposable } from '../core/Disposable';
  * subscription still stays live so the cost is one branch per event either way.
  */
 
-/** Pickups on the map at once. Bodies outnumber this only in a very bad minute. */
-const PICKUP_CAPACITY = 16;
-/** Seconds a dropped magazine remains. Read by the renderer for the expiry blink. */
-export const PICKUP_LIFETIME = 30;
-/** Metres. Generous enough to collect by running past, tight enough to need the detour. */
-const PICKUP_RADIUS = 1.35;
-/** Metres above the feet the pickup floats. Where it is drawn, not where it is collected. */
-export const PICKUP_HEIGHT = 0.35;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { Combatant } from '../ai/Combatant';
+import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import { EV, type GameBus } from '../core/Events';
+import { DT } from '../core/Loop';
+import type { PlayerSim } from '../player/PlayerState';
+import type { WeaponSystem } from '../weapons/WeaponSystem';
+import { NO_PERKS, type PerkState } from './PerkState';
+import { Disposable } from '../core/Disposable';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * A dropped magazine.
  *
@@ -60,12 +56,34 @@ export interface PerksRuntimeDeps {
   /** The local player's team, so a trail only shows the other side. */
   readonly localTeam: 'A' | 'B';
 }
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Pickups on the map at once. Bodies outnumber this only in a very bad minute. */
+const PICKUP_CAPACITY = 16;
+
+/** Seconds a dropped magazine remains. Read by the renderer for the expiry blink. */
+export const PICKUP_LIFETIME = 30;
+
+/** Metres. Generous enough to collect by running past, tight enough to need the detour. */
+const PICKUP_RADIUS = 1.35;
+
+/** Metres above the feet the pickup floats. Where it is drawn, not where it is collected. */
+export const PICKUP_HEIGHT = 0.35;
 
 const evScavenged = { entityId: 0, x: 0, y: 0, z: 0, rounds: 0 };
+//#endregion
 
+// ===================================== CLASS PerksRuntime ===================================== \\
+//#region Class PerksRuntime
 export class PerksRuntime extends Disposable {
+
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Diagnostics for the F1 panel. The print count moved to `PerksRenderer` with the trail. */
   pickupsSpawned = 0;
+
   pickupsCollected = 0;
 
   private state: PerkState = NO_PERKS;
@@ -79,7 +97,10 @@ export class PerksRuntime extends Disposable {
    * Fixed length with reused slots — a consumer reads `active`, never the length.
    */
   readonly pickups: Pickup[] = [];
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: PerksRuntimeDeps) {
     super();
     this.deps = deps;
@@ -90,7 +111,10 @@ export class PerksRuntime extends Disposable {
 
     this.own(deps.bus.on(EV.EntityKilled, (p) => this.onKilled(p.targetId)));
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Called whenever the loadout changes, which in practice is once per match. */
   setPerks(state: PerkState): void {
     this.state = state;
@@ -121,8 +145,24 @@ export class PerksRuntime extends Disposable {
     }
   }
 
-  // -- internals --------------------------------------------------------------
+  /**
+   * Whether a footstep by `entityId` should show up on the local player's tracker trail.
+   *
+   * The *rule* is here — the perk has to be equipped, it is other people's footsteps, and
+   * only the other side's — because it is a rule about a perk and a team. Where the prints
+   * are stored, how they fade and what colour they burn is `client/perks/PerksRenderer.ts`,
+   * because none of that is a fact about the match. This is the whole of what M9 moved.
+   */
+  revealsFootstep(entityId: number): boolean {
+    if (!this.state.tracker) return false;
+    if (entityId === PLAYER_ENTITY_ID) return false;
+    const walker = this.findCombatant(entityId);
+    return walker !== undefined && walker.team !== this.deps.localTeam;
+  }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private onKilled(targetId: number): void {
     if (!this.state.scavenger) return;
     if (targetId === PLAYER_ENTITY_ID) return;
@@ -158,25 +198,12 @@ export class PerksRuntime extends Disposable {
     for (const pickup of this.pickups) pickup.active = false;
   }
 
-  /**
-   * Whether a footstep by `entityId` should show up on the local player's tracker trail.
-   *
-   * The *rule* is here — the perk has to be equipped, it is other people's footsteps, and
-   * only the other side's — because it is a rule about a perk and a team. Where the prints
-   * are stored, how they fade and what colour they burn is `client/perks/PerksRenderer.ts`,
-   * because none of that is a fact about the match. This is the whole of what M9 moved.
-   */
-  revealsFootstep(entityId: number): boolean {
-    if (!this.state.tracker) return false;
-    if (entityId === PLAYER_ENTITY_ID) return false;
-    const walker = this.findCombatant(entityId);
-    return walker !== undefined && walker.team !== this.deps.localTeam;
-  }
-
   private findCombatant(entityId: number): Combatant | undefined {
     for (const c of this.deps.roster) {
       if (c.entityId === entityId) return c;
     }
     return undefined;
   }
+  //#endregion
 }
+//#endregion

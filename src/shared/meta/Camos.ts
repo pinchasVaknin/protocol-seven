@@ -30,6 +30,8 @@
  * is counted on the weapon holding the other five rather than across the account.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type CamoId = 'digital' | 'splinter' | 'tiger' | 'fractal' | 'gold' | 'obsidian';
 
 export interface CamoDef {
@@ -40,7 +42,10 @@ export interface CamoDef {
   /** Drawn into the picker as a swatch, and the base tint of the pattern. */
   readonly swatch: string;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const CAMOS: Readonly<Record<CamoId, CamoDef>> = {
   digital: {
     id: 'digital',
@@ -84,7 +89,10 @@ export const CAMO_IDS = Object.keys(CAMOS) as CamoId[];
 
 /** The five OBSIDIAN is built on. Read by the challenge that awards it. */
 export const CAMO_PREREQUISITES: readonly CamoId[] = ['digital', 'splinter', 'tiger', 'fractal', 'gold'];
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function camoDef(id: CamoId): CamoDef {
   return CAMOS[id];
 }
@@ -92,5 +100,4 @@ export function camoDef(id: CamoId): CamoDef {
 export function isCamoId(value: string): value is CamoId {
   return Object.prototype.hasOwnProperty.call(CAMOS, value);
 }
-
-
+//#endregion

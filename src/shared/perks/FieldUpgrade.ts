@@ -1,14 +1,3 @@
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
-import { EV, type GameBus } from '../core/Events';
-import { Btn, justPressed, type InputCommand } from '../core/InputCommand';
-import { DT } from '../core/Loop';
-import { clamp01 } from '../core/MathUtil';
-import { EquipmentSystem, type EquipmentInventory } from '../equipment/EquipmentSystem';
-import { fieldUpgradeDef, type FieldUpgradeDef, type FieldUpgradeId } from '../meta/FieldUpgrades';
-import type { Health } from '../player/Health';
-import type { PlayerSim } from '../player/PlayerState';
-import type { Inventory } from '../weapons/Inventory';
-
 /**
  * The loadout's field upgrade: a charge, a key, and four real effects.
  *
@@ -25,6 +14,22 @@ import type { Inventory } from '../weapons/Inventory';
  * through it through the M3 perception path, with no new code at all.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import { EV, type GameBus } from '../core/Events';
+import { Btn, justPressed, type InputCommand } from '../core/InputCommand';
+import { DT } from '../core/Loop';
+import { clamp01 } from '../core/MathUtil';
+import { EquipmentSystem, type EquipmentInventory } from '../equipment/EquipmentSystem';
+import { fieldUpgradeDef, type FieldUpgradeDef, type FieldUpgradeId } from '../meta/FieldUpgrades';
+import type { Health } from '../player/Health';
+import type { PlayerSim } from '../player/PlayerState';
+import type { Inventory } from '../weapons/Inventory';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface FieldUpgradeDeps {
   readonly bus: GameBus;
   readonly equipment: EquipmentSystem;
@@ -32,22 +37,41 @@ export interface FieldUpgradeDeps {
   readonly weapons: Inventory;
   readonly health: Health;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const evReady = { upgradeId: '', entityId: PLAYER_ENTITY_ID };
-const evUsed = { upgradeId: '', entityId: PLAYER_ENTITY_ID, x: 0, y: 0, z: 0 };
 
+const evUsed = { upgradeId: '', entityId: PLAYER_ENTITY_ID, x: 0, y: 0, z: 0 };
+//#endregion
+
+// ================================= CLASS FieldUpgradeRuntime ================================== \\
+//#region Class FieldUpgradeRuntime
 export class FieldUpgradeRuntime {
+
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** 0..1. Drives the HUD ring. */
   charge = 0;
+
   /** Activations this match, for the F1 read-out. */
   uses = 0;
 
   private def: FieldUpgradeDef = fieldUpgradeDef('munitions');
+
   private wasReady = false;
+
   private prevButtons = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly deps: FieldUpgradeDeps) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get id(): FieldUpgradeId {
     return this.def.id;
   }
@@ -89,7 +113,10 @@ export class FieldUpgradeRuntime {
     if (!pressed || !alive || this.charge < 1) return;
     this.activate(sim);
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private activate(sim: PlayerSim): void {
     const def = this.def;
 
@@ -123,4 +150,6 @@ export class FieldUpgradeRuntime {
     evUsed.z = sim.z;
     this.deps.bus.emit(EV.FieldUpgradeUsed, evUsed);
   }
+  //#endregion
 }
+//#endregion

@@ -33,77 +33,8 @@
  * thing that makes this table tunable without playing 55 levels.
  */
 
-export const MAX_LEVEL = 55;
-
-/**
- * XP from level n+1 to level n+2, in order. 54 rows.
- *
- * Rows 1-10 are hand-authored for the opening. Rows 11 onward step by a constant 1,500,
- * which is a deliberate choice rather than an accident of generation: a curve that
- * accelerates all the way to 55 makes the last ten levels take longer than the first
- * forty-five, and the simulator made that obvious the first time it was run. The whole
- * table is the 2026-09-23 re-pricing of the original, every row multiplied by three, so the
- * shape the paragraph above describes is exactly the shape it always had.
- */
-export const LEVEL_XP: readonly number[] = [
-  // 1 -> 11: the opening. Twelve matches to level 10, fifteen to level 11; measured by
-  // `npm run progression`, not estimated.
-  1500, 2100, 2700, 3600, 4500, 5700, 6900, 8100, 9600, 11100,
-  // 11 -> 21
-  12600, 14100, 15600, 17100, 18600, 20100, 21600, 23100, 24600, 26100,
-  // 21 -> 31
-  27600, 29100, 30600, 32100, 33600, 35100, 36600, 38100, 39600, 41100,
-  // 31 -> 41
-  42600, 44100, 45600, 47100, 48600, 50100, 51600, 53100, 54600, 56100,
-  // 41 -> 51
-  57600, 59100, 60600, 62100, 63600, 65100, 66600, 68100, 69600, 71100,
-  // 51 -> 55
-  72600, 74100, 75600, 77100,
-];
-
-/** Cumulative XP at the start of each level. `LEVEL_START[0]` is level 1, always 0. */
-const LEVEL_START: readonly number[] = buildCumulative();
-
-function buildCumulative(): number[] {
-  const out: number[] = [0];
-  let total = 0;
-  for (const step of LEVEL_XP) {
-    total += step;
-    out.push(total);
-  }
-  return out;
-}
-
-/** Total XP needed to reach `MAX_LEVEL`. 2,029,200 on the shipped table. */
-export const XP_TO_MAX = LEVEL_START[LEVEL_START.length - 1] ?? 0;
-
-/** XP required to advance out of `level`. Zero at the cap. */
-export function xpForLevel(level: number): number {
-  if (level >= MAX_LEVEL) return 0;
-  return LEVEL_XP[Math.max(0, level - 1)] ?? 0;
-}
-
-/** Cumulative XP at which `level` begins. */
-export function xpAtLevelStart(level: number): number {
-  const index = Math.min(Math.max(level, 1), MAX_LEVEL) - 1;
-  return LEVEL_START[index] ?? 0;
-}
-
-/**
- * The level a lifetime XP total puts you at, 1..55.
- *
- * Linear scan over 55 entries. It is called on a level-up and by the summary screen, not
- * in the sim path, and a binary search over a fifty-five element array would be less
- * readable for no measurable gain.
- */
-export function levelForXp(totalXp: number): number {
-  const xp = Math.max(0, totalXp);
-  for (let level = MAX_LEVEL; level >= 1; level--) {
-    if (xp >= xpAtLevelStart(level)) return level;
-  }
-  return 1;
-}
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** How far into the current level a total sits, and how far it has to go. */
 export interface LevelProgress {
   readonly level: number;
@@ -114,66 +45,6 @@ export interface LevelProgress {
   /** 0..1 through the level. 1 at the cap. */
   readonly fraction: number;
   readonly atCap: boolean;
-}
-
-export function levelProgress(totalXp: number): LevelProgress {
-  const level = levelForXp(totalXp);
-  const start = xpAtLevelStart(level);
-  const span = xpForLevel(level);
-  const into = Math.max(0, totalXp - start);
-  const atCap = level >= MAX_LEVEL;
-  return {
-    level,
-    into,
-    span,
-    fraction: atCap ? 1 : span > 0 ? Math.min(1, into / span) : 0,
-    atCap,
-  };
-}
-
-// -- prestige -----------------------------------------------------------------
-
-/**
- * Prestige (S6.1): at 55 the level and the unlocks reset, the icon persists, and one
- * permanent unlock token is granted.
- *
- * A token permanently unlocks a single item *across resets* — which is what makes it a
- * choice worth thinking about rather than a currency. `PRESTIGE_MAX` is a bound rather
- * than a design statement: ten is where the icon vocabulary in `PrestigeIcons` runs out,
- * and nothing in the save schema cares.
- */
-export const PRESTIGE_MAX = 10;
-
-/** Tokens granted per prestige. One, deliberately. */
-export const TOKENS_PER_PRESTIGE = 1;
-
-/** Whether a profile at this level and prestige may prestige right now. */
-export function canPrestige(level: number, prestige: number): boolean {
-  return level >= MAX_LEVEL && prestige < PRESTIGE_MAX;
-}
-
-/**
- * The prestige badge, as a short label.
- *
- * Roman numerals rather than generated art: the icon has to read at 11 px in a scoreboard
- * row next to a name, and a procedural emblem at that size is a smudge.
- */
-const PRESTIGE_LABELS: readonly string[] = [
-  '',
-  'I',
-  'II',
-  'III',
-  'IV',
-  'V',
-  'VI',
-  'VII',
-  'VIII',
-  'IX',
-  'X',
-];
-
-export function prestigeLabel(prestige: number): string {
-  return PRESTIGE_LABELS[Math.max(0, Math.min(PRESTIGE_MAX, prestige))] ?? '';
 }
 
 /**
@@ -210,6 +81,131 @@ export interface LevelBarStep {
   readonly levelUp: boolean;
   /** Nothing left to advance. The caller stops; there is no further frame to ask for. */
   readonly done: boolean;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+export const MAX_LEVEL = 55;
+
+/**
+ * XP from level n+1 to level n+2, in order. 54 rows.
+ *
+ * Rows 1-10 are hand-authored for the opening. Rows 11 onward step by a constant 1,500,
+ * which is a deliberate choice rather than an accident of generation: a curve that
+ * accelerates all the way to 55 makes the last ten levels take longer than the first
+ * forty-five, and the simulator made that obvious the first time it was run. The whole
+ * table is the 2026-09-23 re-pricing of the original, every row multiplied by three, so the
+ * shape the paragraph above describes is exactly the shape it always had.
+ */
+export const LEVEL_XP: readonly number[] = [
+  // 1 -> 11: the opening. Twelve matches to level 10, fifteen to level 11; measured by
+  // `npm run progression`, not estimated.
+  1500, 2100, 2700, 3600, 4500, 5700, 6900, 8100, 9600, 11100,
+  // 11 -> 21
+  12600, 14100, 15600, 17100, 18600, 20100, 21600, 23100, 24600, 26100,
+  // 21 -> 31
+  27600, 29100, 30600, 32100, 33600, 35100, 36600, 38100, 39600, 41100,
+  // 31 -> 41
+  42600, 44100, 45600, 47100, 48600, 50100, 51600, 53100, 54600, 56100,
+  // 41 -> 51
+  57600, 59100, 60600, 62100, 63600, 65100, 66600, 68100, 69600, 71100,
+  // 51 -> 55
+  72600, 74100, 75600, 77100,
+];
+
+/** Cumulative XP at the start of each level. `LEVEL_START[0]` is level 1, always 0. */
+const LEVEL_START: readonly number[] = buildCumulative();
+
+/** Total XP needed to reach `MAX_LEVEL`. 2,029,200 on the shipped table. */
+export const XP_TO_MAX = LEVEL_START[LEVEL_START.length - 1] ?? 0;
+
+/**
+ * Prestige (S6.1): at 55 the level and the unlocks reset, the icon persists, and one
+ * permanent unlock token is granted.
+ *
+ * A token permanently unlocks a single item *across resets* — which is what makes it a
+ * choice worth thinking about rather than a currency. `PRESTIGE_MAX` is a bound rather
+ * than a design statement: ten is where the icon vocabulary in `PrestigeIcons` runs out,
+ * and nothing in the save schema cares.
+ */
+export const PRESTIGE_MAX = 10;
+
+/** Tokens granted per prestige. One, deliberately. */
+export const TOKENS_PER_PRESTIGE = 1;
+
+/**
+ * The prestige badge, as a short label.
+ *
+ * Roman numerals rather than generated art: the icon has to read at 11 px in a scoreboard
+ * row next to a name, and a procedural emblem at that size is a smudge.
+ */
+const PRESTIGE_LABELS: readonly string[] = [
+  '',
+  'I',
+  'II',
+  'III',
+  'IV',
+  'V',
+  'VI',
+  'VII',
+  'VIII',
+  'IX',
+  'X',
+];
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** XP required to advance out of `level`. Zero at the cap. */
+export function xpForLevel(level: number): number {
+  if (level >= MAX_LEVEL) return 0;
+  return LEVEL_XP[Math.max(0, level - 1)] ?? 0;
+}
+
+/** Cumulative XP at which `level` begins. */
+export function xpAtLevelStart(level: number): number {
+  const index = Math.min(Math.max(level, 1), MAX_LEVEL) - 1;
+  return LEVEL_START[index] ?? 0;
+}
+
+/**
+ * The level a lifetime XP total puts you at, 1..55.
+ *
+ * Linear scan over 55 entries. It is called on a level-up and by the summary screen, not
+ * in the sim path, and a binary search over a fifty-five element array would be less
+ * readable for no measurable gain.
+ */
+export function levelForXp(totalXp: number): number {
+  const xp = Math.max(0, totalXp);
+  for (let level = MAX_LEVEL; level >= 1; level--) {
+    if (xp >= xpAtLevelStart(level)) return level;
+  }
+  return 1;
+}
+
+export function levelProgress(totalXp: number): LevelProgress {
+  const level = levelForXp(totalXp);
+  const start = xpAtLevelStart(level);
+  const span = xpForLevel(level);
+  const into = Math.max(0, totalXp - start);
+  const atCap = level >= MAX_LEVEL;
+  return {
+    level,
+    into,
+    span,
+    fraction: atCap ? 1 : span > 0 ? Math.min(1, into / span) : 0,
+    atCap,
+  };
+}
+
+/** Whether a profile at this level and prestige may prestige right now. */
+export function canPrestige(level: number, prestige: number): boolean {
+  return level >= MAX_LEVEL && prestige < PRESTIGE_MAX;
+}
+
+export function prestigeLabel(prestige: number): string {
+  return PRESTIGE_LABELS[Math.max(0, Math.min(PRESTIGE_MAX, prestige))] ?? '';
 }
 
 /**
@@ -252,3 +248,17 @@ export function stepLevelBar(
   }
   return { xp: advanced, levelUp: false, done: advanced >= targetXp };
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function buildCumulative(): number[] {
+  const out: number[] = [0];
+  let total = 0;
+  for (const step of LEVEL_XP) {
+    total += step;
+    out.push(total);
+  }
+  return out;
+}
+//#endregion

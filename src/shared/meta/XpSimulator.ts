@@ -1,7 +1,3 @@
-import { levelForXp, MAX_LEVEL, XP_TO_MAX } from './Levels';
-import { unlocksAtLevel } from './Unlocks';
-import { matchMinutes, XP_SOURCES, xpSource } from './XpRules';
-
 /**
  * The XP / unlock simulator (brief S7).
  *
@@ -31,15 +27,15 @@ import { matchMinutes, XP_SOURCES, xpSource } from './XpRules';
  * be measured.
  */
 
-/**
- * How long the average match this projection models runs, minutes.
- *
- * It was a bare `10` inside the milestone loop's hours conversion. `matchTime` needs the same
- * number (round 5, B6), and a projection whose XP-per-match and hours-per-match disagreed about
- * the length of a match would be two models wearing one graph.
- */
-const MINUTES_PER_MATCH = 10;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { levelForXp, MAX_LEVEL, XP_TO_MAX } from './Levels';
+import { unlocksAtLevel } from './Unlocks';
+import { matchMinutes, XP_SOURCES, xpSource, type XpSourceId } from './XpRules';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** One match of "average performance", as counts per XP source. */
 export interface SimulatedMatch {
   kills: number;
@@ -55,25 +51,6 @@ export interface SimulatedMatch {
   /** XP from challenges per match. Front-loaded in reality; flat here, and said so. */
   challengeXp: number;
 }
-
-/**
- * The default profile of an average player, measured against the M4/M5 acceptance runs.
- *
- * A ten-minute TDM to 75 kills with ten combatants gives a competent player roughly 18
- * kills; the rest follow from the M5 bot-aim measurements (about a third of kills are
- * headshots at these multipliers) and from the assist ledger's 8-second window.
- */
-export const AVERAGE_MATCH: SimulatedMatch = {
-  kills: 18,
-  headshots: 5,
-  assists: 6,
-  objectives: 0,
-  longshots: 2,
-  bestStreak: 4,
-  winRate: 0.5,
-  mvpRate: 0.2,
-  challengeXp: 350,
-};
 
 interface SimulatedLevel {
   readonly level: number;
@@ -96,49 +73,90 @@ export interface XpSimulation {
   /** The per-source breakdown of one average match, for the panel's first block. */
   readonly breakdown: ReadonlyArray<Readonly<{ label: string; xp: number }>>;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * How long the average match this projection models runs, minutes.
+ *
+ * It was a bare `10` inside the milestone loop's hours conversion. `matchTime` needs the same
+ * number (round 5, B6), and a projection whose XP-per-match and hours-per-match disagreed about
+ * the length of a match would be two models wearing one graph.
+ */
+const MINUTES_PER_MATCH = 10;
+
+/**
+ * The default profile of an average player, measured against the M4/M5 acceptance runs.
+ *
+ * A ten-minute TDM to 75 kills with ten combatants gives a competent player roughly 18
+ * kills; the rest follow from the M5 bot-aim measurements (about a third of kills are
+ * headshots at these multipliers) and from the assist ledger's 8-second window.
+ */
+export const AVERAGE_MATCH: SimulatedMatch = {
+  kills: 18,
+  headshots: 5,
+  assists: 6,
+  objectives: 0,
+  longshots: 2,
+  bestStreak: 4,
+  winRate: 0.5,
+  mvpRate: 0.2,
+  challengeXp: 350,
+};
+
+/**
+ * What one line of the match is worth, per XP source (A18).
+ *
+ * A table rather than a `switch`, and typed `satisfies Record<XpSourceId, …>` so it is checked
+ * for exhaustiveness: the switch it replaced ended in `default: return 0`, which meant a source
+ * added to `XP_SOURCES` and forgotten here paid **nothing, silently**, in a projection whose
+ * whole job is to answer "is this pacing right". Adding one now fails to compile.
+ *
+ * Three of the fourteen are not simply a count times a value, and each says why on its own line.
+ */
+const MATCH_LINES = {
+  matchComplete: () => xpSource('matchComplete').value,
+  // The ten minutes this whole projection is authored against — see `SimulatedLevel.hours`,
+  // which converts matches to hours at the same rate.
+  matchTime: () => matchMinutes(MINUTES_PER_MATCH * 60) * xpSource('matchTime').value,
+  kill: (match) => match.kills * xpSource('kill').value,
+  headshot: (match) => match.headshots * xpSource('headshot').value,
+  assist: (match) => match.assists * xpSource('assist').value,
+  objective: (match) => match.objectives * xpSource('objective').value,
+  longshot: (match) => match.longshots * xpSource('longshot').value,
+  // Already XP rather than a count, so the table's own value is not a multiplier here.
+  challenge: (match) => match.challengeXp,
+  // Weapon levels arrive in bursts early and stop; averaged to a small constant here rather
+  // than modelled, and flagged in the panel so nobody reads it as exact.
+  weaponLevel: () => xpSource('weaponLevel').value * 0.3,
+  // Expected values, not coin flips: variance would hide the curve the panel exists to show.
+  win: (match) => xpSource('win').value * match.winRate,
+  mvp: (match) => xpSource('mvp').value * match.mvpRate,
+  streak: (match) => match.bestStreak * xpSource('streak').value,
+  /**
+   * Nothing, and the zero is the point.
+   *
+   * `'match'` is the id a **dedicated server** stamps on its own already-labelled breakdown
+   * lines (§6.9); it is deliberately not a row in `XP_SOURCES`, so neither `xpPerMatch` nor the
+   * breakdown — both of which walk that table — ever reaches this entry. It is here because the
+   * union is closed and the table is checked against it, which is what turned the `default:
+   * return 0` this replaced into a line that says so. A projection cannot model a figure only a
+   * server can compute.
+   */
+  match: () => 0,
+} satisfies Record<XpSourceId, (match: SimulatedMatch) => number>;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** XP one match of the given performance is worth. */
 export function xpPerMatch(match: SimulatedMatch): number {
   let total = 0;
   for (const source of XP_SOURCES) {
-    total += matchLineXp(source.id, match);
+    total += MATCH_LINES[source.id](match);
   }
   return Math.round(total);
-}
-
-function matchLineXp(id: string, match: SimulatedMatch): number {
-  switch (id) {
-    case 'matchComplete':
-      return xpSource('matchComplete').value;
-    case 'matchTime':
-      // The ten minutes this whole projection is authored against — see `SimulatedLevel.hours`,
-      // which converts matches to hours at the same rate.
-      return matchMinutes(MINUTES_PER_MATCH * 60) * xpSource('matchTime').value;
-    case 'kill':
-      return match.kills * xpSource('kill').value;
-    case 'headshot':
-      return match.headshots * xpSource('headshot').value;
-    case 'assist':
-      return match.assists * xpSource('assist').value;
-    case 'objective':
-      return match.objectives * xpSource('objective').value;
-    case 'longshot':
-      return match.longshots * xpSource('longshot').value;
-    case 'challenge':
-      return match.challengeXp;
-    case 'weaponLevel':
-      // Weapon levels arrive in bursts early and stop; averaged to a small constant here
-      // rather than modelled, and flagged in the panel so nobody reads it as exact.
-      return xpSource('weaponLevel').value * 0.3;
-    case 'win':
-      return xpSource('win').value * match.winRate;
-    case 'mvp':
-      return xpSource('mvp').value * match.mvpRate;
-    case 'streak':
-      return match.bestStreak * xpSource('streak').value;
-    default:
-      return 0;
-  }
 }
 
 /**
@@ -177,7 +195,7 @@ export function simulateXp(
 
   const breakdown = XP_SOURCES.map((source) => ({
     label: source.label,
-    xp: Math.round(matchLineXp(source.id, match)),
+    xp: Math.round(MATCH_LINES[source.id](match)),
   })).filter((row) => row.xp > 0);
 
   return {
@@ -206,3 +224,4 @@ export function simulationToLines(sim: XpSimulation): string[] {
   }
   return out;
 }
+//#endregion

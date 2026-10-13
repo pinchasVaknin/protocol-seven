@@ -1,6 +1,3 @@
-import type { AttachmentEffects } from '../weapons/Attachments';
-import { perkDef, type PerkId, type PerkStateEffects } from './PerkDefs';
-
 /**
  * A loadout's three perks, resolved.
  *
@@ -21,6 +18,14 @@ import { perkDef, type PerkId, type PerkStateEffects } from './PerkDefs';
  * object; two loadouts holding the same perk cannot interfere.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { AttachmentEffects } from '../weapons/Attachments';
+import { perkDef, type PerkId, type PerkStateEffects } from './PerkDefs';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface PerkState {
   readonly perks: readonly PerkId[];
   /** Ground speed cap multiplier. 1 is the M1 behaviour. */
@@ -40,6 +45,29 @@ export interface PerkState {
   readonly streakDiscount: number;
 }
 
+/**
+ * The accumulator `resolvePerkState` folds into.
+ *
+ * Two of the nine are stored as the perk states them — `ghost`, `coldBlooded` — and inverted on
+ * the way out, because `PerkState` holds the *absence* (`visibleToUav`) while a perk declares
+ * the presence. Keeping the fold in the perk's own vocabulary is what makes `foldPerkEffects`
+ * field-for-field with `PerkStateEffects`.
+ */
+interface PerkFold {
+  moveSpeedMult: number;
+  audibleFootsteps: boolean;
+  flashResistMult: number;
+  scavenger: boolean;
+  tracker: boolean;
+  overkill: boolean;
+  ghost: boolean;
+  coldBlooded: boolean;
+  streakDiscount: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const NO_PERKS: PerkState = {
   perks: [],
   moveSpeedMult: 1,
@@ -52,7 +80,10 @@ export const NO_PERKS: PerkState = {
   targetedByStreaks: true,
   streakDiscount: 0,
 };
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Fold a perk list into one state.
  *
@@ -64,40 +95,20 @@ export const NO_PERKS: PerkState = {
 export function resolvePerkState(ids: readonly PerkId[]): PerkState {
   if (ids.length === 0) return NO_PERKS;
 
-  let moveSpeedMult = 1;
-  let audibleFootsteps = true;
-  let flashResistMult = 1;
-  let scavenger = false;
-  let tracker = false;
-  let overkill = false;
-  let ghost = false;
-  let coldBlooded = false;
-  let streakDiscount = 0;
-
-  for (const id of ids) {
-    const fx: PerkStateEffects = perkDef(id).state;
-    if (fx.moveSpeedMult !== undefined) moveSpeedMult *= fx.moveSpeedMult;
-    if (fx.silentFootsteps === true) audibleFootsteps = false;
-    if (fx.flashResistMult !== undefined) flashResistMult *= fx.flashResistMult;
-    if (fx.scavenger === true) scavenger = true;
-    if (fx.tracker === true) tracker = true;
-    if (fx.overkill === true) overkill = true;
-    if (fx.ghost === true) ghost = true;
-    if (fx.coldBlooded === true) coldBlooded = true;
-    if (fx.streakDiscount !== undefined) streakDiscount += fx.streakDiscount;
-  }
+  const fold = blankFold();
+  for (const id of ids) foldPerkEffects(fold, perkDef(id).state);
 
   return {
     perks: [...ids],
-    moveSpeedMult,
-    audibleFootsteps,
-    flashResistMult,
-    scavenger,
-    tracker,
-    overkill,
-    visibleToUav: !ghost,
-    targetedByStreaks: !coldBlooded,
-    streakDiscount,
+    moveSpeedMult: fold.moveSpeedMult,
+    audibleFootsteps: fold.audibleFootsteps,
+    flashResistMult: fold.flashResistMult,
+    scavenger: fold.scavenger,
+    tracker: fold.tracker,
+    overkill: fold.overkill,
+    visibleToUav: !fold.ghost,
+    targetedByStreaks: !fold.coldBlooded,
+    streakDiscount: fold.streakDiscount,
   };
 }
 
@@ -124,3 +135,40 @@ export function describePerkState(state: PerkState): string {
   if (state.perks.length === 0) return 'none';
   return state.perks.map((id) => perkDef(id).name).join(' · ');
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function blankFold(): PerkFold {
+  return {
+    moveSpeedMult: 1,
+    audibleFootsteps: true,
+    flashResistMult: 1,
+    scavenger: false,
+    tracker: false,
+    overkill: false,
+    ghost: false,
+    coldBlooded: false,
+    streakDiscount: 0,
+  };
+}
+
+/**
+ * Fold one perk's effects in.
+ *
+ * Multipliers compose by multiplication, flags by OR and the discount by addition — a count
+ * rather than a scale. The order is the caller's `ids` order and the arithmetic is left exactly
+ * as it was, because three Lightweights are 1.07 cubed and a reassociated product would not be.
+ */
+function foldPerkEffects(fold: PerkFold, fx: PerkStateEffects): void {
+  if (fx.moveSpeedMult !== undefined) fold.moveSpeedMult *= fx.moveSpeedMult;
+  if (fx.silentFootsteps === true) fold.audibleFootsteps = false;
+  if (fx.flashResistMult !== undefined) fold.flashResistMult *= fx.flashResistMult;
+  if (fx.scavenger === true) fold.scavenger = true;
+  if (fx.tracker === true) fold.tracker = true;
+  if (fx.overkill === true) fold.overkill = true;
+  if (fx.ghost === true) fold.ghost = true;
+  if (fx.coldBlooded === true) fold.coldBlooded = true;
+  if (fx.streakDiscount !== undefined) fold.streakDiscount += fx.streakDiscount;
+}
+//#endregion

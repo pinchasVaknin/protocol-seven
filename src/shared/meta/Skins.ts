@@ -15,9 +15,14 @@
  * 255. `check:skins` holds the folder to both.
  */
 
-export const SKIN_IDS = ['apex', 'echo', 'hazard', 'pulse', 'rhino', 'sentry', 'viper'] as const;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type SkinId = (typeof SKIN_IDS)[number];
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+export const SKIN_IDS = ['apex', 'echo', 'hazard', 'pulse', 'rhino', 'sentry', 'viper'] as const;
 
 /**
  * The skin every player has worn since M13 — the default that preloads at boot, the body the
@@ -31,7 +36,10 @@ export const DEFAULT_SKIN_ID: SkinId = 'echo';
  * a byte that can never be a real index.
  */
 export const NO_SKIN_INDEX = 255;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function isSkinId(id: string): id is SkinId {
   return (SKIN_IDS as readonly string[]).includes(id);
 }
@@ -46,3 +54,4 @@ export function skinIndexOf(id: string): number {
 export function skinIdAt(index: number): SkinId | null {
   return SKIN_IDS[index] ?? null;
 }
+//#endregion

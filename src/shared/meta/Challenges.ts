@@ -1,7 +1,3 @@
-import type { HitZone } from '../combat/HitboxRig';
-import type { WeaponClass } from '../weapons/WeaponDefs';
-import { CAMO_PREREQUISITES, type CamoId } from './Camos';
-
 /**
  * Challenges (brief S6.5): thirty of them, every one driven off the EventBus.
  *
@@ -32,6 +28,16 @@ import { CAMO_PREREQUISITES, type CamoId } from './Camos';
  * nothing else decides what a camo costs.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { HitZone } from '../combat/HitboxRig';
+import type { WeaponClass } from '../weapons/WeaponDefs';
+import { CAMO_PREREQUISITES, type CamoId } from './Camos';
+import { LONGSHOT_METRES } from './XpRules';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type ChallengeId = string;
 
 type ChallengeCategory = 'COMBAT' | 'PRECISION' | 'MOVEMENT' | 'TACTICAL' | 'MASTERY' | 'CAMO';
@@ -96,21 +102,41 @@ export interface ChallengeDef {
   readonly rule: ChallengeRule;
 }
 
+/** The per-weapon counters a camo rule reads. `WeaponSaveData` satisfies it. */
+export type WeaponCamoStats = Readonly<Record<WeaponStatKey, number>>;
+
+/**
+ * What one camo costs on one weapon: which of that weapon's counters, and how much of it.
+ *
+ * The picker needs to print *"18 / 25 KILLS"* under a locked finish (the human's brief §6,
+ * 2026-09-24), and until this function the only thing it could ask for was `CamoDef.requirement`
+ * — authored prose, *"25 kills with the weapon"*, with no way to get the 25 out of it or to
+ * know which counter it meant. Two numbers written twice is two numbers that disagree, and
+ * the sentence and the rule had already drifted once (the TIGER line says "longshot kills",
+ * the rule counts `longshots`, and only one of those is a field).
+ *
+ * So the chip reads the **rule that actually awards the camo** and nothing else. A camo with
+ * no challenge behind it is a camo nothing can award, which is why the throw is a throw.
+ */
+export interface CamoRequirement {
+  /** The counter to read, or null for OBSIDIAN — which counts camos, not kills. */
+  readonly stat: WeaponStatKey | null;
+  readonly target: number;
+  /** What the number is, for the chip. */
+  readonly unit: string;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Seconds inside which consecutive kills count as a multikill. */
 export const MULTIKILL_WINDOW = 5;
 
 /** Seconds after a slide ends during which a kill still counts as a slide kill. */
 export const SLIDE_KILL_GRACE = 1.5;
 
-/** Metres beyond which a kill is a longshot. Mirrors `XpRules.LONGSHOT_METRES`. */
-const LONGSHOT_METRES = 38;
-
 /** Metres inside which a kill is point blank. */
 const POINT_BLANK_METRES = 5;
-
-function killsOfClass(cls: WeaponClass) {
-  return (k: KillFact): boolean => k.weaponClass === cls && !k.equipment;
-}
 
 export const CHALLENGES: readonly ChallengeDef[] = [
   // ---- combat --------------------------------------------------------------
@@ -413,11 +439,21 @@ export const CHALLENGES: readonly ChallengeDef[] = [
   },
 ];
 
-/** The per-weapon counters a camo rule reads. `WeaponSaveData` satisfies it. */
-export type WeaponCamoStats = Readonly<Record<WeaponStatKey, number>>;
-
 const CAMO_RULES = CHALLENGES.filter((c) => c.camo !== undefined);
 
+/** The chip's word for each counter. Plural, because every target is more than one. */
+const STAT_UNITS: Readonly<Record<WeaponStatKey, string>> = {
+  kills: 'KILLS',
+  headshots: 'HEADSHOTS',
+  longshots: 'LONGSHOTS',
+  multikills: 'MULTIKILLS',
+};
+
+const BY_ID = new Map<ChallengeId, ChallengeDef>(CHALLENGES.map((c) => [c.id, c]));
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Which camos one weapon's own record has earned, in the order the camos are declared.
  *
@@ -428,49 +464,11 @@ const CAMO_RULES = CHALLENGES.filter((c) => c.camo !== undefined);
  */
 export function camosEarnedBy(stats: WeaponCamoStats): CamoId[] {
   const earned = new Set<CamoId>();
-  for (const def of CAMO_RULES) {
-    if (def.rule.kind !== 'weaponBest' || def.camo === undefined) continue;
-    if (stats[def.rule.stat] >= def.target) earned.add(def.camo);
-  }
-  for (const def of CAMO_RULES) {
-    if (def.rule.kind !== 'camoSet' || def.camo === undefined) continue;
-    let count = 0;
-    for (const id of def.rule.camos) {
-      if (earned.has(id)) count++;
-    }
-    if (count >= def.target) earned.add(def.camo);
-  }
+  addCountedCamos(stats, earned);
+  addCamoSetCamos(earned);
+  // In the order the rules declare them, which is the `Set`'s insertion order.
   return [...earned];
 }
-
-/**
- * What one camo costs on one weapon: which of that weapon's counters, and how much of it.
- *
- * The picker needs to print *"18 / 25 KILLS"* under a locked finish (the human's brief §6,
- * 2026-09-24), and until this function the only thing it could ask for was `CamoDef.requirement`
- * — authored prose, *"25 kills with the weapon"*, with no way to get the 25 out of it or to
- * know which counter it meant. Two numbers written twice is two numbers that disagree, and
- * the sentence and the rule had already drifted once (the TIGER line says "longshot kills",
- * the rule counts `longshots`, and only one of those is a field).
- *
- * So the chip reads the **rule that actually awards the camo** and nothing else. A camo with
- * no challenge behind it is a camo nothing can award, which is why the throw is a throw.
- */
-export interface CamoRequirement {
-  /** The counter to read, or null for OBSIDIAN — which counts camos, not kills. */
-  readonly stat: WeaponStatKey | null;
-  readonly target: number;
-  /** What the number is, for the chip. */
-  readonly unit: string;
-}
-
-/** The chip's word for each counter. Plural, because every target is more than one. */
-const STAT_UNITS: Readonly<Record<WeaponStatKey, string>> = {
-  kills: 'KILLS',
-  headshots: 'HEADSHOTS',
-  longshots: 'LONGSHOTS',
-  multikills: 'MULTIKILLS',
-};
 
 export function camoRequirementOf(id: CamoId): CamoRequirement {
   for (const def of CAMO_RULES) {
@@ -483,9 +481,40 @@ export function camoRequirementOf(id: CamoId): CamoRequirement {
   throw new Error(`Camo "${id}" has no challenge that awards it.`);
 }
 
-const BY_ID = new Map<ChallengeId, ChallengeDef>(CHALLENGES.map((c) => [c.id, c]));
-
 export function challengeDef(id: ChallengeId): ChallengeDef | undefined {
   return BY_ID.get(id);
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function killsOfClass(cls: WeaponClass) {
+  return (k: KillFact): boolean => k.weaponClass === cls && !k.equipment;
+}
+
+/** The first pass: every camo this weapon's own counters have reached outright. */
+function addCountedCamos(stats: WeaponCamoStats, earned: Set<CamoId>): void {
+  for (const def of CAMO_RULES) {
+    if (def.rule.kind !== 'weaponBest' || def.camo === undefined) continue;
+    if (stats[def.rule.stat] >= def.target) earned.add(def.camo);
+  }
+}
+
+/**
+ * The second pass: every camo earned by *holding* other camos.
+ *
+ * Reads only what the first pass put in, which is what keeps OBSIDIAN a fact about this weapon
+ * — a gun with a hundred kills and no headshots does not inherit an obsidian finish from the
+ * one that has them.
+ */
+function addCamoSetCamos(earned: Set<CamoId>): void {
+  for (const def of CAMO_RULES) {
+    if (def.rule.kind !== 'camoSet' || def.camo === undefined) continue;
+    let count = 0;
+    for (const id of def.rule.camos) {
+      if (earned.has(id)) count++;
+    }
+    if (count >= def.target) earned.add(def.camo);
+  }
+}
+//#endregion

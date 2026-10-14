@@ -298,6 +298,16 @@ const FINISHED = {
     'src/shared/net/UrlFlags.ts',
     'src/shared/net/DisplayText.ts',
   ],
+  A21: [
+    'src/shared/net/Messages.ts',
+    'src/shared/net/MessageFrame.ts',
+    'src/shared/net/MessageEvents.ts',
+    'src/shared/net/MessageLoadout.ts',
+    'src/shared/net/MessageSeat.ts',
+    'src/shared/net/MessageMatchFlow.ts',
+    'src/shared/net/MessageModeState.ts',
+    'src/shared/net/MessageSnapshot.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

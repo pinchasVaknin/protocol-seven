@@ -10,7 +10,7 @@ usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects h
 measurement nobody has taken yet.
 
 **28 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14 and **#30 and #31 by A20** on the same day. Three numbers are gone and
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14 and **#30 and #31 by A20** on the same day; **A21 opened none**. Three numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12.
 
@@ -38,7 +38,8 @@ and belong in its Step 2 plan.
 | ~~A18~~ | `shared/perks/`, `shared/meta/` Camos, Challenges, ChallengeTracker, FieldUpgrades, Levels, XpRules, XpSimulator, Skins | **closed** — A18 read the whole list and nothing was bound to its twelve files; it opened none, and merged `LONGSHOT_METRES`'s in-unit duplicate itself |
 | ~~A19~~ | `shared/meta/` SaveData, Unlocks, LoadoutRules, Loadouts, MatchLedger, MatchProgression, ProgressionStore | **closed** — nothing was bound to its seven files; A19 opened #29 |
 | ~~A20~~ | `shared/net/` Wire, Protocol, Snapshot, UrlFlags, DisplayText | **declined with a reason** — #1 owns no A20 file: the edit is in `MathUtil.ts` (A1) and both call sites are A23 (`Interpolation`) and A12 (`ai/Bot`). A20 opened #30 and #31 |
-| A21–A23 | `shared/net/` | #1 (`Interpolation` is a caller of `shortestAngle`) |
+| ~~A21~~ | `shared/net/Messages.ts` + the seven files it was split into | **declined with a reason** — `Messages.ts` calls neither angle helper, so #1 has no edit to make here. A21 opened none |
+| A23 | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | #1 (`Interpolation` is the one remaining caller of `shortestAngle`) |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local `angleDelta` copy) |
 | C6 | `client/weapons/ViewmodelAnim.ts` | #1 (caller of `angleDelta`) |

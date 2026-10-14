@@ -308,6 +308,10 @@ const FINISHED = {
     'src/shared/net/MessageModeState.ts',
     'src/shared/net/MessageSnapshot.ts',
   ],
+  A22: [
+    'src/shared/net/NetClient.ts',
+    'src/shared/net/CommandPipeline.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

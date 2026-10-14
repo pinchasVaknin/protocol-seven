@@ -9,8 +9,8 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**28 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14 and **#30 and #31 by A20** on the same day; **A21 opened none**. Three numbers are gone and
+**29 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14. Three numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12.
 
@@ -39,6 +39,7 @@ and belong in its Step 2 plan.
 | ~~A19~~ | `shared/meta/` SaveData, Unlocks, LoadoutRules, Loadouts, MatchLedger, MatchProgression, ProgressionStore | **closed** — nothing was bound to its seven files; A19 opened #29 |
 | ~~A20~~ | `shared/net/` Wire, Protocol, Snapshot, UrlFlags, DisplayText | **declined with a reason** — #1 owns no A20 file: the edit is in `MathUtil.ts` (A1) and both call sites are A23 (`Interpolation`) and A12 (`ai/Bot`). A20 opened #30 and #31 |
 | ~~A21~~ | `shared/net/Messages.ts` + the seven files it was split into | **declined with a reason** — `Messages.ts` calls neither angle helper, so #1 has no edit to make here. A21 opened none |
+| ~~A22~~ | `shared/net/NetClient.ts` + `CommandPipeline.ts` | **closed** — nothing was bound to it; A22 opened #32 |
 | A23 | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | #1 (`Interpolation` is the one remaining caller of `shortestAngle`) |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local `angleDelta` copy) |
@@ -802,6 +803,27 @@ the suffix is stripped before the cap, which is the fix round 5 made.
 
 **Verify** `npm run check` + SIM + NET. `UrlFlags.test.ts` (A20) pins both halves of the suffix
 convention, including the eighteen-character callsign that the old ordering silently ignored.
+
+### #32 — Three comments still name `NetClient.neutralise` · `open` *(opened 2026-10-14 by A22)*
+
+**Files** `src/server/debug/HeadlessClient.ts`, lines 345, 913 and 2091. **Origin** A22.
+
+A22 moved `neutralise` out of `NetClient` and into the new `CommandPipeline`, where the rest of
+the command-shaping lives. Three comments in `HeadlessClient.ts` refer to it by its old home —
+*"the bit as it survived `NetClient.neutralise`"*, *"`neutralise` zeroing `Btn.Scoreboard`"*, and
+*"`NetClient.neutralise` — so holding it changes no prediction, no hit and no score"*. They
+describe the rule correctly; only the owner's name has moved.
+
+Nothing is broken: these are prose, not calls, and the B6 behaviour they document is pinned by
+`NetClient.test.ts` (*"strips movement and actions while input is frozen, and keeps the view"*)
+and by `CommandPipeline.neutralise`'s own JSDoc, which keeps the whole B6 paragraph.
+
+**Why A22 could not do it.** `src/server/debug/` is out of scope for the whole refactor
+programme (REFACTOR-PROMPT.md §10: the debug folders and the harnesses are the instruments), so
+the unit that caused the drift is the one unit not allowed to fix it.
+
+**The work**: change `NetClient.neutralise` to `CommandPipeline.neutralise` in those three
+comments. No behaviour, no test, no oracle — `npm run check` is enough.
 
 ### The missing item
 The chat list was counted as 24 and this file received 22 of them. Neither #19 (folded into #2) nor

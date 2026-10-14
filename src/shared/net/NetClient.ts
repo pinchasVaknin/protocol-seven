@@ -1,55 +1,3 @@
-import { nowMs } from '../core/Clock';
-import type { ReplicatedScoreRow } from '../combat/ScoreSystem';
-import { Btn, copyCommand, type InputCommand, type MutableInputCommand } from '../core/InputCommand';
-import { DT } from '../core/Loop';
-import { logger } from '../core/Log';
-import { withRewindSuffix } from './UrlFlags';
-import type { PlayerController } from '../player/PlayerController';
-import { makePlayerSimState, type PlayerSimState } from '../player/PlayerState';
-import { ClockSync } from './ClockSync';
-import { EntityInterpolator } from './Interpolation';
-import {
-  decodeHeader,
-  makeSnapshotHeader,
-  readEntity,
-  readEvents,
-  readOwnerState,
-  readSnapshotHeader,
-  readSnapshotOwnerPresent,
-  writeBye,
-  writeCheatRequest,
-  writeCommands,
-  writeHello,
-  writeLoadout,
-  writePing,
-  writeReady,
-  writeStreakRequest,
-  writeVote,
-  SFlag,
-  type EventSink,
-  type SnapshotHeader,
-  type SummaryInfo,
-  type VoteInfo,
-  type WelcomeInfo,
-} from './Messages';
-import { CHEAT_SIMULATION } from '../cheats/Cheats';
-import { Prediction } from './Prediction';
-import type {
-  NetLoadout,
-  ObjectiveState,
-  ProjectileState,
-  SmokeState,
-  StreakView,
-} from './Skirmish';
-import type { BombInfo, TagInfo } from '../modes/GameMode';
-import { COMMAND_REDUNDANCY, quantiseCommandInPlace, rejectText } from './Protocol';
-import { copyEntitySnapshot, EFlag, makeEntitySnapshot, type EntitySnapshot } from './Snapshot';
-import { NO_SKIN_INDEX } from '../meta/Skins';
-import type { INetLink } from './Transport';
-import { ByteReader, ByteWriter } from './Wire';
-
-const log = logger('netclient');
-
 /**
  * The client half of the protocol (M10).
  *
@@ -79,6 +27,62 @@ const log = logger('netclient');
  * server has already simulated.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { nowMs } from '../core/Clock';
+import type { ReplicatedScoreRow } from '../combat/ScoreSystem';
+import type { InputCommand } from '../core/InputCommand';
+import { DT } from '../core/Loop';
+import { logger } from '../core/Log';
+import { withRewindSuffix } from './UrlFlags';
+import type { PlayerController } from '../player/PlayerController';
+import { makePlayerSimState, type PlayerSimState } from '../player/PlayerState';
+import { ClockSync } from './ClockSync';
+import { EntityInterpolator } from './Interpolation';
+import {
+  decodeHeader,
+  makeSnapshotHeader,
+  readEntity,
+  readEvents,
+  readOwnerState,
+  readSnapshotHeader,
+  readSnapshotOwnerPresent,
+  writeBye,
+  writeCheatRequest,
+  writeHello,
+  writeLoadout,
+  writePing,
+  writeReady,
+  writeStreakRequest,
+  writeVote,
+  SFlag,
+  type Decoded,
+  type EventSink,
+  type SnapshotHeader,
+  type SummaryInfo,
+  type VoteInfo,
+  type WelcomeInfo,
+} from './Messages';
+import { CHEAT_SIMULATION } from '../cheats/Cheats';
+import { Prediction } from './Prediction';
+import type {
+  NetLoadout,
+  ObjectiveState,
+  ProjectileState,
+  SmokeState,
+  StreakView,
+} from './Skirmish';
+import type { BombInfo, TagInfo } from '../modes/GameMode';
+import { rejectText } from './Protocol';
+import { CommandPipeline } from './CommandPipeline';
+import { copyEntitySnapshot, EFlag, makeEntitySnapshot, type EntitySnapshot } from './Snapshot';
+import { NO_SKIN_INDEX } from '../meta/Skins';
+import type { INetLink } from './Transport';
+import { ByteReader, ByteWriter } from './Wire';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type NetClientState =
   | 'idle'
   | 'connecting'
@@ -240,6 +244,11 @@ export interface NetClientStats {
   resyncs: number;
   catchUps: number;
 }
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('netclient');
 
 /** Ping cadence. Four a second is plenty to track a link and costs 13 bytes each. */
 const PING_INTERVAL_MS = 250;
@@ -261,19 +270,29 @@ const MAX_STEPS_PER_FRAME = 5;
  * intact; over it the client is a backgrounded tab or a real freeze, and jumping is still right.
  */
 const RESYNC_TICKS = 20;
+//#endregion
 
+// ====================================== CLASS NetClient ======================================= \\
+//#region Class NetClient
 export class NetClient {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   state: NetClientState = 'idle';
 
   /** Entity id the server assigned. -1 until the welcome arrives. */
   entityId = -1;
+
   team: 'A' | 'B' = 'A';
+
   mapId = '';
+
   modeId = '';
+
   /** Why the connection ended, if it did. Shown to the player rather than swallowed. */
   closeReason = '';
 
   readonly clock = new ClockSync();
+
   readonly prediction = new Prediction();
 
   /** Remote entities by id, each with its own interpolation buffer (S4.12). */
@@ -334,20 +353,6 @@ export class NetClient {
    */
   private awaitingFirstAuthoritativePose = true;
 
-  /**
-   * Seated, and told where we are (playtest round 4, F8).
-   *
-   * *"Joined"* is only half of it: between the seat assignment and the first owner block the
-   * client has an entity id and a controller sitting wherever the last world left it. That gap
-   * is what a reconnect has to wait out before it can claim to be back, and it is the honest
-   * definition of *"the first synchronised frame"* the reconnect probe measures against.
-   *
-   * A pure read of two fields rather than a third copy of the same fact.
-   */
-  get synchronised(): boolean {
-    return this.state === 'joined' && !this.awaitingFirstAuthoritativePose;
-  }
-
   readonly stats: NetClientStats = {
     rttMs: 0,
     jitterMs: 0,
@@ -384,30 +389,31 @@ export class NetClient {
    * this client was *built* with, and this field is what it is *using*.
    */
   private controller: PlayerController;
+
   private readonly reader = new ByteReader(new Uint8Array(0));
+
   private readonly writer = new ByteWriter(1024);
+
   private readonly owner: PlayerSimState = makePlayerSimState();
+
   private readonly entityScratch: EntitySnapshot = makeEntitySnapshot();
 
   /**
-   * The newest commands, oldest first, resent every tick for redundancy against loss.
+   * The outgoing command stream: suppression, wire rounding and the redundant batch (A22).
    *
-   * S6.2 requires commands to survive a dropped packet, and at thirteen bytes each the
-   * cheapest way to do that is to keep sending the last sixteen. A single lost frame then
-   * costs nothing at all, and no acknowledgement protocol is needed for the one message type
-   * where a retransmit would arrive too late to be worth anything.
+   * Takes this client's own writer, so there is still one encode buffer per connection.
    */
-  private readonly pending: MutableInputCommand[] = [];
+  private readonly commands = new CommandPipeline(this.writer);
 
   private lastPingMs = 0;
+
   private pingId = 1;
+
   private readonly pingSentAt = new Map<number, number>();
 
   private lastSnapshotId = 0;
-  private ackSnapshot = 0;
 
-  /** Neutralised command scratch. See `neutralise`. */
-  private readonly neutral: MutableInputCommand = blank();
+  private ackSnapshot = 0;
 
   /**
    * Whether this client's own entity is alive, from the snapshot.
@@ -416,11 +422,6 @@ export class NetClient {
    * commands are not applied by the server.
    */
   localAlive = true;
-
-  /** See `ownSpawnSerial`. `-1` until our own entity has been seen at all. */
-  get localSpawnSerial(): number {
-    return this.ownSpawnSerial;
-  }
 
   /**
    * This seat's cheat entitlements, as the server last stated them (playtest round 4, F14).
@@ -445,6 +446,7 @@ export class NetClient {
 
   /** Set when this client's own entity reports a new spawn serial. */
   private respawned = false;
+
   /**
    * The spawn serial last seen for our own entity — **the client's whole knowledge of a new
    * life** (playtest round 4, B3).
@@ -462,18 +464,53 @@ export class NetClient {
    * simply does not happen. `NetPlayer.spawn` bumps this on every one of them.
    */
   private ownSpawnSerial = -1;
+
   private snapshotBytesTotal = 0;
 
   private rateWindowMs = 0;
+
   private rateSnapshots = 0;
+
   private rateBytesIn = 0;
+
   private rateBytesOut = 0;
 
+  private lostAtWindowStart = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: NetClientDeps) {
     this.deps = deps;
     this.controller = deps.controller;
-    for (let i = 0; i < COMMAND_REDUNDANCY; i++) this.pending.push(blank());
   }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  /**
+   * Seated, and told where we are (playtest round 4, F8).
+   *
+   * *"Joined"* is only half of it: between the seat assignment and the first owner block the
+   * client has an entity id and a controller sitting wherever the last world left it. That gap
+   * is what a reconnect has to wait out before it can claim to be back, and it is the honest
+   * definition of *"the first synchronised frame"* the reconnect probe measures against.
+   *
+   * A pure read of two fields rather than a third copy of the same fact.
+   */
+  get synchronised(): boolean {
+    return this.state === 'joined' && !this.awaitingFirstAuthoritativePose;
+  }
+
+  /** See `ownSpawnSerial`. `-1` until our own entity has been seen at all. */
+  get localSpawnSerial(): number {
+    return this.ownSpawnSerial;
+  }
+
+  get tick(): number {
+    return this.currentTick;
+  }
+
 
   /**
    * Replace the predicted controller after a migration to a different map (M11, §4.18).
@@ -555,7 +592,6 @@ export class NetClient {
     this.onWelcome(welcome, receivedAtMs, reconnectToken);
   }
 
-  // -- M11: the skirmish messages ---------------------------------------------
 
   /**
    * Send the player's class (Tier 1 #20).
@@ -662,12 +698,6 @@ export class NetClient {
     return this.clock.serverTickFractional() * DT * 1000 - interpolationDelayMs;
   }
 
-  get tick(): number {
-    return this.currentTick;
-  }
-
-  // -- receive ----------------------------------------------------------------
-
   /**
    * Apply frames the handshake drained before this client existed.
    *
@@ -679,98 +709,144 @@ export class NetClient {
     for (const bytes of frames) this.handleFrame(bytes);
   }
 
+  /** The `Welcome`'s payload, for a caller that needs to build a world from it. */
+  matchInfo(): WelcomeInfo {
+    return {
+      entityId: this.entityId,
+      team: this.team,
+      mapId: this.mapId,
+      modeId: this.modeId,
+      serverTick: this.stats.serverTick,
+      serverMs: 0,
+      snapshotHz: 0,
+      matchId: this.matchId,
+      effectiveTick: this.effectiveTick,
+      migrated: this.migrations > 0,
+    };
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private receive(): void {
     this.deps.link.poll((bytes) => this.handleFrame(bytes));
   }
 
+  /**
+   * Route one decoded frame.
+   *
+   * Two groups, and the split is the same one the message files are organised by: frames about
+   * **the match** that this client mostly passes on to the layer above, and frames about **this
+   * seat** that change what this client is. A frame in neither group is a version skew the
+   * handshake should have caught.
+   */
   private handleFrame(bytes: Uint8Array): void {
     this.rateBytesIn += bytes.length;
     this.reader.reuse(bytes);
     const msg = decodeHeader(this.reader);
+    if (this.handleMatchFrame(msg)) return;
+    if (this.handleSeatFrame(msg, bytes.length)) return;
+    // A frame this client cannot parse. The server is the trusted end here, so this is
+    // a version skew the handshake should have caught — say so rather than ignoring it.
+    log.warn('undecodable frame from server; ignoring.');
+  }
 
+  /**
+   * The match's own frames. True when this one was handled.
+   *
+   * Almost all of these are handed straight to `deps.skirmish` and nothing here reads them:
+   * the client renders what the server decided and computes no tally, no board and no fuse.
+   */
+  private handleMatchFrame(msg: Decoded): boolean {
     switch (msg.kind) {
-      case 'welcome':
-        this.onWelcome(msg, nowMs(), msg.reconnectToken);
-        return;
-      case 'migrate':
-        // Same handler, and that is the point: a migration and a join say the same thing
-        // about this seat, so there is one path that resets prediction and interpolation
-        // rather than two that must be kept in step. See `onWelcome`.
-        this.onWelcome(msg, nowMs(), msg.reconnectToken);
-        this.deps.skirmish?.onMigrated?.(this.matchInfo());
-        return;
       case 'voteState':
         this.deps.skirmish?.onVoteState?.(msg);
-        return;
+        return true;
       case 'prepare':
         // Logged because it is the starting gun for the background build (§6.5), it happens
         // once a cycle, and "did the client ever hear about the map" is the first question
         // when a transition hitches.
         log.info(`prepare: match ${msg.matchId} on ${msg.mapId} (${msg.modeId}).`);
         this.deps.skirmish?.onPrepare?.(msg.matchId, msg.mapId, msg.modeId);
-        return;
+        return true;
       case 'summary':
         this.deps.skirmish?.onSummary?.(msg);
-        return;
+        return true;
       case 'notice':
         this.deps.skirmish?.onNotice?.(msg.text);
-        return;
+        return true;
       case 'cheats':
         // The mask is applied here as well as from the snapshot, so the pause screen can say
         // what happened without waiting for a snapshot tick. Same masking, same reason.
         this.cheatMask = msg.mask & CHEAT_SIMULATION;
         this.deps.skirmish?.onCheats?.(msg.outcome, this.cheatMask);
-        return;
+        return true;
       case 'objectives':
         this.deps.skirmish?.onObjectives?.(msg.states);
-        return;
+        return true;
       case 'tags':
         this.deps.skirmish?.onTags?.(msg.tags);
-        return;
+        return true;
       case 'bomb':
         this.deps.skirmish?.onBomb?.(msg.bomb);
-        return;
+        return true;
       case 'streaks':
         this.deps.skirmish?.onStreaks?.(msg.view);
-        return;
+        return true;
       case 'scoreboard':
         // Jitter reorders frames. A board is a set of counters that only ever grow, so an
         // older frame applied after a newer one would move every column backwards for a tick.
-        if (msg.serial < this.scoreboardSerial) return;
+        if (msg.serial < this.scoreboardSerial) return true;
         this.scoreboardSerial = msg.serial;
         this.deps.skirmish?.onScoreboard?.(msg.rows);
-        return;
+        return true;
       case 'projectiles':
         this.deps.skirmish?.onProjectiles?.(msg.projectiles, msg.smoke);
-        return;
+        return true;
       case 'stateHash':
         this.deps.skirmish?.onStateHash?.(msg.tick, msg.hash, msg.sections);
-        return;
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /** This seat's own frames: who we are, what the world is doing, and how the link is. */
+  private handleSeatFrame(msg: Decoded, byteLength: number): boolean {
+    switch (msg.kind) {
+      case 'welcome':
+        this.onWelcome(msg, nowMs(), msg.reconnectToken);
+        return true;
+      case 'migrate':
+        // Same handler, and that is the point: a migration and a join say the same thing
+        // about this seat, so there is one path that resets prediction and interpolation
+        // rather than two that must be kept in step. See `onWelcome`.
+        this.onWelcome(msg, nowMs(), msg.reconnectToken);
+        this.deps.skirmish?.onMigrated?.(this.matchInfo());
+        return true;
       case 'reject':
         this.state = 'rejected';
         this.closeReason = rejectText(msg.code);
         log.error(`server refused the connection: ${this.closeReason}`);
         this.deps.link.close('rejected');
-        return;
+        return true;
       case 'pong':
         this.onPong(msg.id, msg.clientMs, msg.serverMs, msg.serverTick);
-        return;
+        return true;
       case 'snapshot':
-        this.onSnapshot(bytes.length);
-        return;
+        this.onSnapshot(byteLength);
+        return true;
       case 'events':
         if (this.deps.events !== undefined) readEvents(this.reader, msg.count, this.deps.events);
-        return;
+        return true;
       case 'bye':
         this.state = 'disconnected';
         this.closeReason = msg.reason;
         log.info(`server closed the connection: ${msg.reason}`);
         this.deps.link.close('server bye');
-        return;
+        return true;
       default:
-        // A frame this client cannot parse. The server is the trusted end here, so this is
-        // a version skew the handshake should have caught — say so rather than ignoring it.
-        log.warn('undecodable frame from server; ignoring.');
+        return false;
     }
   }
 
@@ -848,7 +924,7 @@ export class NetClient {
     this.cheatMask = 0;
     // The board belongs to the instance too: the next one's serials start over.
     this.scoreboardSerial = 0;
-    for (const cmd of this.pending) blankInto(cmd);
+    this.commands.clear();
 
     /**
      * Seed the clock from the welcome, as a *guess* rather than as a sample.
@@ -876,36 +952,47 @@ export class NetClient {
     if (rejoin && !info.migrated) this.deps.onNewMatch?.(this.matchInfo());
   }
 
-  /** The `Welcome`'s payload, for a caller that needs to build a world from it. */
-  matchInfo(): WelcomeInfo {
-    return {
-      entityId: this.entityId,
-      team: this.team,
-      mapId: this.mapId,
-      modeId: this.modeId,
-      serverTick: this.stats.serverTick,
-      serverMs: 0,
-      snapshotHz: 0,
-      matchId: this.matchId,
-      effectiveTick: this.effectiveTick,
-      migrated: this.migrations > 0,
-    };
-  }
-
   private onPong(id: number, clientMs: number, serverMs: number, serverTick: number): void {
     const sentAt = this.pingSentAt.get(id) ?? clientMs;
     this.pingSentAt.delete(id);
     this.clock.sample(sentAt, nowMs(), serverMs, serverTick);
   }
 
+  /**
+   * Apply one snapshot, in the order the frame lays it out.
+   *
+   * The owner block is *decoded* where it sits and *applied* last, because the entity list is
+   * what carries this client's own spawn serial — a respawn has to be recognised before the
+   * state it produced is reconciled against.
+   */
   private onSnapshot(byteLength: number): void {
+    if (!this.readSnapshotHead(byteLength)) return;
+
+    const hasOwner = readSnapshotOwnerPresent(this.reader);
+    if (hasOwner) readOwnerState(this.reader, this.owner);
+    // F14: after the optional state and always present, so a player who switches free cam on
+    // while dead — when there is no owner block at all — is still told.
+    const mask = this.reader.u8v();
+    if (this.reader.overran) return;
+    this.cheatMask = mask & CHEAT_SIMULATION;
+
+    this.dropRemovedEntities();
+    if (!this.readEntityDeltas()) return;
+    if (hasOwner) this.applyOwnerState();
+  }
+
+  /**
+   * The header, the ack and the instrumentation. False when the frame was truncated.
+   *
+   * Snapshot ids are 16-bit and wrap. A gap means snapshots were lost in flight, which is the
+   * client's only direct measure of downstream packet loss.
+   */
+  private readSnapshotHead(byteLength: number): boolean {
     readSnapshotHeader(this.reader, this.header);
     // Latched here rather than polled by a caller. See `sawMatchOver`.
     if ((this.header.flags & SFlag.MatchOver) !== 0) this.sawMatchOver = true;
-    if (this.reader.overran) return;
+    if (this.reader.overran) return false;
 
-    // Ids are 16-bit and wrap. A gap means snapshots were lost in flight, which is the
-    // client's only direct measure of downstream packet loss.
     if (this.lastSnapshotId !== 0) {
       const gap = (this.header.snapshotId - this.lastSnapshotId) & 0xffff;
       if (gap > 1 && gap < 0x8000) this.stats.snapshotsLost += gap - 1;
@@ -917,20 +1004,11 @@ export class NetClient {
     this.stats.lastSnapshotBytes = byteLength;
     this.snapshotBytesTotal += byteLength;
     this.rateSnapshots++;
+    return true;
+  }
 
-    // ---- the owner block ----------------------------------------------------
-    // Decoded here because that is where it sits in the frame, but *applied* after the
-    // entities below — the entity list is what carries this client's own spawn serial, and
-    // a respawn has to be recognised before the state it produced is reconciled against.
-    const hasOwner = readSnapshotOwnerPresent(this.reader);
-    if (hasOwner) readOwnerState(this.reader, this.owner);
-    // F14: after the optional state and always present, so a player who switches free cam on
-    // while dead — when there is no owner block at all — is still told.
-    const mask = this.reader.u8v();
-    if (this.reader.overran) return;
-    this.cheatMask = mask & CHEAT_SIMULATION;
-
-    // ---- removals ------------------------------------------------------------
+  /** Forget the bodies the server says are gone. */
+  private dropRemovedEntities(): void {
     const removedCount = this.reader.u8v();
     for (let i = 0; i < removedCount; i++) {
       const id = this.reader.u8v();
@@ -940,16 +1018,21 @@ export class NetClient {
       // the map on every join.
       this.remotes.delete(id);
     }
+  }
 
-    // ---- entities ------------------------------------------------------------
+  /**
+   * Every entity delta in the frame, into its own interpolation buffer. False when truncated.
+   *
+   * The id is peeked so the delta is decoded *into this entity's own baseline*, which is the
+   * contract `readEntity` documents: an absent field means unchanged, so decoding into a
+   * blank record would put an unchanged entity at the origin.
+   */
+  private readEntityDeltas(): boolean {
     const count = this.reader.u8v();
     const serverMs = this.headerServerMs();
     for (let i = 0; i < count; i++) {
-      // Peek the id so the delta is decoded *into this entity's own baseline*, which is the
-      // contract `readEntity` documents: an absent field means unchanged, so decoding into a
-      // blank record would put an unchanged entity at the origin.
       const id = this.reader.peekU8();
-      if (this.reader.overran) return;
+      if (this.reader.overran) return false;
 
       let interp = this.remotes.get(id);
       if (interp === undefined) {
@@ -959,7 +1042,7 @@ export class NetClient {
       const wasDormant = interp.sampleCount > 0 && (interp.latest.flags & EFlag.Dormant) !== 0;
       copyEntitySnapshot(interp.latest, this.entityScratch);
       readEntity(this.reader, this.entityScratch);
-      if (this.reader.overran) return;
+      if (this.reader.overran) return false;
 
       /**
        * A body this client could not see has just come into view (protocol 28): start its
@@ -969,25 +1052,37 @@ export class NetClient {
        */
       if (wasDormant && (this.entityScratch.flags & EFlag.Dormant) === 0) interp.reset();
 
-      // Our own entity's spawn serial is how the client learns it has been put somewhere new.
-      // Read before `push` so the flag is set for the *next* owner block, which is the one
-      // carrying the post-spawn state.
-      if (id === this.entityId) {
-        // The first sighting of our own entity counts as a spawn too. The client's controller
-        // is sitting at the origin until the server says otherwise, and treating that as a
-        // failed prediction would charge the join itself as a misprediction — a 30 m one, the
-        // width of the map.
-        if (this.entityScratch.spawnSerial !== this.ownSpawnSerial) this.respawned = true;
-        this.ownSpawnSerial = this.entityScratch.spawnSerial;
-        this.localAlive = (this.entityScratch.flags & EFlag.Alive) !== 0;
-      }
+      if (id === this.entityId) this.noteOwnEntity();
 
       interp.push(this.entityScratch, serverMs);
     }
+    return true;
+  }
 
-    // ---- now apply the owner block -------------------------------------------
-    if (!hasOwner) return;
+  /**
+   * What this client learns from its own body in the entity list.
+   *
+   * Read before the sample is pushed, so the flag is set for the *next* owner block, which is
+   * the one carrying the post-spawn state.
+   *
+   * The first sighting of our own entity counts as a spawn too. The client's controller is
+   * sitting at the origin until the server says otherwise, and treating that as a failed
+   * prediction would charge the join itself as a misprediction — a 30 m one, the width of the
+   * map.
+   */
+  private noteOwnEntity(): void {
+    if (this.entityScratch.spawnSerial !== this.ownSpawnSerial) this.respawned = true;
+    this.ownSpawnSerial = this.entityScratch.spawnSerial;
+    this.localAlive = (this.entityScratch.flags & EFlag.Alive) !== 0;
+  }
 
+  /**
+   * Reconcile the predicted player against the authoritative one — or adopt it outright.
+   *
+   * Three cases, and the two exemptions are the difference between S8.4's "zero
+   * mispredictions" being a target and being unreachable by construction.
+   */
+  private applyOwnerState(): void {
     if (this.awaitingFirstAuthoritativePose) {
       /**
        * Nothing to be wrong about yet (M11, §4.18).
@@ -1051,8 +1146,6 @@ export class NetClient {
     this.prediction.reconcile(this.header.ackSeq, this.owner, this.controller);
   }
 
-  // -- simulate ---------------------------------------------------------------
-
   /**
    * Advance to the tick the clock says we should be on.
    *
@@ -1081,12 +1174,12 @@ export class NetClient {
 
     let steps = 0;
     while (this.currentTick < target && steps < MAX_STEPS_PER_FRAME) {
-      const cmd = this.neutralise(this.deps.sample(this.currentTick));
+      const cmd = this.commands.neutralise(this.deps.sample(this.currentTick), this.inputSuppressed());
       this.controller.weaponSpeedScale = this.deps.moveScale?.(cmd) ?? 1;
       this.controller.step(cmd);
       this.deps.applyNonReplayed?.(cmd);
       this.prediction.record(cmd, this.controller);
-      this.queue(cmd);
+      this.commands.queue(cmd);
       this.currentTick++;
       steps++;
     }
@@ -1096,7 +1189,7 @@ export class NetClient {
   }
 
   /**
-   * Apply the server's own input rules to a sampled command, before predicting with it.
+   * Whether the server will consume this tick's command at all.
    *
    * The client must neutralise a command in **exactly** the cases the server does, or it
    * predicts motion the server never applies and corrects itself out of it a moment later.
@@ -1104,71 +1197,21 @@ export class NetClient {
    *
    * - **Frozen** (`SFlag.InputFrozen`): the pre-match countdown and the post-round pause.
    *   `ServerMatch.stepPlayer` strips the movement axes and every action bit and keeps the
-   *   view angles, so looking around still works. This does the same thing to the same
-   *   fields.
+   *   view angles, so looking around still works.
    * - **Dead**: `NetPlayer.step` returns before consuming a command at all, so the corpse
    *   just falls. A client predicting a dead player walking is the same divergence in a
    *   different costume.
    *
-   * The view angles survive in both cases, which is what makes a countdown feel like a
-   * starting gun and a death screen feel like a camera rather than a freeze frame.
-   *
-   * Every command passes through here, suppressed or not, because this is also where the
-   * command is rounded to wire precision.
-   *
-   * This is the netcode-side statement of a rule the single-player build already had
-   * (`Input.sampleSpectating`). Neither side owns it alone: it lives here so both halves of
-   * a networked match read it from one place.
-   *
-   * **Except that it restated the rule and lost its exception** (playtest round 4, B6).
-   * `Input.sampleSpectating` keeps `Btn.Scoreboard` through a death on purpose — the M4 note
-   * that the death screen is exactly when you want to look at the board — and this zeroed the
-   * whole bitfield, so on a networked client the one fact the scoreboard is derived from was
-   * forced to nothing the moment the server said you were dead. The standing
-   * authority-migration failure in miniature: the rule moved here, the exception did not.
-   *
-   * Keeping it costs no divergence and cannot. `Btn.Scoreboard` is presentation: nothing in
-   * `PlayerController.step` or `Weapons.step` reads it, `NetPlayer.step` does not consume a
-   * dead player's command at all, and the frozen path's `lastButtons` is only ever asked
-   * whether the trigger was down. The bit rides the same bitfield as everything else because
-   * S4.2 allows exactly one input path, not because the simulation wants it.
+   * *What* suppression does to a command — and the one bit that survives it — is
+   * `CommandPipeline.neutralise`.
    */
-  private neutralise(cmd: InputCommand): InputCommand {
+  private inputSuppressed(): boolean {
     const frozen = (this.header.flags & SFlag.InputFrozen) !== 0;
-    const suppress = frozen || !this.localAlive;
-
-    const out = this.neutral;
-    out.seq = cmd.seq;
-    out.tickIndex = cmd.tickIndex;
-    out.moveX = suppress ? 0 : cmd.moveX;
-    out.moveZ = suppress ? 0 : cmd.moveZ;
-    out.yaw = cmd.yaw;
-    out.pitch = cmd.pitch;
-    out.buttons = suppress ? cmd.buttons & Btn.Scoreboard : cmd.buttons;
-    out.sampledAtMs = cmd.sampledAtMs;
-
-    // Predict with exactly what the wire will carry. See `quantiseCommandInPlace` — without
-    // this the client and the server simulate subtly different commands and the divergence
-    // accumulates in one direction whenever the player is turning.
-    quantiseCommandInPlace(out);
-    return out;
-  }
-
-  /** Keep the newest commands for the redundant batch. */
-  private queue(cmd: InputCommand): void {
-    // Shift left and append. The array is `MAX_COMMANDS_PER_BATCH` long and this runs at most
-    // five times a frame, so the copy is cheaper than the bookkeeping a ring would need.
-    for (let i = 0; i < this.pending.length - 1; i++) {
-      const dst = this.pending[i];
-      const src = this.pending[i + 1];
-      if (dst !== undefined && src !== undefined) copyCommand(src, dst);
-    }
-    const last = this.pending[this.pending.length - 1];
-    if (last !== undefined) copyCommand(cmd, last);
+    return frozen || !this.localAlive;
   }
 
   private sendCommands(): void {
-    const frame = writeCommands(this.writer, this.pending, this.pending.length, this.ackSnapshot);
+    const frame = this.commands.frame(this.ackSnapshot);
     this.rateBytesOut += frame.length;
     this.deps.link.send(frame);
   }
@@ -1189,7 +1232,6 @@ export class NetClient {
     this.deps.link.send(frame);
   }
 
-  // -- stats ------------------------------------------------------------------
 
   private updateRates(): void {
     const s = this.stats;
@@ -1222,8 +1264,6 @@ export class NetClient {
     this.lostAtWindowStart = this.stats.snapshotsLost;
   }
 
-  private lostAtWindowStart = 0;
-
   private lostThisWindow(): number {
     return this.stats.snapshotsLost - this.lostAtWindowStart;
   }
@@ -1237,20 +1277,6 @@ export class NetClient {
   private headerServerMs(): number {
     return this.header.serverTick * DT * 1000;
   }
+  //#endregion
 }
-
-function blank(): MutableInputCommand {
-  return { seq: 0, tickIndex: 0, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, sampledAtMs: 0 };
-}
-
-/** Wipe a command in place. The redundancy buffer is preallocated and never reallocated. */
-function blankInto(cmd: MutableInputCommand): void {
-  cmd.seq = 0;
-  cmd.tickIndex = 0;
-  cmd.moveX = 0;
-  cmd.moveZ = 0;
-  cmd.yaw = 0;
-  cmd.pitch = 0;
-  cmd.buttons = 0;
-  cmd.sampledAtMs = 0;
-}
+//#endregion

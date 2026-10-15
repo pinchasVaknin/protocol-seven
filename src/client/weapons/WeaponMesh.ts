@@ -4,20 +4,20 @@ import { Rng } from '../../shared/core/Rng';
 import { camoTexture } from '../meta/CamoTextures';
 import type { CamoId } from '../../shared/meta/Camos';
 import {
-  bodyBoxes,
-  bodyTubes,
-  barrelY,
-  chargingBoxes,
-  handBoxes,
-  handBoxesAt,
-  magazineBoxes,
-  magazineTubes,
-  muzzleZ,
-  supportHandAnchor,
-  triggerHandAnchor,
-  type BoxPart,
-  type SurfaceKey,
-  type TubePart,
+    bodyBoxes,
+    bodyTubes,
+    barrelY,
+    chargingBoxes,
+    handBoxes,
+    handBoxesAt,
+    magazineBoxes,
+    magazineTubes,
+    muzzleZ,
+    supportHandAnchor,
+    triggerHandAnchor,
+    type BoxPart,
+    type SurfaceKey,
+    type TubePart,
 } from './WeaponMeshParts';
 import { modelSpecFor } from './WeaponModelSpecs';
 import { groupNodes, type WeaponAssetService, type WeaponAssetTemplate } from './WeaponAssetService';
@@ -57,122 +57,122 @@ import type { AttachmentId } from '../../shared/weapons/Attachments';
  */
 
 export interface WeaponModel {
-  /** `Object3D` rather than `Group` since M19: a GLB node is the former, and nothing here reads the flag. */
-  readonly root: THREE.Object3D;
-  /** Slides out of the well and drops away during a reload. */
-  readonly magazine: THREE.Object3D;
-  /** Pulled and released on the empty reload. On a shotgun this is the pump. */
-  readonly chargingHandle: THREE.Object3D;
-  /** Muzzle flash is parented here so it tracks every animation the gun does. */
-  readonly muzzle: THREE.Object3D;
-  /**
-   * Height of the sight line above the origin **in the parent's space**, metres —
-   * `spec.sightHeight` with `spec.scale` already applied.
-   *
-   * The scale matters and was missed the first time: the root is scaled, so a weapon at
-   * 1.08 has a sight line 8% higher than its spec says, and the ADS compensation in
-   * `ViewmodelAnim` was cancelling the unscaled number. Measured error was up to 8.3 mm —
-   * about 2.5 degrees at the ADS distance, which is a visibly misaligned sight picture on
-   * the six weapons whose scale is not 1.
-   */
-  readonly sightHeight: number;
-  /**
-   * The sight line as a point in weapon space (M19, playtest 3): `sightHeight` is its Y, and
-   * its X and Z are what the ADS pose brings onto the camera axis at the eye's distance. On
-   * the primitives it is (0, sightHeight, 0), the pose the config was tuned against; on a file
-   * it is `socket_sight`, or the mounted optic's own sight above the rail socket — a P90's
-   * collimator twelve centimetres ahead of the receiver's centre, an AK's rear leaf on it,
-   * and `ViewmodelAnim` holds every one at the same distance from the eye.
-   */
-  readonly sightPoint: THREE.Vector3;
-  /**
-   * How far in front of the eye `sightPoint` is held at full ADS, metres (M19, playtest 3).
-   *
-   * A shouldered rifle puts its rear sight or its red dot about 20 cm from the eye, and a
-   * scope its ocular about 10 — that is eye relief, and it is why a scope fills the view and
-   * a red dot does not. Holding every weapon at one distance is what put the AK's receiver
-   * across the screen and the P90's collimator at arm's length; holding the *sight* at the
-   * right distance puts the rest of each weapon where the eye expects it.
-   *
-   * Zero on the primitives, whose pose is `ViewmodelConfig.adsZ` plus the spec's own
-   * `adsOffsetZ` and is not derived from a sight point at all.
-   */
-  readonly adsSightDistance: number;
-  /**
-   * Degrees the weapon turns about its own X at full ADS, the muzzle up (M19, playtest 6).
-   *
-   * Zero wherever the sight line is parallel to the bore, which is everywhere but a file whose
-   * irons are a line that is not: the VULCAN's quad rail stands over its front post, and the
-   * only line that sees the post falls toward it from over the rail. The file says so with a
-   * `socket_sight_front` at the post's tip, this is the slope from `sightPoint` to it, and the
-   * ADS pose turns the weapon by it so that line is the camera's axis. A mounted optic's line is
-   * parallel to the bore again, so it is zero under one.
-   */
-  readonly adsPitch: number;
-  /** Per-weapon correction to the shared ADS pose. See `WeaponModelSpec.adsOffsetZ`. */
-  readonly adsOffsetZ: number;
-  readonly weaponId: string;
-  /** Where the triangles came from (M19): the file, or the primitives standing in for it. */
-  readonly source: 'glb' | 'procedural';
-  /**
-   * The direction the magazine leaves along on a reload, a unit vector in weapon space (M19,
-   * stage 3). Straight down for every weapon but the P90, whose magazine lies along the top
-   * and comes off upward and back; a file says so with a `socket_mag_exit` node.
-   */
-  readonly magazineExit: THREE.Vector3;
-  /**
-   * The support glove's boxes and forearm, as one node, or null when the model has no hands
-   * (the loadout preview, the bodies' LOD), is the primitives', or wears the arms' rig — whose
-   * support hand goes to the magazine through `hands.magazineHold` instead.
-   *
-   * Its own group rather than part of the body because it is the hand that **changes the
-   * magazine** (M19, playtest 5): the trigger hand stays on the grip and this one travels to
-   * the well, carries the empty magazine away and brings the fresh one up. A reload the player
-   * cannot see is a reload that might as well be a fade to black, and the well was the one
-   * thing the raised pose made visible — so something had to arrive at it.
-   */
-  readonly supportHand: THREE.Object3D | null;
-  /**
-   * The first-person arms (M19, stage 4), or null when the model wears the grey boxes — no
-   * hands asked for, or the arms' file has not arrived. `ViewmodelAnim` calls its `update`
-   * once the root has its pose for the frame; the rig puts the gloves on the model's two hand
-   * targets, one of which is under `supportHand`.
-   */
-  readonly hands: ViewmodelHands | null;
-  dispose(): void;
+    /** `Object3D` rather than `Group` since M19: a GLB node is the former, and nothing here reads the flag. */
+    readonly root: THREE.Object3D;
+    /** Slides out of the well and drops away during a reload. */
+    readonly magazine: THREE.Object3D;
+    /** Pulled and released on the empty reload. On a shotgun this is the pump. */
+    readonly chargingHandle: THREE.Object3D;
+    /** Muzzle flash is parented here so it tracks every animation the gun does. */
+    readonly muzzle: THREE.Object3D;
+    /**
+     * Height of the sight line above the origin **in the parent's space**, metres —
+     * `spec.sightHeight` with `spec.scale` already applied.
+     *
+     * The scale matters and was missed the first time: the root is scaled, so a weapon at
+     * 1.08 has a sight line 8% higher than its spec says, and the ADS compensation in
+     * `ViewmodelAnim` was cancelling the unscaled number. Measured error was up to 8.3 mm —
+     * about 2.5 degrees at the ADS distance, which is a visibly misaligned sight picture on
+     * the six weapons whose scale is not 1.
+     */
+    readonly sightHeight: number;
+    /**
+     * The sight line as a point in weapon space (M19, playtest 3): `sightHeight` is its Y, and
+     * its X and Z are what the ADS pose brings onto the camera axis at the eye's distance. On
+     * the primitives it is (0, sightHeight, 0), the pose the config was tuned against; on a file
+     * it is `socket_sight`, or the mounted optic's own sight above the rail socket — a P90's
+     * collimator twelve centimetres ahead of the receiver's centre, an AK's rear leaf on it,
+     * and `ViewmodelAnim` holds every one at the same distance from the eye.
+     */
+    readonly sightPoint: THREE.Vector3;
+    /**
+     * How far in front of the eye `sightPoint` is held at full ADS, metres (M19, playtest 3).
+     *
+     * A shouldered rifle puts its rear sight or its red dot about 20 cm from the eye, and a
+     * scope its ocular about 10 — that is eye relief, and it is why a scope fills the view and
+     * a red dot does not. Holding every weapon at one distance is what put the AK's receiver
+     * across the screen and the P90's collimator at arm's length; holding the *sight* at the
+     * right distance puts the rest of each weapon where the eye expects it.
+     *
+     * Zero on the primitives, whose pose is `ViewmodelConfig.adsZ` plus the spec's own
+     * `adsOffsetZ` and is not derived from a sight point at all.
+     */
+    readonly adsSightDistance: number;
+    /**
+     * Degrees the weapon turns about its own X at full ADS, the muzzle up (M19, playtest 6).
+     *
+     * Zero wherever the sight line is parallel to the bore, which is everywhere but a file whose
+     * irons are a line that is not: the VULCAN's quad rail stands over its front post, and the
+     * only line that sees the post falls toward it from over the rail. The file says so with a
+     * `socket_sight_front` at the post's tip, this is the slope from `sightPoint` to it, and the
+     * ADS pose turns the weapon by it so that line is the camera's axis. A mounted optic's line is
+     * parallel to the bore again, so it is zero under one.
+     */
+    readonly adsPitch: number;
+    /** Per-weapon correction to the shared ADS pose. See `WeaponModelSpec.adsOffsetZ`. */
+    readonly adsOffsetZ: number;
+    readonly weaponId: string;
+    /** Where the triangles came from (M19): the file, or the primitives standing in for it. */
+    readonly source: 'glb' | 'procedural';
+    /**
+     * The direction the magazine leaves along on a reload, a unit vector in weapon space (M19,
+     * stage 3). Straight down for every weapon but the P90, whose magazine lies along the top
+     * and comes off upward and back; a file says so with a `socket_mag_exit` node.
+     */
+    readonly magazineExit: THREE.Vector3;
+    /**
+     * The support glove's boxes and forearm, as one node, or null when the model has no hands
+     * (the loadout preview, the bodies' LOD), is the primitives', or wears the arms' rig — whose
+     * support hand goes to the magazine through `hands.magazineHold` instead.
+     *
+     * Its own group rather than part of the body because it is the hand that **changes the
+     * magazine** (M19, playtest 5): the trigger hand stays on the grip and this one travels to
+     * the well, carries the empty magazine away and brings the fresh one up. A reload the player
+     * cannot see is a reload that might as well be a fade to black, and the well was the one
+     * thing the raised pose made visible — so something had to arrive at it.
+     */
+    readonly supportHand: THREE.Object3D | null;
+    /**
+     * The first-person arms (M19, stage 4), or null when the model wears the grey boxes — no
+     * hands asked for, or the arms' file has not arrived. `ViewmodelAnim` calls its `update`
+     * once the root has its pose for the frame; the rig puts the gloves on the model's two hand
+     * targets, one of which is under `supportHand`.
+     */
+    readonly hands: ViewmodelHands | null;
+    dispose(): void;
 }
 
 /** What a `WeaponModel` is for, which decides which part groups it is built from. */
 export interface WeaponModelOptions {
-  /**
-   * The first-person gloves. On for the viewmodel, where a weapon with no hands reads as a
-   * floating prop; off for a picture of the weapon alone, such as the loadout preview.
-   */
-  readonly hands: boolean;
-  /**
-   * Where a built GLB comes from (M19). Absent or null, every weapon is the primitives; given,
-   * a weapon whose template has arrived is cloned from the file. Never awaited here: the
-   * builder is synchronous, and a template that is still loading is a procedural model now
-   * and a `preload` promise for the caller to act on.
-   */
-  readonly assets?: WeaponAssetService | null;
-  /**
-   * The attachments to show on the gun (M19, stage 2). Read only by a model built from a file:
-   * the pack mounts on sockets, and the primitives have none. Absent means bare.
-   */
-  readonly attachments?: readonly AttachmentId[];
-  /**
-   * Build the geometry of a **different** weapon, and keep this one's identity (2026-09-27).
-   *
-   * One caller: the riot shield's sidearm. The streak hands you a pistol, and the human asked
-   * for the pistol the game already has rather than the slab `WeaponModelSpecs` describes — but
-   * it is not *that* pistol, it is a one-handed pistol held beside a plate, and its hand pose
-   * and its place on screen are its own. So the mesh comes from `pistol_talon` and everything
-   * tuned — `HAND_POSES`, `HAND_WRAPS`, `VIEWMODEL_OFFSETS` — stays keyed to the weapon asking.
-   *
-   * Absent, which is every other call, the two are the same id and nothing changes.
-   */
-  readonly assetId?: string;
+    /**
+     * The first-person gloves. On for the viewmodel, where a weapon with no hands reads as a
+     * floating prop; off for a picture of the weapon alone, such as the loadout preview.
+     */
+    readonly hands: boolean;
+    /**
+     * Where a built GLB comes from (M19). Absent or null, every weapon is the primitives; given,
+     * a weapon whose template has arrived is cloned from the file. Never awaited here: the
+     * builder is synchronous, and a template that is still loading is a procedural model now
+     * and a `preload` promise for the caller to act on.
+     */
+    readonly assets?: WeaponAssetService | null;
+    /**
+     * The attachments to show on the gun (M19, stage 2). Read only by a model built from a file:
+     * the pack mounts on sockets, and the primitives have none. Absent means bare.
+     */
+    readonly attachments?: readonly AttachmentId[];
+    /**
+     * Build the geometry of a **different** weapon, and keep this one's identity (2026-09-27).
+     *
+     * One caller: the riot shield's sidearm. The streak hands you a pistol, and the human asked
+     * for the pistol the game already has rather than the slab `WeaponModelSpecs` describes — but
+     * it is not *that* pistol, it is a one-handed pistol held beside a plate, and its hand pose
+     * and its place on screen are its own. So the mesh comes from `pistol_talon` and everything
+     * tuned — `HAND_POSES`, `HAND_WRAPS`, `VIEWMODEL_OFFSETS` — stays keyed to the weapon asking.
+     *
+     * Absent, which is every other call, the two are the same id and nothing changes.
+     */
+    readonly assetId?: string;
 }
 
 const VIEWMODEL: WeaponModelOptions = { hands: true };
@@ -185,85 +185,85 @@ const VIEWMODEL: WeaponModelOptions = { hands: true };
  * value in practice.
  */
 export function buildWeaponModel(
-  weaponId: string,
-  anisotropy: number,
-  camo: CamoId | null = null,
-  options: WeaponModelOptions = VIEWMODEL,
+    weaponId: string,
+    anisotropy: number,
+    camo: CamoId | null = null,
+    options: WeaponModelOptions = VIEWMODEL,
 ): WeaponModel {
-  // The geometry's id and the identity's id, which are the same for every weapon but one.
-  const assetId = options.assetId ?? weaponId;
-  const spec = modelSpecFor(assetId);
-  const surfaces = sharedSurfaces(anisotropy, camo);
+    // The geometry's id and the identity's id, which are the same for every weapon but one.
+    const assetId = options.assetId ?? weaponId;
+    const spec = modelSpecFor(assetId);
+    const surfaces = sharedSurfaces(anisotropy, camo);
 
-  const template = options.assets?.template(assetId) ?? null;
-  if (template !== null) return buildFromTemplate(template, anisotropy, camo, surfaces, options, weaponId);
+    const template = options.assets?.template(assetId) ?? null;
+    if (template !== null) return buildFromTemplate(template, anisotropy, camo, surfaces, options, weaponId);
 
-  const root = new THREE.Group();
-  root.name = `viewmodel:${weaponId}`;
-  root.scale.setScalar(spec.scale);
+    const root = new THREE.Group();
+    root.name = `viewmodel:${weaponId}`;
+    root.scale.setScalar(spec.scale);
 
-  const disposables: Array<{ dispose(): void }> = [];
+    const disposables: Array<{ dispose(): void }> = [];
 
-  // The hands are their own part group (see `handBoxes`), so a model without them is built
-  // from fewer groups rather than from a filtered one. The arms' rig replaces the boxes once
-  // its file has arrived (stage 4), on the same two anchors the boxes stand on.
-  const rig = options.hands ? (options.assets?.hands() ?? null) : null;
-  const boxes = options.hands && rig === null ? [...bodyBoxes(spec), ...handBoxes(spec)] : bodyBoxes(spec);
-  addMerged(root, boxes, bodyTubes(spec), surfaces, disposables, 'body');
+    // The hands are their own part group (see `handBoxes`), so a model without them is built
+    // from fewer groups rather than from a filtered one. The arms' rig replaces the boxes once
+    // its file has arrived (stage 4), on the same two anchors the boxes stand on.
+    const rig = options.hands ? (options.assets?.hands() ?? null) : null;
+    const boxes = options.hands && rig === null ? [...bodyBoxes(spec), ...handBoxes(spec)] : bodyBoxes(spec);
+    addMerged(root, boxes, bodyTubes(spec), surfaces, disposables, 'body');
 
-  const magazine = new THREE.Group();
-  magazine.name = 'viewmodel:magazine';
-  addMerged(magazine, magazineBoxes(spec), magazineTubes(spec), surfaces, disposables, 'mag');
-  // The magazine's middle, from its own boxes, measured before it has a parent: the reload
-  // hand's place, as a file's `socket_mag_grip` is.
-  magazine.updateMatrixWorld(true);
-  const magazineMiddle = new THREE.Box3().setFromObject(magazine).getCenter(new THREE.Vector3());
-  root.add(magazine);
+    const magazine = new THREE.Group();
+    magazine.name = 'viewmodel:magazine';
+    addMerged(magazine, magazineBoxes(spec), magazineTubes(spec), surfaces, disposables, 'mag');
+    // The magazine's middle, from its own boxes, measured before it has a parent: the reload
+    // hand's place, as a file's `socket_mag_grip` is.
+    magazine.updateMatrixWorld(true);
+    const magazineMiddle = new THREE.Box3().setFromObject(magazine).getCenter(new THREE.Vector3());
+    root.add(magazine);
 
-  let hands: ViewmodelHands | null = null;
-  if (rig !== null) {
-    const grip = handTarget(root, 'grip', triggerHandAnchor(spec));
-    const support = handTarget(root, 'support', supportHandAnchor(spec));
-    const onMagazine = handTarget(magazine, 'magazine', magazineMiddle);
-    hands = attachHands(rig, root, { grip, support, supportPose: supportPoseFor(spec), magazine: onMagazine }, weaponId, disposables);
-  }
+    let hands: ViewmodelHands | null = null;
+    if (rig !== null) {
+        const grip = handTarget(root, 'grip', triggerHandAnchor(spec));
+        const support = handTarget(root, 'support', supportHandAnchor(spec));
+        const onMagazine = handTarget(magazine, 'magazine', magazineMiddle);
+        hands = attachHands(rig, root, { grip, support, supportPose: supportPoseFor(spec), magazine: onMagazine }, weaponId, disposables);
+    }
 
-  const chargingHandle = new THREE.Group();
-  chargingHandle.name = 'viewmodel:charging';
-  addMerged(chargingHandle, chargingBoxes(spec), [], surfaces, disposables, 'charge');
-  root.add(chargingHandle);
+    const chargingHandle = new THREE.Group();
+    chargingHandle.name = 'viewmodel:charging';
+    addMerged(chargingHandle, chargingBoxes(spec), [], surfaces, disposables, 'charge');
+    root.add(chargingHandle);
 
-  const muzzle = new THREE.Object3D();
-  muzzle.name = 'viewmodel:muzzle';
-  muzzle.position.set(0, barrelY(spec), muzzleZ(spec));
-  root.add(muzzle);
+    const muzzle = new THREE.Object3D();
+    muzzle.name = 'viewmodel:muzzle';
+    muzzle.position.set(0, barrelY(spec), muzzleZ(spec));
+    root.add(muzzle);
 
-  return {
-    root,
-    magazine,
-    chargingHandle,
-    muzzle,
-    sightHeight: spec.sightHeight * spec.scale,
-    sightPoint: new THREE.Vector3(0, spec.sightHeight * spec.scale, 0),
-    adsSightDistance: 0,
-    adsPitch: 0,
-    adsOffsetZ: spec.adsOffsetZ,
-    weaponId,
-    source: 'procedural',
-    magazineExit: MAGAZINE_EXIT_DOWN.clone(),
-    // The primitives' reload is the old dip, and nothing down there is worth watching (only the
-    // two LMGs are built this way now): the support hand stays where it holds the weapon.
-    supportHand: null,
-    hands,
-    dispose(): void {
-      // Only the geometry is per model. The three materials and their textures are shared
-      // for the life of the process in `cachedSurfaces` and `baseTextures` here and the camo cache in
-      // `meta/CamoTextures`. Nothing releases them today; a page teardown, if one is ever built,
-      // disposes those three caches, not the meshes.
-      for (const d of disposables) d.dispose();
-      root.clear();
-    },
-  };
+    return {
+        root,
+        magazine,
+        chargingHandle,
+        muzzle,
+        sightHeight: spec.sightHeight * spec.scale,
+        sightPoint: new THREE.Vector3(0, spec.sightHeight * spec.scale, 0),
+        adsSightDistance: 0,
+        adsPitch: 0,
+        adsOffsetZ: spec.adsOffsetZ,
+        weaponId,
+        source: 'procedural',
+        magazineExit: MAGAZINE_EXIT_DOWN.clone(),
+        // The primitives' reload is the old dip, and nothing down there is worth watching (only the
+        // two LMGs are built this way now): the support hand stays where it holds the weapon.
+        supportHand: null,
+        hands,
+        dispose(): void {
+            // Only the geometry is per model. The three materials and their textures are shared
+            // for the life of the process in `cachedSurfaces` and `baseTextures` here and the camo cache in
+            // `meta/CamoTextures`. Nothing releases them today; a page teardown, if one is ever built,
+            // disposes those three caches, not the meshes.
+            for (const d of disposables) d.dispose();
+            root.clear();
+        },
+    };
 }
 
 /**
@@ -294,92 +294,99 @@ export function buildWeaponModel(
  * so nothing downstream learns that a gun can change shape — `ViewmodelAnim` reads
  * `sightHeight`, `Fx` parents to `muzzle`, and the values are simply different.
  */
+const configuredMaterials = new WeakSet<THREE.Material>();
+
 function buildFromTemplate(
-  template: WeaponAssetTemplate,
-  anisotropy: number,
-  camo: CamoId | null,
-  surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
-  options: WeaponModelOptions,
-  /** Whose tuning this model answers to; the template's own id for every weapon but the shield's sidearm. */
-  identity: string = template.weaponId,
+    template: WeaponAssetTemplate,
+    anisotropy: number,
+    camo: CamoId | null,
+    surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
+    options: WeaponModelOptions,
+    /** Whose tuning this model answers to; the template's own id for every weapon but the shield's sidearm. */
+    identity: string = template.weaponId,
 ): WeaponModel {
-  const spec = modelSpecFor(template.weaponId);
-  const root = template.scene.clone(true);
-  root.name = `viewmodel:${identity}`;
-  const groups = groupNodes(root);
-  const disposables: Array<{ dispose(): void }> = [];
-  if (camo !== null) paintCamo(root, camo, anisotropy);
+    const spec = modelSpecFor(template.weaponId);
+    const root = template.scene.clone(true);
+    root.name = `viewmodel:${identity}`;
+    const groups = groupNodes(root);
+    const disposables: Array<{ dispose(): void }> = [];
+    if (camo !== null) paintCamo(root, camo, anisotropy);
 
-  // The filtering the procedural textures get, on the file's — once per texture, and the
-  // textures are shared, so a second instance finds it set.
-  root.traverse((node) => {
-    const material = (node as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
-    for (const m of Array.isArray(material) ? material : [material]) {
-      if (!(m instanceof THREE.Material)) continue;
-      for (const value of Object.values(m as unknown as Record<string, unknown>)) {
-        if (value instanceof THREE.Texture && value.anisotropy !== anisotropy) {
-          value.anisotropy = anisotropy;
-          value.needsUpdate = true;
+    // The filtering the procedural textures get, on the file's — once per texture, and the
+    // textures are shared, so a second instance finds it set.
+    root.traverse((node) => {
+        if (node instanceof THREE.Mesh) {
+            node.updateMatrix();
+            node.matrixAutoUpdate = false;
         }
-      }
+        const material = (node as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+        for (const m of Array.isArray(material) ? material : [material]) {
+            if (!(m instanceof THREE.Material) || configuredMaterials.has(m)) continue;
+            configuredMaterials.add(m);
+            for (const value of Object.values(m as unknown as Record<string, unknown>)) {
+                if (value instanceof THREE.Texture && value.anisotropy !== anisotropy) {
+                    value.anisotropy = anisotropy;
+                    value.needsUpdate = true;
+                }
+            }
+        }
+    });
+
+    dressOwnOptic(root, surfaces, disposables);
+
+    let supportHand: THREE.Object3D | null = null;
+    let hands: ViewmodelHands | null = null;
+    const rig = options.hands ? (options.assets?.hands() ?? null) : null;
+    if (rig !== null) {
+        // The arms (stage 4): the two sockets, and the magazine's grip on the magazine itself, so
+        // the reload hand goes where the magazine goes (`ViewmodelHands.magazineHold`).
+        const grip = handTarget(root, 'grip', template.sockets.socket_grip);
+        const support = handTarget(root, 'support', template.sockets.socket_support);
+        const onMagazine = handTarget(groups.magazine, 'magazine', template.sockets.socket_mag_grip);
+        hands = attachHands(rig, root, { grip, support, supportPose: supportPoseFor(spec), magazine: onMagazine }, identity, disposables);
+    } else if (options.hands) {
+        const boxes = handBoxesAt(spec, template.sockets.socket_grip, template.sockets.socket_support);
+        // `handBoxes` lists the trigger pair first and the support pair second (its own comment
+        // says so); the split is by that order, as `handBoxesAt` already relies on it.
+        addMerged(groups.body, boxes.slice(0, 2), [], surfaces, disposables, 'hands');
+        const support = boxes.slice(2);
+        if (support.length > 0) {
+            const group = new THREE.Group();
+            group.name = 'viewmodel:hand:support';
+            addMerged(group, support, [], surfaces, disposables, 'hand-support');
+            root.add(group);
+            supportHand = group;
+        }
     }
-  });
 
-  dressOwnOptic(root, surfaces, disposables);
+    const bareMuzzle = root.getObjectByName('socket_muzzle');
+    if (bareMuzzle === undefined) throw new Error(`Weapon clone "${template.weaponId}" has no socket_muzzle.`);
+    const mounted = mountAttachments(root, groups.magazine, template, options, surfaces);
+    const sightPoint = mounted.sightPoint ?? template.sockets.socket_sight.clone();
+    const front = mounted.sightPoint === undefined ? root.getObjectByName('socket_sight_front') : undefined;
 
-  let supportHand: THREE.Object3D | null = null;
-  let hands: ViewmodelHands | null = null;
-  const rig = options.hands ? (options.assets?.hands() ?? null) : null;
-  if (rig !== null) {
-    // The arms (stage 4): the two sockets, and the magazine's grip on the magazine itself, so
-    // the reload hand goes where the magazine goes (`ViewmodelHands.magazineHold`).
-    const grip = handTarget(root, 'grip', template.sockets.socket_grip);
-    const support = handTarget(root, 'support', template.sockets.socket_support);
-    const onMagazine = handTarget(groups.magazine, 'magazine', template.sockets.socket_mag_grip);
-    hands = attachHands(rig, root, { grip, support, supportPose: supportPoseFor(spec), magazine: onMagazine }, identity, disposables);
-  } else if (options.hands) {
-    const boxes = handBoxesAt(spec, template.sockets.socket_grip, template.sockets.socket_support);
-    // `handBoxes` lists the trigger pair first and the support pair second (its own comment
-    // says so); the split is by that order, as `handBoxesAt` already relies on it.
-    addMerged(groups.body, boxes.slice(0, 2), [], surfaces, disposables, 'hands');
-    const support = boxes.slice(2);
-    if (support.length > 0) {
-      const group = new THREE.Group();
-      group.name = 'viewmodel:hand:support';
-      addMerged(group, support, [], surfaces, disposables, 'hand-support');
-      root.add(group);
-      supportHand = group;
-    }
-  }
-
-  const bareMuzzle = root.getObjectByName('socket_muzzle');
-  if (bareMuzzle === undefined) throw new Error(`Weapon clone "${template.weaponId}" has no socket_muzzle.`);
-  const mounted = mountAttachments(root, groups.magazine, template, options, surfaces);
-  const sightPoint = mounted.sightPoint ?? template.sockets.socket_sight.clone();
-  const front = mounted.sightPoint === undefined ? root.getObjectByName('socket_sight_front') : undefined;
-
-  return {
-    root,
-    magazine: groups.magazine,
-    chargingHandle: groups.charge,
-    muzzle: mounted.muzzle ?? bareMuzzle,
-    sightHeight: sightPoint.y,
-    sightPoint,
-    // A scope is held at eye relief; irons and a red dot at a shouldered rifle's sight
-    // distance. `mountAttachments` leaves a scoped weapon its scope, so the two cannot disagree.
-    adsSightDistance: spec.optic === 'scope' ? SCOPE_EYE_RELIEF : spec.handguardLength > 0 ? SIGHT_DISTANCE : PISTOL_SIGHT_DISTANCE,
-    adsPitch: front === undefined ? 0 : ironsPitch(sightPoint, front.position),
-    adsOffsetZ: spec.adsOffsetZ,
-    weaponId: identity,
-    source: 'glb',
-    magazineExit: magazineExitOf(root),
-    supportHand,
-    hands,
-    dispose(): void {
-      for (const d of disposables) d.dispose();
-      root.clear();
-    },
-  };
+    return {
+        root,
+        magazine: groups.magazine,
+        chargingHandle: groups.charge,
+        muzzle: mounted.muzzle ?? bareMuzzle,
+        sightHeight: sightPoint.y,
+        sightPoint,
+        // A scope is held at eye relief; irons and a red dot at a shouldered rifle's sight
+        // distance. `mountAttachments` leaves a scoped weapon its scope, so the two cannot disagree.
+        adsSightDistance: spec.optic === 'scope' ? SCOPE_EYE_RELIEF : spec.handguardLength > 0 ? SIGHT_DISTANCE : PISTOL_SIGHT_DISTANCE,
+        adsPitch: front === undefined ? 0 : ironsPitch(sightPoint, front.position),
+        adsOffsetZ: spec.adsOffsetZ,
+        weaponId: identity,
+        source: 'glb',
+        magazineExit: magazineExitOf(root),
+        supportHand,
+        hands,
+        dispose(): void {
+            for (const d of disposables) d.dispose();
+            root.clear();
+        },
+    };
 }
 
 /**
@@ -388,14 +395,14 @@ function buildFromTemplate(
  * left, for the reason `addOpticSurfaces` gives: a painted lens is not a lens.
  */
 export function paintCamo(root: THREE.Object3D, camo: CamoId, anisotropy: number): void {
-  root.traverse((node) => {
-    const mesh = node as THREE.Mesh;
-    const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
-    if (material === undefined) return;
-    const paint = (m: THREE.Material): THREE.Material =>
-      m instanceof THREE.MeshStandardMaterial && !m.transparent ? camoMaterial(m, camo, anisotropy) : m;
-    mesh.material = Array.isArray(material) ? material.map(paint) : paint(material);
-  });
+    root.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
+        if (material === undefined) return;
+        const paint = (m: THREE.Material): THREE.Material =>
+            m instanceof THREE.MeshStandardMaterial && !m.transparent ? camoMaterial(m, camo, anisotropy) : m;
+        mesh.material = Array.isArray(material) ? material.map(paint) : paint(material);
+    });
 }
 
 /**
@@ -424,52 +431,52 @@ const camoVariants = new Map<THREE.MeshStandardMaterial, Map<CamoId, THREE.MeshS
  * its own, so a material with no map of its own — a plain-colour part — paints the same.
  */
 export function camoMaterial(material: THREE.MeshStandardMaterial, camo: CamoId, anisotropy: number): THREE.MeshStandardMaterial {
-  let byCamo = camoVariants.get(material);
-  if (byCamo === undefined) {
-    byCamo = new Map();
-    camoVariants.set(material, byCamo);
-  }
-  const existing = byCamo.get(camo);
-  if (existing !== undefined) return existing;
-  const variant = material.clone();
-  variant.name = `${material.name}|${camo}`;
-  const metallic = camo === 'gold' || camo === 'obsidian';
-  if (metallic) {
-    variant.metalness = Math.max(variant.metalness, 0.55);
-    variant.roughness = Math.min(variant.roughness, 0.3);
-  }
-  const texture = camoTexture(camo, anisotropy);
-  variant.onBeforeCompile = (shader) => {
-    shader.uniforms.camoMap = { value: texture };
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vCamoUv;')
-      .replace('#include <uv_vertex>', `#include <uv_vertex>\nvCamoUv = uv * ${CAMO_OVERLAY_REPEAT.toFixed(1)};`);
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D camoMap;\nvarying vec2 vCamoUv;')
-      .replace(
-        '#include <map_fragment>',
-        [
-          '#include <map_fragment>',
-          '{',
-          '  vec3 camo = texture2D(camoMap, vCamoUv).rgb;',
-          '  float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));',
-          '  diffuseColor.rgb = camo * clamp(0.6 + 1.4 * lum, 0.0, 1.5);',
-          '}',
-        ].join('\n'),
-      );
-  };
-  variant.customProgramCacheKey = () => `camo:${camo}`;
-  byCamo.set(camo, variant);
-  return variant;
+    let byCamo = camoVariants.get(material);
+    if (byCamo === undefined) {
+        byCamo = new Map();
+        camoVariants.set(material, byCamo);
+    }
+    const existing = byCamo.get(camo);
+    if (existing !== undefined) return existing;
+    const variant = material.clone();
+    variant.name = `${material.name}|${camo}`;
+    const metallic = camo === 'gold' || camo === 'obsidian';
+    if (metallic) {
+        variant.metalness = Math.max(variant.metalness, 0.55);
+        variant.roughness = Math.min(variant.roughness, 0.3);
+    }
+    const texture = camoTexture(camo, anisotropy);
+    variant.onBeforeCompile = (shader) => {
+        shader.uniforms.camoMap = { value: texture };
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', '#include <common>\nvarying vec2 vCamoUv;')
+            .replace('#include <uv_vertex>', `#include <uv_vertex>\nvCamoUv = uv * ${CAMO_OVERLAY_REPEAT.toFixed(1)};`);
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', '#include <common>\nuniform sampler2D camoMap;\nvarying vec2 vCamoUv;')
+            .replace(
+                '#include <map_fragment>',
+                [
+                    '#include <map_fragment>',
+                    '{',
+                    '  vec3 camo = texture2D(camoMap, vCamoUv).rgb;',
+                    '  float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));',
+                    '  diffuseColor.rgb = camo * clamp(0.6 + 1.4 * lum, 0.0, 1.5);',
+                    '}',
+                ].join('\n'),
+            );
+    };
+    variant.customProgramCacheKey = () => `camo:${camo}`;
+    byCamo.set(camo, variant);
+    return variant;
 }
 
 /** An empty node a hand is put on, `at` in its parent's space. */
 function handTarget(parent: THREE.Object3D, which: 'grip' | 'support' | 'magazine', at: { x: number; y: number; z: number }): THREE.Object3D {
-  const node = new THREE.Object3D();
-  node.name = `viewmodel:hand-target:${which}`;
-  node.position.set(at.x, at.y, at.z);
-  parent.add(node);
-  return node;
+    const node = new THREE.Object3D();
+    node.name = `viewmodel:hand-target:${which}`;
+    node.position.set(at.x, at.y, at.z);
+    parent.add(node);
+    return node;
 }
 
 /**
@@ -477,21 +484,21 @@ function handTarget(parent: THREE.Object3D, which: 'grip' | 'support' | 'magazin
  * support hand wraps the trigger hand rather than cupping furniture that is not there.
  */
 function supportPoseFor(spec: { readonly handguardLength: number }): SupportPose {
-  return spec.handguardLength > 0 ? 'handguard' : 'wrap';
+    return spec.handguardLength > 0 ? 'handguard' : 'wrap';
 }
 
 /** The arms' rig on a model: its frame under the root, released with the model. */
 function attachHands(
-  template: THREE.Object3D,
-  root: THREE.Object3D,
-  targets: HandTargets,
-  weaponId: string,
-  disposables: Array<{ dispose(): void }>,
+    template: THREE.Object3D,
+    root: THREE.Object3D,
+    targets: HandTargets,
+    weaponId: string,
+    disposables: Array<{ dispose(): void }>,
 ): ViewmodelHands {
-  const hands = new ViewmodelHands(template, root, targets, weaponId);
-  root.add(hands.frame);
-  disposables.push(hands);
-  return hands;
+    const hands = new ViewmodelHands(template, root, targets, weaponId);
+    root.add(hands.frame);
+    disposables.push(hands);
+    return hands;
 }
 
 /** Where a file's rear sight or red dot is held at ADS, metres from the eye. */
@@ -509,10 +516,10 @@ const MAGAZINE_EXIT_DOWN = new THREE.Vector3(0, -1, 0);
 
 /** The file's `socket_mag_exit`, a unit direction carried as a point; down when it has none. */
 function magazineExitOf(root: THREE.Object3D): THREE.Vector3 {
-  const socket = root.getObjectByName('socket_mag_exit');
-  if (socket === undefined) return MAGAZINE_EXIT_DOWN.clone();
-  const exit = socket.position.clone();
-  return exit.lengthSq() > 0 ? exit.normalize() : MAGAZINE_EXIT_DOWN.clone();
+    const socket = root.getObjectByName('socket_mag_exit');
+    if (socket === undefined) return MAGAZINE_EXIT_DOWN.clone();
+    const exit = socket.position.clone();
+    return exit.lengthSq() > 0 ? exit.normalize() : MAGAZINE_EXIT_DOWN.clone();
 }
 
 /**
@@ -520,9 +527,9 @@ function magazineExitOf(root: THREE.Object3D): THREE.Vector3 {
  * post is lower — the turn about X, the muzzle up, that makes the line level. See `adsPitch`.
  */
 function ironsPitch(rear: THREE.Vector3, front: THREE.Vector3): number {
-  const run = rear.z - front.z;
-  if (run <= 0) return 0;
-  return Math.atan2(rear.y - front.y, run) * THREE.MathUtils.RAD2DEG;
+    const run = rear.z - front.z;
+    if (run <= 0) return 0;
+    return Math.atan2(rear.y - front.y, run) * THREE.MathUtils.RAD2DEG;
 }
 
 /**
@@ -547,33 +554,33 @@ const OWN_RETICLE_RADIUS = 0.0016;
  *   that group — hides this with it.
  */
 function dressOwnOptic(
-  root: THREE.Object3D,
-  surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
-  disposables: Array<{ dispose(): void }>,
+    root: THREE.Object3D,
+    surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
+    disposables: Array<{ dispose(): void }>,
 ): void {
-  const glass = root.getObjectByName('scope_glass') as THREE.Mesh | undefined;
-  const lens = surfaces.get('lens');
-  if (glass !== undefined && lens !== undefined) glass.material = lens;
+    const glass = root.getObjectByName('scope_glass') as THREE.Mesh | undefined;
+    const lens = surfaces.get('lens');
+    if (glass !== undefined && lens !== undefined) glass.material = lens;
 
-  const own = root.getObjectByName('optic_default');
-  const at = root.getObjectByName('socket_reticle');
-  const reticle = surfaces.get('reticle');
-  if (own === undefined || at === undefined || own.children.length === 0 || reticle === undefined) return;
-  const geometry = new THREE.CircleGeometry(OWN_RETICLE_RADIUS, 12);
-  disposables.push(geometry);
-  const dot = new THREE.Mesh(geometry, reticle);
-  dot.name = 'optic_default:reticle';
-  // Where the file says the window is: the recipe measures it in all three axes, halfway
-  // through the head. An offset here once pushed it the other way, out of the back of the
-  // housing, and from the hip it floated beside the sight (playtests 5 and 6).
-  dot.position.copy(at.position);
-  own.add(dot);
+    const own = root.getObjectByName('optic_default');
+    const at = root.getObjectByName('socket_reticle');
+    const reticle = surfaces.get('reticle');
+    if (own === undefined || at === undefined || own.children.length === 0 || reticle === undefined) return;
+    const geometry = new THREE.CircleGeometry(OWN_RETICLE_RADIUS, 12);
+    disposables.push(geometry);
+    const dot = new THREE.Mesh(geometry, reticle);
+    dot.name = 'optic_default:reticle';
+    // Where the file says the window is: the recipe measures it in all three axes, halfway
+    // through the head. An offset here once pushed it the other way, out of the back of the
+    // housing, and from the hip it floated beside the sight (playtests 5 and 6).
+    dot.position.copy(at.position);
+    own.add(dot);
 }
 
 /** What mounting changed about the contract's numbers; absent means the bare weapon's. */
 interface Mounted {
-  muzzle?: THREE.Object3D;
-  sightPoint?: THREE.Vector3;
+    muzzle?: THREE.Object3D;
+    sightPoint?: THREE.Vector3;
 }
 
 /**
@@ -602,118 +609,124 @@ interface Mounted {
  * hides it when the red dot goes on, so two sights do not stand on one rail.
  */
 function mountAttachments(
-  root: THREE.Object3D,
-  magazine: THREE.Object3D,
-  template: WeaponAssetTemplate,
-  options: WeaponModelOptions,
-  surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
+    root: THREE.Object3D,
+    magazine: THREE.Object3D,
+    template: WeaponAssetTemplate,
+    options: WeaponModelOptions,
+    surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
 ): Mounted {
-  const out: Mounted = {};
-  const assets = options.assets ?? null;
-  const attachments = options.attachments ?? [];
-  if (assets === null || attachments.length === 0) return out;
+    const out: Mounted = {};
+    const assets = options.assets ?? null;
+    const attachments = options.attachments ?? [];
+    if (assets === null || attachments.length === 0) return out;
 
-  const spec = modelSpecFor(template.weaponId);
-  for (const id of attachments) {
-    if (id === 'mag_extended') {
-      magazine.scale.y = MAGAZINE_EXTENDED_STRETCH;
-      continue;
-    }
-    if (id === 'optic_reflex' && spec.optic === 'scope') continue;
-    const partId = ATTACHMENT_PARTS[id];
-    const part = assets.part(partId);
-    const socket = root.getObjectByName(ATTACHMENT_PART_SOCKETS[partId]);
-    if (part === null || socket === undefined) continue;
-    const clone = part.scene.clone(true);
-    clone.name = `attachment:${partId}`;
-    socket.add(clone);
+    const spec = modelSpecFor(template.weaponId);
+    for (const id of attachments) {
+        if (id === 'mag_extended') {
+            magazine.scale.y = MAGAZINE_EXTENDED_STRETCH;
+            continue;
+        }
+        if (id === 'optic_reflex' && spec.optic === 'scope') continue;
+        const partId = ATTACHMENT_PARTS[id];
+        const part = assets.part(partId);
+        const socket = root.getObjectByName(ATTACHMENT_PART_SOCKETS[partId]);
+        if (part === null || socket === undefined) continue;
+        const clone = part.scene.clone(true);
+        clone.name = `attachment:${partId}`;
+        clone.traverse((node) => {
+            if (node instanceof THREE.Mesh) {
+                node.updateMatrix();
+                node.matrixAutoUpdate = false;
+            }
+        });
+        socket.add(clone);
 
-    if (partId === 'att_optic') {
-      clone.traverse((node) => {
-        const mesh = node as THREE.Mesh;
-        const material = mesh.material;
-        if (!(material instanceof THREE.Material)) return;
-        if (material.name === 'M_glass') mesh.material = surfaces.get('lens') ?? material;
-        else if (material.name === 'M_Reticle') mesh.material = surfaces.get('reticle') ?? material;
-      });
-      const sight = part.sockets.socket_sight;
-      if (sight !== undefined) out.sightPoint = template.sockets.socket_rail_top.clone().add(sight);
-      // The weapon's own sights go under a mounted optic: its collimator (`optic_default`) and
-      // its iron sights (`irons`, carved out by the build). Both stood in the middle of the
-      // sight picture (playtest 4, finding 3), which is what a real shooter removes them for.
-      for (const name of ['optic_default', 'irons']) {
-        const own = root.getObjectByName(name);
-        if (own !== undefined) own.visible = false;
-      }
-    } else if (partId === 'att_suppressor') {
-      const muzzle = clone.getObjectByName('socket_muzzle');
-      if (muzzle !== undefined) out.muzzle = muzzle;
-    } else if (partId === 'att_grip') {
-      /**
-       * A weapon that came with a foregrip loses its own when one is mounted (2026-09-27).
-       *
-       * The same rule `optic_default` has above, for the same reason and found the same way:
-       * the MONOLITH's handguard has a vertical grip moulded into it, and mounting the pack's
-       * put a second one through it. Carved out by the build into `grip_default`, and the
-       * mounted part takes its place — `socket_rail_bottom` is that grip's own collar, so the
-       * replacement stands where the original stood rather than somewhere near it.
-       */
-      const own = root.getObjectByName('grip_default');
-      if (own !== undefined) own.visible = false;
+        if (partId === 'att_optic') {
+            clone.traverse((node) => {
+                const mesh = node as THREE.Mesh;
+                const material = mesh.material;
+                if (!(material instanceof THREE.Material)) return;
+                if (material.name === 'M_glass') mesh.material = surfaces.get('lens') ?? material;
+                else if (material.name === 'M_Reticle') mesh.material = surfaces.get('reticle') ?? material;
+            });
+            const sight = part.sockets.socket_sight;
+            if (sight !== undefined) out.sightPoint = template.sockets.socket_rail_top.clone().add(sight);
+            // The weapon's own sights go under a mounted optic: its collimator (`optic_default`) and
+            // its iron sights (`irons`, carved out by the build). Both stood in the middle of the
+            // sight picture (playtest 4, finding 3), which is what a real shooter removes them for.
+            for (const name of ['optic_default', 'irons']) {
+                const own = root.getObjectByName(name);
+                if (own !== undefined) own.visible = false;
+            }
+        } else if (partId === 'att_suppressor') {
+            const muzzle = clone.getObjectByName('socket_muzzle');
+            if (muzzle !== undefined) out.muzzle = muzzle;
+        } else if (partId === 'att_grip') {
+            /**
+             * A weapon that came with a foregrip loses its own when one is mounted (2026-09-27).
+             *
+             * The same rule `optic_default` has above, for the same reason and found the same way:
+             * the MONOLITH's handguard has a vertical grip moulded into it, and mounting the pack's
+             * put a second one through it. Carved out by the build into `grip_default`, and the
+             * mounted part takes its place — `socket_rail_bottom` is that grip's own collar, so the
+             * replacement stands where the original stood rather than somewhere near it.
+             */
+            const own = root.getObjectByName('grip_default');
+            if (own !== undefined) own.visible = false;
+        }
     }
-  }
-  return out;
+    return out;
 }
 
 // -- assembly ---------------------------------------------------------------
 
 function addMerged(
-  parent: THREE.Object3D,
-  boxes: readonly BoxPart[],
-  tubes: readonly TubePart[],
-  surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
-  disposables: Array<{ dispose(): void }>,
-  label: string,
+    parent: THREE.Object3D,
+    boxes: readonly BoxPart[],
+    tubes: readonly TubePart[],
+    surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
+    disposables: Array<{ dispose(): void }>,
+    label: string,
 ): void {
-  const bySurface = new Map<SurfaceKey, THREE.BufferGeometry[]>();
+    const bySurface = new Map<SurfaceKey, THREE.BufferGeometry[]>();
 
-  const push = (key: SurfaceKey, geometry: THREE.BufferGeometry): void => {
-    const list = bySurface.get(key);
-    if (list === undefined) bySurface.set(key, [geometry]);
-    else list.push(geometry);
-  };
+    const push = (key: SurfaceKey, geometry: THREE.BufferGeometry): void => {
+        const list = bySurface.get(key);
+        if (list === undefined) bySurface.set(key, [geometry]);
+        else list.push(geometry);
+    };
 
-  for (const part of boxes) {
-    const g = new THREE.BoxGeometry(part.w, part.h, part.d);
-    if (part.rx !== undefined) g.rotateX(part.rx);
-    if (part.ry !== undefined) g.rotateY(part.ry);
-    if (part.rz !== undefined) g.rotateZ(part.rz);
-    g.translate(part.x, part.y, part.z);
-    push(part.surface, g);
-  }
+    for (const part of boxes) {
+        const g = new THREE.BoxGeometry(part.w, part.h, part.d);
+        if (part.rx !== undefined) g.rotateX(part.rx);
+        if (part.ry !== undefined) g.rotateY(part.ry);
+        if (part.rz !== undefined) g.rotateZ(part.rz);
+        g.translate(part.x, part.y, part.z);
+        push(part.surface, g);
+    }
 
-  for (const part of tubes) {
-    const g = new THREE.CylinderGeometry(part.radius, part.radius, part.length, part.sides ?? 12, 1);
-    // CylinderGeometry runs along +Y; barrels run along Z.
-    if (part.vertical !== true) g.rotateX(Math.PI / 2);
-    g.translate(part.x, part.y, part.z);
-    push(part.surface, g);
-  }
+    for (const part of tubes) {
+        const g = new THREE.CylinderGeometry(part.radius, part.radius, part.length, part.sides ?? 12, 1);
+        // CylinderGeometry runs along +Y; barrels run along Z.
+        if (part.vertical !== true) g.rotateX(Math.PI / 2);
+        g.translate(part.x, part.y, part.z);
+        push(part.surface, g);
+    }
 
-  for (const [key, list] of bySurface) {
-    const merged = mergeGeometries(list, false);
-    for (const g of list) g.dispose();
-    if (merged === null) continue;
-    merged.computeBoundingSphere();
-    const material = surfaces.get(key);
-    if (material === undefined) continue;
-    const mesh = new THREE.Mesh(merged, material);
-    mesh.name = `viewmodel:${label}:${key}`;
-    mesh.matrixAutoUpdate = false;
-    mesh.updateMatrix();
-    parent.add(mesh);
-    disposables.push(merged);
-  }
+    for (const [key, list] of bySurface) {
+        const merged = mergeGeometries(list, false);
+        for (const g of list) g.dispose();
+        if (merged === null) continue;
+        merged.computeBoundingSphere();
+        const material = surfaces.get(key);
+        if (material === undefined) continue;
+        const mesh = new THREE.Mesh(merged, material);
+        mesh.name = `viewmodel:${label}:${key}`;
+        mesh.matrixAutoUpdate = false;
+        mesh.updateMatrix();
+        parent.add(mesh);
+        disposables.push(merged);
+    }
 }
 
 // -- surfaces ---------------------------------------------------------------
@@ -744,21 +757,21 @@ const cachedSurfaces = new Map<string, Map<SurfaceKey, THREE.MeshStandardMateria
  * is not one.
  */
 export function sharedWeaponSurfaces(
-  anisotropy: number,
+    anisotropy: number,
 ): ReadonlyMap<SurfaceKey, THREE.MeshStandardMaterial> {
-  return sharedSurfaces(anisotropy, null);
+    return sharedSurfaces(anisotropy, null);
 }
 
 function sharedSurfaces(
-  anisotropy: number,
-  camo: CamoId | null,
+    anisotropy: number,
+    camo: CamoId | null,
 ): Map<SurfaceKey, THREE.MeshStandardMaterial> {
-  const key = camo ?? '';
-  const existing = cachedSurfaces.get(key);
-  if (existing !== undefined) return existing;
-  const out = camo === null ? buildDefaultSurfaces(anisotropy) : buildCamoSurfaces(anisotropy, camo);
-  cachedSurfaces.set(key, out);
-  return out;
+    const key = camo ?? '';
+    const existing = cachedSurfaces.get(key);
+    if (existing !== undefined) return existing;
+    const out = camo === null ? buildDefaultSurfaces(anisotropy) : buildCamoSurfaces(anisotropy, camo);
+    cachedSurfaces.set(key, out);
+    return out;
 }
 
 /**
@@ -769,83 +782,83 @@ function sharedSurfaces(
  * is a *material* rather than a coating, so it takes the metalness the others do not.
  */
 function buildCamoSurfaces(
-  anisotropy: number,
-  camo: CamoId,
+    anisotropy: number,
+    camo: CamoId,
 ): Map<SurfaceKey, THREE.MeshStandardMaterial> {
-  const out = new Map<SurfaceKey, THREE.MeshStandardMaterial>();
-  const texture = camoTexture(camo, anisotropy);
-  const metallic = camo === 'gold' || camo === 'obsidian';
-  out.set(
-    'gunmetal',
-    new THREE.MeshStandardMaterial({
-      map: texture,
-      color: 0xffffff,
-      roughness: metallic ? 0.3 : 0.55,
-      metalness: metallic ? 0.55 : 0.18,
-    }),
-  );
-  out.set(
-    'polymer',
-    new THREE.MeshStandardMaterial({
-      map: texture,
-      color: 0xffffff,
-      roughness: metallic ? 0.38 : 0.8,
-      metalness: metallic ? 0.45 : 0.04,
-    }),
-  );
-  out.set(
-    'glove',
-    new THREE.MeshStandardMaterial({
-      map: baseTexture('glove', anisotropy),
-      color: 0xffffff,
-      roughness: 0.95,
-      metalness: 0,
-    }),
-  );
-  addOpticSurfaces(out);
-  return out;
+    const out = new Map<SurfaceKey, THREE.MeshStandardMaterial>();
+    const texture = camoTexture(camo, anisotropy);
+    const metallic = camo === 'gold' || camo === 'obsidian';
+    out.set(
+        'gunmetal',
+        new THREE.MeshStandardMaterial({
+            map: texture,
+            color: 0xffffff,
+            roughness: metallic ? 0.3 : 0.55,
+            metalness: metallic ? 0.55 : 0.18,
+        }),
+    );
+    out.set(
+        'polymer',
+        new THREE.MeshStandardMaterial({
+            map: texture,
+            color: 0xffffff,
+            roughness: metallic ? 0.38 : 0.8,
+            metalness: metallic ? 0.45 : 0.04,
+        }),
+    );
+    out.set(
+        'glove',
+        new THREE.MeshStandardMaterial({
+            map: baseTexture('glove', anisotropy),
+            color: 0xffffff,
+            roughness: 0.95,
+            metalness: 0,
+        }),
+    );
+    addOpticSurfaces(out);
+    return out;
 }
 
 function buildDefaultSurfaces(anisotropy: number): Map<SurfaceKey, THREE.MeshStandardMaterial> {
-  const out = new Map<SurfaceKey, THREE.MeshStandardMaterial>();
+    const out = new Map<SurfaceKey, THREE.MeshStandardMaterial>();
 
-  // A viewmodel is the one place in this project worth a real BRDF: it is a handful of
-  // triangles filling a small part of the screen, and the difference between "metal" and
-  // "plastic" is exactly what roughness is for.
-  //
-  // Metalness is deliberately kept low. A physically honest 0.85 metal has almost no
-  // diffuse response and gets nearly all its colour from reflections — with no
-  // environment map in the scene there is nothing to reflect, and the gun renders black.
-  // Base colour lives in the textures; the material tints are left neutral.
-  out.set(
-    'gunmetal',
-    new THREE.MeshStandardMaterial({
-      map: baseTexture('gunmetal', anisotropy),
-      color: 0xffffff,
-      roughness: 0.44,
-      metalness: 0.3,
-    }),
-  );
-  out.set(
-    'polymer',
-    new THREE.MeshStandardMaterial({
-      map: baseTexture('polymer', anisotropy),
-      color: 0xffffff,
-      roughness: 0.85,
-      metalness: 0.02,
-    }),
-  );
-  out.set(
-    'glove',
-    new THREE.MeshStandardMaterial({
-      map: baseTexture('glove', anisotropy),
-      color: 0xffffff,
-      roughness: 0.95,
-      metalness: 0,
-    }),
-  );
-  addOpticSurfaces(out);
-  return out;
+    // A viewmodel is the one place in this project worth a real BRDF: it is a handful of
+    // triangles filling a small part of the screen, and the difference between "metal" and
+    // "plastic" is exactly what roughness is for.
+    //
+    // Metalness is deliberately kept low. A physically honest 0.85 metal has almost no
+    // diffuse response and gets nearly all its colour from reflections — with no
+    // environment map in the scene there is nothing to reflect, and the gun renders black.
+    // Base colour lives in the textures; the material tints are left neutral.
+    out.set(
+        'gunmetal',
+        new THREE.MeshStandardMaterial({
+            map: baseTexture('gunmetal', anisotropy),
+            color: 0xffffff,
+            roughness: 0.44,
+            metalness: 0.3,
+        }),
+    );
+    out.set(
+        'polymer',
+        new THREE.MeshStandardMaterial({
+            map: baseTexture('polymer', anisotropy),
+            color: 0xffffff,
+            roughness: 0.85,
+            metalness: 0.02,
+        }),
+    );
+    out.set(
+        'glove',
+        new THREE.MeshStandardMaterial({
+            map: baseTexture('glove', anisotropy),
+            color: 0xffffff,
+            roughness: 0.95,
+            metalness: 0,
+        }),
+    );
+    addOpticSurfaces(out);
+    return out;
 }
 
 /**
@@ -860,30 +873,30 @@ function buildDefaultSurfaces(anisotropy: number): Map<SurfaceKey, THREE.MeshSta
  * depth test, which is the opaque-optic bug wearing a transparent material.
  */
 function addOpticSurfaces(out: Map<SurfaceKey, THREE.MeshStandardMaterial>): void {
-  out.set(
-    'lens',
-    new THREE.MeshStandardMaterial({
-      color: 0x18242e,
-      roughness: 0.07,
-      metalness: 0,
-      transparent: true,
-      opacity: 0.2,
-      depthWrite: false,
-    }),
-  );
-  out.set(
-    'reticle',
-    new THREE.MeshStandardMaterial({
-      color: 0x000000,
-      emissive: 0xff2a1e,
-      emissiveIntensity: 3.5,
-      roughness: 1,
-      metalness: 0,
-      // The dot is a light source, not a lit surface: tone mapping would drag it toward the
-      // scene's exposure and a red dot that dims in a bright lane is not a red dot.
-      toneMapped: false,
-    }),
-  );
+    out.set(
+        'lens',
+        new THREE.MeshStandardMaterial({
+            color: 0x18242e,
+            roughness: 0.07,
+            metalness: 0,
+            transparent: true,
+            opacity: 0.2,
+            depthWrite: false,
+        }),
+    );
+    out.set(
+        'reticle',
+        new THREE.MeshStandardMaterial({
+            color: 0x000000,
+            emissive: 0xff2a1e,
+            emissiveIntensity: 3.5,
+            roughness: 1,
+            metalness: 0,
+            // The dot is a light source, not a lit surface: tone mapping would drag it toward the
+            // scene's exposure and a red dot that dims in a bright lane is not a red dot.
+            toneMapped: false,
+        }),
+    );
 }
 
 /**
@@ -917,50 +930,50 @@ function addOpticSurfaces(out: Map<SurfaceKey, THREE.MeshStandardMaterial>): voi
  * a body that already has hands does not need a second pair floating beside them.
  */
 function buildHeldWeaponGeometry(weaponId: string): THREE.BufferGeometry {
-  const spec = modelSpecFor(weaponId);
-  const parts: THREE.BufferGeometry[] = [];
+    const spec = modelSpecFor(weaponId);
+    const parts: THREE.BufferGeometry[] = [];
 
-  for (const part of [...bodyBoxes(spec), ...magazineBoxes(spec), ...chargingBoxes(spec)]) {
-    if (part.surface === 'lens' || part.surface === 'reticle') continue;
-    const g = new THREE.BoxGeometry(part.w, part.h, part.d);
-    if (part.rx !== undefined) g.rotateX(part.rx);
-    if (part.ry !== undefined) g.rotateY(part.ry);
-    if (part.rz !== undefined) g.rotateZ(part.rz);
-    g.translate(part.x, part.y, part.z);
-    parts.push(g);
-  }
+    for (const part of [...bodyBoxes(spec), ...magazineBoxes(spec), ...chargingBoxes(spec)]) {
+        if (part.surface === 'lens' || part.surface === 'reticle') continue;
+        const g = new THREE.BoxGeometry(part.w, part.h, part.d);
+        if (part.rx !== undefined) g.rotateX(part.rx);
+        if (part.ry !== undefined) g.rotateY(part.ry);
+        if (part.rz !== undefined) g.rotateZ(part.rz);
+        g.translate(part.x, part.y, part.z);
+        parts.push(g);
+    }
 
-  for (const part of [...bodyTubes(spec), ...magazineTubes(spec)]) {
-    if (part.surface === 'lens' || part.surface === 'reticle') continue;
-    // Half the sides of the viewmodel's: a barrel that is twelve-sided at arm's length is
-    // eight-sided at twenty metres and nobody can tell, and this is ten of them.
-    const sides = Math.max(5, Math.round((part.sides ?? 12) * 0.5));
-    const g = new THREE.CylinderGeometry(part.radius, part.radius, part.length, sides, 1);
-    if (part.vertical !== true) g.rotateX(Math.PI / 2);
-    g.translate(part.x, part.y, part.z);
-    parts.push(g);
-  }
+    for (const part of [...bodyTubes(spec), ...magazineTubes(spec)]) {
+        if (part.surface === 'lens' || part.surface === 'reticle') continue;
+        // Half the sides of the viewmodel's: a barrel that is twelve-sided at arm's length is
+        // eight-sided at twenty metres and nobody can tell, and this is ten of them.
+        const sides = Math.max(5, Math.round((part.sides ?? 12) * 0.5));
+        const g = new THREE.CylinderGeometry(part.radius, part.radius, part.length, sides, 1);
+        if (part.vertical !== true) g.rotateX(Math.PI / 2);
+        g.translate(part.x, part.y, part.z);
+        parts.push(g);
+    }
 
-  const merged = mergeGeometries(parts, false);
-  for (const g of parts) g.dispose();
-  if (merged === null) throw new Error(`Weapon "${weaponId}" merged to no geometry.`);
-  // The viewmodel scales its root; a shared geometry has no root to scale, so it is baked.
-  merged.scale(spec.scale, spec.scale, spec.scale);
-  merged.computeBoundingSphere();
-  return merged;
+    const merged = mergeGeometries(parts, false);
+    for (const g of parts) g.dispose();
+    if (merged === null) throw new Error(`Weapon "${weaponId}" merged to no geometry.`);
+    // The viewmodel scales its root; a shared geometry has no root to scale, so it is baked.
+    merged.scale(spec.scale, spec.scale, spec.scale);
+    merged.computeBoundingSphere();
+    return merged;
 }
 
 /** A held weapon's geometry and the two points a body holds it by, in the same space. */
 export interface HeldWeaponGeometry {
-  readonly geometry: THREE.BufferGeometry;
-  /**
-   * The trigger grip, after the scale baked into the geometry. Third-person code attaches
-   * this point to the character's right-hand socket instead of attaching the receiver centre,
-   * so every weapon class has the correct attachment rule.
-   */
-  readonly gripAnchor: THREE.Vector3;
-  /** The support palm, same space. The target for the animated left-arm constraint. */
-  readonly supportAnchor: THREE.Vector3;
+    readonly geometry: THREE.BufferGeometry;
+    /**
+     * The trigger grip, after the scale baked into the geometry. Third-person code attaches
+     * this point to the character's right-hand socket instead of attaching the receiver centre,
+     * so every weapon class has the correct attachment rule.
+     */
+    readonly gripAnchor: THREE.Vector3;
+    /** The support palm, same space. The target for the animated left-arm constraint. */
+    readonly supportAnchor: THREE.Vector3;
 }
 
 /**
@@ -995,56 +1008,56 @@ const SHIELD_T = 0.045;
  * material, and at twenty metres a dark band reads the same as a window.
  */
 function buildShieldGeometry(): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-  const rail = 0.05;
-  const gap = 0.1;
-  // The plate, in three bands so the middle one can be a slot the eye reads as a viewport.
-  const upper = SHIELD_H * 0.34;
-  const lower = SHIELD_H - upper - gap;
-  const plate = (h: number, y: number): void => {
-    const g = new THREE.BoxGeometry(SHIELD_W, h, SHIELD_T);
-    g.translate(0, y, 0);
-    parts.push(g);
-  };
-  plate(upper, SHIELD_H * 0.5 - upper * 0.5);
-  plate(lower, -SHIELD_H * 0.5 + lower * 0.5);
-  // The bar across the viewport, and a rim down each edge: the two details that stop it
-  // reading as a crate at distance.
-  for (const x of [-SHIELD_W * 0.5 + rail * 0.5, SHIELD_W * 0.5 - rail * 0.5]) {
-    const g = new THREE.BoxGeometry(rail, SHIELD_H, SHIELD_T * 1.6);
-    g.translate(x, 0, 0);
-    parts.push(g);
-  }
-  // The grip, behind the plate, where the hand goes.
-  const grip = new THREE.BoxGeometry(0.04, 0.16, 0.05);
-  grip.translate(0, -0.05, SHIELD_T * 0.5 + 0.03);
-  parts.push(grip);
+    const parts: THREE.BufferGeometry[] = [];
+    const rail = 0.05;
+    const gap = 0.1;
+    // The plate, in three bands so the middle one can be a slot the eye reads as a viewport.
+    const upper = SHIELD_H * 0.34;
+    const lower = SHIELD_H - upper - gap;
+    const plate = (h: number, y: number): void => {
+        const g = new THREE.BoxGeometry(SHIELD_W, h, SHIELD_T);
+        g.translate(0, y, 0);
+        parts.push(g);
+    };
+    plate(upper, SHIELD_H * 0.5 - upper * 0.5);
+    plate(lower, -SHIELD_H * 0.5 + lower * 0.5);
+    // The bar across the viewport, and a rim down each edge: the two details that stop it
+    // reading as a crate at distance.
+    for (const x of [-SHIELD_W * 0.5 + rail * 0.5, SHIELD_W * 0.5 - rail * 0.5]) {
+        const g = new THREE.BoxGeometry(rail, SHIELD_H, SHIELD_T * 1.6);
+        g.translate(x, 0, 0);
+        parts.push(g);
+    }
+    // The grip, behind the plate, where the hand goes.
+    const grip = new THREE.BoxGeometry(0.04, 0.16, 0.05);
+    grip.translate(0, -0.05, SHIELD_T * 0.5 + 0.03);
+    parts.push(grip);
 
-  const merged = mergeGeometries(parts, false);
-  for (const g of parts) g.dispose();
-  if (merged === null) throw new Error('The riot shield merged to no geometry.');
-  merged.computeBoundingSphere();
-  return merged;
+    const merged = mergeGeometries(parts, false);
+    for (const g of parts) g.dispose();
+    if (merged === null) throw new Error('The riot shield merged to no geometry.');
+    merged.computeBoundingSphere();
+    return merged;
 }
 
 export function buildHeldWeapon(weaponId: string): HeldWeaponGeometry {
-  if (weaponId === 'streak_shield') {
+    if (weaponId === 'streak_shield') {
+        return {
+            geometry: buildShieldGeometry(),
+            // The hand is on the grip behind the plate; the support palm is the same place, because
+            // a shield is carried with one arm and the other one is holding a pistol.
+            gripAnchor: new THREE.Vector3(0, -0.05, SHIELD_T * 0.5 + 0.05),
+            supportAnchor: new THREE.Vector3(0, -0.05, SHIELD_T * 0.5 + 0.05),
+        };
+    }
+    const spec = modelSpecFor(weaponId);
+    const grip = triggerHandAnchor(spec);
+    const support = supportHandAnchor(spec);
     return {
-      geometry: buildShieldGeometry(),
-      // The hand is on the grip behind the plate; the support palm is the same place, because
-      // a shield is carried with one arm and the other one is holding a pistol.
-      gripAnchor: new THREE.Vector3(0, -0.05, SHIELD_T * 0.5 + 0.05),
-      supportAnchor: new THREE.Vector3(0, -0.05, SHIELD_T * 0.5 + 0.05),
+        geometry: buildHeldWeaponGeometry(weaponId),
+        gripAnchor: new THREE.Vector3(grip.x, grip.y, grip.z).multiplyScalar(spec.scale),
+        supportAnchor: new THREE.Vector3(support.x, support.y, support.z).multiplyScalar(spec.scale),
     };
-  }
-  const spec = modelSpecFor(weaponId);
-  const grip = triggerHandAnchor(spec);
-  const support = supportHandAnchor(spec);
-  return {
-    geometry: buildHeldWeaponGeometry(weaponId),
-    gripAnchor: new THREE.Vector3(grip.x, grip.y, grip.z).multiplyScalar(spec.scale),
-    supportAnchor: new THREE.Vector3(support.x, support.y, support.z).multiplyScalar(spec.scale),
-  };
 }
 
 /**
@@ -1062,9 +1075,9 @@ export function buildHeldWeapon(weaponId: string): HeldWeaponGeometry {
  * does not — the wire carries no camo, so there is none to show.
  */
 export function heldWeaponMaterial(anisotropy: number, camo: CamoId | null = null): THREE.Material {
-  const material = sharedSurfaces(anisotropy, camo).get('gunmetal');
-  if (material === undefined) throw new Error('The shared weapon surfaces have no gunmetal.');
-  return material;
+    const material = sharedSurfaces(anisotropy, camo).get('gunmetal');
+    if (material === undefined) throw new Error('The shared weapon surfaces have no gunmetal.');
+    return material;
 }
 
 /**
@@ -1076,99 +1089,99 @@ export function heldWeaponMaterial(anisotropy: number, camo: CamoId | null = nul
 const baseTextures = new Map<SurfaceKey, THREE.Texture>();
 
 function baseTexture(key: SurfaceKey, anisotropy: number): THREE.Texture {
-  const existing = baseTextures.get(key);
-  if (existing !== undefined) return existing;
-  const made =
-    key === 'gunmetal'
-      ? gunmetalTexture(anisotropy)
-      : key === 'polymer'
-        ? polymerTexture(anisotropy)
-        : gloveTexture(anisotropy);
-  baseTextures.set(key, made);
-  return made;
+    const existing = baseTextures.get(key);
+    if (existing !== undefined) return existing;
+    const made =
+        key === 'gunmetal'
+            ? gunmetalTexture(anisotropy)
+            : key === 'polymer'
+                ? polymerTexture(anisotropy)
+                : gloveTexture(anisotropy);
+    baseTextures.set(key, made);
+    return made;
 }
 
 const TEX = 128;
 
 function makeCanvas(): CanvasRenderingContext2D {
-  const canvas = document.createElement('canvas');
-  canvas.width = TEX;
-  canvas.height = TEX;
-  const ctx = canvas.getContext('2d');
-  if (ctx === null) throw new Error('2D canvas context unavailable; cannot build weapon textures.');
-  return ctx;
+    const canvas = document.createElement('canvas');
+    canvas.width = TEX;
+    canvas.height = TEX;
+    const ctx = canvas.getContext('2d');
+    if (ctx === null) throw new Error('2D canvas context unavailable; cannot build weapon textures.');
+    return ctx;
 }
 
 function finish(ctx: CanvasRenderingContext2D, anisotropy: number, repeat: number): THREE.Texture {
-  const texture = new THREE.CanvasTexture(ctx.canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = anisotropy;
-  texture.repeat.set(repeat, repeat);
-  texture.needsUpdate = true;
-  return texture;
+    const texture = new THREE.CanvasTexture(ctx.canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = anisotropy;
+    texture.repeat.set(repeat, repeat);
+    texture.needsUpdate = true;
+    return texture;
 }
 
 function gunmetalTexture(anisotropy: number): THREE.Texture {
-  const ctx = makeCanvas();
-  const rng = new Rng(0x6a17_c0de);
-  ctx.fillStyle = '#565c66';
-  ctx.fillRect(0, 0, TEX, TEX);
-  // Machining marks running along the barrel axis.
-  for (let i = 0; i < 340; i++) {
-    const y = rng.float() * TEX;
-    const a = rng.range(0.03, 0.11);
-    ctx.fillStyle = rng.chance(0.5) ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`;
-    ctx.fillRect(rng.float() * TEX, y, rng.range(12, 70), 1);
-  }
-  // Edge wear: a few brighter scuffs where a real rifle rubs.
-  for (let i = 0; i < 26; i++) {
-    ctx.fillStyle = `rgba(220,225,235,${rng.range(0.05, 0.16)})`;
-    ctx.fillRect(rng.float() * TEX, rng.float() * TEX, rng.range(3, 14), rng.range(1, 3));
-  }
-  return finish(ctx, anisotropy, 1);
+    const ctx = makeCanvas();
+    const rng = new Rng(0x6a17_c0de);
+    ctx.fillStyle = '#565c66';
+    ctx.fillRect(0, 0, TEX, TEX);
+    // Machining marks running along the barrel axis.
+    for (let i = 0; i < 340; i++) {
+        const y = rng.float() * TEX;
+        const a = rng.range(0.03, 0.11);
+        ctx.fillStyle = rng.chance(0.5) ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`;
+        ctx.fillRect(rng.float() * TEX, y, rng.range(12, 70), 1);
+    }
+    // Edge wear: a few brighter scuffs where a real rifle rubs.
+    for (let i = 0; i < 26; i++) {
+        ctx.fillStyle = `rgba(220,225,235,${rng.range(0.05, 0.16)})`;
+        ctx.fillRect(rng.float() * TEX, rng.float() * TEX, rng.range(3, 14), rng.range(1, 3));
+    }
+    return finish(ctx, anisotropy, 1);
 }
 
 function polymerTexture(anisotropy: number): THREE.Texture {
-  const ctx = makeCanvas();
-  const rng = new Rng(0x9f2b_5511);
-  ctx.fillStyle = '#3a3e45';
-  ctx.fillRect(0, 0, TEX, TEX);
-  // Moulded stipple.
-  for (let i = 0; i < 2600; i++) {
-    const a = rng.range(0.03, 0.14);
-    ctx.fillStyle = rng.chance(0.55) ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`;
-    ctx.fillRect(rng.float() * TEX, rng.float() * TEX, rng.range(0.8, 2.2), rng.range(0.8, 2.2));
-  }
-  // Panel lines so the handguard does not read as one flat slab.
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-  ctx.lineWidth = 2;
-  for (let i = 1; i < 8; i++) {
-    const x = (i / 8) * TEX;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, TEX);
-    ctx.stroke();
-  }
-  return finish(ctx, anisotropy, 2);
+    const ctx = makeCanvas();
+    const rng = new Rng(0x9f2b_5511);
+    ctx.fillStyle = '#3a3e45';
+    ctx.fillRect(0, 0, TEX, TEX);
+    // Moulded stipple.
+    for (let i = 0; i < 2600; i++) {
+        const a = rng.range(0.03, 0.14);
+        ctx.fillStyle = rng.chance(0.55) ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`;
+        ctx.fillRect(rng.float() * TEX, rng.float() * TEX, rng.range(0.8, 2.2), rng.range(0.8, 2.2));
+    }
+    // Panel lines so the handguard does not read as one flat slab.
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 2;
+    for (let i = 1; i < 8; i++) {
+        const x = (i / 8) * TEX;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, TEX);
+        ctx.stroke();
+    }
+    return finish(ctx, anisotropy, 2);
 }
 
 function gloveTexture(anisotropy: number): THREE.Texture {
-  const ctx = makeCanvas();
-  const rng = new Rng(0x11a7_3ef0);
-  ctx.fillStyle = '#5d574a';
-  ctx.fillRect(0, 0, TEX, TEX);
-  // Woven fabric: two crossing sets of threads.
-  for (let i = 0; i < TEX; i += 3) {
-    ctx.fillStyle = `rgba(0,0,0,${rng.range(0.06, 0.16)})`;
-    ctx.fillRect(0, i, TEX, 1);
-    ctx.fillStyle = `rgba(255,255,255,${rng.range(0.02, 0.07)})`;
-    ctx.fillRect(i, 0, 1, TEX);
-  }
-  for (let i = 0; i < 700; i++) {
-    ctx.fillStyle = `rgba(0,0,0,${rng.range(0.04, 0.12)})`;
-    ctx.fillRect(rng.float() * TEX, rng.float() * TEX, rng.range(1, 3), rng.range(1, 3));
-  }
-  return finish(ctx, anisotropy, 3);
+    const ctx = makeCanvas();
+    const rng = new Rng(0x11a7_3ef0);
+    ctx.fillStyle = '#5d574a';
+    ctx.fillRect(0, 0, TEX, TEX);
+    // Woven fabric: two crossing sets of threads.
+    for (let i = 0; i < TEX; i += 3) {
+        ctx.fillStyle = `rgba(0,0,0,${rng.range(0.06, 0.16)})`;
+        ctx.fillRect(0, i, TEX, 1);
+        ctx.fillStyle = `rgba(255,255,255,${rng.range(0.02, 0.07)})`;
+        ctx.fillRect(i, 0, 1, TEX);
+    }
+    for (let i = 0; i < 700; i++) {
+        ctx.fillStyle = `rgba(0,0,0,${rng.range(0.04, 0.12)})`;
+        ctx.fillRect(rng.float() * TEX, rng.float() * TEX, rng.range(1, 3), rng.range(1, 3));
+    }
+    return finish(ctx, anisotropy, 3);
 }

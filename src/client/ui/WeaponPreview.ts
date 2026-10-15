@@ -98,11 +98,14 @@ export class WeaponPreview {
   private model: WeaponModel | null = null;
   /** What `model` is, so an unchanged selection does not rebuild it every refresh. */
   private modelKey = '';
+  private readonly modelCache = new Map<string, WeaponModel>();
   private spinRadians = 0;
   private readonly width: number;
   private readonly height: number;
   private lastSeenWidth = 0;
   private lastSeenHeight = 0;
+  private sizeDirty = true;
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor(deps: WeaponPreviewDeps) {
     this.deps = deps;
@@ -136,140 +139,135 @@ export class WeaponPreview {
     this.camera.lookAt(0, -0.01, 0);
   }
 
-  /**
-   * Show a weapon. Cheap to call every refresh: an unchanged (weapon, camo) pair is a no-op.
-   */
-  show(weaponId: string, camo: CamoId | null, name: string, attachments: readonly AttachmentId[] = []): void {
-    const key = `${weaponId}|${camo ?? ''}|${[...attachments].sort().join(',')}`;
-    if (key !== this.modelKey) {
-      this.modelKey = key;
-      this.disposeModel();
-      // A picture of the weapon, not of somebody holding it: no gloves.
-      const model = buildWeaponModel(weaponId, this.deps.anisotropy(), camo, {
-        hands: false,
-        assets: this.deps.weaponAssets,
-        attachments,
-      });
-      this.upgradeWhenLoaded(model, key, weaponId, camo, name, attachments);
-      /**
-       * Framed by its own size rather than by a per-weapon number.
-       *
-       * The pistol is genuinely a different object from the LMG — `WeaponModelSpec.scale`
-       * says so — and a fixed camera distance would draw one as a speck and clip the other.
-       * The bounding box comes from the geometry that was just built, so a spec change moves
-       * the framing with it and there is no second table to keep in step.
-       */
-      const bounds = new THREE.Box3().setFromObject(model.root);
-      const centre = bounds.getCenter(new THREE.Vector3());
-      const span = Math.max(bounds.getSize(new THREE.Vector3()).length(), 0.001);
-      const fit = FIT_DIAGONAL / span;
-      /**
-       * Scale, **then** offset by the *scaled* centre, and the order is not cosmetic.
-       *
-       * A group's local matrix is `T · R · S`, so the translation is applied outside the
-       * scale: a child ends up at `fit · s · c + position`. The box was measured at `s`, so
-       * subtracting its raw centre would leave the model off the turntable's axis by
-       * `(fit - 1)` times that centre — a weapon that wobbles as it spins rather than turning
-       * on the spot, which is subtle enough to look like a modelling choice.
-       */
-      model.root.scale.multiplyScalar(fit);
-      model.root.position.copy(centre).multiplyScalar(-fit);
-      this.turntable.add(model.root);
-      this.model = model;
+    show(weaponId: string, camo: CamoId | null, name: string, attachments: readonly AttachmentId[] = []): void {
+        this.sizeDirty = true;
+        const key = `${weaponId}|${camo ?? ''}|${[...attachments].sort().join(',')}`;
+        if (key !== this.modelKey) {
+            this.modelKey = key;
+
+            if (this.model !== null) {
+                this.turntable.remove(this.model.root);
+                this.model = null;
+            }
+
+            let model = this.modelCache.get(key);
+            if (model === undefined) {
+                model = buildWeaponModel(weaponId, this.deps.anisotropy(), camo, {
+                    hands: false,
+                    assets: this.deps.weaponAssets,
+                    attachments,
+                });
+                const bounds = new THREE.Box3().setFromObject(model.root);
+                const centre = bounds.getCenter(new THREE.Vector3());
+                const span = Math.max(bounds.getSize(new THREE.Vector3()).length(), 0.001);
+                const fit = FIT_DIAGONAL / span;
+                model.root.scale.multiplyScalar(fit);
+                model.root.position.copy(centre).multiplyScalar(-fit);
+                this.modelCache.set(key, model);
+                this.upgradeWhenLoaded(model, key, weaponId, camo, name, attachments);
+            }
+
+            this.turntable.add(model.root);
+            this.model = model;
+        }
+        if (this.caption.textContent !== name) this.caption.textContent = name;
     }
-    if (this.caption.textContent !== name) this.caption.textContent = name;
-  }
 
-  /**
-   * The file in place of the primitives once it lands (M19): the same swap `ClientMatch` makes,
-   * done by forgetting the key and showing again. A late promise checks the key first — the
-   * pointer has usually moved on — and a weapon with no file resolves at once and does nothing.
-   */
-  private upgradeWhenLoaded(
-    model: WeaponModel,
-    key: string,
-    weaponId: string,
-    camo: CamoId | null,
-    name: string,
-    attachments: readonly AttachmentId[],
-  ): void {
-    const assets = this.deps.weaponAssets;
-    if (assets === null || model.source === 'glb' || assets.statusFor(weaponId) === 'none') return;
-    void assets.preload(weaponId).then(
-      () => {
-        if (this.modelKey !== key || this.model !== model) return;
+    private upgradeWhenLoaded(
+        model: WeaponModel,
+        key: string,
+        weaponId: string,
+        camo: CamoId | null,
+        name: string,
+        attachments: readonly AttachmentId[],
+    ): void {
+        const assets = this.deps.weaponAssets;
+        if (assets === null || model.source === 'glb' || assets.statusFor(weaponId) === 'none') return;
+        void assets.preload(weaponId).then(
+            () => {
+                // <<< שונה: מחיקת המודל הזמני מה-Cache כשהקובץ המלא (GLB) מסיים להיטען
+                const cached = this.modelCache.get(key);
+                if (cached === model) {
+                    this.modelCache.delete(key);
+                    if (this.model === model) {
+                        this.turntable.remove(model.root);
+                        this.model = null;
+                    }
+                    model.dispose();
+                }
+                if (this.modelKey !== key) return;
+                this.modelKey = '';
+                this.show(weaponId, camo, name, attachments);
+            },
+            () => undefined,
+        );
+    }
+
+    /** One frame. Driven from the render pass — see `LoadoutEditor.tick`. */
+    tick(dt: number): void {
+        if (this.model === null) return;
+        this.spinRadians += SPIN_DEG_PER_SEC * (Math.PI / 180) * dt;
+        this.turntable.rotation.y = this.spinRadians;
+        const renderer = this.ensureRenderer();
+        if (this.sizeDirty) this.fitBackingStore(renderer); // <<< שונה: רץ רק כשהגודל באמת השתנה!
+        renderer.render(this.scene, this.camera);
+    }
+
+    release(): void {
+        // <<< שונה: מנתקים מהבמה בלי למחוק את ה-Cache
+        if (this.model !== null) {
+            this.turntable.remove(this.model.root);
+            this.model = null;
+        }
         this.modelKey = '';
-        this.show(weaponId, camo, name, attachments);
-      },
-      () => undefined,
-    );
-  }
+    }
 
-  /** One frame. Driven from the render pass — see `LoadoutEditor.tick`. */
-  tick(dt: number): void {
-    if (this.model === null) return;
-    this.spinRadians += SPIN_DEG_PER_SEC * (Math.PI / 180) * dt;
-    this.turntable.rotation.y = this.spinRadians;
-    const renderer = this.ensureRenderer();
-    this.fitBackingStore(renderer);
-    renderer.render(this.scene, this.camera);
-  }
+    dispose(): void {
+        this.release();
+        // <<< חדש: ניקוי כל ה-Cache וה-ResizeObserver בסגירה מלאה
+        for (const cached of this.modelCache.values()) {
+            cached.dispose();
+        }
+        this.modelCache.clear();
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = null;
+        this.renderer?.dispose();
+        this.renderer = null;
+        this.element.remove();
+    }
 
-  /**
-   * Drop the model when the screen goes away, and keep the context.
-   *
-   * The geometry is per model and worth releasing between visits; the renderer is not — the
-   * expensive part of it is the context, and re-creating one per visit to a screen the player
-   * flips in and out of is how a page runs out of them.
-   */
-  release(): void {
-    this.disposeModel();
-    this.modelKey = '';
-  }
+    private ensureRenderer(): THREE.WebGLRenderer {
+        const existing = this.renderer;
+        if (existing !== null) return existing;
+        const made = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
+        made.outputColorSpace = THREE.SRGBColorSpace;
+        made.toneMapping = THREE.ACESFilmicToneMapping;
+        made.toneMappingExposure = 1.25;
+        made.debug.checkShaderErrors = false;
+        this.renderer = made;
+        this.sizeDirty = true; 
 
-  dispose(): void {
-    this.disposeModel();
-    this.renderer?.dispose();
-    this.renderer = null;
-    this.element.remove();
-  }
+        if (typeof ResizeObserver !== 'undefined' && this.resizeObserver === null) {
+            this.resizeObserver = new ResizeObserver(() => {
+                this.sizeDirty = true;
+            });
+            this.resizeObserver.observe(this.canvas);
+        }
+        return made;
+    }
 
-  private ensureRenderer(): THREE.WebGLRenderer {
-    const existing = this.renderer;
-    if (existing !== null) return existing;
-    const made = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
-    // The same colour pipeline as `Renderer`, or the weapon here is a different colour from
-    // the weapon in the match. Exposure included: ACES without it is a different curve.
-    made.outputColorSpace = THREE.SRGBColorSpace;
-    made.toneMapping = THREE.ACESFilmicToneMapping;
-    made.toneMappingExposure = 1.25;
-    this.renderer = made;
-    return made;
-  }
-
-  /**
-   * Size the backing store to what is on screen: the canvas's CSS box is in frame pixels and
-   * the frame is zoomed, so the rect is the truth and the attribute is not (as `CharacterStage`).
-   */
-  private fitBackingStore(renderer: THREE.WebGLRenderer): void {
-    const rect = this.canvas.getBoundingClientRect();
-    const ratio = Math.min(2, window.devicePixelRatio || 1);
-    const width = Math.max(1, Math.round((rect.width || this.width) * ratio));
-    const height = Math.max(1, Math.round((rect.height || this.height) * ratio));
-    if (width === this.lastSeenWidth && height === this.lastSeenHeight) return;
-    this.lastSeenWidth = width;
-    this.lastSeenHeight = height;
-    renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-  }
-
-  private disposeModel(): void {
-    const model = this.model;
-    if (model === null) return;
-    this.turntable.remove(model.root);
-    // Geometry only. The materials and textures belong to the process — see the file comment.
-    model.dispose();
-    this.model = null;
-  }
+    private fitBackingStore(renderer: THREE.WebGLRenderer): void {
+        const rect = this.canvas.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+        this.sizeDirty = false;
+        const ratio = Math.min(2, window.devicePixelRatio || 1);
+        const width = Math.max(1, Math.round((rect.width || this.width) * ratio));
+        const height = Math.max(1, Math.round((rect.height || this.height) * ratio));
+        if (width === this.lastSeenWidth && height === this.lastSeenHeight) return;
+        this.lastSeenWidth = width;
+        this.lastSeenHeight = height;
+        renderer.setSize(width, height, false);
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+    }
 }

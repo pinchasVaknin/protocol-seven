@@ -148,9 +148,9 @@ export class CharacterSkin {
    * Constrain the animated support palm only while this skin currently has a held weapon — and
    * not while a throw has put it away, when the palm would be pulled to a rifle nobody can see.
    */
-  solveSupportHand(): void {
+  solveSupportHand(_distSq: number): void {
     if (!this.hasSupportGrip || this.weaponAway) return;
-    this.supportHandConstraint.solve();
+      this.supportHandConstraint.solve(_distSq);
   }
 
   /** Resolve an animated semantic landmark for the renderer's separate IFF layer. */

@@ -139,12 +139,15 @@ export class WeaponPreview {
     this.camera.lookAt(0, -0.01, 0);
   }
 
+    /**
+   * Show a weapon. Models are cached by (weapon, camo, attachments) key so hovering back and
+   * forth across cards swaps scene nodes without rebuilding or disposing geometry.
+   */
     show(weaponId: string, camo: CamoId | null, name: string, attachments: readonly AttachmentId[] = []): void {
         this.sizeDirty = true;
         const key = `${weaponId}|${camo ?? ''}|${[...attachments].sort().join(',')}`;
         if (key !== this.modelKey) {
             this.modelKey = key;
-
             if (this.model !== null) {
                 this.turntable.remove(this.model.root);
                 this.model = null;
@@ -152,15 +155,33 @@ export class WeaponPreview {
 
             let model = this.modelCache.get(key);
             if (model === undefined) {
+                // A picture of the weapon, not of somebody holding it: no gloves.
                 model = buildWeaponModel(weaponId, this.deps.anisotropy(), camo, {
                     hands: false,
                     assets: this.deps.weaponAssets,
                     attachments,
                 });
+                /**
+                 * Framed by its own size rather than by a per-weapon number.
+                 *
+                 * The pistol is genuinely a different object from the LMG — `WeaponModelSpec.scale`
+                 * says so — and a fixed camera distance would draw one as a speck and clip the other.
+                 * The bounding box comes from the geometry that was just built, so a spec change moves
+                 * the framing with it and there is no second table to keep in step.
+                 */
                 const bounds = new THREE.Box3().setFromObject(model.root);
                 const centre = bounds.getCenter(new THREE.Vector3());
                 const span = Math.max(bounds.getSize(new THREE.Vector3()).length(), 0.001);
                 const fit = FIT_DIAGONAL / span;
+                /**
+                 * Scale, **then** offset by the *scaled* centre, and the order is not cosmetic.
+                 *
+                 * A group's local matrix is `T · R · S`, so the translation is applied outside the
+                 * scale: a child ends up at `fit · s · c + position`. The box was measured at `s`, so
+                 * subtracting its raw centre would leave the model off the turntable's axis by
+                 * `(fit - 1)` times that centre — a weapon that wobbles as it spins rather than turning
+                 * on the spot, which is subtle enough to look like a modelling choice.
+                 */
                 model.root.scale.multiplyScalar(fit);
                 model.root.position.copy(centre).multiplyScalar(-fit);
                 this.modelCache.set(key, model);
@@ -173,6 +194,10 @@ export class WeaponPreview {
         if (this.caption.textContent !== name) this.caption.textContent = name;
     }
 
+    /**
+     * The file in place of the primitives once it lands (M19): the same swap `ClientMatch` makes,
+     * done by evicting the procedural entry from the cache and showing again.
+     */
     private upgradeWhenLoaded(
         model: WeaponModel,
         key: string,
@@ -185,7 +210,6 @@ export class WeaponPreview {
         if (assets === null || model.source === 'glb' || assets.statusFor(weaponId) === 'none') return;
         void assets.preload(weaponId).then(
             () => {
-                // <<< שונה: מחיקת המודל הזמני מה-Cache כשהקובץ המלא (GLB) מסיים להיטען
                 const cached = this.modelCache.get(key);
                 if (cached === model) {
                     this.modelCache.delete(key);
@@ -209,12 +233,15 @@ export class WeaponPreview {
         this.spinRadians += SPIN_DEG_PER_SEC * (Math.PI / 180) * dt;
         this.turntable.rotation.y = this.spinRadians;
         const renderer = this.ensureRenderer();
-        if (this.sizeDirty) this.fitBackingStore(renderer); // <<< שונה: רץ רק כשהגודל באמת השתנה!
+        if (this.sizeDirty) this.fitBackingStore(renderer);
         renderer.render(this.scene, this.camera);
     }
 
+    /**
+     * Detach the active model when the preview hides, while keeping both the WebGL context and
+     * the cached weapon models alive across visits.
+     */
     release(): void {
-        // <<< שונה: מנתקים מהבמה בלי למחוק את ה-Cache
         if (this.model !== null) {
             this.turntable.remove(this.model.root);
             this.model = null;
@@ -224,7 +251,6 @@ export class WeaponPreview {
 
     dispose(): void {
         this.release();
-        // <<< חדש: ניקוי כל ה-Cache וה-ResizeObserver בסגירה מלאה
         for (const cached of this.modelCache.values()) {
             cached.dispose();
         }
@@ -240,12 +266,14 @@ export class WeaponPreview {
         const existing = this.renderer;
         if (existing !== null) return existing;
         const made = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
+        // The same colour pipeline as `Renderer`, or the weapon here is a different colour from
+        // the weapon in the match. Exposure included: ACES without it is a different curve.
         made.outputColorSpace = THREE.SRGBColorSpace;
         made.toneMapping = THREE.ACESFilmicToneMapping;
         made.toneMappingExposure = 1.25;
         made.debug.checkShaderErrors = false;
         this.renderer = made;
-        this.sizeDirty = true; 
+        this.sizeDirty = true;
 
         if (typeof ResizeObserver !== 'undefined' && this.resizeObserver === null) {
             this.resizeObserver = new ResizeObserver(() => {
@@ -256,6 +284,10 @@ export class WeaponPreview {
         return made;
     }
 
+    /**
+     * Size the backing store to what is on screen: the canvas's CSS box is in frame pixels and
+     * the frame is zoomed, so the rect is the truth and the attribute is not (as `CharacterStage`).
+     */
     private fitBackingStore(renderer: THREE.WebGLRenderer): void {
         const rect = this.canvas.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;

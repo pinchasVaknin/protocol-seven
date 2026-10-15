@@ -1258,7 +1258,6 @@ export class LoadoutEditor {
     /** Put a weapon in the operator's hands while the pointer or the keyboard is on its tile. */
     private holdOnHover(el: HTMLElement, weaponId: string): void {
         const enter = (): void => {
-            // <<< שונה: ממתין 50ms לפני שמחליף נשק כדי לא לבנות מודלים סתם במעבר מהיר
             if (this.hoverDebounceTimer !== null) {
                 window.clearTimeout(this.hoverDebounceTimer);
                 this.hoverDebounceTimer = null;
@@ -1271,7 +1270,6 @@ export class LoadoutEditor {
             }, 50);
         };
         const leave = (): void => {
-            // <<< שונה: ממתין 50ms ביציאה כדי שאם נכנסת מיד לקלף הבא, לא יבנה את נשק ברירת המחדל באמצע
             if (this.hoverDebounceTimer !== null) {
                 window.clearTimeout(this.hoverDebounceTimer);
                 this.hoverDebounceTimer = null;

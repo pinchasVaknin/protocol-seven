@@ -43,36 +43,36 @@ const stockBox = new THREE.Box3();
  * weapon space, where +Z is the stock's way.
  */
 export function stockShift(weapon: THREE.Object3D, gripAnchor: THREE.Vector3): number {
-  stockBox.setFromObject(weapon);
-  if (stockBox.isEmpty()) return 0;
-  return Math.max(0, stockBox.max.z - gripAnchor.z - STOCK_BEHIND_HAND_MAX);
+    stockBox.setFromObject(weapon);
+    if (stockBox.isEmpty()) return 0;
+    return Math.max(0, stockBox.max.z - gripAnchor.z - STOCK_BEHIND_HAND_MAX);
 }
 
 export interface HeldWeaponAsset {
-  readonly weaponId: string;
-  /**
-   * The weapon's class, for the one presentation decision that turns on it: a sidearm is drawn
-   * standing and kneeling in its own clips (M13 decision 11), and the crouched one needs its own
-   * hitbox layout because it is a half-squat 10.9 cm above the kneel.
-   *
-   * It rides on the asset rather than being looked up in the avatar because the avatar is handed
-   * a weapon and never an id — `BotRenderer.heldWeapon` is the one place that already depends on
-   * both the weapon table and the avatar contract, and joining them twice is how the two answers
-   * start to disagree. Null for an id with no definition, which is what a killstreak's weapon is.
-   */
-  readonly weaponClass: WeaponClass | null;
-  readonly geometry: THREE.BufferGeometry;
-  readonly material: THREE.Material;
-  /**
-   * The weapon's own file for the bodies (M19, stage 3), cloned in place of the geometry and
-   * the material when present: a rifle from its LOD wears its own materials, and the
-   * primitives' single gunmetal is the fallback it stands beside.
-   */
-  readonly template: THREE.Object3D | null;
-  /** The trigger grip. This is the point that sits at the hand socket. */
-  readonly gripAnchor: THREE.Vector3;
-  /** The support palm. This is where the other hand is pulled to. */
-  readonly supportAnchor: THREE.Vector3;
+    readonly weaponId: string;
+    /**
+     * The weapon's class, for the one presentation decision that turns on it: a sidearm is drawn
+     * standing and kneeling in its own clips (M13 decision 11), and the crouched one needs its own
+     * hitbox layout because it is a half-squat 10.9 cm above the kneel.
+     *
+     * It rides on the asset rather than being looked up in the avatar because the avatar is handed
+     * a weapon and never an id — `BotRenderer.heldWeapon` is the one place that already depends on
+     * both the weapon table and the avatar contract, and joining them twice is how the two answers
+     * start to disagree. Null for an id with no definition, which is what a killstreak's weapon is.
+     */
+    readonly weaponClass: WeaponClass | null;
+    readonly geometry: THREE.BufferGeometry;
+    readonly material: THREE.Material;
+    /**
+     * The weapon's own file for the bodies (M19, stage 3), cloned in place of the geometry and
+     * the material when present: a rifle from its LOD wears its own materials, and the
+     * primitives' single gunmetal is the fallback it stands beside.
+     */
+    readonly template: THREE.Object3D | null;
+    /** The trigger grip. This is the point that sits at the hand socket. */
+    readonly gripAnchor: THREE.Vector3;
+    /** The support palm. This is where the other hand is pulled to. */
+    readonly supportAnchor: THREE.Vector3;
 }
 
 /**
@@ -81,10 +81,10 @@ export interface HeldWeaponAsset {
  * weapon and its trigger grip, so an avatar hangs one exactly as it hangs the other.
  */
 export interface HeldEquipmentAsset {
-  readonly equipmentId: string;
-  readonly template: THREE.Object3D;
-  /** `socket_grip`: the point that sits at the hand socket. */
-  readonly gripAnchor: THREE.Vector3;
+    readonly equipmentId: string;
+    readonly template: THREE.Object3D;
+    /** `socket_grip`: the point that sits at the hand socket. */
+    readonly gripAnchor: THREE.Vector3;
 }
 
 /**
@@ -94,55 +94,56 @@ export interface HeldEquipmentAsset {
  * skinned GLB.  The roster reconciler therefore never cares how a body was constructed.
  */
 export interface ActorAvatar {
-  readonly group: THREE.Group;
-  readonly isDying: boolean;
+    readonly group: THREE.Group;
+    readonly isDying: boolean;
 
-  /** Put this in the body's hands, or empty them. Idempotent for an unchanged weapon id. */
-  setWeapon(weapon: HeldWeaponAsset | null): void;
-  /**
-   * The hand off the weapon for a throw (2026-09-28). `weaponAway` takes the weapon out of the
-   * hand for the whole of it — draw, cook, swing and the follow-through after — and `grenade` is
-   * drawn in that hand from the draw to the release. The weapon keeps its place in `setWeapon`;
-   * this only hides it, so a throw that ends gives back the very object it took. Idempotent.
-   */
-  setThrow(weaponAway: boolean, grenade: HeldEquipmentAsset | null): void;
-  setVisible(on: boolean): void;
-  /**
-   * Which life this body is on (M13 Phase D): the entity and its replicated spawn serial.
-   * A skinned body deals the variants of its locomotion slots from the pair, so every client
-   * draws the same variant for the same life and a respawn re-deals it; the procedural body
-   * has no variants and ignores it. Called when the avatar is made and whenever the spawn
-   * serial moves.
-   */
-  setLife(entityId: number, spawnSerial: number): void;
-  /**
-   * Write an animated, world-space landmark to `target`.
-   *
-   * The renderer owns the viewer-relative IFF policy. Avatars expose only geometry landmarks,
-   * which keeps a future skin free to use a different skeleton without teaching the renderer
-   * about its bone names.
-   */
-  getIndicatorAnchor(anchor: ActorIndicatorAnchor, target: THREE.Vector3): boolean;
-  /**
-   * Write an animated, world-space **frame** — where a pad sits and which way it faces — for
-   * one of the frame anchors. The convention is the pad's: local +Z is the outward normal of
-   * the surface, +X runs along the limb toward its far end, +Y across it. `CharacterSkin`
-   * answers from a calibrated node under the upper-arm bone (`CharacterIndicatorProfile`);
-   * `BotMesh` from the outer face of its arm box. The renderer still learns no bone names.
-   */
-  getIndicatorFrame(anchor: ActorIndicatorFrameAnchor, position: THREE.Vector3, quaternion: THREE.Quaternion): boolean;
-  beginDeath(dx: number, dz: number, variant: number, animation: ActorAnimationInput): void;
-  endDeath(): void;
-  flinch(dx: number, dz: number): void;
-  /** Apply one authoritative render pose and advance local-only visual effects. */
-  update(
-    animation: ActorAnimationInput,
-    x: number,
-    y: number,
-    z: number,
-    yaw: number,
-    heightScale: number,
-    dt: number,
-  ): void;
-  dispose(): void;
+    /** Put this in the body's hands, or empty them. Idempotent for an unchanged weapon id. */
+    setWeapon(weapon: HeldWeaponAsset | null): void;
+    /**
+     * The hand off the weapon for a throw (2026-09-28). `weaponAway` takes the weapon out of the
+     * hand for the whole of it — draw, cook, swing and the follow-through after — and `grenade` is
+     * drawn in that hand from the draw to the release. The weapon keeps its place in `setWeapon`;
+     * this only hides it, so a throw that ends gives back the very object it took. Idempotent.
+     */
+    setThrow(weaponAway: boolean, grenade: HeldEquipmentAsset | null): void;
+    setVisible(on: boolean): void;
+    /**
+     * Which life this body is on (M13 Phase D): the entity and its replicated spawn serial.
+     * A skinned body deals the variants of its locomotion slots from the pair, so every client
+     * draws the same variant for the same life and a respawn re-deals it; the procedural body
+     * has no variants and ignores it. Called when the avatar is made and whenever the spawn
+     * serial moves.
+     */
+    setLife(entityId: number, spawnSerial: number): void;
+    /**
+     * Write an animated, world-space landmark to `target`.
+     *
+     * The renderer owns the viewer-relative IFF policy. Avatars expose only geometry landmarks,
+     * which keeps a future skin free to use a different skeleton without teaching the renderer
+     * about its bone names.
+     */
+    getIndicatorAnchor(anchor: ActorIndicatorAnchor, target: THREE.Vector3): boolean;
+    /**
+     * Write an animated, world-space **frame** — where a pad sits and which way it faces — for
+     * one of the frame anchors. The convention is the pad's: local +Z is the outward normal of
+     * the surface, +X runs along the limb toward its far end, +Y across it. `CharacterSkin`
+     * answers from a calibrated node under the upper-arm bone (`CharacterIndicatorProfile`);
+     * `BotMesh` from the outer face of its arm box. The renderer still learns no bone names.
+     */
+    getIndicatorFrame(anchor: ActorIndicatorFrameAnchor, position: THREE.Vector3, quaternion: THREE.Quaternion): boolean;
+    beginDeath(dx: number, dz: number, variant: number, animation: ActorAnimationInput): void;
+    endDeath(): void;
+    flinch(dx: number, dz: number): void;
+    /** Apply one authoritative render pose and advance local-only visual effects. */
+    update(
+        animation: ActorAnimationInput,
+        x: number,
+        y: number,
+        z: number,
+        yaw: number,
+        heightScale: number,
+        dt: number,
+        camera?: THREE.Camera,
+    ): void;
+    dispose(): void;
 }

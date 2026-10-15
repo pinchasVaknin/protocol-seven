@@ -44,10 +44,10 @@ import { preloadSentry } from './streaks/SentryModel';
 import { StreakSystem } from '../shared/streaks/StreakSystem';
 import { ReplicatedStreaks } from './streaks/ReplicatedStreaks';
 import {
-  NO_SPECTATOR_TARGET,
-  nextSpectatorTarget,
-  pickSpectatorTarget,
-  type SpectatorCandidate,
+    NO_SPECTATOR_TARGET,
+    nextSpectatorTarget,
+    pickSpectatorTarget,
+    type SpectatorCandidate,
 } from '../shared/modes/SpectatorTarget';
 
 
@@ -57,13 +57,13 @@ import type { ProjectileState, SmokeState, StreakView } from '../shared/net/Skir
 const EMPTY_PROJECTILES: readonly ProjectileState[] = [];
 const EMPTY_SMOKE: readonly SmokeState[] = [];
 import {
-  ALL_STREAK_IDS,
-  DEFAULT_STREAK_CONFIG,
-  STREAK_DEFS,
-  streakDef,
-  type StreakConfig,
-  type StreakDef,
-  type StreakId,
+    ALL_STREAK_IDS,
+    DEFAULT_STREAK_CONFIG,
+    STREAK_DEFS,
+    streakDef,
+    type StreakConfig,
+    type StreakDef,
+    type StreakId,
 } from '../shared/streaks/StreakDefs';
 import { sentryInDismantleReach } from '../shared/streaks/SentryGun';
 import type { CamoId } from '../shared/meta/Camos';
@@ -129,7 +129,7 @@ import { PISTOL_DEFAULT } from '../shared/weapons/WeaponDefs';
  * `streak_shield`, which is what `WeaponModelOptions.assetId` is for.
  */
 function assetIdFor(weaponId: string): string {
-  return weaponId === SHIELD_ASSET_ID ? PISTOL_DEFAULT.id : weaponId;
+    return weaponId === SHIELD_ASSET_ID ? PISTOL_DEFAULT.id : weaponId;
 }
 import { handsOffWeapon, WeaponSystem, type WeaponSnapshot } from '../shared/weapons/WeaponSystem';
 
@@ -163,171 +163,171 @@ import { handsOffWeapon, WeaponSystem, type WeaponSnapshot } from '../shared/wea
  * over three numbers and leave the fourth at whatever `makeSnapshot` had put there.
  */
 export interface SpectatorView {
-  readonly x: number;
-  readonly y: number;
-  readonly z: number;
-  readonly yaw: number;
-  /** Metres above the feet, from the stance the watched body is drawn in. */
-  readonly eyeHeight: number;
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+    readonly yaw: number;
+    /** Metres above the feet, from the stance the watched body is drawn in. */
+    readonly eyeHeight: number;
 }
 
 export interface MatchDeps {
-  readonly bus: GameBus;
-  readonly scene: THREE.Scene;
-  /** Resolves Match-scoped factory handles over Game's long-lived parsed character assets. */
-  readonly characterAvatarProvider: CharacterAvatarProviderResolver;
-  /**
-   * Game's long-lived weapon templates (M19). Null where a match has no use for a file — the
-   * harnesses — and every weapon is then the primitives, as it was before M19.
-   */
-  readonly weaponAssets: WeaponAssetService | null;
-  readonly viewmodel: ViewmodelLayer;
-  readonly cameraRig: CameraRig;
-  readonly cameraConfig: CameraConfig;
-  readonly audio: ProceduralAudio;
-  readonly input: Input;
-  readonly world: CollisionWorld;
-  readonly player: PlayerController;
-  readonly movementConfig: MovementConfig;
-  /**
-   * The player's live primary — resolved from the loadout, so it already carries the
-   * attachments and the perks. The tuning panel writes into this object.
-   */
-  readonly weaponDef: WeaponDef;
-  /** M5: the player's sidearm. Bots do not carry one — see `WeaponSystem`. */
-  readonly secondaryDef: WeaponDef;
-  /**
-   * The *base* of the player's primary: no attachments, no perks.
-   *
-   * M6 introduced this as `botWeaponDef` to stop the enemy team being issued the player's
-   * Quickdraw, and M7 renamed it because the name was describing a bug. Bots never read it —
-   * they draw their own weapons in `BotArsenal` — and its one remaining job is the M6
-   * modifier panel, which shows perks and attachments as a before-and-after and must read
-   * the *same* base the match was built from rather than looking one up in the registry.
-   */
-  readonly playerBaseDef: WeaponDef;
-  readonly viewmodelConfig: ViewmodelConfig;
-  readonly healthConfig: HealthConfig;
-  readonly equipmentConfig: EquipmentConfig;
-  readonly uiHost: HTMLElement;
-  readonly anisotropy: number;
-  /** M4: the map and mode this match is. The director bakes a navmesh from the map def. */
-  readonly map: MapEntry;
-  readonly mode: ModeEntry;
-  readonly tiers: TierTable;
-  /**
-   * How hard the bots are in a **local** match (playtest round 4, F1).
-   *
-   * The player's menu choice, straight from the save. It is read in exactly one place —
-   * `populateDefault` — and it is deliberately not consulted on a networked client, which
-   * populates no roster at all: over the wire the bots are the server's and their difficulty is
-   * the operator's `BOT_DIFFICULTY`, not this player's preference. A client that applied its own
-   * would be a client with an opinion about somebody else's simulation.
-   */
-  readonly difficulty: BotDifficulty;
-  readonly perceptionConfig: PerceptionConfig;
-  readonly schedulerConfig: SchedulerConfig;
-  readonly seed: number;
-  /** M6: the equipped class, already resolved and sanitised by `Profile`. */
-  readonly loadout: ResolvedLoadout;
-  readonly profile: Profile;
-  /** False in the Shooting Range: a testbed does not write to the save. */
-  readonly banksProgress: boolean;
+    readonly bus: GameBus;
+    readonly scene: THREE.Scene;
+    /** Resolves Match-scoped factory handles over Game's long-lived parsed character assets. */
+    readonly characterAvatarProvider: CharacterAvatarProviderResolver;
+    /**
+     * Game's long-lived weapon templates (M19). Null where a match has no use for a file — the
+     * harnesses — and every weapon is then the primitives, as it was before M19.
+     */
+    readonly weaponAssets: WeaponAssetService | null;
+    readonly viewmodel: ViewmodelLayer;
+    readonly cameraRig: CameraRig;
+    readonly cameraConfig: CameraConfig;
+    readonly audio: ProceduralAudio;
+    readonly input: Input;
+    readonly world: CollisionWorld;
+    readonly player: PlayerController;
+    readonly movementConfig: MovementConfig;
+    /**
+     * The player's live primary — resolved from the loadout, so it already carries the
+     * attachments and the perks. The tuning panel writes into this object.
+     */
+    readonly weaponDef: WeaponDef;
+    /** M5: the player's sidearm. Bots do not carry one — see `WeaponSystem`. */
+    readonly secondaryDef: WeaponDef;
+    /**
+     * The *base* of the player's primary: no attachments, no perks.
+     *
+     * M6 introduced this as `botWeaponDef` to stop the enemy team being issued the player's
+     * Quickdraw, and M7 renamed it because the name was describing a bug. Bots never read it —
+     * they draw their own weapons in `BotArsenal` — and its one remaining job is the M6
+     * modifier panel, which shows perks and attachments as a before-and-after and must read
+     * the *same* base the match was built from rather than looking one up in the registry.
+     */
+    readonly playerBaseDef: WeaponDef;
+    readonly viewmodelConfig: ViewmodelConfig;
+    readonly healthConfig: HealthConfig;
+    readonly equipmentConfig: EquipmentConfig;
+    readonly uiHost: HTMLElement;
+    readonly anisotropy: number;
+    /** M4: the map and mode this match is. The director bakes a navmesh from the map def. */
+    readonly map: MapEntry;
+    readonly mode: ModeEntry;
+    readonly tiers: TierTable;
+    /**
+     * How hard the bots are in a **local** match (playtest round 4, F1).
+     *
+     * The player's menu choice, straight from the save. It is read in exactly one place —
+     * `populateDefault` — and it is deliberately not consulted on a networked client, which
+     * populates no roster at all: over the wire the bots are the server's and their difficulty is
+     * the operator's `BOT_DIFFICULTY`, not this player's preference. A client that applied its own
+     * would be a client with an opinion about somebody else's simulation.
+     */
+    readonly difficulty: BotDifficulty;
+    readonly perceptionConfig: PerceptionConfig;
+    readonly schedulerConfig: SchedulerConfig;
+    readonly seed: number;
+    /** M6: the equipped class, already resolved and sanitised by `Profile`. */
+    readonly loadout: ResolvedLoadout;
+    readonly profile: Profile;
+    /** False in the Shooting Range: a testbed does not write to the save. */
+    readonly banksProgress: boolean;
 
-  /**
-   * The match is driven by a server (M10).
-   *
-   * A flag rather than a subclass, and deliberately narrow: it turns off the three things
-   * this file does that a **dedicated server owns instead** (S4.9), and touches nothing else.
-   *
-   * 1. **No local bot roster.** The server has the bots. `BotDirector` is still constructed —
-   *    the navmesh it bakes is what the spawn selector and the debug tools read — it is
-   *    simply never populated and never stepped.
-   * 2. **No local mode clock.** Score, round state and the match result arrive replicated.
-   * 3. **No local respawn.** The server decides when a body comes back and where.
-   *
-   * Everything else runs exactly as it does in single-player: the weapon, the viewmodel, the
-   * camera, the HUD, the audio, the hitmarkers. That is the point of S3's *"a networked event
-   * and a local one must be indistinguishable to the client"* — the presentation layer never
-   * learns which kind of match it is in.
-   */
-  readonly networked?: boolean;
+    /**
+     * The match is driven by a server (M10).
+     *
+     * A flag rather than a subclass, and deliberately narrow: it turns off the three things
+     * this file does that a **dedicated server owns instead** (S4.9), and touches nothing else.
+     *
+     * 1. **No local bot roster.** The server has the bots. `BotDirector` is still constructed —
+     *    the navmesh it bakes is what the spawn selector and the debug tools read — it is
+     *    simply never populated and never stepped.
+     * 2. **No local mode clock.** Score, round state and the match result arrive replicated.
+     * 3. **No local respawn.** The server decides when a body comes back and where.
+     *
+     * Everything else runs exactly as it does in single-player: the weapon, the viewmodel, the
+     * camera, the HUD, the audio, the hitmarkers. That is the point of S3's *"a networked event
+     * and a local one must be indistinguishable to the client"* — the presentation layer never
+     * learns which kind of match it is in.
+     */
+    readonly networked?: boolean;
 
-  /**
-   * This world is the permanent warmup arena (M11 §6.3; playtest round 4, F7 and F12).
-   *
-   * Derived by `MatchWorld` through `isArenaInstance`, from an id that has been on the
-   * wire since v3 — the arena is not a mode and cannot be read off the registry, because a
-   * ballot can elect Free-for-All and a live Free-for-All must kill and score as it always has.
-   *
-   * Three things read it and all three are the room's own rules: nobody is killable, nothing is
-   * recorded, and the caption over the crosshair says what you are doing there. Absent — and
-   * therefore false — in single-player, which has no arena at all.
-   */
-  readonly warmupArena?: boolean;
+    /**
+     * This world is the permanent warmup arena (M11 §6.3; playtest round 4, F7 and F12).
+     *
+     * Derived by `MatchWorld` through `isArenaInstance`, from an id that has been on the
+     * wire since v3 — the arena is not a mode and cannot be read off the registry, because a
+     * ballot can elect Free-for-All and a live Free-for-All must kill and score as it always has.
+     *
+     * Three things read it and all three are the room's own rules: nobody is killable, nothing is
+     * recorded, and the caption over the crosshair says what you are doing there. Absent — and
+     * therefore false — in single-player, which has no arena at all.
+     */
+    readonly warmupArena?: boolean;
 
-  /** Whether the arena's ballot is open, for the caption over the crosshair. Absent offline. */
-  readonly ballotOpen?: () => boolean;
+    /** Whether the arena's ballot is open, for the caption over the crosshair. Absent offline. */
+    readonly ballotOpen?: () => boolean;
 
-  /**
-   * Ask the server to spend a streak (M11 Gate B, §8.22).
-   *
-   * Supplied only by a networked match; single-player activates locally and never calls it.
-   * The coordinates are the mortar's marked point — every other streak is placed by the server
-   * from its own copy of where this player is standing, because the position a streak lands at
-   * is not a thing an untrusted client gets to choose (§4.16).
-   */
-  readonly onStreakRequest?: ((id: StreakId, markX: number, markZ: number) => void) | undefined;
+    /**
+     * Ask the server to spend a streak (M11 Gate B, §8.22).
+     *
+     * Supplied only by a networked match; single-player activates locally and never calls it.
+     * The coordinates are the mortar's marked point — every other streak is placed by the server
+     * from its own copy of where this player is standing, because the position a streak lands at
+     * is not a thing an untrusted client gets to choose (§4.16).
+     */
+    readonly onStreakRequest?: ((id: StreakId, markX: number, markZ: number) => void) | undefined;
 
-  /**
-   * This client's cheat entitlements, read every tick (playtest round 4, F14).
-   *
-   * A supplier rather than a value because the mask outlives this object: it comes from the
-   * replicated owner block on a networked client and from `Game`'s own store offline, and both
-   * survive the world being torn down and rebuilt by a rotation. `Game.cheatMask` is the one
-   * expression that merges the two authorities; nothing here needs to know which it is reading.
-   */
-  readonly cheats: () => number;
+    /**
+     * This client's cheat entitlements, read every tick (playtest round 4, F14).
+     *
+     * A supplier rather than a value because the mask outlives this object: it comes from the
+     * replicated owner block on a networked client and from `Game`'s own store offline, and both
+     * survive the world being torn down and rebuilt by a rotation. `Game.cheatMask` is the one
+     * expression that merges the two authorities; nothing here needs to know which it is reading.
+     */
+    readonly cheats: () => number;
 
-  /**
-   * Where the drawable bodies come from (M10, S6.5).
-   *
-   * Defaults to the local bot roster, which is what single-player has always drawn. A
-   * networked match supplies the remote actors rebuilt from snapshots instead — same mesh,
-   * same animations, same renderer, because both satisfy `RenderableActor`.
-   */
-  readonly actors?: (() => Iterable<RenderableActor>) | undefined;
-  /** M7: killstreak tuning. Live-editable from the debug panel. */
-  readonly streakConfig?: StreakConfig;
+    /**
+     * Where the drawable bodies come from (M10, S6.5).
+     *
+     * Defaults to the local bot roster, which is what single-player has always drawn. A
+     * networked match supplies the remote actors rebuilt from snapshots instead — same mesh,
+     * same animations, same renderer, because both satisfy `RenderableActor`.
+     */
+    readonly actors?: (() => Iterable<RenderableActor>) | undefined;
+    /** M7: killstreak tuning. Live-editable from the debug panel. */
+    readonly streakConfig?: StreakConfig;
 
-  /**
-   * Which entity this client is (M10, playtest round 2).
-   *
-   * Absent in single-player, where it is `PLAYER_ENTITY_ID` and always was. On a dedicated
-   * server the seat is assigned in the `Welcome` and is 1 or above, and every "was that me?"
-   * test in this file and in `MatchFeedback` reads it — see `LocalIdentity` for the list of
-   * things that silently did nothing while they were all comparing against 0.
-   */
-  readonly identity?: LocalIdentity;
+    /**
+     * Which entity this client is (M10, playtest round 2).
+     *
+     * Absent in single-player, where it is `PLAYER_ENTITY_ID` and always was. On a dedicated
+     * server the seat is assigned in the `Welcome` and is 1 or above, and every "was that me?"
+     * test in this file and in `MatchFeedback` reads it — see `LocalIdentity` for the list of
+     * things that silently did nothing while they were all comparing against 0.
+     */
+    readonly identity?: LocalIdentity;
 
-  /**
-   * The side the server put this client on. Single-player is always `PLAYER_TEAM`.
-   *
-   * It decides whether the announcer calls the result a victory or a defeat, which is the one
-   * place a networked client would otherwise congratulate the player for losing.
-   */
-  readonly localTeam?: BotTeam;
+    /**
+     * The side the server put this client on. Single-player is always `PLAYER_TEAM`.
+     *
+     * It decides whether the announcer calls the result a victory or a defeat, which is the one
+     * place a networked client would otherwise congratulate the player for losing.
+     */
+    readonly localTeam?: BotTeam;
 
-  /**
-   * The name this client is known by; `PLAYER_NAME` when absent.
-   *
-   * The scoreboard registers the local row before the first snapshot arrives, so without this
-   * the player's own row read `OPERATOR` while every other client — and the killfeed, which
-   * resolves names from the snapshot — called them by the name they joined with. Single-player
-   * passes the profile's callsign here too since M17 C2: the local roster's `PlayerCombatant`
-   * and the score row both take it, so the killfeed and the board say what the card says.
-   */
-  readonly localName?: string;
+    /**
+     * The name this client is known by; `PLAYER_NAME` when absent.
+     *
+     * The scoreboard registers the local row before the first snapshot arrives, so without this
+     * the player's own row read `OPERATOR` while every other client — and the killfeed, which
+     * resolves names from the snapshot — called them by the name they joined with. Single-player
+     * passes the profile's callsign here too since M17 C2: the local roster's `PlayerCombatant`
+     * and the score row both take it, so the killfeed and the board say what the card says.
+     */
+    readonly localName?: string;
 }
 
 /** The player's side. Bots added to 'A' fight alongside them, 'B' against. */
@@ -379,3046 +379,3052 @@ const MORTAR_STEER_M_PER_RAD = 42;
 /** Every streak, for entities that have no loadout to narrow it — which is every bot. */
 
 export class Match {
-  readonly damage: DamageSystem;
-  readonly weapons: WeaponSystem;
-  /**
-   * The knife (post-M8). Alongside the weapon rather than inside it — see `weapons/Melee.ts`
-   * for why a melee is not an inventory slot.
-   */
-  readonly melee: Melee;
-  /** Only on the grey-box testbed: a firing range does not belong on a TDM map. */
-  readonly range: TargetRange | null;
-  readonly fx: Fx;
-  /** The flamethrower's jet. See `engine/FlameFx`. */
-  readonly flame: FlameFx;
-  readonly weaponAudio: WeaponAudio;
-  /** One per inventory slot; only the active one is visible. */
-  readonly models: WeaponModel[];
-  /** The knife viewmodel. Alongside the weapons rather than among them — see the constructor. */
-  private knifeModel: KnifeModel;
-  /**
-   * The riot shield in the left hand (2026-09-27), or null when the player is not holding one.
-   *
-   * Not in `models`: that array is the inventory indexed by slot, and the shield is not a slot
-   * — the slot it comes with holds a *pistol*, which is what the right hand is doing. This is
-   * the same reasoning that keeps the knife out of the array, and the shield is built on demand
-   * for the same reason the streak slot's own mesh is: a match cannot pre-build a mesh for
-   * every streak a class might buy.
-   */
-  private shieldModel: ShieldModel | null = null;
+    readonly damage: DamageSystem;
+    readonly weapons: WeaponSystem;
+    /**
+     * The knife (post-M8). Alongside the weapon rather than inside it — see `weapons/Melee.ts`
+     * for why a melee is not an inventory slot.
+     */
+    readonly melee: Melee;
+    /** Only on the grey-box testbed: a firing range does not belong on a TDM map. */
+    readonly range: TargetRange | null;
+    readonly fx: Fx;
+    /** The flamethrower's jet. See `engine/FlameFx`. */
+    readonly flame: FlameFx;
+    readonly weaponAudio: WeaponAudio;
+    /** One per inventory slot; only the active one is visible. */
+    readonly models: WeaponModel[];
+    /** The knife viewmodel. Alongside the weapons rather than among them — see the constructor. */
+    private knifeModel: KnifeModel;
+    /**
+     * The riot shield in the left hand (2026-09-27), or null when the player is not holding one.
+     *
+     * Not in `models`: that array is the inventory indexed by slot, and the shield is not a slot
+     * — the slot it comes with holds a *pistol*, which is what the right hand is doing. This is
+     * the same reasoning that keeps the knife out of the array, and the shield is built on demand
+     * for the same reason the streak slot's own mesh is: a match cannot pre-build a mesh for
+     * every streak a class might buy.
+     */
+    private shieldModel: ShieldModel | null = null;
 
-  /**
-   * The grenade in the hand (2026-09-24), one model per equipment id, built the first time
-   * that id is thrown and kept for the match.
-   *
-   * Not an entry in `models` for the same reason the knife is not: that array is the
-   * inventory, indexed by slot. A grenade is a thing you throw, and which one is in the hand
-   * is the slot the player is cooking rather than the weapon they are carrying — so the
-   * lethal and the tactical can both have a model and only one is ever on screen.
-   */
-  private readonly grenadeModels = new Map<string, GrenadeModel>();
-  private grenadeShown: GrenadeModel | null = null;
-  /** Equipment ids this match has already asked the service for, so it asks once. */
-  private readonly grenadesRequested = new Set<string>();
-  /** The camo each slot is wearing, so a rebuild does not lose it. */
-  private readonly slotCamos: Array<CamoId | null> = [];
-  /** The attachments each slot shows (M19, stage 2), kept for the same reason. */
-  private readonly slotAttachments: Array<readonly AttachmentId[]> = [];
-  /** The visible one. Reassigned on a swap. */
-  model: WeaponModel;
-  readonly anim: ViewmodelAnim;
-  readonly latency = new LatencyProbe();
-  readonly playerHealth: Health;
-  readonly playerCombatant: PlayerCombatant;
-  readonly bots: BotDirector;
-  /** The bodies. Client-only from M9 — the director owns the roster, not the meshes. */
-  readonly botRenderer: BotRenderer;
+    /**
+     * The grenade in the hand (2026-09-24), one model per equipment id, built the first time
+     * that id is thrown and kept for the match.
+     *
+     * Not an entry in `models` for the same reason the knife is not: that array is the
+     * inventory, indexed by slot. A grenade is a thing you throw, and which one is in the hand
+     * is the slot the player is cooking rather than the weapon they are carrying — so the
+     * lethal and the tactical can both have a model and only one is ever on screen.
+     */
+    private readonly grenadeModels = new Map<string, GrenadeModel>();
+    private grenadeShown: GrenadeModel | null = null;
+    /** Equipment ids this match has already asked the service for, so it asks once. */
+    private readonly grenadesRequested = new Set<string>();
+    /** The camo each slot is wearing, so a rebuild does not lose it. */
+    private readonly slotCamos: Array<CamoId | null> = [];
+    /** The attachments each slot shows (M19, stage 2), kept for the same reason. */
+    private readonly slotAttachments: Array<readonly AttachmentId[]> = [];
+    /** The visible one. Reassigned on a swap. */
+    model: WeaponModel;
+    readonly anim: ViewmodelAnim;
+    readonly latency = new LatencyProbe();
+    readonly playerHealth: Health;
+    readonly playerCombatant: PlayerCombatant;
+    readonly bots: BotDirector;
+    /** The bodies. Client-only from M9 — the director owns the roster, not the meshes. */
+    readonly botRenderer: BotRenderer;
 
-  // ---- M4: the match, as opposed to the firefight -------------------------
-  readonly score: ScoreSystem;
+    // ---- M4: the match, as opposed to the firefight -------------------------
+    readonly score: ScoreSystem;
 
-  /**
-   * Which entity this client is. `PLAYER_ENTITY_ID` unless a server said otherwise.
-   *
-   * Read through `localId` at the point of use rather than copied into a field, because the
-   * assignment arrives over a socket and may land after any given object was constructed.
-   */
-  private readonly identity: LocalIdentity;
-  readonly mode: GameMode;
-  readonly flow: MatchFlow;
-  readonly ui: MatchHud;
-  /** Turns the events a shot produces into what the player sees and hears. */
-  readonly feedback: MatchFeedback;
-  /** M5: grenades, smoke, flashes and the bots that throw them. */
-  readonly equipment: MatchEquipment;
-  /** M6: XP, challenges, perks and the field upgrade. */
-  readonly meta: MatchMeta;
-  /** M7: killstreaks. Owns every streak entity in the world. */
-  readonly streaks: StreakSystem;
-  /** The sentry and care-package bodies. Client-only from M9 — see `StreakRenderer`. */
-  readonly streakRenderer: StreakRenderer;
-  /** M7: flags, capture rings, dog tags and the bomb, as things in the world. */
-  readonly objectives: MatchObjectives;
-  /** M7: the mortar targeting map. Built once; only rasterises when first opened. */
-  readonly mortarOverlay: MortarOverlay;
+    /**
+     * Which entity this client is. `PLAYER_ENTITY_ID` unless a server said otherwise.
+     *
+     * Read through `localId` at the point of use rather than copied into a field, because the
+     * assignment arrives over a socket and may land after any given object was constructed.
+     */
+    private readonly identity: LocalIdentity;
+    readonly mode: GameMode;
+    readonly flow: MatchFlow;
+    readonly ui: MatchHud;
+    /** Turns the events a shot produces into what the player sees and hears. */
+    readonly feedback: MatchFeedback;
+    /** M5: grenades, smoke, flashes and the bots that throw them. */
+    readonly equipment: MatchEquipment;
+    /** M6: XP, challenges, perks and the field upgrade. */
+    readonly meta: MatchMeta;
+    /** M7: killstreaks. Owns every streak entity in the world. */
+    readonly streaks: StreakSystem;
+    /** The sentry and care-package bodies. Client-only from M9 — see `StreakRenderer`. */
+    readonly streakRenderer: StreakRenderer;
+    /** M7: flags, capture rings, dog tags and the bomb, as things in the world. */
+    readonly objectives: MatchObjectives;
+    /** M7: the mortar targeting map. Built once; only rasterises when first opened. */
+    readonly mortarOverlay: MortarOverlay;
 
-  /** Interpolated weapon state for this frame. Read by Game for the camera. */
-  readonly visual: WeaponSnapshot = {
-    raise: 1,
-    adsFraction: 0,
-    visualPunch: 0,
-    visualLateral: 0,
-    aimPitch: 0,
-    aimYaw: 0,
-    reloadFraction: 0,
-    swapFraction: 1,
-  };
-
-  /** Wall time inside the last `flow.simulate`, ms. Reported in F1 (S7). */
-  lastModeMs = 0;
-
-  private readonly deps: MatchDeps;
-  private readonly drive: ViewmodelDrive = makeViewmodelDrive();
-  private readonly residual = { yaw: 0, pitch: 0 };
-  private readonly selfDamage: DamageRequest;
-  private readonly occlusionRay: RayHit = makeRayHit();
-  private readonly listenerAt = { x: 0, y: 0, z: 0 };
-
-  private readonly spawnChoice: SpawnChoice = makeSpawnChoice();
-  private swapSubscription: (() => void) | null = null;
-  private deathSubscription: (() => void) | null = null;
-  /** F9's panel content, latched on the local player's death and cleared on their next spawn. */
-  private deathReport: DeathReport | null = null;
-  /** Who killed the local player, and when — for a distance the kill's own frame could not measure. */
-  private deathKillerId = -1;
-  private deathAtMs = 0;
-  private roundResetSubscription: (() => void) | null = null;
-
-  private active = false;
-  private playerDead = false;
-  /**
-   * The last replicated spawn serial this client acted on. `-1` before the first snapshot.
-   *
-   * The networked half of "a new life started" (playtest round 4, B3). See
-   * `applyReplicatedSelf`.
-   */
-  private lastSpawnSerial = -1;
-  /** Previous tick's buttons, for edge detection in the sim (S4.2). */
-  private prevButtons = 0;
-  /**
-   * The command this tick, for the Chopper Gunner (M11 Gate B).
-   *
-   * `StreakSystem` pulls per-owner commands now rather than being handed one, so that a server
-   * with two gunners does not fly both off the same stick. The client's answer is the local
-   * player's current command, stashed here immediately before `simulate`.
-   */
-  private lastStreakCommand: InputCommand | null = null;
-
-  /**
-   * The map's resupply stations, and the rule that spends time at one (this session).
-   *
-   * Stepped on **both** sides of a networked match, unlike the bomb. A plant timer is the mode's
-   * and the mode runs on the server, so a client that ran one as well would be a second
-   * authority over it. A magazine is not like that: the client and the server each own a copy of
-   * the weapon and step it from the same commands, and have since M10 — nothing about ammunition
-   * is on the wire at all. So the crate is a rule both sides apply, and the two agree because
-   * their inputs do.
-   */
-  private readonly supply: SupplySystem;
-  /**
-   * Bodies still alight after the jet moved on (2026-09-26).
-   *
-   * Stepped **only in a solo match**, unlike the resupply station and for the opposite reason:
-   * a burn is damage, damage is health, and health is the server's in a networked match. A
-   * client that ticked its own burns would be a second opinion about a bar it does not own. In
-   * a networked match this object still exists and still answers `isBurning` — from the
-   * replicated `EFlag.Burning` rather than from a timer of its own, which is what the renderer
-   * asks and all it needs.
-   */
-  private readonly burn: BurnSystem;
-  /** Seconds until the next puff of fire on every burning body. See `renderBurns`. */
-  private burnFxTimer = 0;
-
-  /**
-   * Who this player is watching while dead (§6.8).
-   *
-   * Cleared on every round start — the §4.18 discard rule applied to a round boundary. Without
-   * it a spectator returns from the round they died in still pointed at a body that has since
-   * respawned somewhere else, which reads as the camera being stuck.
-   */
-  private spectatorTarget = NO_SPECTATOR_TARGET;
-
-  /**
-   * The server's streak state (M11 Gate B, §8.22).
-   *
-   * Populated only in a networked match, where `this.streaks` is constructed but never
-   * simulated. See `ReplicatedStreaks` for why the client does not simply fold its own
-   * replicated kill events into its own counter.
-   */
-  private readonly replicatedStreaks = new ReplicatedStreaks();
-  /**
-   * Where a mortar will land if one is called in.
-   *
-   * Defaults to the map centre and is moved by the targeting overlay. Held here rather than in
-   * the overlay so a mortar called from the console — or, later, by a bot — still has a mark.
-   */
-  mortarMarkX = 0;
-  mortarMarkZ = 0;
-  /** The player's three equipped streaks, refreshed whenever the class changes. */
-  private equippedStreakIds: readonly StreakId[] = [];
-  /**
-   * The three equipped streaks **in key order**, nulls kept (M11 Gate B playtest).
-   *
-   * `equippedStreakIds` drops the empty slots because `StreakSystem` wants a set to decide what
-   * this player may earn. The keys want the opposite: position is the whole meaning, because key
-   * 3 is slot 0 and key 5 is slot 2 whatever is or is not in between. Packing the two together
-   * is what made key 5 dead for a player carrying one streak.
-   */
-  private streakSlots: readonly (StreakId | null)[] = [null, null, null];
-  /** Look angles when the overlay opened, so the mark is steered by the delta. */
-  private overlayYaw = 0;
-  private overlayPitch = 0;
-  private playerRespawnTimer = 0;
-  private heartbeatTimer = 0;
-  private rosterRegistered = false;
-
-  constructor(deps: MatchDeps) {
-    this.deps = deps;
-    // First, because almost everything below is handed it.
-    this.identity = deps.identity ?? new LocalIdentity();
-
-    this.damage = new DamageSystem(deps.bus);
-    this.playerHealth = new Health(deps.healthConfig);
-    this.playerCombatant = new PlayerCombatant(
-      this.playerHealth,
-      deps.localTeam ?? PLAYER_TEAM,
-      deps.player,
-      /**
-       * The server's seat, not the constant (M11 Gate B playtest).
-       *
-       * The same eighth-argument fix `WeaponSystem` documents below, applied to the body the
-       * weapon shoots *past*. `Ballistics.nearestTarget` excludes the shooter by id, so a rig
-       * registered as entity 0 while the weapon fires as entity 3 is a rig the shooter's own
-       * rounds are entitled to hit — and they hit it at t = 0, because the muzzle ray starts
-       * inside it. See `PlayerCombatant.entityId` for the three faults that produced.
-       */
-      this.identity.entityId,
-      deps.localName ?? PLAYER_NAME,
-    );
-    this.damage.register(this.playerCombatant);
-    this.selfDamage = makeDamageRequest(deps.weaponDef);
-    // Both ends are this client's own seat: `applySelfDamage` is the debug lever that runs
-    // real damage at the player, and a request addressed to entity 0 would land on nobody.
-    this.selfDamage.targetId = this.identity.entityId;
-    this.selfDamage.sourceId = this.identity.entityId;
-
-    // The player holds the *resolved* loadout — base plus attachments plus perks — which
-    // `Game` has already copied into `weaponDef` so the tuning panel keeps its reference.
-    this.weapons = new WeaponSystem(
-      deps.weaponDef,
-      deps.secondaryDef,
-      deps.world,
-      this.damage,
-      deps.bus,
-      deps.viewmodelConfig,
-      deps.movementConfig.walkSpeed,
-      /**
-       * The **eighth** argument, and it is the whole fix.
-       *
-       * `WeaponSystem` defaults `sourceId` to `PLAYER_ENTITY_ID`, which is 0 — right in
-       * single-player, wrong the moment a server assigns an entity id. `Inventory` stamps that
-       * id onto `EV.WeaponSwapped` and the subscription filters on `identity.is(sourceId)`, so
-       * over the network the swap event announced entity 0, the filter rejected it, and
-       * `showSlot` never ran: the mechanics changed weapon and the model in your hands did not.
-       *
-       * Captured at construction rather than read per event, which is safe because a
-       * reassignment tears the world down and builds a fresh `Match` around the new identity.
-       */
-      this.identity.entityId,
-    );
-    // The range is an instrument, not a fight: its guns never run out of spare magazines
-    // (2026-10-03). See `Weapon.infiniteReserve`.
-    this.weapons.inventory.infiniteReserve = deps.mode.id === 'RANGE';
-
-    this.melee = new Melee({
-      world: deps.world,
-      damage: this.damage,
-      bus: deps.bus,
-      // The knife swings as whoever this client is, for the same reason the rifle fires as
-      // them: the swing excludes its own source, and a mismatch stabs the swinger.
-      sourceId: this.identity.entityId,
-    });
-
-    // The world is handed over so each dummy is dropped onto the geometry actually beneath
-    // it rather than trusting the authored `y` (post-M8; see `TargetRange`).
-    this.range = deps.map.targetRange
-      ? new TargetRange(this.damage, deps.bus, deps.healthConfig, deps.world)
-      : null;
-    if (this.range !== null) deps.scene.add(this.range.group);
-
-    // The director bakes the navmesh, so it is built once here rather than per match.
-    // No weapon is handed over: each bot draws its own (M7, `ai/BotArsenal.ts`).
-    this.bots = new BotDirector({
-      world: deps.world,
-      mapDef: deps.map.def,
-      bus: deps.bus,
-      damage: this.damage,
-      movement: deps.movementConfig,
-      healthConfig: deps.healthConfig,
-      viewmodelConfig: deps.viewmodelConfig,
-      tiers: deps.tiers,
-      perceptionConfig: deps.perceptionConfig,
-      scheduler: deps.schedulerConfig,
-      player: this.playerCombatant,
-      seed: deps.seed,
-    });
-    // M9: the bodies are the client's, not the director's. `BotRenderer` reconciles its
-    // mesh set against the roster each frame and drives the animations off `BotVisualState`.
-    this.supply = new SupplySystem(deps.map.def.supply ?? []);
-    this.burn = new BurnSystem(deps.bus, this.damage, burnWeapon());
-    this.botRenderer = new BotRenderer(
-      deps.actors ?? (() => this.bots.bots),
-      // Colour is a relation to this viewer, not an absolute A/B property. That keeps an
-      // enemy red from either side of a networked match and makes every FFA opponent hostile.
-      () => this.viewer,
-      // Round 5, F4: the bodies carry the weapon they were dealt, drawn with the viewmodel's
-      // own shared gunmetal, so the filtering setting reaches them the way it reaches the gun
-      // in the player's hands.
-      deps.anisotropy,
-      // Composition root: the renderer resolves a synchronous provider for each actor. Each
-      // handle reads the app-level GLB cache and exposes a factory only when it is safe to
-      // create instances; the procedural body remains the non-blocking fallback.
-      deps.characterAvatarProvider,
-      deps.weaponAssets,
-    );
-    deps.scene.add(this.botRenderer.group);
-
-    // ---- the mode ---------------------------------------------------------
-    // A networked client's board is the server's, delivered whole; it counts nothing for
-    // itself (M13 Phase B). See `ScoreSystem.authoritative`.
-    this.score = new ScoreSystem(deps.bus, this.identity, deps.networked !== true);
-    // See `ScoreSystem.freeForAll`. The replicated path records kills here too, so a client
-    // that dropped same-side kills showed a personal counter that stalled while the server's
-    // ladder moved — which is the FFA scoreboard the playtest reported as "not working".
-    this.score.freeForAll = deps.mode.freeForAll === true;
-    this.mode = deps.mode.create({
-      bus: deps.bus,
-      score: this.score,
-      roster: this.bots.roster,
-      mapDef: deps.map.def,
-    });
-    this.flow = new MatchFlow({
-      bus: deps.bus,
-      score: this.score,
-      roster: this.bots.roster,
-      mode: this.mode,
-      mapId: deps.map.id,
-      mapName: deps.map.name,
-      // The server put us on a side; in single-player there is only one to be on.
-      localTeam: deps.localTeam ?? PLAYER_TEAM,
-      identity: this.identity,
-      /**
-       * A networked client's flow is **replicated, not simulated** (M10, playtest round 2).
-       *
-       * `simulate` is already skipped for it, so the mode was never going to score — but the
-       * kill subscription inside `MatchFlow` ran regardless and resolved against an empty
-       * roster, which is why the killfeed was silently blank all milestone. Saying so here
-       * makes the two drive modes a property of the object rather than an accident of which
-       * methods the caller remembers not to invoke.
-       */
-      authoritative: deps.networked !== true,
-      // The freeze the intro is sized to (M17, C2) — the same number the server computes.
-      matchStartSeconds: matchStartSeconds(deps.map.def, this.mode.id),
-      onSidesSwapped: (swapped) => this.bots.spawns.setSideSwap(swapped),
-    });
-    this.bots.respawnPolicy = {
-      allowed: (id) => this.flow.respawnAllowed(id),
-      noted: (id) => this.flow.noteRespawn(id),
+    /** Interpolated weapon state for this frame. Read by Game for the camera. */
+    readonly visual: WeaponSnapshot = {
+        raise: 1,
+        adsFraction: 0,
+        visualPunch: 0,
+        visualLateral: 0,
+        aimPitch: 0,
+        aimYaw: 0,
+        reloadFraction: 0,
+        swapFraction: 1,
     };
-    // M7: if the mode has objectives, hand the director the provider. `ai/` asks and the
-    // mode answers; nothing in `ai/` knows a flag from a bomb site (see `ObjectiveIntent`).
-    this.bots.objectives = isObjectiveProvider(this.mode) ? this.mode : null;
-    // Post-M8: the player collects the bomb with the Use key rather than by walking over it.
-    // The mode is told *which* entity drives itself; it never learns that one of them is human.
-    if (this.mode instanceof SearchAndDestroy) {
-      this.mode.manualPickup = (id) => id === this.localId;
-    }
-    this.bots.freeForAll = deps.mode.freeForAll === true;
-    // There is no such thing as a teammate in FFA, so the friendly-fire gate at the damage
-    // door has to come off or half the lobby is unkillable by the other half.
-    this.damage.freeForAll = deps.mode.freeForAll === true;
+
+    /** Wall time inside the last `flow.simulate`, ms. Reported in F1 (S7). */
+    lastModeMs = 0;
+
+    private readonly deps: MatchDeps;
+    private readonly drive: ViewmodelDrive = makeViewmodelDrive();
+    private readonly residual = { yaw: 0, pitch: 0 };
+    private readonly selfDamage: DamageRequest;
+    private readonly occlusionRay: RayHit = makeRayHit();
+    private readonly listenerAt = { x: 0, y: 0, z: 0 };
+
+    private readonly spawnChoice: SpawnChoice = makeSpawnChoice();
+    private swapSubscription: (() => void) | null = null;
+    private deathSubscription: (() => void) | null = null;
+    /** F9's panel content, latched on the local player's death and cleared on their next spawn. */
+    private deathReport: DeathReport | null = null;
+    /** Who killed the local player, and when — for a distance the kill's own frame could not measure. */
+    private deathKillerId = -1;
+    private deathAtMs = 0;
+    private roundResetSubscription: (() => void) | null = null;
+
+    private active = false;
+    private playerDead = false;
     /**
-     * The waiting room's two rules, from the one fact (playtest round 4, F7).
+     * The last replicated spawn serial this client acted on. `-1` before the first snapshot.
      *
-     * The same pair `ServerMatch` sets from `variant`, and set here for the same reason
-     * `damage.freeForAll` is set in both runtimes: they are one fact about the match, and a client
-     * whose copy disagreed with the server's would be a client predicting a different game.
-     *
-     * Over the network neither is load-bearing today — the server resolves every shot at a
-     * person and owns every row — and both are still set, because "the client happens not to
-     * reach this path" is the reasoning that left the damage door's FFA flag (then called
-     * `friendlyFire`) unset on the server for four milestones. `combatantsInvulnerable` does
-     * reach one path here: the debug self-damage.
+     * The networked half of "a new life started" (playtest round 4, B3). See
+     * `applyReplicatedSelf`.
      */
-    if (deps.warmupArena === true) {
-      this.damage.combatantsInvulnerable = true;
-      this.score.records = false;
-    }
-    this.bots.pushAggressionScale = deps.mode.pushAggressionScale ?? 1;
-
-    this.fx = new Fx(deps.anisotropy);
-    deps.scene.add(this.fx.group);
-    this.flame = new FlameFx();
-    deps.scene.add(this.flame.group);
-
-    // One mesh per inventory slot, both built up front and toggled by visibility. Building
-    // on demand would put a geometry merge and a GPU upload on the frame the player presses
-    // the swap key, which is the one frame that must not stutter.
-    this.slotCamos[0] = deps.loadout.primaryCamo;
-    this.slotCamos[1] = deps.loadout.secondaryCamo;
-    this.slotAttachments[0] = deps.loadout.primaryAttachments;
-    this.slotAttachments[1] = deps.loadout.secondaryAttachments;
-    this.models = [
-      buildWeaponModel(deps.weaponDef.id, deps.anisotropy, deps.loadout.primaryCamo, this.modelOptions(0, deps.weaponDef.id)),
-      buildWeaponModel(deps.secondaryDef.id, deps.anisotropy, deps.loadout.secondaryCamo, this.modelOptions(1, deps.secondaryDef.id)),
-    ];
-    for (const model of this.models) {
-      deps.viewmodel.add(model.root);
-      model.root.visible = false;
-    }
-    this.model = this.requireModel(0);
-    this.model.root.visible = true;
-    this.fx.attachMuzzle(this.model.muzzle);
-    this.flame.setLocalMuzzle(this.model.muzzle, deps.viewmodel.camera);
-    this.anim = new ViewmodelAnim(this.model);
-    // A slot whose file has not arrived starts on the primitives and upgrades in place when it
-    // does (M19). `Game` warms the equipped class while the menu is up, so this is usually a
-    // no-op; when it is not, the match starts rather than waiting on a download.
-    this.models.forEach((_, slot) => this.upgradeWhenLoaded(slot));
+    private lastSpawnSerial = -1;
+    /** Previous tick's buttons, for edge detection in the sim (S4.2). */
+    private prevButtons = 0;
+    /**
+     * The command this tick, for the Chopper Gunner (M11 Gate B).
+     *
+     * `StreakSystem` pulls per-owner commands now rather than being handed one, so that a server
+     * with two gunners does not fly both off the same stick. The client's answer is the local
+     * player's current command, stashed here immediately before `simulate`.
+     */
+    private lastStreakCommand: InputCommand | null = null;
 
     /**
-     * The knife (round 2). One static model, built with the weapons and hidden until it swings.
+     * The map's resupply stations, and the rule that spends time at one (this session).
      *
-     * Not an entry in `models`: that array is the inventory, indexed by slot, and everything
-     * that walks it — `equip`, `showSlot`, the camo bookkeeping — would have to special-case a
-     * third element that is not a weapon. A knife is a thing you *do*, which is the same reason
-     * `Melee` is not a `Weapon`; see the header of `weapons/Melee.ts`.
+     * Stepped on **both** sides of a networked match, unlike the bomb. A plant timer is the mode's
+     * and the mode runs on the server, so a client that ran one as well would be a second
+     * authority over it. A magazine is not like that: the client and the server each own a copy of
+     * the weapon and step it from the same commands, and have since M10 — nothing about ammunition
+     * is on the wire at all. So the crate is a rule both sides apply, and the two agree because
+     * their inputs do.
      */
-    // The arms' rig goes in with the blade (stage 5): with it the knife is held by the same
-    // gloved hand every weapon is, and the box fist and its cylinder arm are not built.
-    this.knifeModel = buildKnifeModel(
-      deps.anisotropy,
-      deps.weaponAssets?.knife() ?? null,
-      deps.weaponAssets?.hands() ?? null,
-    );
-    this.knifeModel.root.visible = false;
-    deps.viewmodel.add(this.knifeModel.root);
-    if (this.knifeModel.arm !== null) {
-      this.knifeModel.arm.visible = false;
-      deps.viewmodel.add(this.knifeModel.arm);
-    }
-    this.anim.setKnife(this.knifeModel.root, this.knifeModel.arm, this.knifeModel.hands);
-    this.upgradeKnifeWhenLoaded();
-
-    this.ui = new MatchHud({
-      bus: deps.bus,
-      uiHost: deps.uiHost,
-      mapDef: deps.map.def,
-      mapName: deps.map.name,
-      modeName: this.mode.name,
-      // F10. Asked of the mode once, here, where every other fact about it is assembled.
-      modeBrief: this.mode.brief,
-      columns: this.mode.getScoreboardColumns(),
-      score: this.score,
-      audio: deps.audio,
-      localTeam: this.localTeam,
-      roster: this.bots.roster,
-      teamSize: deps.map.teamSize,
-      freeForAll: deps.mode.freeForAll === true,
-      warmupArena: deps.warmupArena === true,
-      ballotOpen: () => deps.ballotOpen?.() === true,
-      cameraRig: deps.cameraRig,
-    });
-    this.weaponAudio = new WeaponAudio(deps.audio);
-
-    this.feedback = new MatchFeedback({
-      bus: deps.bus,
-      cameraRig: deps.cameraRig,
-      cameraConfig: deps.cameraConfig,
-      audio: deps.audio,
-      input: deps.input,
-      player: deps.player,
-      playerHealth: this.playerHealth,
-      weaponAudio: this.weaponAudio,
-      fx: this.fx,
-      flame: this.flame,
-      hud: this.ui.hud,
-      bots: this.bots,
-      latency: this.latency,
-      identity: this.identity,
-      bodyAt: (entityId) => this.bodyAt(entityId),
-      onPlayerKilled: () => this.onPlayerKilled(),
-      listener: () => this.listenerAt,
-    });
+    private readonly supply: SupplySystem;
+    /**
+     * Bodies still alight after the jet moved on (2026-09-26).
+     *
+     * Stepped **only in a solo match**, unlike the resupply station and for the opposite reason:
+     * a burn is damage, damage is health, and health is the server's in a networked match. A
+     * client that ticked its own burns would be a second opinion about a bar it does not own. In
+     * a networked match this object still exists and still answers `isBurning` — from the
+     * replicated `EFlag.Burning` rather than from a timer of its own, which is what the renderer
+     * asks and all it needs.
+     */
+    private readonly burn: BurnSystem;
+    /** Seconds until the next puff of fire on every burning body. See `renderBurns`. */
+    private burnFxTimer = 0;
 
     /**
-     * The death report (playtest round 5, F9).
+     * Who this player is watching while dead (§6.8).
      *
-     * Built here rather than in the HUD because this is the only object that holds all four
-     * facts at once: the killfeed's directory for the name, `bodyAt` for the killer's position,
-     * the weapon table for the label, and the event itself for the health the server stamped.
-     * Latched on the kill and cleared on the next spawn — the same lifetime as being dead, which
-     * is exactly how long the panel is up.
-     *
-     * `EV.EntityKilled` and not `EV.KillfeedEntry`: the feed line is written for a different
-     * purpose and carries no health, and correlating two events that happen to arrive on one
-     * tick is the kind of coupling that survives until the day something reorders them.
+     * Cleared on every round start — the §4.18 discard rule applied to a round boundary. Without
+     * it a spectator returns from the round they died in still pointed at a body that has since
+     * respawned somewhere else, which reads as the camera being stuck.
      */
-    this.deathSubscription = deps.bus.on(EV.EntityKilled, (p) => {
-      if (p.targetId !== this.localId) return;
-      this.deathReport = this.buildDeathReport(p.sourceId, p.weaponId, p.zone, p.killerHealth);
-      this.deathKillerId = p.sourceId;
-      this.deathAtMs = performance.now();
-    });
-
-    // The mesh follows the inventory. `weapon.swapped` fires at the hand-over, which is the
-    // exact tick the old weapon has finished going down and the new one starts coming up.
-    this.swapSubscription = deps.bus.on(EV.WeaponSwapped, (p) => {
-      if (!this.identity.is(p.sourceId)) return;
-      this.showSlot(this.weapons.inventory.activeSlotIndex);
-    });
+    private spectatorTarget = NO_SPECTATOR_TARGET;
 
     /**
-     * A new round puts everybody back where they started (post-M8 playtest).
+     * The server's streak state (M11 Gate B, §8.22).
      *
-     * Only for modes that actually have rounds, which in practice is Search & Destroy: a
-     * single-round mode fires this once, at the start, where it is a no-op against a world
-     * that has just spawned everyone anyway.
-     *
-     * Subscribed rather than called from `MatchFlow`, because respawning is not the flow's
-     * job — it owns *whether* somebody may come back and this owns *putting them there*, and
-     * merging the two would put the roster and the spawn selector inside the round machine.
+     * Populated only in a networked match, where `this.streaks` is constructed but never
+     * simulated. See `ReplicatedStreaks` for why the client does not simply fold its own
+     * replicated kill events into its own counter.
      */
-    this.roundResetSubscription = deps.bus.on(EV.RoundStarted, () => {
-      if (this.deps.mode.usesRoundReset !== true) return;
-      // No state leaks across a round boundary, the camera's included. True in both runtimes:
-      // where the player is put is the server's business, where the camera looks is not.
-      this.spectatorTarget = NO_SPECTATOR_TARGET;
-      /**
-       * The **server** puts everybody back in a networked match (playtest round 4, B3).
-       *
-       * This ran in both runtimes, and over the network it was a second writer against the one
-       * fact a client may not decide: `hardResetRound` calls `respawnPlayer`, which runs
-       * `selectSpawn` and teleports the local controller to a point the client chose while the
-       * server was putting the body somewhere else — a guaranteed misprediction of up to the
-       * width of the map, every round, corrected a snapshot later by a camera lurch.
-       *
-       * It also concealed B3 by accident: the local `player.spawn` emits `player.spawned`, so
-       * the grenades did come back, as a side effect of the teleport rather than because
-       * anything had decided a life had started. Removing the teleport without the serial above
-       * would have turned an intermittent bug into a certain one.
-       */
-      if (this.isNetworked) return;
-      this.hardResetRound();
-    });
-
-    // M5. Built after the HUD because it pushes the flash and the threat indicator into it,
-    // and after the director because it hands the smoke field to `Perception` as an occluder.
-    this.equipment = new MatchEquipment({
-      bus: deps.bus,
-      scene: deps.scene,
-      world: deps.world,
-      damage: this.damage,
-      bots: this.bots,
-      audio: deps.audio,
-      cameraRig: deps.cameraRig,
-      hud: this.ui.hud,
-      cfg: deps.equipmentConfig,
-      tiers: deps.tiers,
-      localTeam: this.localTeam,
-      localId: this.identity.entityId,
-      // The equipment's own files (2026-09-24). The loadout's two are warmed below; anything
-      // else the world throws is fetched by `EquipmentFx` the first time it sees one.
-      weaponAssets: deps.weaponAssets,
-      // The same fact `bots.freeForAll` carries, from the same registry flag (M13 Phase A).
-      freeForAll: deps.mode.freeForAll === true,
-      seed: deps.seed,
-      // The server resolves every blast in a networked match (S4.15). This system stays for
-      // the prediction and the drawing of the player's own throw.
-      authoritative: deps.networked !== true,
-    });
-
-    // The loadout's grenades, not the M5 defaults. Set before the first refill so a
-    // spawning player is handed what their class actually carries.
-    this.equipment.inventory.lethal = deps.loadout.lethal;
-    this.equipment.inventory.tactical = deps.loadout.tactical;
-    EquipmentSystem.refill(this.equipment.inventory);
-    for (const id of [deps.loadout.lethal, deps.loadout.tactical]) {
-      void deps.weaponAssets?.preloadEquipment(id).catch(() => undefined);
-    }
-
-    // M6, last: it hooks into the bots, the flash field and the player controller, all of
-    // which have to exist first.
-    this.meta = new MatchMeta({
-      bus: deps.bus,
-      scene: deps.scene,
-      profile: deps.profile,
-      loadout: deps.loadout,
-      score: this.score,
-      player: deps.player,
-      playerHealth: this.playerHealth,
-      weapons: this.weapons,
-      bots: this.bots,
-      equipment: this.equipment.system,
-      equipmentInventory: this.equipment.inventory,
-      localTeam: this.localTeam,
-      localId: this.identity.entityId,
-      banksProgress: deps.banksProgress,
-    });
-
+    private readonly replicatedStreaks = new ReplicatedStreaks();
     /**
-     * M7, last of all: it asks `MatchMeta` for perk state and `MatchEquipment` for its blast,
-     * so both have to exist first.
+     * Where a mortar will land if one is called in.
      *
-     * The three predicates below are the whole of the M6 hook activation. `streaks/` never
-     * learns what a perk is — it asks three questions and this is where they are answered:
-     * Cold-Blooded refuses to be targeted, Ghost refuses to appear on a sweep, and Hardline
-     * discounts every requirement.
+     * Defaults to the map centre and is moved by the targeting overlay. Held here rather than in
+     * the overlay so a mortar called from the console — or, later, by a bot — still has a mark.
      */
-    this.streaks = new StreakSystem({
-      bus: deps.bus,
-      score: this.score,
-      roster: this.bots.roster,
-      // One HUD, one player: the client's answer to both of these is "is this me" (M11 Gate B).
-      reportProgressTo: (id) => this.identity.is(id),
-      commandFor: (id) => (this.identity.is(id) ? this.lastStreakCommand : null),
-      targetable: (id) => (this.identity.is(id) ? this.meta.state.targetedByStreaks : true),
-      visibleToUav: (id) => (this.identity.is(id) ? this.meta.state.visibleToUav : true),
-      streakDiscount: (id) => (this.identity.is(id) ? this.meta.state.streakDiscount : 0),
-      // The player earns only what their class equips; bots have no class, so they keep the
-      // full list and behave exactly as they did before.
-      equippedStreaks: (id) => (this.identity.is(id) ? this.equippedStreakIds : ALL_STREAK_IDS),
-      context: {
-        bus: deps.bus,
-        world: deps.world,
-        damage: this.damage,
-        bots: this.bots,
-        // M9: one port instead of a scene, an Fx pool, a camera rig and an audio graph.
-        // The server hands the same streaks `SILENT_PRESENTATION` and they do not notice.
-        present: new ClientStreakPresentation(
-          new StreakAudio(deps.audio),
-          this.fx,
-          deps.cameraRig,
-          (x, y, z, radius, bright) => this.equipment.fx.spawnBlast(x, y, z, radius, bright),
-        ),
-        mapDef: deps.map.def,
-        cfg: deps.streakConfig ?? DEFAULT_STREAK_CONFIG,
-        rng: new Rng(deps.seed ^ 0x5bd1_e995),
-        tiers: deps.tiers,
-        roster: this.bots.roster,
-        // The same fact `bots.freeForAll` carries, from the same registry flag (M13 Phase A).
-        freeForAll: deps.mode.freeForAll === true,
-      },
-    });
-    this.streakRenderer = new StreakRenderer(
-      this.streaks,
-      // The same relation every other surface paints by, and the same "is this me" (M13 A).
-      () => this.viewer,
-      (id) => this.identity.is(id),
-    );
-    deps.scene.add(this.streakRenderer.group);
-    // The turret's model, started now and awaited by nobody: a sentry costs a killstreak, so
-    // the file has the opening of the match to arrive, and `SentryMesh` draws the old box
-    // turret for any that beats it. The same bargain `PropModels` makes for the station.
-    void preloadSentry();
+    mortarMarkX = 0;
+    mortarMarkZ = 0;
+    /** The player's three equipped streaks, refreshed whenever the class changes. */
+    private equippedStreakIds: readonly StreakId[] = [];
     /**
-     * The riot shield, from whichever streak list this match believes in.
+     * The three equipped streaks **in key order**, nulls kept (M11 Gate B playtest).
      *
-     * The same expression `syncCarriedStreakWeapon` uses and for the same reason: a solo client
-     * owns its streaks and a networked one is told about them, and there is exactly one place
-     * that has to know the difference. The damage door then asks, every hit, without knowing
-     * that either kind of match exists.
-     *
-     * Set on a networked client too, although the server owns health there: the two simulations
-     * are supposed to reach the same answer from the same command stream (S4.15), and a client
-     * whose door refused nothing would predict a hitmarker on a body the server never moved.
+     * `equippedStreakIds` drops the empty slots because `StreakSystem` wants a set to decide what
+     * this player may earn. The keys want the opposite: position is the whole meaning, because key
+     * 3 is slot 0 and key 5 is slot 2 whatever is or is not in between. Packing the two together
+     * is what made key 5 dead for a player carrying one streak.
      */
-    this.damage.shieldOf = (id) =>
-      (this.isNetworked
-        ? this.replicatedStreaks.carriedWeaponFor(id)
-        : this.streaks.carriedWeaponFor(id)
-      )?.shield ?? null;
-    // Care packages are contestable in every mode, so they ride the second provider slot
-    // rather than the mode's (see `BotDirector.streakObjectives`).
-    this.bots.streakObjectives = this.streaks;
-    this.setStreakLoadout(deps.loadout.streaks);
+    private streakSlots: readonly (StreakId | null)[] = [null, null, null];
+    /** Look angles when the overlay opened, so the mark is steered by the delta. */
+    private overlayYaw = 0;
+    private overlayPitch = 0;
+    private playerRespawnTimer = 0;
+    private heartbeatTimer = 0;
+    private rosterRegistered = false;
 
-    this.objectives = new MatchObjectives({
-      bus: deps.bus,
-      scene: deps.scene,
-      mode: this.mode,
-      localTeam: this.localTeam,
-      dormant: (entityId) => this.isDormant(entityId),
-    });
-    this.mortarOverlay = new MortarOverlay({
-      host: deps.uiHost,
-      mapDef: deps.map.def,
-      onConfirm: (x, z) => {
-        this.mortarMarkX = x;
-        this.mortarMarkZ = z;
-        /**
-         * Through `spendStreak`, not straight into the local system (M11 Gate B playtest).
-         *
-         * This called `streaks.activate` directly, which on a networked client fires a streak
-         * into the copy of `StreakSystem` that is deliberately never simulated — so the mark
-         * was confirmed, the streak left the pending list, and no shell ever fell. The server
-         * was never asked. `spendStreak` is the one door that knows which of the two a match is.
-         */
-        this.spendStreak('mortar', x, z);
-      },
-      onCancel: () => {
-        /* The streak stays pending: cancelling a mark must not spend it. */
-      },
-    });
-    // Flags and bomb sites are worth drawing on the minimap; a TDM map is not (M4's note).
-    // The *kinds* matter too: Foundry authors flags and bomb sites together, so a mode that
-    // does not filter shows both at once.
-    const kinds = objectiveKindsFor(this.mode);
-    this.ui.hud.minimap.objectiveKinds = kinds;
-    this.ui.hud.minimap.showObjectives = kinds.length > 0;
+    constructor(deps: MatchDeps) {
+        this.deps = deps;
+        // First, because almost everything below is handed it.
+        this.identity = deps.identity ?? new LocalIdentity();
 
-    // Occlusion low-pass through the same spatial-hash raycaster the sim uses (S6.7).
-    deps.audio.setOccluder((x, y, z) =>
-      !deps.world.segmentClear(
-        x,
-        y,
-        z,
-        this.listenerAt.x,
-        this.listenerAt.y,
-        this.listenerAt.z,
-        this.occlusionRay,
-      ),
-    );
-    // The room, into the one convolver that already exists (S6.6).
-    deps.audio.setReverb(deps.map.def.reverb ?? null);
-  }
+        this.damage = new DamageSystem(deps.bus);
+        this.playerHealth = new Health(deps.healthConfig);
+        this.playerCombatant = new PlayerCombatant(
+            this.playerHealth,
+            deps.localTeam ?? PLAYER_TEAM,
+            deps.player,
+            /**
+             * The server's seat, not the constant (M11 Gate B playtest).
+             *
+             * The same eighth-argument fix `WeaponSystem` documents below, applied to the body the
+             * weapon shoots *past*. `Ballistics.nearestTarget` excludes the shooter by id, so a rig
+             * registered as entity 0 while the weapon fires as entity 3 is a rig the shooter's own
+             * rounds are entitled to hit — and they hit it at t = 0, because the muzzle ray starts
+             * inside it. See `PlayerCombatant.entityId` for the three faults that produced.
+             */
+            this.identity.entityId,
+            deps.localName ?? PLAYER_NAME,
+        );
+        this.damage.register(this.playerCombatant);
+        this.selfDamage = makeDamageRequest(deps.weaponDef);
+        // Both ends are this client's own seat: `applySelfDamage` is the debug lever that runs
+        // real damage at the player, and a request addressed to entity 0 would land on nobody.
+        this.selfDamage.targetId = this.identity.entityId;
+        this.selfDamage.sourceId = this.identity.entityId;
 
-  /**
-   * Bring the match up. Builds the roster on the first activation, registers everybody with
-   * the score system, and starts the flow's clock.
-   */
-  setActive(on: boolean): void {
-    this.active = on;
-    this.ui.setVisible(on);
-    if (!on) return;
-    this.anim.reset(this.deps.input.yaw, this.deps.input.pitch);
-    // Deferred to the first time a match actually starts rather than done at construction:
-    // the harness wants a different roster and gets to set it before anyone spawns.
-    // The range populates nothing: S9's testbed has no enemies by design, and the
-    // registry says so rather than this file guessing from the map.
-    // A networked match's roster lives on the server (S4.15). Populating one here would put
-    // ten bots in the world that only this client can see, fighting nobody.
-    if (!this.isNetworked && this.bots.botCount === 0 && this.deps.mode.populatesRoster) {
-      this.populateDefault();
-    }
-    this.registerRoster();
-    if (this.flow.currentPhase === 'WARMUP' && this.flow.round === 1 && this.score.rows.length > 0) {
-      this.flow.start();
-    }
-  }
+        // The player holds the *resolved* loadout — base plus attachments plus perks — which
+        // `Game` has already copied into `weaponDef` so the tuning panel keeps its reference.
+        this.weapons = new WeaponSystem(
+            deps.weaponDef,
+            deps.secondaryDef,
+            deps.world,
+            this.damage,
+            deps.bus,
+            deps.viewmodelConfig,
+            deps.movementConfig.walkSpeed,
+            /**
+             * The **eighth** argument, and it is the whole fix.
+             *
+             * `WeaponSystem` defaults `sourceId` to `PLAYER_ENTITY_ID`, which is 0 — right in
+             * single-player, wrong the moment a server assigns an entity id. `Inventory` stamps that
+             * id onto `EV.WeaponSwapped` and the subscription filters on `identity.is(sourceId)`, so
+             * over the network the swap event announced entity 0, the filter rejected it, and
+             * `showSlot` never ran: the mechanics changed weapon and the model in your hands did not.
+             *
+             * Captured at construction rather than read per event, which is safe because a
+             * reassignment tears the world down and builds a fresh `Match` around the new identity.
+             */
+            this.identity.entityId,
+        );
+        // The range is an instrument, not a fight: its guns never run out of spare magazines
+        // (2026-10-03). See `Weapon.infiniteReserve`.
+        this.weapons.inventory.infiniteReserve = deps.mode.id === 'RANGE';
 
-  /**
-   * The default firefight: the map's team size, the player counting as one of their side.
-   *
-   * A mode may override the roster size (M7): Free-for-All is eight operators on any map, and
-   * they are split evenly across the two substrate sides so perception, spawn safety and the
-   * aim model keep working — see `modes/FreeForAll.ts` for why the two-team substrate stays.
-   */
-  populateDefault(): void {
-    /**
-     * The tiers, from the menu's difficulty rather than from the map alone (round 4, F1).
-     *
-     * `tiersFor` is the same function `ServerMatch` resolves with, which is what makes "Recruit"
-     * mean the same roster in a solo match and on a server started with `BOT_DIFFICULTY=RECRUIT`.
-     * `MIX` returns the map's authored spread unchanged, so every measurement taken before this
-     * session still describes the default.
-     */
-    const mix = tiersFor(this.deps.difficulty, this.deps.map.tierMix);
-    const override = this.deps.mode.rosterSize;
-    if (override !== undefined) {
-      const bots = Math.max(0, override - 1);
-      const teamB = Math.ceil(bots / 2);
-      this.bots.populate(bots - teamB, teamB, mix);
-      return;
-    }
-    const size = this.deps.map.teamSize;
-    this.bots.populate(Math.max(0, size - 1), size, mix);
-  }
+        this.melee = new Melee({
+            world: deps.world,
+            damage: this.damage,
+            bus: deps.bus,
+            // The knife swings as whoever this client is, for the same reason the rifle fires as
+            // them: the swing excludes its own source, and a mismatch stabs the swinger.
+            sourceId: this.identity.entityId,
+        });
 
-  /**
-   * Put every roster member on the scoreboard.
-   *
-   * Deferred until the roster exists and done once: the bots are built by `populate`, which
-   * the harness may call with its own numbers before the match goes live.
-   */
-  registerRoster(): void {
-    if (this.rosterRegistered) return;
-    this.rosterRegistered = true;
-    this.score.register(this.localId, this.deps.localName ?? PLAYER_NAME, this.deps.localTeam ?? PLAYER_TEAM);
-    for (const bot of this.bots.bots) this.score.register(bot.entityId, bot.displayName, bot.team);
-  }
+        // The world is handed over so each dummy is dropped onto the geometry actually beneath
+        // it rather than trusting the authored `y` (post-M8; see `TargetRange`).
+        this.range = deps.map.targetRange
+            ? new TargetRange(this.damage, deps.bus, deps.healthConfig, deps.world)
+            : null;
+        if (this.range !== null) deps.scene.add(this.range.group);
 
-  /**
-   * Is this world the permanent arena? See `HudSurfaceState.inWarmupArena`.
-   *
-   * A world is built per instance and rebuilt on migration, so this is a constant for the life
-   * of the object rather than something to re-derive per frame.
-   */
-  get inWarmupArena(): boolean {
-    return this.deps.warmupArena === true;
-  }
+        // The director bakes the navmesh, so it is built once here rather than per match.
+        // No weapon is handed over: each bot draws its own (M7, `ai/BotArsenal.ts`).
+        this.bots = new BotDirector({
+            world: deps.world,
+            mapDef: deps.map.def,
+            bus: deps.bus,
+            damage: this.damage,
+            movement: deps.movementConfig,
+            healthConfig: deps.healthConfig,
+            viewmodelConfig: deps.viewmodelConfig,
+            tiers: deps.tiers,
+            perceptionConfig: deps.perceptionConfig,
+            scheduler: deps.schedulerConfig,
+            player: this.playerCombatant,
+            seed: deps.seed,
+        });
+        // M9: the bodies are the client's, not the director's. `BotRenderer` reconciles its
+        // mesh set against the roster each frame and drives the animations off `BotVisualState`.
+        this.supply = new SupplySystem(deps.map.def.supply ?? []);
+        this.burn = new BurnSystem(deps.bus, this.damage, burnWeapon());
+        this.botRenderer = new BotRenderer(
+            deps.actors ?? (() => this.bots.bots),
+            // Colour is a relation to this viewer, not an absolute A/B property. That keeps an
+            // enemy red from either side of a networked match and makes every FFA opponent hostile.
+            () => this.viewer,
+            // Round 5, F4: the bodies carry the weapon they were dealt, drawn with the viewmodel's
+            // own shared gunmetal, so the filtering setting reaches them the way it reaches the gun
+            // in the player's hands.
+            deps.anisotropy,
+            // Composition root: the renderer resolves a synchronous provider for each actor. Each
+            // handle reads the app-level GLB cache and exposes a factory only when it is safe to
+            // create instances; the procedural body remains the non-blocking fallback.
+            deps.characterAvatarProvider,
+            deps.weaponAssets,
+        );
+        deps.scene.add(this.botRenderer.group);
 
-  /** The score banner, the Tab board and the streak strip. One predicate decides all three (F7). */
-  setResultSurfacesVisible(on: boolean): void {
-    this.ui.setResultSurfacesVisible(on);
-  }
-
-  get isPlayerDead(): boolean {
-    return this.playerDead;
-  }
-
-  /** The mortar's targeting map has the input: what `Btn.Targeting` tells the server. */
-  get targeting(): boolean {
-    return this.mortarOverlay.isOpen;
-  }
-
-  /**
-   * The side the server put this client on; `PLAYER_TEAM` in single-player.
-   *
-   * A getter rather than the `deps.localTeam ?? PLAYER_TEAM` expression repeated at each use,
-   * because "which team am I" being answered by a constant is precisely how the alive counter
-   * came to label a team-B player's own side as the enemy.
-   */
-  get localTeam(): BotTeam {
-    return this.deps.localTeam ?? PLAYER_TEAM;
-  }
-
-  /**
-   * Which seat is looking at the HUD, as one value (playtest round 4, B12).
-   *
-   * `localTeam` alone is not enough to decide a colour, because Free-for-All keeps the
-   * two-team substrate and half of an FFA lobby therefore shares the viewer's side without
-   * being on their team. Both facts travel together or the killfeed paints four opponents
-   * green, which is the seam post-M8 closed in the minimap and left open everywhere else.
-   */
-  get viewer(): ViewerContext {
-    return { team: this.localTeam, freeForAll: this.deps.mode.freeForAll === true };
-  }
-
-  /**
-   * How many of a side are still standing, from whichever body source this match has.
-   *
-   * Single-player holds `Bot`s on a roster; a networked match holds `RemoteActor`s rebuilt from
-   * snapshots. A caller that wants a number should not have to know which — and
-   * `SearchAndDestroy.aliveCount` walks `ModeDeps.roster`, which on a networked client is
-   * **empty**, so it returned 0 for both sides for the whole match. The local player is counted
-   * separately because they are in neither list.
-   */
-  countAlive(team: BotTeam): number {
-    let n = 0;
-    if (this.isNetworked) {
-      const actors = this.deps.actors;
-      if (actors !== undefined) {
-        for (const actor of actors()) {
-          if (actor.team === team && actor.participating) n++;
+        // ---- the mode ---------------------------------------------------------
+        // A networked client's board is the server's, delivered whole; it counts nothing for
+        // itself (M13 Phase B). See `ScoreSystem.authoritative`.
+        this.score = new ScoreSystem(deps.bus, this.identity, deps.networked !== true);
+        // See `ScoreSystem.freeForAll`. The replicated path records kills here too, so a client
+        // that dropped same-side kills showed a personal counter that stalled while the server's
+        // ladder moved — which is the FFA scoreboard the playtest reported as "not working".
+        this.score.freeForAll = deps.mode.freeForAll === true;
+        this.mode = deps.mode.create({
+            bus: deps.bus,
+            score: this.score,
+            roster: this.bots.roster,
+            mapDef: deps.map.def,
+        });
+        this.flow = new MatchFlow({
+            bus: deps.bus,
+            score: this.score,
+            roster: this.bots.roster,
+            mode: this.mode,
+            mapId: deps.map.id,
+            mapName: deps.map.name,
+            // The server put us on a side; in single-player there is only one to be on.
+            localTeam: deps.localTeam ?? PLAYER_TEAM,
+            identity: this.identity,
+            /**
+             * A networked client's flow is **replicated, not simulated** (M10, playtest round 2).
+             *
+             * `simulate` is already skipped for it, so the mode was never going to score — but the
+             * kill subscription inside `MatchFlow` ran regardless and resolved against an empty
+             * roster, which is why the killfeed was silently blank all milestone. Saying so here
+             * makes the two drive modes a property of the object rather than an accident of which
+             * methods the caller remembers not to invoke.
+             */
+            authoritative: deps.networked !== true,
+            // The freeze the intro is sized to (M17, C2) — the same number the server computes.
+            matchStartSeconds: matchStartSeconds(deps.map.def, this.mode.id),
+            onSidesSwapped: (swapped) => this.bots.spawns.setSideSwap(swapped),
+        });
+        this.bots.respawnPolicy = {
+            allowed: (id) => this.flow.respawnAllowed(id),
+            noted: (id) => this.flow.noteRespawn(id),
+        };
+        // M7: if the mode has objectives, hand the director the provider. `ai/` asks and the
+        // mode answers; nothing in `ai/` knows a flag from a bomb site (see `ObjectiveIntent`).
+        this.bots.objectives = isObjectiveProvider(this.mode) ? this.mode : null;
+        // Post-M8: the player collects the bomb with the Use key rather than by walking over it.
+        // The mode is told *which* entity drives itself; it never learns that one of them is human.
+        if (this.mode instanceof SearchAndDestroy) {
+            this.mode.manualPickup = (id) => id === this.localId;
         }
-      }
-      // A client's own entity is not among its remote actors, so it is never double-counted.
-      if (this.localTeam === team && !this.playerDead) n++;
-      return n;
-    }
-    for (const c of this.bots.roster) {
-      if (c.team === team && c.participating) n++;
-    }
-    return n;
-  }
+        this.bots.freeForAll = deps.mode.freeForAll === true;
+        // There is no such thing as a teammate in FFA, so the friendly-fire gate at the damage
+        // door has to come off or half the lobby is unkillable by the other half.
+        this.damage.freeForAll = deps.mode.freeForAll === true;
+        /**
+         * The waiting room's two rules, from the one fact (playtest round 4, F7).
+         *
+         * The same pair `ServerMatch` sets from `variant`, and set here for the same reason
+         * `damage.freeForAll` is set in both runtimes: they are one fact about the match, and a client
+         * whose copy disagreed with the server's would be a client predicting a different game.
+         *
+         * Over the network neither is load-bearing today — the server resolves every shot at a
+         * person and owns every row — and both are still set, because "the client happens not to
+         * reach this path" is the reasoning that left the damage door's FFA flag (then called
+         * `friendlyFire`) unset on the server for four milestones. `combatantsInvulnerable` does
+         * reach one path here: the debug self-damage.
+         */
+        if (deps.warmupArena === true) {
+            this.damage.combatantsInvulnerable = true;
+            this.score.records = false;
+        }
+        this.bots.pushAggressionScale = deps.mode.pushAggressionScale ?? 1;
 
-  /**
-   * The entity id this client's own player occupies.
-   *
-   * `PLAYER_ENTITY_ID` in single-player and the server's assignment in a networked match.
-   * Everything that used to compare against the constant compares against this.
-   */
-  get localId(): number {
-    return this.identity.entityId;
-  }
+        this.fx = new Fx(deps.anisotropy);
+        deps.scene.add(this.fx.group);
+        this.flame = new FlameFx();
+        deps.scene.add(this.flame.group);
 
-  /**
-   * The bodies this match draws, whichever kind of match it is (M15, D1).
-   *
-   * The same supplier `BotRenderer` was handed — the director's roster in single-player, the
-   * snapshot's remote set when networked — so the summary's lineup asks the one list the
-   * renderer draws from for what each entity is holding, rather than a second answer to it.
-   */
-  actorsForRender(): Iterable<RenderableActor> {
-    return this.deps.actors?.() ?? this.bots.bots;
-  }
+        // One mesh per inventory slot, both built up front and toggled by visibility. Building
+        // on demand would put a geometry merge and a GPU upload on the frame the player presses
+        // the swap key, which is the one frame that must not stutter.
+        this.slotCamos[0] = deps.loadout.primaryCamo;
+        this.slotCamos[1] = deps.loadout.secondaryCamo;
+        this.slotAttachments[0] = deps.loadout.primaryAttachments;
+        this.slotAttachments[1] = deps.loadout.secondaryAttachments;
+        this.models = [
+            buildWeaponModel(deps.weaponDef.id, deps.anisotropy, deps.loadout.primaryCamo, this.modelOptions(0, deps.weaponDef.id)),
+            buildWeaponModel(deps.secondaryDef.id, deps.anisotropy, deps.loadout.secondaryCamo, this.modelOptions(1, deps.secondaryDef.id)),
+        ];
+        for (const model of this.models) {
+            deps.viewmodel.add(model.root);
+            model.root.visible = false;
+        }
+        this.model = this.requireModel(0);
+        this.model.root.visible = true;
+        this.fx.attachMuzzle(this.model.muzzle);
+        this.flame.setLocalMuzzle(this.model.muzzle, deps.viewmodel.camera);
+        this.anim = new ViewmodelAnim(this.model);
+        // A slot whose file has not arrived starts on the primitives and upgrades in place when it
+        // does (M19). `Game` warms the equipped class while the menu is up, so this is usually a
+        // no-op; when it is not, the match starts rather than waiting on a download.
+        this.models.forEach((_, slot) => this.upgradeWhenLoaded(slot));
 
-  /**
-   * Find a body by entity id, whichever kind of match this is (M10, playtest round 2).
-   *
-   * Single-player has one place to look and a networked match has another: the roster holds
-   * `Bot`s here and `RemoteActor`s there, and only one of the two is ever populated. Callers
-   * that want to put a sound on a body or point a chevron at one should not have to know
-   * which — that is exactly the knowledge that leaked into `MatchFeedback` and made every
-   * positional cue silent over the network.
-   *
-   * The remote pose is sampled at `alpha` 1, the newest interpolated position. A sound is a
-   * one-shot placed at the instant it fires; blending it against the previous frame would
-   * buy nothing audible.
-   */
-  /**
-   * Everything the death screen says, assembled at the moment of death (round 5, F9).
-   *
-   * Each field degrades on its own rather than the whole report being withheld: a killstreak has
-   * a name and no health, a fall has neither, and a killer who has already been removed from the
-   * roster has a health the server stamped and no body to measure to. `describeDeath` drops
-   * whatever is missing, so a partial report is a shorter sentence rather than a wrong one.
-   */
-  private buildDeathReport(
-    killerId: number,
-    weaponId: string,
-    zone: HitZone,
-    killerHealth: number,
-  ): DeathReport | null {
-    if (killerId === this.localId) return null; // your own grenade needs no explaining
-    const killerName = this.flow.killfeed.nameOf(killerId);
-    if (killerName === null) return null;
+        /**
+         * The knife (round 2). One static model, built with the weapons and hidden until it swings.
+         *
+         * Not an entry in `models`: that array is the inventory, indexed by slot, and everything
+         * that walks it — `equip`, `showSlot`, the camo bookkeeping — would have to special-case a
+         * third element that is not a weapon. A knife is a thing you *do*, which is the same reason
+         * `Melee` is not a `Weapon`; see the header of `weapons/Melee.ts`.
+         */
+        // The arms' rig goes in with the blade (stage 5): with it the knife is held by the same
+        // gloved hand every weapon is, and the box fist and its cylinder arm are not built.
+        this.knifeModel = buildKnifeModel(
+            deps.anisotropy,
+            deps.weaponAssets?.knife() ?? null,
+            deps.weaponAssets?.hands() ?? null,
+        );
+        this.knifeModel.root.visible = false;
+        deps.viewmodel.add(this.knifeModel.root);
+        if (this.knifeModel.arm !== null) {
+            this.knifeModel.arm.visible = false;
+            deps.viewmodel.add(this.knifeModel.arm);
+        }
+        this.anim.setKnife(this.knifeModel.root, this.knifeModel.arm, this.knifeModel.hands);
+        this.upgradeKnifeWhenLoaded();
 
-    /*
-     * Distance between the two bodies, measured now.
-     *
-     * `bodyAt` returns a shared scratch, so the numbers are read out before anything else can
-     * ask — which is the contract that comment states and the reason this does not hold the
-     * pose. The player's own position comes off the sim rather than the same scratch for the
-     * same reason.
-     */
-    const sim = this.deps.player.sim;
-    const body = this.bodyAt(killerId);
-    const distanceM = body === null ? -1 : Math.hypot(body.x - sim.x, body.y - sim.y, body.z - sim.z);
+        this.ui = new MatchHud({
+            bus: deps.bus,
+            uiHost: deps.uiHost,
+            mapDef: deps.map.def,
+            mapName: deps.map.name,
+            modeName: this.mode.name,
+            // F10. Asked of the mode once, here, where every other fact about it is assembled.
+            modeBrief: this.mode.brief,
+            columns: this.mode.getScoreboardColumns(),
+            score: this.score,
+            audio: deps.audio,
+            localTeam: this.localTeam,
+            roster: this.bots.roster,
+            teamSize: deps.map.teamSize,
+            freeForAll: deps.mode.freeForAll === true,
+            warmupArena: deps.warmupArena === true,
+            ballotOpen: () => deps.ballotOpen?.() === true,
+            cameraRig: deps.cameraRig,
+        });
+        this.weaponAudio = new WeaponAudio(deps.audio);
 
-    return {
-      killerName,
-      weaponName: anyWeaponDef(weaponId)?.name ?? '',
-      distanceM,
-      killerHealth,
-      headshot: zone === 'head',
-    };
-  }
+        this.feedback = new MatchFeedback({
+            bus: deps.bus,
+            cameraRig: deps.cameraRig,
+            cameraConfig: deps.cameraConfig,
+            audio: deps.audio,
+            input: deps.input,
+            player: deps.player,
+            playerHealth: this.playerHealth,
+            weaponAudio: this.weaponAudio,
+            fx: this.fx,
+            flame: this.flame,
+            hud: this.ui.hud,
+            bots: this.bots,
+            latency: this.latency,
+            identity: this.identity,
+            bodyAt: (entityId) => this.bodyAt(entityId),
+            onPlayerKilled: () => this.onPlayerKilled(),
+            listener: () => this.listenerAt,
+        });
 
-  /**
-   * The killer's distance, once there is a body to measure to (anti-wallhack phase 2, part 1).
-   *
-   * A killer this client was not told about is dormant when the kill arrives, and wakes in the
-   * next snapshot (R9) — so a report built on the kill's own frame said nothing about distance.
-   * Measured again each frame for `WAKE_WAIT_MS`, then left as it is.
-   */
-  private settleDeathDistance(): void {
-    const report = this.deathReport;
-    if (report === null || report.distanceM >= 0) return;
-    if (performance.now() - this.deathAtMs > WAKE_WAIT_MS) return;
-    const body = this.bodyAt(this.deathKillerId);
-    if (body === null) return;
-    const sim = this.deps.player.sim;
-    this.deathReport = { ...report, distanceM: Math.hypot(body.x - sim.x, body.y - sim.y, body.z - sim.z) };
-  }
+        /**
+         * The death report (playtest round 5, F9).
+         *
+         * Built here rather than in the HUD because this is the only object that holds all four
+         * facts at once: the killfeed's directory for the name, `bodyAt` for the killer's position,
+         * the weapon table for the label, and the event itself for the health the server stamped.
+         * Latched on the kill and cleared on the next spawn — the same lifetime as being dead, which
+         * is exactly how long the panel is up.
+         *
+         * `EV.EntityKilled` and not `EV.KillfeedEntry`: the feed line is written for a different
+         * purpose and carries no health, and correlating two events that happen to arrive on one
+         * tick is the kind of coupling that survives until the day something reorders them.
+         */
+        this.deathSubscription = deps.bus.on(EV.EntityKilled, (p) => {
+            if (p.targetId !== this.localId) return;
+            this.deathReport = this.buildDeathReport(p.sourceId, p.weaponId, p.zone, p.killerHealth);
+            this.deathKillerId = p.sourceId;
+            this.deathAtMs = performance.now();
+        });
 
-  /** A remote body this client is not told the place of (protocol 28). Never true offline. */
-  private isDormant(entityId: number): boolean {
-    const actors = this.deps.actors;
-    if (actors === undefined) return false;
-    for (const actor of actors()) {
-      if (actor.entityId === entityId) return actor.dormant === true;
-    }
-    return false;
-  }
+        // The mesh follows the inventory. `weapon.swapped` fires at the hand-over, which is the
+        // exact tick the old weapon has finished going down and the new one starts coming up.
+        this.swapSubscription = deps.bus.on(EV.WeaponSwapped, (p) => {
+            if (!this.identity.is(p.sourceId)) return;
+            this.showSlot(this.weapons.inventory.activeSlotIndex);
+        });
 
-  private bodyAt(entityId: number): Readonly<BodyPose> | null {
-    const bot = this.bots.get(entityId);
-    if (bot !== undefined) {
-      bodyScratch.x = bot.px;
-      bodyScratch.y = bot.py;
-      bodyScratch.z = bot.pz;
-      bodyScratch.eyeHeight = bot.eyeHeight;
-      return bodyScratch;
-    }
+        /**
+         * A new round puts everybody back where they started (post-M8 playtest).
+         *
+         * Only for modes that actually have rounds, which in practice is Search & Destroy: a
+         * single-round mode fires this once, at the start, where it is a no-op against a world
+         * that has just spawned everyone anyway.
+         *
+         * Subscribed rather than called from `MatchFlow`, because respawning is not the flow's
+         * job — it owns *whether* somebody may come back and this owns *putting them there*, and
+         * merging the two would put the roster and the spawn selector inside the round machine.
+         */
+        this.roundResetSubscription = deps.bus.on(EV.RoundStarted, () => {
+            if (this.deps.mode.usesRoundReset !== true) return;
+            // No state leaks across a round boundary, the camera's included. True in both runtimes:
+            // where the player is put is the server's business, where the camera looks is not.
+            this.spectatorTarget = NO_SPECTATOR_TARGET;
+            /**
+             * The **server** puts everybody back in a networked match (playtest round 4, B3).
+             *
+             * This ran in both runtimes, and over the network it was a second writer against the one
+             * fact a client may not decide: `hardResetRound` calls `respawnPlayer`, which runs
+             * `selectSpawn` and teleports the local controller to a point the client chose while the
+             * server was putting the body somewhere else — a guaranteed misprediction of up to the
+             * width of the map, every round, corrected a snapshot later by a camera lurch.
+             *
+             * It also concealed B3 by accident: the local `player.spawn` emits `player.spawned`, so
+             * the grenades did come back, as a side effect of the teleport rather than because
+             * anything had decided a life had started. Removing the teleport without the serial above
+             * would have turned an intermittent bug into a certain one.
+             */
+            if (this.isNetworked) return;
+            this.hardResetRound();
+        });
 
-    const actors = this.deps.actors;
-    if (actors !== undefined) {
-      for (const actor of actors()) {
-        if (actor.entityId !== entityId) continue;
-        // A dormant body's place is frozen, or a blank origin — not a place to measure from.
-        if (actor.dormant === true) return null;
-        bodyScratch.x = actor.renderX(1);
-        bodyScratch.y = actor.renderY(1);
-        bodyScratch.z = actor.renderZ(1);
-        // The rig's own eye height is not replicated; the standing default is close enough
-        // for a sound and is what the local case uses for a standing bot.
-        bodyScratch.eyeHeight = DEFAULT_EYE_HEIGHT;
-        return bodyScratch;
-      }
-    }
-    return null;
-  }
+        // M5. Built after the HUD because it pushes the flash and the threat indicator into it,
+        // and after the director because it hands the smoke field to `Perception` as an occluder.
+        this.equipment = new MatchEquipment({
+            bus: deps.bus,
+            scene: deps.scene,
+            world: deps.world,
+            damage: this.damage,
+            bots: this.bots,
+            audio: deps.audio,
+            cameraRig: deps.cameraRig,
+            hud: this.ui.hud,
+            cfg: deps.equipmentConfig,
+            tiers: deps.tiers,
+            localTeam: this.localTeam,
+            localId: this.identity.entityId,
+            // The equipment's own files (2026-09-24). The loadout's two are warmed below; anything
+            // else the world throws is fetched by `EquipmentFx` the first time it sees one.
+            weaponAssets: deps.weaponAssets,
+            // The same fact `bots.freeForAll` carries, from the same registry flag (M13 Phase A).
+            freeForAll: deps.mode.freeForAll === true,
+            seed: deps.seed,
+            // The server resolves every blast in a networked match (S4.15). This system stays for
+            // the prediction and the drawing of the player's own throw.
+            authoritative: deps.networked !== true,
+        });
 
-  /**
-   * Nobody may move or shoot right now (post-M8 playtest).
-   *
-   * True through the 3-2-1 and through the hold between rounds. The brief asks for movement
-   * and shooting to be locked during the countdown and for the camera to stay free, which is
-   * exactly the split `Input.sampleSpectating` already produces — it zeroes the axes and the
-   * buttons and stamps the live view angles — so `Game` reads this and picks that sampler
-   * rather than a fourth one being written.
-   *
-   * `ROUND_END` is included on purpose. It is the same situation as the warm-up with the
-   * clock running the other way: the round is decided, and letting people keep shooting into
-   * it is how a Search & Destroy round that has already been won produces another death on
-   * the scoreboard.
-   */
-  get inputFrozen(): boolean {
-    // Networked: the server says so, through the snapshot header. Its own `MatchFlow` is the
-    // one running, and this client's is inert.
-    if (this.isNetworked) return this.netFrozen;
-    const phase = this.flow.currentPhase;
-    return phase === 'WARMUP' || phase === 'ROUND_END';
-  }
+        // The loadout's grenades, not the M5 defaults. Set before the first refill so a
+        // spawning player is handed what their class actually carries.
+        this.equipment.inventory.lethal = deps.loadout.lethal;
+        this.equipment.inventory.tactical = deps.loadout.tactical;
+        EquipmentSystem.refill(this.equipment.inventory);
+        for (const id of [deps.loadout.lethal, deps.loadout.tactical]) {
+            void deps.weaponAssets?.preloadEquipment(id).catch(() => undefined);
+        }
 
-  /**
-   * Whether the player's command should be neutered this tick. Read by both samplers.
-   *
-   * It used to be `uiFocus || inputFrozen`, where `uiFocus` meant *a front-end surface has the
-   * keyboard and the cursor* — built for the Create-a-Class overlay, which was opened over a
-   * running match because there is no pausing a dedicated server. Playtest round 4 (B8) made
-   * the editor a front-end screen again, and that left `uiFocus` a boolean with **no writer**:
-   * dead state sitting in the input path, indistinguishable from a flag somebody forgot to
-   * set. The quick class selector never needed it — it is offered only in the two windows
-   * where the body is already frozen, which is what `inputFrozen` says.
-   */
-  get inputSuppressed(): boolean {
-    return this.inputFrozen;
-  }
+        // M6, last: it hooks into the bots, the flash field and the player controller, all of
+        // which have to exist first.
+        this.meta = new MatchMeta({
+            bus: deps.bus,
+            scene: deps.scene,
+            profile: deps.profile,
+            loadout: deps.loadout,
+            score: this.score,
+            player: deps.player,
+            playerHealth: this.playerHealth,
+            weapons: this.weapons,
+            bots: this.bots,
+            equipment: this.equipment.system,
+            equipmentInventory: this.equipment.inventory,
+            localTeam: this.localTeam,
+            localId: this.identity.entityId,
+            banksProgress: deps.banksProgress,
+        });
 
-  /** True when this match is driven by a server. See `MatchDeps.networked`. */
-  get isNetworked(): boolean {
-    return this.deps.networked === true;
-  }
+        /**
+         * M7, last of all: it asks `MatchMeta` for perk state and `MatchEquipment` for its blast,
+         * so both have to exist first.
+         *
+         * The three predicates below are the whole of the M6 hook activation. `streaks/` never
+         * learns what a perk is — it asks three questions and this is where they are answered:
+         * Cold-Blooded refuses to be targeted, Ghost refuses to appear on a sweep, and Hardline
+         * discounts every requirement.
+         */
+        this.streaks = new StreakSystem({
+            bus: deps.bus,
+            score: this.score,
+            roster: this.bots.roster,
+            // One HUD, one player: the client's answer to both of these is "is this me" (M11 Gate B).
+            reportProgressTo: (id) => this.identity.is(id),
+            commandFor: (id) => (this.identity.is(id) ? this.lastStreakCommand : null),
+            targetable: (id) => (this.identity.is(id) ? this.meta.state.targetedByStreaks : true),
+            visibleToUav: (id) => (this.identity.is(id) ? this.meta.state.visibleToUav : true),
+            streakDiscount: (id) => (this.identity.is(id) ? this.meta.state.streakDiscount : 0),
+            // The player earns only what their class equips; bots have no class, so they keep the
+            // full list and behave exactly as they did before.
+            equippedStreaks: (id) => (this.identity.is(id) ? this.equippedStreakIds : ALL_STREAK_IDS),
+            context: {
+                bus: deps.bus,
+                world: deps.world,
+                damage: this.damage,
+                bots: this.bots,
+                // M9: one port instead of a scene, an Fx pool, a camera rig and an audio graph.
+                // The server hands the same streaks `SILENT_PRESENTATION` and they do not notice.
+                present: new ClientStreakPresentation(
+                    new StreakAudio(deps.audio),
+                    this.fx,
+                    deps.cameraRig,
+                    (x, y, z, radius, bright) => this.equipment.fx.spawnBlast(x, y, z, radius, bright),
+                ),
+                mapDef: deps.map.def,
+                cfg: deps.streakConfig ?? DEFAULT_STREAK_CONFIG,
+                rng: new Rng(deps.seed ^ 0x5bd1_e995),
+                tiers: deps.tiers,
+                roster: this.bots.roster,
+                // The same fact `bots.freeForAll` carries, from the same registry flag (M13 Phase A).
+                freeForAll: deps.mode.freeForAll === true,
+            },
+        });
+        this.streakRenderer = new StreakRenderer(
+            this.streaks,
+            // The same relation every other surface paints by, and the same "is this me" (M13 A).
+            () => this.viewer,
+            (id) => this.identity.is(id),
+        );
+        deps.scene.add(this.streakRenderer.group);
+        // The turret's model, started now and awaited by nobody: a sentry costs a killstreak, so
+        // the file has the opening of the match to arrive, and `SentryMesh` draws the old box
+        // turret for any that beats it. The same bargain `PropModels` makes for the station.
+        void preloadSentry();
+        /**
+         * The riot shield, from whichever streak list this match believes in.
+         *
+         * The same expression `syncCarriedStreakWeapon` uses and for the same reason: a solo client
+         * owns its streaks and a networked one is told about them, and there is exactly one place
+         * that has to know the difference. The damage door then asks, every hit, without knowing
+         * that either kind of match exists.
+         *
+         * Set on a networked client too, although the server owns health there: the two simulations
+         * are supposed to reach the same answer from the same command stream (S4.15), and a client
+         * whose door refused nothing would predict a hitmarker on a body the server never moved.
+         */
+        this.damage.shieldOf = (id) =>
+            (this.isNetworked
+                ? this.replicatedStreaks.carriedWeaponFor(id)
+                : this.streaks.carriedWeaponFor(id)
+            )?.shield ?? null;
+        // Care packages are contestable in every mode, so they ride the second provider slot
+        // rather than the mode's (see `BotDirector.streakObjectives`).
+        this.bots.streakObjectives = this.streaks;
+        this.setStreakLoadout(deps.loadout.streaks);
 
-  /**
-   * Adopt the local player's replicated health and liveness (M10 playtest fix).
-   *
-   * The server owns whether this player is alive; before this the client decided for itself
-   * and got it wrong in the only way that matters. `onPlayerKilled` keys on
-   * `PLAYER_ENTITY_ID`, which is entity **0** — the server's empty spectator seat — while a
-   * connected human is entity 1 or above. So the death path never fired, the death screen
-   * never appeared, and `stepPlayerRespawn` (the only thing that clears `playerDead`) is
-   * skipped in networked matches anyway. Three separate notions of "am I dead", one of them
-   * authoritative and none of them talking to each other.
-   *
-   * Now there is one: this. Called on every change to the replicated health or alive bit.
-   */
-  applyReplicatedSelf(health: number, alive: boolean, spawnSerial: number): void {
-    if (!this.isNetworked) return;
+        this.objectives = new MatchObjectives({
+            bus: deps.bus,
+            scene: deps.scene,
+            mode: this.mode,
+            localTeam: this.localTeam,
+            dormant: (entityId) => this.isDormant(entityId),
+        });
+        this.mortarOverlay = new MortarOverlay({
+            host: deps.uiHost,
+            mapDef: deps.map.def,
+            onConfirm: (x, z) => {
+                this.mortarMarkX = x;
+                this.mortarMarkZ = z;
+                /**
+                 * Through `spendStreak`, not straight into the local system (M11 Gate B playtest).
+                 *
+                 * This called `streaks.activate` directly, which on a networked client fires a streak
+                 * into the copy of `StreakSystem` that is deliberately never simulated — so the mark
+                 * was confirmed, the streak left the pending list, and no shell ever fell. The server
+                 * was never asked. `spendStreak` is the one door that knows which of the two a match is.
+                 */
+                this.spendStreak('mortar', x, z);
+            },
+            onCancel: () => {
+                /* The streak stays pending: cancelling a mark must not spend it. */
+            },
+        });
+        // Flags and bomb sites are worth drawing on the minimap; a TDM map is not (M4's note).
+        // The *kinds* matter too: Foundry authors flags and bomb sites together, so a mode that
+        // does not filter shows both at once.
+        const kinds = objectiveKindsFor(this.mode);
+        this.ui.hud.minimap.objectiveKinds = kinds;
+        this.ui.hud.minimap.showObjectives = kinds.length > 0;
 
-    /**
-     * The life boundary is the **spawn serial**, and it is not the alive bit (round 4, B3).
-     *
-     * This used to read `alive && this.playerDead` — a life starts when a dead player stops
-     * being dead — and that is true of a respawn and of nothing else. A Search & Destroy
-     * survivor's next round is a new life the server spawns without ever having killed them,
-     * and so is a class change cashed during the pre-match freeze (`applyPendingLoadoutNow`):
-     * in both the server picks a spawn point, refills its own copy of the hand and bumps the
-     * serial, while the client's alive bit never moves and its own per-life reset never runs.
-     * The report's *"in certain modes"* is exactly that set — the modes where a life can begin
-     * without a death.
-     *
-     * The serial covers both, because it is what `PlayerController.spawn` moves and every new
-     * life on the server goes through that one door. It is also strictly stronger than what it
-     * replaces: a respawn bumps it too, so the ordinary case is the same event seen through a
-     * signal that does not have a hole in it.
-     *
-     * Derived by comparison rather than by a flag on the wire: the serial is state, it stays
-     * true after the snapshot that carried it, and comparing it with the last one acted on
-     * cannot miss an edge by arriving late.
-     */
-    if (spawnSerial !== this.lastSpawnSerial) {
-      this.lastSpawnSerial = spawnSerial;
-      this.beginLife();
-    }
-
-    // After the reset, deliberately: `beginLife` puts the local `Health` back to full, and the
-    // server's answer has to be the last word on this even in the frame a life starts.
-    this.playerHealth.setReplicated(health, alive);
-
-    if (!alive && !this.playerDead) this.onPlayerKilled();
-  }
-
-  /**
-   * A new life, where the server already put us. The networked per-life reset, entire.
-   *
-   * Everything `respawnPlayer` does **except choose a position**: no `selectSpawn`, no
-   * `player.spawn`, no `setView`. The server picked the spawn point, the snapshot carried it,
-   * and prediction has already adopted it — re-spawning locally would fight the authoritative
-   * position and yank the camera somewhere the server disagrees with.
-   *
-   * What it does do is the per-life reset the rest of the client depends on: full health, a
-   * reloaded weapon on the right slot, the sights down, the knife put away, grenades back.
-   *
-   * Called from one place, off one signal — see `applyReplicatedSelf`. It was named
-   * `respawnNetworked` while a respawn was the only way it could be reached; a round start is
-   * the other way, and naming it after the death it no longer needs is what let the round start
-   * be forgotten.
-   */
-  private beginLife(): void {
-    // Before the weapon reset, so the reset puts the *new* class's primary in hand rather than
-    // the old one's and then having it swapped out from under the animation.
-    this.applyPendingLoadout();
-    this.playerHealth.reset();
-    this.weapons.reset();
-    /**
-     * The grenades, explicitly (M11 Gate B playtest, and round 4's B3).
-     *
-     * `MatchEquipment` refills on `player.spawned`, and this path deliberately never emits one
-     * — the server chose the position, so `PlayerController.spawn` is not called. So the one
-     * event the refill hangs off does not exist over the network, and a networked player came
-     * back with whatever the previous life had left. The server refilled its own copy on the
-     * same spawn all along, which is why nothing desynced and nothing logged — only the HUD and
-     * the local hand were wrong.
-     *
-     * Round two's fix was this call; round four's is *what reaches it*. The call was right and
-     * the trigger was half a signal.
-     */
-    this.equipment.refillForLife();
-    // A reset is not a swap and emits no `weapon.swapped`, so the visible model has to be
-    // told separately or it keeps whatever was in frame when the player died.
-    this.showSlot(this.weapons.inventory.activeSlotIndex);
-    this.melee.reset();
-    this.playerCombatant.syncRig();
-    this.playerDead = false;
-    this.playerRespawnTimer = 0;
-  }
-
-  /**
-   * Replicated freeze state, written by the net session from the snapshot header.
-   *
-   * Held here rather than read from the session because `inputFrozen` is consulted from the
-   * sampler in `Game.simulate`, which has a `Match` and no reason to learn about sockets.
-   */
-  netFrozen = false;
-
-  /**
-   * Debug spectator state (post-M8, `debug/Spectator.ts`).
-   *
-   * Held here rather than in the debug suite because two of the three things it does are
-   * facts about the *match* — whether the player can be hurt and whether anybody is looking
-   * for them — and both are already expressed on `PlayerCombatant`. The suite owns the
-   * toggle and the panel; this owns what the toggle means.
-   */
-  /**
-   * `SPEC[]1` and `SPEC[]2`, read from the entitlement rather than stored (round 4, F14).
-   *
-   * These were two fields, written by `debug/Spectator.ts`. They are getters now because the
-   * entitlement is the store and a field beside it would be a second copy of it — and, over a
-   * network, a copy the client had written for itself while the server disagreed. `Spectator`
-   * still owns the *toggle*; what it toggles is the entitlement, through the same door a typed
-   * code goes through.
-   */
-  get godMode(): boolean {
-    return (this.deps.cheats() & Cheat.God) !== 0;
-  }
-
-  get hiddenFromBots(): boolean {
-    return (this.deps.cheats() & Cheat.Unseen) !== 0;
-  }
-
-  get playerRespawnSeconds(): number {
-    return this.playerRespawnTimer;
-  }
-
-  /**
-   * Held Tab, as of the last command this match consumed (S4.2, playtest round 4).
-   *
-   * Derived from `prevButtons` rather than latched into a field of its own: the bit is already
-   * kept for edge detection, and a second copy of it would be the second writer this session
-   * exists to remove. The scoreboard's visibility is a pure function of this and the screen —
-   * see `shared/ui/HudSurfaces.ts`.
-   */
-  get scoreboardHeld(): boolean {
-    return isDown(this.prevButtons, Btn.Scoreboard);
-  }
-
-  /** The scoreboard's one writer, called once per frame from `Game.updateHudSurfaces`. */
-  setScoreboardOpen(on: boolean): void {
-    this.ui.setScoreboardOpen(on);
-  }
-
-  /**
-   * The cheat tag's one writer, from the same per-frame pass (round 4, F14).
-   *
-   * Routed through the match rather than written on the HUD from `Game`, because the HUD belongs
-   * to the match and `Game` is not allowed to hold a reference that outlives a rotation — the
-   * same argument `setScoreboardOpen` is here for.
-   */
-  setCheatTag(text: string): void {
-    this.ui.hud.setCheatTag(text);
-  }
-
-  /** B8's aim warning. One writer, `Game.updateHudSurfaces`, like every other HUD surface. */
-  setAimWarning(text: string): void {
-    this.ui.hud.setAimWarning(text);
-  }
-
-  /** F8's mode header. Same one writer; the slots are the mode's, drawn without interpretation. */
-  setHeaderSlots(slots: readonly HeaderSlot[]): void {
-    // The viewer context is this match's, so a cell is coloured by what its owner is *to this
-    // client* — the `(viewer, subject)` invariant round 4's B12 established.
-    this.ui.hud.setHeaderSlots(this.viewer, slots);
-  }
-
-  /** What this mode wants in the header this frame. Empty for a mode with nothing to say. */
-  get headerSlots(): readonly HeaderSlot[] {
-    return this.mode.headerSlots;
-  }
-
-  get isActive(): boolean {
-    return this.active;
-  }
-
-  /** The live player simulation, for tooling that needs a pose and a facing. */
-  get playerSim(): PlayerController['sim'] {
-    return this.deps.player.sim;
-  }
-
-  /** The collision world this match is being played in. */
-  get world(): CollisionWorld {
-    return this.deps.world;
-  }
-
-  /** The unmodified base of the player's primary. See `MatchDeps.playerBaseDef`. */
-  get playerBaseDef(): WeaponDef {
-    return this.deps.playerBaseDef;
-  }
-
-  /** The class this match was built with. */
-  get loadout(): ResolvedLoadout {
-    return this.deps.loadout;
-  }
-
-  /**
-   * Put a different weapon in a slot (M5).
-   *
-   * Rebuilds that slot's mesh, because a weapon is its silhouette as much as its numbers.
-   * Used by the debug weapon picker; M6's loadout editor is the real caller.
-   */
-  equip(slotIndex: number, def: WeaponDef, camo?: CamoId | null, attachments?: readonly AttachmentId[]): void {
-    const old = this.models[slotIndex];
-    if (old === undefined) return;
-    const wasVisible = old.root.visible;
-    this.deps.viewmodel.remove(old.root);
-    old.dispose();
-
-    // `undefined` keeps whatever finish the slot already had; `null` strips it. The
-    // distinction matters because M5's debug weapon picker calls this with two arguments
-    // and has no idea camos exist — without it, opening the arsenal panel would silently
-    // return a gold rifle to grey. The attachments follow the same rule (stage 2).
-    const nextCamo = camo === undefined ? (this.slotCamos[slotIndex] ?? null) : camo;
-    this.slotCamos[slotIndex] = nextCamo;
-    if (attachments !== undefined) this.slotAttachments[slotIndex] = attachments;
-    const model = buildWeaponModel(def.id, this.deps.anisotropy, nextCamo, this.modelOptions(slotIndex, def.id));
-    this.models[slotIndex] = model;
-    this.deps.viewmodel.add(model.root);
-    model.root.visible = wasVisible;
-
-    this.weapons.equip(slotIndex, def);
-    if (wasVisible) this.showSlot(slotIndex);
-    this.upgradeWhenLoaded(slotIndex);
-  }
-
-  /**
-   * The same in-place upgrade the weapons get, for the knife (stage 5).
-   *
-   * Two files can change what a knife looks like: its own blade and the arms' rig that holds
-   * it. Both are warmed on the menu, so this is the case where a match started before they
-   * landed — and a whole match swinging a box fist because a promise was 200 ms late is the
-   * thing stage 1 built this shape to avoid. The rebuild is unconditional about visibility:
-   * the knife is hidden except mid-swing, and `frame` puts the right one on screen next tick.
-   */
-  private upgradeKnifeWhenLoaded(): void {
-    const assets = this.deps.weaponAssets;
-    if (assets === null) return;
-    const current = this.knifeModel;
-    const wantsBlade = assets.knife() === null;
-    const wantsHands = current.hands === null;
-    if (!wantsBlade && !wantsHands) return;
-    const waits: Promise<void>[] = [];
-    if (wantsBlade) waits.push(assets.preloadKnife());
-    if (wantsHands) waits.push(assets.preloadHands());
-    void Promise.allSettled(waits).then(() => {
-      // The two ways a late promise can arrive into a world that has moved on: the match is
-      // over (`dispose` took the knife out of the viewmodel, so it has no parent) or another
-      // upgrade got there first. Both are answered by looking, not by a flag.
-      if (this.knifeModel !== current || current.root.parent === null) return;
-      if (assets.knife() === null && assets.hands() === null) return;
-      const wasVisible = this.knifeModel.root.visible;
-      this.deps.viewmodel.remove(this.knifeModel.root);
-      if (this.knifeModel.arm !== null) this.deps.viewmodel.remove(this.knifeModel.arm);
-      this.knifeModel.dispose();
-    for (const grenade of this.grenadeModels.values()) {
-      this.deps.viewmodel.remove(grenade.root);
-      grenade.dispose();
-    }
-    this.grenadeModels.clear();
-    this.grenadeShown = null;
-      this.knifeModel = buildKnifeModel(this.deps.anisotropy, assets.knife(), assets.hands());
-      this.knifeModel.root.visible = wasVisible;
-      this.deps.viewmodel.add(this.knifeModel.root);
-      if (this.knifeModel.arm !== null) {
-        this.knifeModel.arm.visible = wasVisible;
-        this.deps.viewmodel.add(this.knifeModel.arm);
-      }
-      this.anim.setKnife(this.knifeModel.root, this.knifeModel.arm, this.knifeModel.hands);
-    });
-  }
-
-  /**
-   * Put one equipment id in the hand, or nothing.
-   *
-   * Called every frame before the animator runs, because which grenade is being thrown is a
-   * per-throw fact. A file that has not arrived means no grenade in the hand for this throw
-   * and the weapon simply lowers, which is exactly what a throw looked like before this
-   * existed — the fallback is the old behaviour rather than a box.
-   */
-  private showGrenade(equipmentId: string | null): void {
-    const next = equipmentId === null ? null : this.grenadeFor(equipmentId);
-    if (next !== this.grenadeShown) {
-      if (this.grenadeShown !== null) this.grenadeShown.root.visible = false;
-      this.grenadeShown = next;
-      this.anim.setGrenade(next);
-    }
-    if (next !== null) next.root.visible = true;
-  }
-
-  private grenadeFor(equipmentId: string): GrenadeModel | null {
-    const assets = this.deps.weaponAssets;
-    const existing = this.grenadeModels.get(equipmentId);
-    /**
-     * Built already, and built with everything it needed.
-     *
-     * The second half of that test is the in-place upgrade the weapons have: a grenade built
-     * in the window before the arms' file landed has no gloves, and without this it would keep
-     * holding itself in mid-air for the rest of the match. Once the rig is there the model is
-     * thrown away and built again, once.
-     */
-    if (existing !== undefined && (existing.hands !== null || (assets?.hands() ?? null) === null)) return existing;
-    const template = assets?.equipment(equipmentId) ?? null;
-    if (template === null) {
-      /**
-       * Ask for it, once, the way `EquipmentFx` asks for a body it has not seen.
-       *
-       * The menu warms the equipped class's two and that is what makes a match start ready
-       * (`Game.warmWeaponAssets`). This is the other half: a class swapped between spawns
-       * changes which two a match needs, and without a request here that grenade would never
-       * arrive in the hand however many times it was drawn — `equipment()` only ever answers
-       * with what somebody has already fetched.
-       */
-      if (assets !== null && !this.grenadesRequested.has(equipmentId)) {
-        this.grenadesRequested.add(equipmentId);
-        void assets.preloadEquipment(equipmentId).catch(() => undefined);
-      }
-      return existing ?? null;
-    }
-    if (existing !== undefined) {
-      this.deps.viewmodel.remove(existing.root);
-      existing.dispose();
-    }
-    const model = buildGrenadeModel(template, assets?.hands() ?? null);
-    model.root.visible = false;
-    this.deps.viewmodel.add(model.root);
-    this.grenadeModels.set(equipmentId, model);
-    return model;
-  }
-
-  private modelOptions(
-    slotIndex: number,
-    weaponId: string,
-  ): { hands: true; assets: WeaponAssetService | null; attachments: readonly AttachmentId[]; assetId: string } {
-    return {
-      hands: true,
-      assets: this.deps.weaponAssets,
-      attachments: this.slotAttachments[slotIndex] ?? [],
-      assetId: assetIdFor(weaponId),
-    };
-  }
-
-  /**
-   * Swap a slot's primitives for its file once the file lands (M19, stage 1).
-   *
-   * Only the mesh changes: the weapon object, its ammunition and its state are untouched,
-   * which is what separates this from `equip`. The checks before the rebuild are the ones a
-   * late promise needs — the match may have ended, the slot may hold a different weapon by
-   * now, or a rebuild may already have happened — and each is answered by looking at the slot
-   * rather than by a flag kept in step with it.
-   */
-  private upgradeWhenLoaded(slotIndex: number): void {
-    const assets = this.deps.weaponAssets;
-    const model = this.models[slotIndex];
-    if (assets === null || model === undefined) return;
-    const weaponId = model.weaponId;
-    // The file to fetch is the *mesh's*, which is the weapon's own for all but the shield's
-    // sidearm — asking for `streak_shield` here would fetch a plate for a slot drawing a pistol.
-    const assetId = assetIdFor(weaponId);
-    // Two files can upgrade a slot: the weapon's own, and the arms' (stage 4), which every
-    // slot wears — the two LMGs, built from primitives, included.
-    const wantsFile = model.source !== 'glb' && assets.statusFor(assetId) !== 'none';
-    const wantsHands = model.hands === null;
-    if (!wantsFile && !wantsHands) return;
-    const waits: Promise<void>[] = [];
-    if (wantsFile) waits.push(assets.preload(assetId));
-    if (wantsHands) waits.push(assets.preloadHands());
-    void Promise.allSettled(waits).then(() => {
-      const current = this.models[slotIndex];
-      if (current === undefined || current !== model || current.weaponId !== weaponId) return;
-      const fileArrived = wantsFile && assets.template(assetId) !== null;
-      const handsArrived = wantsHands && assets.hands() !== null;
-      if (!fileArrived && !handsArrived) return;
-      const wasVisible = current.root.visible;
-      this.deps.viewmodel.remove(current.root);
-      current.dispose();
-      const next = buildWeaponModel(weaponId, this.deps.anisotropy, this.slotCamos[slotIndex] ?? null, this.modelOptions(slotIndex, weaponId));
-      this.models[slotIndex] = next;
-      this.deps.viewmodel.add(next.root);
-      next.root.visible = wasVisible;
-      if (wasVisible) this.showSlot(slotIndex);
-    });
-  }
-
-  /**
-   * Swap the whole class over on a live match (M6).
-   *
-   * Called when the player edits their loadout from the pause screen, which is S6.3's
-   * "reachable… between spawns". Both weapons are rebuilt (a class change is a different
-   * silhouette as much as different numbers), the grenades are replaced and refilled, and
-   * the perks are re-derived. Ammunition resets with the weapons, which is the honest
-   * behaviour: you did not keep the magazine, you picked up a different gun.
-   */
-  applyLoadout(loadout: ResolvedLoadout): void {
-    /**
-     * **On the next spawn, unless there is not going to be one to wait for** (M11 Gate B).
-     *
-     * This used to apply unconditionally, which is Tier 1 #20 arriving from the client's side:
-     * `meta.setLoadout` re-runs the perk hooks and one of them writes `PlayerController
-     * .speedScale`, so a class swapped on a *standing* body changed how fast this client
-     * predicted itself moving while the server — which defers to the next spawn by rule
-     * (`ServerMatch.setPendingLoadout`) — kept simulating the old figure. A constant per-tick
-     * disagreement about speed, which is what rubberbanding is.
-     *
-     * It mattered little when the editor was a screen you had to pause to reach. The quick
-     * selector puts it one keypress away, so the two sides now follow the same rule: deferred
-     * for a living player mid-match, immediate when the player is dead (their next spawn is the
-     * one being waited for) or during the pre-match freeze (where the server applies it at once
-     * too — see `ServerMatch.applyPendingLoadoutNow` — and nobody can move regardless).
-     */
-    if (this.canApplyLoadoutNow()) {
-      this.pendingLoadout = null;
-      this.applyLoadoutNow(loadout);
-      return;
-    }
-    this.pendingLoadout = loadout;
-  }
-
-  /** Whether a class change lands immediately rather than waiting for a body. */
-  private canApplyLoadoutNow(): boolean {
-    if (this.playerDead) return true;
-    return this.flow.currentPhase === 'WARMUP' && this.flow.round <= 1;
-  }
-
-  /** The actual swap. Both weapons rebuilt, grenades replaced and refilled, perks re-derived. */
-  private applyLoadoutNow(loadout: ResolvedLoadout): void {
-    this.setStreakLoadout(loadout.streaks);
-    this.equip(0, loadout.primary, loadout.primaryCamo, loadout.primaryAttachments);
-    this.equip(1, loadout.secondary, loadout.secondaryCamo, loadout.secondaryAttachments);
-    this.equipment.inventory.lethal = loadout.lethal;
-    this.equipment.inventory.tactical = loadout.tactical;
-    EquipmentSystem.refill(this.equipment.inventory);
-    this.meta.setLoadout(loadout);
-  }
-
-  /**
-   * Cash a deferred class change, on the spawn it was waiting for.
-   *
-   * Called from both respawn paths, so the local and networked halves cannot develop different
-   * ideas about when a class takes effect.
-   */
-  private applyPendingLoadout(): void {
-    const pending = this.pendingLoadout;
-    if (pending === null) return;
-    this.pendingLoadout = null;
-    this.applyLoadoutNow(pending);
-  }
-
-  /** A class change waiting for this player's next body. See `applyLoadout`. */
-  private pendingLoadout: ResolvedLoadout | null = null;
-
-  private showSlot(slotIndex: number): void {
-    const model = this.models[slotIndex];
-    if (model === undefined) return;
-    for (const m of this.models) m.root.visible = m === model;
-    // The shield rides the streak slot: it is the other half of what that slot holds, so it is
-    // on screen exactly when the pistol it comes with is, and never on its own.
-    if (this.shieldModel !== null) this.shieldModel.root.visible = slotIndex === STREAK_VIEWMODEL_SLOT;
-    this.model = model;
-    this.anim.setModel(model);
-    this.fx.attachMuzzle(model.muzzle);
-    this.flame.setLocalMuzzle(model.muzzle, this.deps.viewmodel.camera);
-  }
-
-  private requireModel(index: number): WeaponModel {
-    const model = this.models[index];
-    if (model === undefined) throw new Error(`Match has no viewmodel for slot ${index}`);
-    return model;
-  }
-
-  /** Debug hook: run real damage at the player so regeneration is exercised, not faked. */
-  applySelfDamage(amount: number): void {
-    const def = this.weapons.definition;
-    this.selfDamage.weapon = def;
-    this.selfDamage.zone = 'torso';
-    // Solve for the request that produces exactly `amount` at the torso.
-    this.selfDamage.distance = 0;
-    this.selfDamage.penetrationRetain = Math.max(0, Math.min(1, amount / Math.max(def.damage.near, 1)));
-    const sim = this.deps.player.sim;
-    this.selfDamage.x = sim.x;
-    this.selfDamage.y = sim.y + sim.eyeHeight;
-    this.selfDamage.z = sim.z;
-    this.damage.apply(this.selfDamage);
-  }
-
-  // -- loop -----------------------------------------------------------------
-
-  /** One sim tick. Called from Game.simulate after the player has stepped. */
-  simulate(cmd: InputCommand): void {
-    // Health is server-owned in a networked match (S4.15) and arrives replicated. Stepping it
-    // here as well would run a *second* regeneration curve against the authoritative one and
-    // the bar would visibly disagree with the damage the player is taking.
-    if (!this.isNetworked) this.playerHealth.step();
-    // The rig follows the capsule on the *tick*, and before anything resolves a shot
-    // against it, so a bot's round is tested against where the player was when it fired.
-    this.playerCombatant.syncRig();
-
-    // The targeting map owns the input while it is up — firing confirms the mark rather
-    // than pulling the trigger.
-    const mortarOpen = this.stepMortarOverlay(cmd);
-    /**
-     * A live Chopper Gunner takes the player's weapon out of the loop entirely (post-M8).
-     *
-     * Until now the takeover consumed the command *and left the rifle consuming it too*, so
-     * holding the trigger in the gunship emptied the magazine on the ground below — reported
-     * as "the chopper drains my primary ammo". It also meant the ADS button drove the rifle's
-     * `adsFraction` up while the player was a kilometre away from it, which is what hid the
-     * crosshair: the scope overlay saw a scoped sniper and took the reticle away.
-     *
-     * Both are the same bug and this is the one fix. The chopper has always had its own
-     * `Ballistics` and its own `WeaponDef` — an infinite pool by construction, because it
-     * spends no magazine — and now nothing else is spending one on its behalf.
-     */
-    const flyingChopper = this.streaks.activeChopperFor(this.localId) !== null;
-    // A hand on a grenade — or on the knife — is a hand off the rifle. One flag, read by the
-    // weapon and by the viewmodel, so the gun cannot be fired while it is visibly lowered.
-    //
-    // The held button is part of the test, not just the thrower state. `equipment.simulate`
-    // runs *after* the weapon this tick, so on the very first tick of a cook `busy` is still
-    // last tick's answer and exactly one round escaped - measured, not theorised.
-    /**
-     * Reaching for something else cancels a reload (post-M8 playtest).
-     *
-     * The report was that grenades can be thrown mid-reload, and the fix the brief allows is
-     * either blocking the throw or cancelling the reload. Cancelling is the right one: a
-     * blocked throw is an input the player made that the game silently ate, and the magazine
-     * is not lost either way — `Weapon` only banks ammunition on completion, so an interrupted
-     * reload leaves the count exactly as it was. It is the same rule a swap already follows.
-     *
-     * Tested on the *press edge* rather than on `busy`, so it fires once, on the tick the hand
-     * leaves the rifle, and a held cook does not keep re-cancelling nothing.
-     */
-    const meleePressed = justPressed(cmd.buttons, this.prevButtons, Btn.Melee);
-    const reachedThisTick =
-      justPressed(cmd.buttons, this.prevButtons, Btn.Lethal) ||
-      justPressed(cmd.buttons, this.prevButtons, Btn.Tactical) ||
-      meleePressed;
-    if (!this.playerDead && reachedThisTick) this.weapons.weapon.cancelReload();
-
-    // The presses are part of the test and not just the busy flags, for the reason the equipment
-    // note above gives: the thrower and the knife step *after* the weapon this tick. The rule is
-    // shared with the server's `NetPlayer`, which is the one whose hits count — see `handsOffWeapon`.
-    this.weapons.fireBlocked = handsOffWeapon(
-      cmd.buttons,
-      this.prevButtons,
-      this.equipment.thrower.busy,
-      this.melee.busy,
-    );
-    /**
-     * In the gunship, or with the mortar's map up, the rifle is not the player's (2026-09-28).
-     *
-     * The map used to skip the weapon's step outright. That kept the rifle quiet here and nowhere
-     * else — the server never knew the map was up, and fired the confirming click as a round — and
-     * it froze the weapon's own record of the trigger, so the map closing under a held click handed
-     * the rifle a fresh press. The map is `Btn.Targeting` on the command now, read here exactly as
-     * `NetPlayer` reads it, and the weapon steps suspended: no trigger, no sights, no reload, and a
-     * trigger held through it stays dead until it is let go (`WeaponSystem.triggerHeldOff`).
-     */
-    this.weapons.suspended = flyingChopper || isDown(cmd.buttons, Btn.Targeting);
-
-    if (!this.playerDead) {
-      const sim = this.deps.player.sim;
-      this.weapons.step(cmd, sim);
-
-      // The residual half of each recoil kick is a real aim change, so it goes where mouse
-      // movement goes rather than into a separate offset the player cannot fight.
-      if (this.weapons.takeViewResidual(this.residual)) {
-        this.deps.input.addViewOffset(this.residual.yaw, this.residual.pitch);
-      }
+        // Occlusion low-pass through the same spatial-hash raycaster the sim uses (S6.7).
+        deps.audio.setOccluder((x, y, z) =>
+            !deps.world.segmentClear(
+                x,
+                y,
+                z,
+                this.listenerAt.x,
+                this.listenerAt.y,
+                this.listenerAt.z,
+                this.occlusionRay,
+            ),
+        );
+        // The room, into the one convolver that already exists (S6.6).
+        deps.audio.setReverb(deps.map.def.reverb ?? null);
     }
 
     /**
-     * The knife (post-M8). Edge-detected here, in the sim, from the bitfield — S4.2, and the
-     * reason there is no DOM handler anywhere near it.
-     *
-     * Blocked while a grenade is in hand or the gunship has the camera, both of which are
-     * "something else owns the hands" cases the weapon already respects.
+     * Bring the match up. Builds the roster on the first activation, registers everybody with
+     * the score system, and starts the flow's clock.
      */
-    const swing = meleePressed && !mortarOpen && !flyingChopper && !this.equipment.thrower.busy;
-    this.melee.step(swing, this.deps.player.sim, !this.playerDead);
-
-    // The glint an enemy can see is a property of the weapon, and `PlayerCombatant` is
-    // built before the weapon exists — so it is stamped here, once a tick, before
-    // perception runs against it. The weapon's class rides the same mechanism for the same
-    // reason: `syncRig` needs it to pick the crouched layout, and a sidearm kneels differently.
-    this.playerCombatant.glinting = !this.playerDead && this.weapons.glinting;
-    this.playerCombatant.pistol = this.weapons.definition.class === 'PISTOL';
-
-    this.range?.step();
-    this.equipment.simulate(cmd, this.deps.player.sim, !this.playerDead);
-    this.meta.simulate(cmd, this.deps.player.sim, !this.playerDead);
-    // Nobody moves or shoots during the 3-2-1 (post-M8). The player's half is handled at the
-    // sampler in `Game.simulate`; this is the other half, and both sides freezing is the
-    // point — a countdown one side can use to take an angle is not a countdown.
-    this.bots.inputFrozen = this.inputFrozen;
-    if (!this.isNetworked) this.bots.simulate(cmd.tickIndex, cmd.sampledAtMs);
-    // Streaks tick after the bots that may have just shot one down, and before the flow that
-    // may declare the match over and end them all.
-    /**
-     * The server owns every live streak in a networked match (S4.15).
-     *
-     * Simulating here as well would put a second sentry, with its own aim and its own damage,
-     * on top of the one the server is already resolving shots against — the Domination flag bug
-     * with a trigger. The client keeps the object because the HUD and the renderer are written
-     * against it, and feeds them from `replicatedStreaks` instead.
-     */
-    if (!this.isNetworked) {
-      this.lastStreakCommand = cmd;
-      this.streaks.simulate(cmd.tickIndex);
+    setActive(on: boolean): void {
+        this.active = on;
+        this.ui.setVisible(on);
+        if (!on) return;
+        this.anim.reset(this.deps.input.yaw, this.deps.input.pitch);
+        // Deferred to the first time a match actually starts rather than done at construction:
+        // the harness wants a different roster and gets to set it before anyone spawns.
+        // The range populates nothing: S9's testbed has no enemies by design, and the
+        // registry says so rather than this file guessing from the map.
+        // A networked match's roster lives on the server (S4.15). Populating one here would put
+        // ten bots in the world that only this client can see, fighting nobody.
+        if (!this.isNetworked && this.bots.botCount === 0 && this.deps.mode.populatesRoster) {
+            this.populateDefault();
+        }
+        this.registerRoster();
+        if (this.flow.currentPhase === 'WARMUP' && this.flow.round === 1 && this.score.rows.length > 0) {
+            this.flow.start();
+        }
     }
-    this.syncChopperBody();
-    this.syncCarriedStreakWeapon();
-    if (!this.playerDead && !this.mortarOverlay.isOpen) this.stepStreakInput(cmd);
-    // Local matches only (M11 Gate B). A networked client's Use key is already in the command
-    // it just sent, and `ServerMatch.stepBombInteractions` acts on it there; running this as
-    // well would make the client a second authority over a plant timer the server owns, and
-    // §6.8 gives that to exactly one of them.
-    if (!this.isNetworked && !this.playerDead) this.stepBombInteraction(cmd);
-    // Both kinds of match, deliberately — see the `supply` field. After the bomb, so a station
-    // authored too near an objective cannot take the tick the plant wanted.
-    this.stepSupply();
-    this.stepInteractPose();
-    // The server owns when and where a body comes back (S4.15); the client is told. But
-    // `stepPlayerRespawn` also *decrements the display timer*, and skipping the whole method
-    // left the death screen frozen on the number `onPlayerKilled` set — see
-    // `stepRespawnDisplay`.
-    if (!this.isNetworked) this.stepPlayerRespawn();
-    else this.stepRespawnDisplay();
-    this.stepLowHealthAudio();
-
-    // The mode clock is a gameplay timer and runs on ticks like everything else (S4.1) —
-    // except when a server is running it, in which case score and round state arrive
-    // replicated and a second clock here would disagree with the first one that matters.
-    // Burns are health, and health is the server's over the network — the same line the mode
-    // clock is on, for the same reason. See the `burn` field.
-    if (!this.isNetworked) this.burn.simulate();
-
-    const t0 = performance.now();
-    if (!this.isNetworked) this.flow.simulate(cmd.tickIndex);
-    this.lastModeMs = performance.now() - t0;
 
     /**
-     * The scoreboard used to be written from here, and that was the whole of B6.
+     * The default firefight: the map's team size, the player counting as one of their side.
      *
-     * A tick is not a frame. `Game.simulate` stops calling this the moment the screen leaves
-     * `MATCH`, so the board kept whatever the last tick had put there — up, over the pause
-     * screen, holding a key `Input.clearHeld` had already dropped into a loop that was no
-     * longer running. It is derived once per frame in `Game.updateHudSurfaces` now, from
-     * `scoreboardHeld` below and from state that outlives the tick.
+     * A mode may override the roster size (M7): Free-for-All is eight operators on any map, and
+     * they are split evenly across the two substrate sides so perception, spawn safety and the
+     * aim model keep working — see `modes/FreeForAll.ts` for why the two-team substrate stays.
      */
-    this.prevButtons = cmd.buttons;
-    this.latency.expire(performance.now());
-  }
+    populateDefault(): void {
+        /**
+         * The tiers, from the menu's difficulty rather than from the map alone (round 4, F1).
+         *
+         * `tiersFor` is the same function `ServerMatch` resolves with, which is what makes "Recruit"
+         * mean the same roster in a solo match and on a server started with `BOT_DIFFICULTY=RECRUIT`.
+         * `MIX` returns the map's authored spread unchanged, so every measurement taken before this
+         * session still describes the default.
+         */
+        const mix = tiersFor(this.deps.difficulty, this.deps.map.tierMix);
+        const override = this.deps.mode.rosterSize;
+        if (override !== undefined) {
+            const bots = Math.max(0, override - 1);
+            const teamB = Math.ceil(bots / 2);
+            this.bots.populate(bots - teamB, teamB, mix);
+            return;
+        }
+        const size = this.deps.map.teamSize;
+        this.bots.populate(Math.max(0, size - 1), size, mix);
+    }
 
-  /**
-   * Take the player's body out of play while they are flying a Chopper Gunner, and put it
-   * back the moment they are not (M7 playtest).
-   *
-   * Driven from the live streak rather than from the activate/expire events, so there is no
-   * state to get stuck: if there is no chopper, the body is in play, every tick, unarguably.
-   * That is the same reasoning the chopper's single-exit rule uses.
-   *
-   * Both flags are needed and they do different jobs. `active` false removes the body from
-   * perception, spawn scoring and bot target selection — nobody comes looking. `invulnerable`
-   * is checked at the damage door and stops anything already in flight (a grenade, a mortar,
-   * a sentry burst) from resolving against a player who is not there.
-   *
-   * This reverses M7's original reading of S6.1's "not invulnerable to a lucky mortar":
-   * playtesting found being killed by something you cannot see, react to or avoid reads as
-   * broken rather than as risk.
-   */
-  private syncChopperBody(): void {
-    const flying = this.streaks.activeChopperFor(this.localId) !== null;
     /**
-     * `SPEC[]3` — free cam — is written from here too (round 4, F14).
+     * Put every roster member on the scoreboard.
      *
-     * Not because it is a combat flag, but because this is already the one place that re-applies
-     * the body's state from state every tick, and `PlayerController.spawn` does not clear
-     * `noclip`. A latch set once by the toggle would survive a revoke into the next life. The
-     * server writes the same bit from `NetPlayer.step`, from the same replicated mask, which is
-     * what makes flying predictable rather than a running argument with collision.
+     * Deferred until the roster exists and done once: the bots are built by `populate`, which
+     * the harness may call with its own numbers before the match goes live.
      */
-    this.deps.player.noclip = (this.deps.cheats() & Cheat.NoClip) !== 0;
-    // Post-M8: the QA spectator uses the same two levers, so it is folded in here rather
-    // than written from a second place. Driven from state every tick means there is still
-    // nothing to get stuck — turning god mode off puts the body back on the next tick,
-    // unarguably, which is the property this method was built for.
-    this.playerCombatant.active = !flying && !this.hiddenFromBots;
-    this.playerCombatant.invulnerable = flying || this.godMode;
-  }
-
-  /**
-   * Hold to plant, hold to defuse (M7 playtest).
-   *
-   * Held rather than tapped, and re-tested every tick: stepping off the site, releasing the
-   * key or dying all cancel, which is what makes a plant something the other side can
-   * interrupt. The mode owns the timer and the rules; this only reports that the player is
-   * standing in the right place with the key down.
-   */
-  private stepBombInteraction(cmd: InputCommand): void {
-    const mode = this.mode;
-    if (!(mode instanceof SearchAndDestroy)) return;
-
-    const holding = isDown(cmd.buttons, Btn.Use);
-    if (!holding) {
-      // Only cancel what *this* player started; a bot's plant is not the player's to stop.
-      if (mode.interactEntity === this.localId) mode.cancelInteract();
-      return;
+    registerRoster(): void {
+        if (this.rosterRegistered) return;
+        this.rosterRegistered = true;
+        this.score.register(this.localId, this.deps.localName ?? PLAYER_NAME, this.deps.localTeam ?? PLAYER_TEAM);
+        for (const bot of this.bots.bots) this.score.register(bot.entityId, bot.displayName, bot.team);
     }
 
-    const me = this.playerCombatant;
-    if (mode.bomb === 'PLANTED') {
-      if (me.team !== mode.defenders) return;
-      const site = mode.plantedSite;
-      if (site === null || !site.contains(me)) return;
-      mode.beginInteract(me, true);
-      return;
+    /**
+     * Is this world the permanent arena? See `HudSurfaceState.inWarmupArena`.
+     *
+     * A world is built per instance and rebuilt on migration, so this is a constant for the life
+     * of the object rather than something to re-derive per frame.
+     */
+    get inWarmupArena(): boolean {
+        return this.deps.warmupArena === true;
     }
-    if (mode.bomb !== 'CARRIED') return;
-    if (me.team !== mode.attackers) return;
-    // Picking the bomb up is now the same key as planting it (post-M8 playtest): walking
-    // over it does nothing. Tested before the plant branch because you cannot plant a bomb
-    // you are not carrying, and one press should be able to do the first of the two.
-    if (!mode.isCarrier(this.localId)) {
-      mode.tryPickup(me);
-      return;
+
+    /** The score banner, the Tab board and the streak strip. One predicate decides all three (F7). */
+    setResultSurfacesVisible(on: boolean): void {
+        this.ui.setResultSurfacesVisible(on);
     }
-    if (mode.siteContaining(me) === null) return;
-    mode.beginInteract(me, false);
-  }
 
-  /**
-   * Whoever is planting or defusing kneels over the bomb (post-M8, S6.3's visual indicator).
-   *
-   * Driven from mode state every tick rather than latched on start and cleared on finish,
-   * for the same reason `syncChopperBody` is: an interaction can end four ways — completed,
-   * stepped off, key released, killed — and a latch would have to be cleared correctly on
-   * all four. Asked every tick, there is nothing to get stuck, and a player who dies
-   * mid-defuse does not respawn permanently crouched.
-   *
-   * It applies to bots as well as the player, which is the half that actually matters: the
-   * crouch is how the *other* side can tell at a glance that somebody is on the bomb.
-   */
-  private stepInteractPose(): void {
-    const mode = this.mode;
-    if (!(mode instanceof SearchAndDestroy)) return;
-    const busy = mode.interactingEntity;
-
-    this.deps.player.forceCrouch = busy === this.localId;
-    for (const bot of this.bots.bots) bot.controller.forceCrouch = bot.entityId === busy;
-  }
-
-  /**
-   * Spend a killstreak on the player's say-so (M7).
-   *
-   * Three absolute keys rather than a cycle, and edge-detected in the sim from the bitfield
-   * exactly as S4.2 requires — there is no DOM handler anywhere near this.
-   *
-   * Where a streak lands is decided here rather than by the streak, because "in front of the
-   * player" is a fact about the player: a sentry goes a couple of metres ahead so it does not
-   * spawn inside them, a package drops on the spot, and a mortar marks wherever the overlay
-   * left its cursor.
-   */
-  /**
-   * Drive the mortar overlay while it is open. Returns true when it owns the input.
-   *
-   * Steered by the *look delta* rather than a mouse position, because pointer lock means
-   * there is no cursor to read and releasing the lock to open a map would drop the player's
-   * aim. The player moves the mark exactly as they would move their view.
-   */
-  private stepMortarOverlay(cmd: InputCommand): boolean {
-    if (!this.mortarOverlay.isOpen) return false;
-
-    const dYaw = angleDeltaRad(this.overlayYaw, cmd.yaw);
-    const dPitch = cmd.pitch - this.overlayPitch;
-    this.overlayYaw = cmd.yaw;
-    this.overlayPitch = cmd.pitch;
-    // Yaw sweeps the mark east/west, pitch north/south. Scaled so a comfortable flick
-    // crosses the map rather than nudging it a metre.
-    //
-    // The yaw term is **negated**: a view yaw increase turns the player left, and the map is
-    // drawn in world axes rather than view axes, so passing it through unchanged sent the
-    // cursor the wrong way. Reported from a live match as inverted X.
-    this.mortarOverlay.moveBy(-dYaw * MORTAR_STEER_M_PER_RAD, -dPitch * MORTAR_STEER_M_PER_RAD);
-
-    if (justPressed(cmd.buttons, this.prevButtons, Btn.Fire)) this.mortarOverlay.confirm();
-    // The same key that opened it closes it, and the streak stays in hand.
-    else if (justPressed(cmd.buttons, this.prevButtons, Btn.Streak1) ||
-             justPressed(cmd.buttons, this.prevButtons, Btn.Streak2) ||
-             justPressed(cmd.buttons, this.prevButtons, Btn.Streak3)) {
-      this.mortarOverlay.cancel();
+    get isPlayerDead(): boolean {
+        return this.playerDead;
     }
-    return true;
-  }
 
-  /**
-   * Keys 3, 4 and 5 spend **the class's** first, second and third streak (M11 Gate B playtest).
-   *
-   * They used to index the *earned* list, packed from zero, so which key fired a given streak
-   * depended on how many others happened to be in hand at that moment: a player who had earned
-   * only their Chopper Gunner found it on key 3, and key 5 — the key the loadout editor labels
-   * "Killstreak · key 5", the key it is bound to — did nothing at all. Reported as the chopper
-   * not responding to 5, and it is really the mapping moving underneath the player.
-   *
-   * Position is now fixed by the class and the earned list only decides whether the press is
-   * *honoured*, which is the same rule the HUD paints.
-   */
-  private stepStreakInput(cmd: InputCommand): void {
-    const bits = [Btn.Streak1, Btn.Streak2, Btn.Streak3] as const;
-    for (let i = 0; i < bits.length; i++) {
-      const bit = bits[i];
-      if (bit === undefined) continue;
-      if (!justPressed(cmd.buttons, this.prevButtons, bit)) continue;
-      const id = this.streakSlots[i];
-      if (id === undefined || id === null) continue;
-      // Affordable, cool, and not already in the sky, or the press is simply not honoured. The
-      // slot has already said which — a price it cannot meet, or a fill draining — so a press
-      // that does nothing is a press the player was told about before they made it.
-      if (!this.canAffordStreak(id)) continue;
+    /** The mortar's targeting map has the input: what `Btn.Targeting` tells the server. */
+    get targeting(): boolean {
+        return this.mortarOverlay.isOpen;
+    }
 
-      const sim = this.deps.player.sim;
-      // A mortar is *marked* before it is spent: the overlay opens, and the streak is only
-      // consumed when the player confirms. Cancelling must not cost them the streak.
-      if (id === 'mortar') {
-        this.mortarOverlay.show(sim.x, sim.z);
+    /**
+     * The side the server put this client on; `PLAYER_TEAM` in single-player.
+     *
+     * A getter rather than the `deps.localTeam ?? PLAYER_TEAM` expression repeated at each use,
+     * because "which team am I" being answered by a constant is precisely how the alive counter
+     * came to label a team-B player's own side as the enemy.
+     */
+    get localTeam(): BotTeam {
+        return this.deps.localTeam ?? PLAYER_TEAM;
+    }
+
+    /**
+     * Which seat is looking at the HUD, as one value (playtest round 4, B12).
+     *
+     * `localTeam` alone is not enough to decide a colour, because Free-for-All keeps the
+     * two-team substrate and half of an FFA lobby therefore shares the viewer's side without
+     * being on their team. Both facts travel together or the killfeed paints four opponents
+     * green, which is the seam post-M8 closed in the minimap and left open everywhere else.
+     */
+    private cachedViewer: ViewerContext | null = null;
+
+    get viewer(): ViewerContext {
+        this.cachedViewer ??= { team: this.localTeam, freeForAll: this.deps.mode.freeForAll === true };
+        return this.cachedViewer;
+    }
+
+    /**
+     * How many of a side are still standing, from whichever body source this match has.
+     *
+     * Single-player holds `Bot`s on a roster; a networked match holds `RemoteActor`s rebuilt from
+     * snapshots. A caller that wants a number should not have to know which — and
+     * `SearchAndDestroy.aliveCount` walks `ModeDeps.roster`, which on a networked client is
+     * **empty**, so it returned 0 for both sides for the whole match. The local player is counted
+     * separately because they are in neither list.
+     */
+    countAlive(team: BotTeam): number {
+        let n = 0;
+        if (this.isNetworked) {
+            const actors = this.deps.actors;
+            if (actors !== undefined) {
+                for (const actor of actors()) {
+                    if (actor.team === team && actor.participating) n++;
+                }
+            }
+            // A client's own entity is not among its remote actors, so it is never double-counted.
+            if (this.localTeam === team && !this.playerDead) n++;
+            return n;
+        }
+        for (const c of this.bots.roster) {
+            if (c.team === team && c.participating) n++;
+        }
+        return n;
+    }
+
+    /**
+     * The entity id this client's own player occupies.
+     *
+     * `PLAYER_ENTITY_ID` in single-player and the server's assignment in a networked match.
+     * Everything that used to compare against the constant compares against this.
+     */
+    get localId(): number {
+        return this.identity.entityId;
+    }
+
+    /**
+     * The bodies this match draws, whichever kind of match it is (M15, D1).
+     *
+     * The same supplier `BotRenderer` was handed — the director's roster in single-player, the
+     * snapshot's remote set when networked — so the summary's lineup asks the one list the
+     * renderer draws from for what each entity is holding, rather than a second answer to it.
+     */
+    actorsForRender(): Iterable<RenderableActor> {
+        return this.deps.actors?.() ?? this.bots.bots;
+    }
+
+    /**
+     * Find a body by entity id, whichever kind of match this is (M10, playtest round 2).
+     *
+     * Single-player has one place to look and a networked match has another: the roster holds
+     * `Bot`s here and `RemoteActor`s there, and only one of the two is ever populated. Callers
+     * that want to put a sound on a body or point a chevron at one should not have to know
+     * which — that is exactly the knowledge that leaked into `MatchFeedback` and made every
+     * positional cue silent over the network.
+     *
+     * The remote pose is sampled at `alpha` 1, the newest interpolated position. A sound is a
+     * one-shot placed at the instant it fires; blending it against the previous frame would
+     * buy nothing audible.
+     */
+    /**
+     * Everything the death screen says, assembled at the moment of death (round 5, F9).
+     *
+     * Each field degrades on its own rather than the whole report being withheld: a killstreak has
+     * a name and no health, a fall has neither, and a killer who has already been removed from the
+     * roster has a health the server stamped and no body to measure to. `describeDeath` drops
+     * whatever is missing, so a partial report is a shorter sentence rather than a wrong one.
+     */
+    private buildDeathReport(
+        killerId: number,
+        weaponId: string,
+        zone: HitZone,
+        killerHealth: number,
+    ): DeathReport | null {
+        if (killerId === this.localId) return null; // your own grenade needs no explaining
+        const killerName = this.flow.killfeed.nameOf(killerId);
+        if (killerName === null) return null;
+
+        /*
+         * Distance between the two bodies, measured now.
+         *
+         * `bodyAt` returns a shared scratch, so the numbers are read out before anything else can
+         * ask — which is the contract that comment states and the reason this does not hold the
+         * pose. The player's own position comes off the sim rather than the same scratch for the
+         * same reason.
+         */
+        const sim = this.deps.player.sim;
+        const body = this.bodyAt(killerId);
+        const distanceM = body === null ? -1 : Math.hypot(body.x - sim.x, body.y - sim.y, body.z - sim.z);
+
+        return {
+            killerName,
+            weaponName: anyWeaponDef(weaponId)?.name ?? '',
+            distanceM,
+            killerHealth,
+            headshot: zone === 'head',
+        };
+    }
+
+    /**
+     * The killer's distance, once there is a body to measure to (anti-wallhack phase 2, part 1).
+     *
+     * A killer this client was not told about is dormant when the kill arrives, and wakes in the
+     * next snapshot (R9) — so a report built on the kill's own frame said nothing about distance.
+     * Measured again each frame for `WAKE_WAIT_MS`, then left as it is.
+     */
+    private settleDeathDistance(): void {
+        const report = this.deathReport;
+        if (report === null || report.distanceM >= 0) return;
+        if (performance.now() - this.deathAtMs > WAKE_WAIT_MS) return;
+        const body = this.bodyAt(this.deathKillerId);
+        if (body === null) return;
+        const sim = this.deps.player.sim;
+        this.deathReport = { ...report, distanceM: Math.hypot(body.x - sim.x, body.y - sim.y, body.z - sim.z) };
+    }
+
+    /** A remote body this client is not told the place of (protocol 28). Never true offline. */
+    private isDormant(entityId: number): boolean {
+        const actors = this.deps.actors;
+        if (actors === undefined) return false;
+        for (const actor of actors()) {
+            if (actor.entityId === entityId) return actor.dormant === true;
+        }
+        return false;
+    }
+
+    private bodyAt(entityId: number): Readonly<BodyPose> | null {
+        const bot = this.bots.get(entityId);
+        if (bot !== undefined) {
+            bodyScratch.x = bot.px;
+            bodyScratch.y = bot.py;
+            bodyScratch.z = bot.pz;
+            bodyScratch.eyeHeight = bot.eyeHeight;
+            return bodyScratch;
+        }
+
+        const actors = this.deps.actors;
+        if (actors !== undefined) {
+            for (const actor of actors()) {
+                if (actor.entityId !== entityId) continue;
+                // A dormant body's place is frozen, or a blank origin — not a place to measure from.
+                if (actor.dormant === true) return null;
+                bodyScratch.x = actor.renderX(1);
+                bodyScratch.y = actor.renderY(1);
+                bodyScratch.z = actor.renderZ(1);
+                // The rig's own eye height is not replicated; the standing default is close enough
+                // for a sound and is what the local case uses for a standing bot.
+                bodyScratch.eyeHeight = DEFAULT_EYE_HEIGHT;
+                return bodyScratch;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Nobody may move or shoot right now (post-M8 playtest).
+     *
+     * True through the 3-2-1 and through the hold between rounds. The brief asks for movement
+     * and shooting to be locked during the countdown and for the camera to stay free, which is
+     * exactly the split `Input.sampleSpectating` already produces — it zeroes the axes and the
+     * buttons and stamps the live view angles — so `Game` reads this and picks that sampler
+     * rather than a fourth one being written.
+     *
+     * `ROUND_END` is included on purpose. It is the same situation as the warm-up with the
+     * clock running the other way: the round is decided, and letting people keep shooting into
+     * it is how a Search & Destroy round that has already been won produces another death on
+     * the scoreboard.
+     */
+    get inputFrozen(): boolean {
+        // Networked: the server says so, through the snapshot header. Its own `MatchFlow` is the
+        // one running, and this client's is inert.
+        if (this.isNetworked) return this.netFrozen;
+        const phase = this.flow.currentPhase;
+        return phase === 'WARMUP' || phase === 'ROUND_END';
+    }
+
+    /**
+     * Whether the player's command should be neutered this tick. Read by both samplers.
+     *
+     * It used to be `uiFocus || inputFrozen`, where `uiFocus` meant *a front-end surface has the
+     * keyboard and the cursor* — built for the Create-a-Class overlay, which was opened over a
+     * running match because there is no pausing a dedicated server. Playtest round 4 (B8) made
+     * the editor a front-end screen again, and that left `uiFocus` a boolean with **no writer**:
+     * dead state sitting in the input path, indistinguishable from a flag somebody forgot to
+     * set. The quick class selector never needed it — it is offered only in the two windows
+     * where the body is already frozen, which is what `inputFrozen` says.
+     */
+    get inputSuppressed(): boolean {
+        return this.inputFrozen;
+    }
+
+    /** True when this match is driven by a server. See `MatchDeps.networked`. */
+    get isNetworked(): boolean {
+        return this.deps.networked === true;
+    }
+
+    /**
+     * Adopt the local player's replicated health and liveness (M10 playtest fix).
+     *
+     * The server owns whether this player is alive; before this the client decided for itself
+     * and got it wrong in the only way that matters. `onPlayerKilled` keys on
+     * `PLAYER_ENTITY_ID`, which is entity **0** — the server's empty spectator seat — while a
+     * connected human is entity 1 or above. So the death path never fired, the death screen
+     * never appeared, and `stepPlayerRespawn` (the only thing that clears `playerDead`) is
+     * skipped in networked matches anyway. Three separate notions of "am I dead", one of them
+     * authoritative and none of them talking to each other.
+     *
+     * Now there is one: this. Called on every change to the replicated health or alive bit.
+     */
+    applyReplicatedSelf(health: number, alive: boolean, spawnSerial: number): void {
+        if (!this.isNetworked) return;
+
+        /**
+         * The life boundary is the **spawn serial**, and it is not the alive bit (round 4, B3).
+         *
+         * This used to read `alive && this.playerDead` — a life starts when a dead player stops
+         * being dead — and that is true of a respawn and of nothing else. A Search & Destroy
+         * survivor's next round is a new life the server spawns without ever having killed them,
+         * and so is a class change cashed during the pre-match freeze (`applyPendingLoadoutNow`):
+         * in both the server picks a spawn point, refills its own copy of the hand and bumps the
+         * serial, while the client's alive bit never moves and its own per-life reset never runs.
+         * The report's *"in certain modes"* is exactly that set — the modes where a life can begin
+         * without a death.
+         *
+         * The serial covers both, because it is what `PlayerController.spawn` moves and every new
+         * life on the server goes through that one door. It is also strictly stronger than what it
+         * replaces: a respawn bumps it too, so the ordinary case is the same event seen through a
+         * signal that does not have a hole in it.
+         *
+         * Derived by comparison rather than by a flag on the wire: the serial is state, it stays
+         * true after the snapshot that carried it, and comparing it with the last one acted on
+         * cannot miss an edge by arriving late.
+         */
+        if (spawnSerial !== this.lastSpawnSerial) {
+            this.lastSpawnSerial = spawnSerial;
+            this.beginLife();
+        }
+
+        // After the reset, deliberately: `beginLife` puts the local `Health` back to full, and the
+        // server's answer has to be the last word on this even in the frame a life starts.
+        this.playerHealth.setReplicated(health, alive);
+
+        if (!alive && !this.playerDead) this.onPlayerKilled();
+    }
+
+    /**
+     * A new life, where the server already put us. The networked per-life reset, entire.
+     *
+     * Everything `respawnPlayer` does **except choose a position**: no `selectSpawn`, no
+     * `player.spawn`, no `setView`. The server picked the spawn point, the snapshot carried it,
+     * and prediction has already adopted it — re-spawning locally would fight the authoritative
+     * position and yank the camera somewhere the server disagrees with.
+     *
+     * What it does do is the per-life reset the rest of the client depends on: full health, a
+     * reloaded weapon on the right slot, the sights down, the knife put away, grenades back.
+     *
+     * Called from one place, off one signal — see `applyReplicatedSelf`. It was named
+     * `respawnNetworked` while a respawn was the only way it could be reached; a round start is
+     * the other way, and naming it after the death it no longer needs is what let the round start
+     * be forgotten.
+     */
+    private beginLife(): void {
+        // Before the weapon reset, so the reset puts the *new* class's primary in hand rather than
+        // the old one's and then having it swapped out from under the animation.
+        this.applyPendingLoadout();
+        this.playerHealth.reset();
+        this.weapons.reset();
+        /**
+         * The grenades, explicitly (M11 Gate B playtest, and round 4's B3).
+         *
+         * `MatchEquipment` refills on `player.spawned`, and this path deliberately never emits one
+         * — the server chose the position, so `PlayerController.spawn` is not called. So the one
+         * event the refill hangs off does not exist over the network, and a networked player came
+         * back with whatever the previous life had left. The server refilled its own copy on the
+         * same spawn all along, which is why nothing desynced and nothing logged — only the HUD and
+         * the local hand were wrong.
+         *
+         * Round two's fix was this call; round four's is *what reaches it*. The call was right and
+         * the trigger was half a signal.
+         */
+        this.equipment.refillForLife();
+        // A reset is not a swap and emits no `weapon.swapped`, so the visible model has to be
+        // told separately or it keeps whatever was in frame when the player died.
+        this.showSlot(this.weapons.inventory.activeSlotIndex);
+        this.melee.reset();
+        this.playerCombatant.syncRig();
+        this.playerDead = false;
+        this.playerRespawnTimer = 0;
+    }
+
+    /**
+     * Replicated freeze state, written by the net session from the snapshot header.
+     *
+     * Held here rather than read from the session because `inputFrozen` is consulted from the
+     * sampler in `Game.simulate`, which has a `Match` and no reason to learn about sockets.
+     */
+    netFrozen = false;
+
+    /**
+     * Debug spectator state (post-M8, `debug/Spectator.ts`).
+     *
+     * Held here rather than in the debug suite because two of the three things it does are
+     * facts about the *match* — whether the player can be hurt and whether anybody is looking
+     * for them — and both are already expressed on `PlayerCombatant`. The suite owns the
+     * toggle and the panel; this owns what the toggle means.
+     */
+    /**
+     * `SPEC[]1` and `SPEC[]2`, read from the entitlement rather than stored (round 4, F14).
+     *
+     * These were two fields, written by `debug/Spectator.ts`. They are getters now because the
+     * entitlement is the store and a field beside it would be a second copy of it — and, over a
+     * network, a copy the client had written for itself while the server disagreed. `Spectator`
+     * still owns the *toggle*; what it toggles is the entitlement, through the same door a typed
+     * code goes through.
+     */
+    get godMode(): boolean {
+        return (this.deps.cheats() & Cheat.God) !== 0;
+    }
+
+    get hiddenFromBots(): boolean {
+        return (this.deps.cheats() & Cheat.Unseen) !== 0;
+    }
+
+    get playerRespawnSeconds(): number {
+        return this.playerRespawnTimer;
+    }
+
+    /**
+     * Held Tab, as of the last command this match consumed (S4.2, playtest round 4).
+     *
+     * Derived from `prevButtons` rather than latched into a field of its own: the bit is already
+     * kept for edge detection, and a second copy of it would be the second writer this session
+     * exists to remove. The scoreboard's visibility is a pure function of this and the screen —
+     * see `shared/ui/HudSurfaces.ts`.
+     */
+    get scoreboardHeld(): boolean {
+        return isDown(this.prevButtons, Btn.Scoreboard);
+    }
+
+    /** The scoreboard's one writer, called once per frame from `Game.updateHudSurfaces`. */
+    setScoreboardOpen(on: boolean): void {
+        this.ui.setScoreboardOpen(on);
+    }
+
+    /**
+     * The cheat tag's one writer, from the same per-frame pass (round 4, F14).
+     *
+     * Routed through the match rather than written on the HUD from `Game`, because the HUD belongs
+     * to the match and `Game` is not allowed to hold a reference that outlives a rotation — the
+     * same argument `setScoreboardOpen` is here for.
+     */
+    setCheatTag(text: string): void {
+        this.ui.hud.setCheatTag(text);
+    }
+
+    /** B8's aim warning. One writer, `Game.updateHudSurfaces`, like every other HUD surface. */
+    setAimWarning(text: string): void {
+        this.ui.hud.setAimWarning(text);
+    }
+
+    /** F8's mode header. Same one writer; the slots are the mode's, drawn without interpretation. */
+    setHeaderSlots(slots: readonly HeaderSlot[]): void {
+        // The viewer context is this match's, so a cell is coloured by what its owner is *to this
+        // client* — the `(viewer, subject)` invariant round 4's B12 established.
+        this.ui.hud.setHeaderSlots(this.viewer, slots);
+    }
+
+    /** What this mode wants in the header this frame. Empty for a mode with nothing to say. */
+    get headerSlots(): readonly HeaderSlot[] {
+        return this.mode.headerSlots;
+    }
+
+    get isActive(): boolean {
+        return this.active;
+    }
+
+    /** The live player simulation, for tooling that needs a pose and a facing. */
+    get playerSim(): PlayerController['sim'] {
+        return this.deps.player.sim;
+    }
+
+    /** The collision world this match is being played in. */
+    get world(): CollisionWorld {
+        return this.deps.world;
+    }
+
+    /** The unmodified base of the player's primary. See `MatchDeps.playerBaseDef`. */
+    get playerBaseDef(): WeaponDef {
+        return this.deps.playerBaseDef;
+    }
+
+    /** The class this match was built with. */
+    get loadout(): ResolvedLoadout {
+        return this.deps.loadout;
+    }
+
+    /**
+     * Put a different weapon in a slot (M5).
+     *
+     * Rebuilds that slot's mesh, because a weapon is its silhouette as much as its numbers.
+     * Used by the debug weapon picker; M6's loadout editor is the real caller.
+     */
+    equip(slotIndex: number, def: WeaponDef, camo?: CamoId | null, attachments?: readonly AttachmentId[]): void {
+        const old = this.models[slotIndex];
+        if (old === undefined) return;
+        const wasVisible = old.root.visible;
+        this.deps.viewmodel.remove(old.root);
+        old.dispose();
+
+        // `undefined` keeps whatever finish the slot already had; `null` strips it. The
+        // distinction matters because M5's debug weapon picker calls this with two arguments
+        // and has no idea camos exist — without it, opening the arsenal panel would silently
+        // return a gold rifle to grey. The attachments follow the same rule (stage 2).
+        const nextCamo = camo === undefined ? (this.slotCamos[slotIndex] ?? null) : camo;
+        this.slotCamos[slotIndex] = nextCamo;
+        if (attachments !== undefined) this.slotAttachments[slotIndex] = attachments;
+        const model = buildWeaponModel(def.id, this.deps.anisotropy, nextCamo, this.modelOptions(slotIndex, def.id));
+        this.models[slotIndex] = model;
+        this.deps.viewmodel.add(model.root);
+        model.root.visible = wasVisible;
+
+        this.weapons.equip(slotIndex, def);
+        if (wasVisible) this.showSlot(slotIndex);
+        this.upgradeWhenLoaded(slotIndex);
+    }
+
+    /**
+     * The same in-place upgrade the weapons get, for the knife (stage 5).
+     *
+     * Two files can change what a knife looks like: its own blade and the arms' rig that holds
+     * it. Both are warmed on the menu, so this is the case where a match started before they
+     * landed — and a whole match swinging a box fist because a promise was 200 ms late is the
+     * thing stage 1 built this shape to avoid. The rebuild is unconditional about visibility:
+     * the knife is hidden except mid-swing, and `frame` puts the right one on screen next tick.
+     */
+    private upgradeKnifeWhenLoaded(): void {
+        const assets = this.deps.weaponAssets;
+        if (assets === null) return;
+        const current = this.knifeModel;
+        const wantsBlade = assets.knife() === null;
+        const wantsHands = current.hands === null;
+        if (!wantsBlade && !wantsHands) return;
+        const waits: Promise<void>[] = [];
+        if (wantsBlade) waits.push(assets.preloadKnife());
+        if (wantsHands) waits.push(assets.preloadHands());
+        void Promise.allSettled(waits).then(() => {
+            // The two ways a late promise can arrive into a world that has moved on: the match is
+            // over (`dispose` took the knife out of the viewmodel, so it has no parent) or another
+            // upgrade got there first. Both are answered by looking, not by a flag.
+            if (this.knifeModel !== current || current.root.parent === null) return;
+            if (assets.knife() === null && assets.hands() === null) return;
+            const wasVisible = this.knifeModel.root.visible;
+            this.deps.viewmodel.remove(this.knifeModel.root);
+            if (this.knifeModel.arm !== null) this.deps.viewmodel.remove(this.knifeModel.arm);
+            this.knifeModel.dispose();
+            for (const grenade of this.grenadeModels.values()) {
+                this.deps.viewmodel.remove(grenade.root);
+                grenade.dispose();
+            }
+            this.grenadeModels.clear();
+            this.grenadeShown = null;
+            this.knifeModel = buildKnifeModel(this.deps.anisotropy, assets.knife(), assets.hands());
+            this.knifeModel.root.visible = wasVisible;
+            this.deps.viewmodel.add(this.knifeModel.root);
+            if (this.knifeModel.arm !== null) {
+                this.knifeModel.arm.visible = wasVisible;
+                this.deps.viewmodel.add(this.knifeModel.arm);
+            }
+            this.anim.setKnife(this.knifeModel.root, this.knifeModel.arm, this.knifeModel.hands);
+        });
+    }
+
+    /**
+     * Put one equipment id in the hand, or nothing.
+     *
+     * Called every frame before the animator runs, because which grenade is being thrown is a
+     * per-throw fact. A file that has not arrived means no grenade in the hand for this throw
+     * and the weapon simply lowers, which is exactly what a throw looked like before this
+     * existed — the fallback is the old behaviour rather than a box.
+     */
+    private showGrenade(equipmentId: string | null): void {
+        const next = equipmentId === null ? null : this.grenadeFor(equipmentId);
+        if (next !== this.grenadeShown) {
+            if (this.grenadeShown !== null) this.grenadeShown.root.visible = false;
+            this.grenadeShown = next;
+            this.anim.setGrenade(next);
+        }
+        if (next !== null) next.root.visible = true;
+    }
+
+    private grenadeFor(equipmentId: string): GrenadeModel | null {
+        const assets = this.deps.weaponAssets;
+        const existing = this.grenadeModels.get(equipmentId);
+        /**
+         * Built already, and built with everything it needed.
+         *
+         * The second half of that test is the in-place upgrade the weapons have: a grenade built
+         * in the window before the arms' file landed has no gloves, and without this it would keep
+         * holding itself in mid-air for the rest of the match. Once the rig is there the model is
+         * thrown away and built again, once.
+         */
+        if (existing !== undefined && (existing.hands !== null || (assets?.hands() ?? null) === null)) return existing;
+        const template = assets?.equipment(equipmentId) ?? null;
+        if (template === null) {
+            /**
+             * Ask for it, once, the way `EquipmentFx` asks for a body it has not seen.
+             *
+             * The menu warms the equipped class's two and that is what makes a match start ready
+             * (`Game.warmWeaponAssets`). This is the other half: a class swapped between spawns
+             * changes which two a match needs, and without a request here that grenade would never
+             * arrive in the hand however many times it was drawn — `equipment()` only ever answers
+             * with what somebody has already fetched.
+             */
+            if (assets !== null && !this.grenadesRequested.has(equipmentId)) {
+                this.grenadesRequested.add(equipmentId);
+                void assets.preloadEquipment(equipmentId).catch(() => undefined);
+            }
+            return existing ?? null;
+        }
+        if (existing !== undefined) {
+            this.deps.viewmodel.remove(existing.root);
+            existing.dispose();
+        }
+        const model = buildGrenadeModel(template, assets?.hands() ?? null);
+        model.root.visible = false;
+        this.deps.viewmodel.add(model.root);
+        this.grenadeModels.set(equipmentId, model);
+        return model;
+    }
+
+    private modelOptions(
+        slotIndex: number,
+        weaponId: string,
+    ): { hands: true; assets: WeaponAssetService | null; attachments: readonly AttachmentId[]; assetId: string } {
+        return {
+            hands: true,
+            assets: this.deps.weaponAssets,
+            attachments: this.slotAttachments[slotIndex] ?? [],
+            assetId: assetIdFor(weaponId),
+        };
+    }
+
+    /**
+     * Swap a slot's primitives for its file once the file lands (M19, stage 1).
+     *
+     * Only the mesh changes: the weapon object, its ammunition and its state are untouched,
+     * which is what separates this from `equip`. The checks before the rebuild are the ones a
+     * late promise needs — the match may have ended, the slot may hold a different weapon by
+     * now, or a rebuild may already have happened — and each is answered by looking at the slot
+     * rather than by a flag kept in step with it.
+     */
+    private upgradeWhenLoaded(slotIndex: number): void {
+        const assets = this.deps.weaponAssets;
+        const model = this.models[slotIndex];
+        if (assets === null || model === undefined) return;
+        const weaponId = model.weaponId;
+        // The file to fetch is the *mesh's*, which is the weapon's own for all but the shield's
+        // sidearm — asking for `streak_shield` here would fetch a plate for a slot drawing a pistol.
+        const assetId = assetIdFor(weaponId);
+        // Two files can upgrade a slot: the weapon's own, and the arms' (stage 4), which every
+        // slot wears — the two LMGs, built from primitives, included.
+        const wantsFile = model.source !== 'glb' && assets.statusFor(assetId) !== 'none';
+        const wantsHands = model.hands === null;
+        if (!wantsFile && !wantsHands) return;
+        const waits: Promise<void>[] = [];
+        if (wantsFile) waits.push(assets.preload(assetId));
+        if (wantsHands) waits.push(assets.preloadHands());
+        void Promise.allSettled(waits).then(() => {
+            const current = this.models[slotIndex];
+            if (current === undefined || current !== model || current.weaponId !== weaponId) return;
+            const fileArrived = wantsFile && assets.template(assetId) !== null;
+            const handsArrived = wantsHands && assets.hands() !== null;
+            if (!fileArrived && !handsArrived) return;
+            const wasVisible = current.root.visible;
+            this.deps.viewmodel.remove(current.root);
+            current.dispose();
+            const next = buildWeaponModel(weaponId, this.deps.anisotropy, this.slotCamos[slotIndex] ?? null, this.modelOptions(slotIndex, weaponId));
+            this.models[slotIndex] = next;
+            this.deps.viewmodel.add(next.root);
+            next.root.visible = wasVisible;
+            if (wasVisible) this.showSlot(slotIndex);
+        });
+    }
+
+    /**
+     * Swap the whole class over on a live match (M6).
+     *
+     * Called when the player edits their loadout from the pause screen, which is S6.3's
+     * "reachable… between spawns". Both weapons are rebuilt (a class change is a different
+     * silhouette as much as different numbers), the grenades are replaced and refilled, and
+     * the perks are re-derived. Ammunition resets with the weapons, which is the honest
+     * behaviour: you did not keep the magazine, you picked up a different gun.
+     */
+    applyLoadout(loadout: ResolvedLoadout): void {
+        /**
+         * **On the next spawn, unless there is not going to be one to wait for** (M11 Gate B).
+         *
+         * This used to apply unconditionally, which is Tier 1 #20 arriving from the client's side:
+         * `meta.setLoadout` re-runs the perk hooks and one of them writes `PlayerController
+         * .speedScale`, so a class swapped on a *standing* body changed how fast this client
+         * predicted itself moving while the server — which defers to the next spawn by rule
+         * (`ServerMatch.setPendingLoadout`) — kept simulating the old figure. A constant per-tick
+         * disagreement about speed, which is what rubberbanding is.
+         *
+         * It mattered little when the editor was a screen you had to pause to reach. The quick
+         * selector puts it one keypress away, so the two sides now follow the same rule: deferred
+         * for a living player mid-match, immediate when the player is dead (their next spawn is the
+         * one being waited for) or during the pre-match freeze (where the server applies it at once
+         * too — see `ServerMatch.applyPendingLoadoutNow` — and nobody can move regardless).
+         */
+        if (this.canApplyLoadoutNow()) {
+            this.pendingLoadout = null;
+            this.applyLoadoutNow(loadout);
+            return;
+        }
+        this.pendingLoadout = loadout;
+    }
+
+    /** Whether a class change lands immediately rather than waiting for a body. */
+    private canApplyLoadoutNow(): boolean {
+        if (this.playerDead) return true;
+        return this.flow.currentPhase === 'WARMUP' && this.flow.round <= 1;
+    }
+
+    /** The actual swap. Both weapons rebuilt, grenades replaced and refilled, perks re-derived. */
+    private applyLoadoutNow(loadout: ResolvedLoadout): void {
+        this.setStreakLoadout(loadout.streaks);
+        this.equip(0, loadout.primary, loadout.primaryCamo, loadout.primaryAttachments);
+        this.equip(1, loadout.secondary, loadout.secondaryCamo, loadout.secondaryAttachments);
+        this.equipment.inventory.lethal = loadout.lethal;
+        this.equipment.inventory.tactical = loadout.tactical;
+        EquipmentSystem.refill(this.equipment.inventory);
+        this.meta.setLoadout(loadout);
+    }
+
+    /**
+     * Cash a deferred class change, on the spawn it was waiting for.
+     *
+     * Called from both respawn paths, so the local and networked halves cannot develop different
+     * ideas about when a class takes effect.
+     */
+    private applyPendingLoadout(): void {
+        const pending = this.pendingLoadout;
+        if (pending === null) return;
+        this.pendingLoadout = null;
+        this.applyLoadoutNow(pending);
+    }
+
+    /** A class change waiting for this player's next body. See `applyLoadout`. */
+    private pendingLoadout: ResolvedLoadout | null = null;
+
+    private showSlot(slotIndex: number): void {
+        const model = this.models[slotIndex];
+        if (model === undefined) return;
+        for (const m of this.models) m.root.visible = m === model;
+        // The shield rides the streak slot: it is the other half of what that slot holds, so it is
+        // on screen exactly when the pistol it comes with is, and never on its own.
+        if (this.shieldModel !== null) this.shieldModel.root.visible = slotIndex === STREAK_VIEWMODEL_SLOT;
+        this.model = model;
+        this.anim.setModel(model);
+        this.fx.attachMuzzle(model.muzzle);
+        this.flame.setLocalMuzzle(model.muzzle, this.deps.viewmodel.camera);
+    }
+
+    private requireModel(index: number): WeaponModel {
+        const model = this.models[index];
+        if (model === undefined) throw new Error(`Match has no viewmodel for slot ${index}`);
+        return model;
+    }
+
+    /** Debug hook: run real damage at the player so regeneration is exercised, not faked. */
+    applySelfDamage(amount: number): void {
+        const def = this.weapons.definition;
+        this.selfDamage.weapon = def;
+        this.selfDamage.zone = 'torso';
+        // Solve for the request that produces exactly `amount` at the torso.
+        this.selfDamage.distance = 0;
+        this.selfDamage.penetrationRetain = Math.max(0, Math.min(1, amount / Math.max(def.damage.near, 1)));
+        const sim = this.deps.player.sim;
+        this.selfDamage.x = sim.x;
+        this.selfDamage.y = sim.y + sim.eyeHeight;
+        this.selfDamage.z = sim.z;
+        this.damage.apply(this.selfDamage);
+    }
+
+    // -- loop -----------------------------------------------------------------
+
+    /** One sim tick. Called from Game.simulate after the player has stepped. */
+    simulate(cmd: InputCommand): void {
+        // Health is server-owned in a networked match (S4.15) and arrives replicated. Stepping it
+        // here as well would run a *second* regeneration curve against the authoritative one and
+        // the bar would visibly disagree with the damage the player is taking.
+        if (!this.isNetworked) this.playerHealth.step();
+        // The rig follows the capsule on the *tick*, and before anything resolves a shot
+        // against it, so a bot's round is tested against where the player was when it fired.
+        this.playerCombatant.syncRig();
+
+        // The targeting map owns the input while it is up — firing confirms the mark rather
+        // than pulling the trigger.
+        const mortarOpen = this.stepMortarOverlay(cmd);
+        /**
+         * A live Chopper Gunner takes the player's weapon out of the loop entirely (post-M8).
+         *
+         * Until now the takeover consumed the command *and left the rifle consuming it too*, so
+         * holding the trigger in the gunship emptied the magazine on the ground below — reported
+         * as "the chopper drains my primary ammo". It also meant the ADS button drove the rifle's
+         * `adsFraction` up while the player was a kilometre away from it, which is what hid the
+         * crosshair: the scope overlay saw a scoped sniper and took the reticle away.
+         *
+         * Both are the same bug and this is the one fix. The chopper has always had its own
+         * `Ballistics` and its own `WeaponDef` — an infinite pool by construction, because it
+         * spends no magazine — and now nothing else is spending one on its behalf.
+         */
+        const flyingChopper = this.streaks.activeChopperFor(this.localId) !== null;
+        // A hand on a grenade — or on the knife — is a hand off the rifle. One flag, read by the
+        // weapon and by the viewmodel, so the gun cannot be fired while it is visibly lowered.
+        //
+        // The held button is part of the test, not just the thrower state. `equipment.simulate`
+        // runs *after* the weapon this tick, so on the very first tick of a cook `busy` is still
+        // last tick's answer and exactly one round escaped - measured, not theorised.
+        /**
+         * Reaching for something else cancels a reload (post-M8 playtest).
+         *
+         * The report was that grenades can be thrown mid-reload, and the fix the brief allows is
+         * either blocking the throw or cancelling the reload. Cancelling is the right one: a
+         * blocked throw is an input the player made that the game silently ate, and the magazine
+         * is not lost either way — `Weapon` only banks ammunition on completion, so an interrupted
+         * reload leaves the count exactly as it was. It is the same rule a swap already follows.
+         *
+         * Tested on the *press edge* rather than on `busy`, so it fires once, on the tick the hand
+         * leaves the rifle, and a held cook does not keep re-cancelling nothing.
+         */
+        const meleePressed = justPressed(cmd.buttons, this.prevButtons, Btn.Melee);
+        const reachedThisTick =
+            justPressed(cmd.buttons, this.prevButtons, Btn.Lethal) ||
+            justPressed(cmd.buttons, this.prevButtons, Btn.Tactical) ||
+            meleePressed;
+        if (!this.playerDead && reachedThisTick) this.weapons.weapon.cancelReload();
+
+        // The presses are part of the test and not just the busy flags, for the reason the equipment
+        // note above gives: the thrower and the knife step *after* the weapon this tick. The rule is
+        // shared with the server's `NetPlayer`, which is the one whose hits count — see `handsOffWeapon`.
+        this.weapons.fireBlocked = handsOffWeapon(
+            cmd.buttons,
+            this.prevButtons,
+            this.equipment.thrower.busy,
+            this.melee.busy,
+        );
+        /**
+         * In the gunship, or with the mortar's map up, the rifle is not the player's (2026-09-28).
+         *
+         * The map used to skip the weapon's step outright. That kept the rifle quiet here and nowhere
+         * else — the server never knew the map was up, and fired the confirming click as a round — and
+         * it froze the weapon's own record of the trigger, so the map closing under a held click handed
+         * the rifle a fresh press. The map is `Btn.Targeting` on the command now, read here exactly as
+         * `NetPlayer` reads it, and the weapon steps suspended: no trigger, no sights, no reload, and a
+         * trigger held through it stays dead until it is let go (`WeaponSystem.triggerHeldOff`).
+         */
+        this.weapons.suspended = flyingChopper || isDown(cmd.buttons, Btn.Targeting);
+
+        if (!this.playerDead) {
+            const sim = this.deps.player.sim;
+            this.weapons.step(cmd, sim);
+
+            // The residual half of each recoil kick is a real aim change, so it goes where mouse
+            // movement goes rather than into a separate offset the player cannot fight.
+            if (this.weapons.takeViewResidual(this.residual)) {
+                this.deps.input.addViewOffset(this.residual.yaw, this.residual.pitch);
+            }
+        }
+
+        /**
+         * The knife (post-M8). Edge-detected here, in the sim, from the bitfield — S4.2, and the
+         * reason there is no DOM handler anywhere near it.
+         *
+         * Blocked while a grenade is in hand or the gunship has the camera, both of which are
+         * "something else owns the hands" cases the weapon already respects.
+         */
+        const swing = meleePressed && !mortarOpen && !flyingChopper && !this.equipment.thrower.busy;
+        this.melee.step(swing, this.deps.player.sim, !this.playerDead);
+
+        // The glint an enemy can see is a property of the weapon, and `PlayerCombatant` is
+        // built before the weapon exists — so it is stamped here, once a tick, before
+        // perception runs against it. The weapon's class rides the same mechanism for the same
+        // reason: `syncRig` needs it to pick the crouched layout, and a sidearm kneels differently.
+        this.playerCombatant.glinting = !this.playerDead && this.weapons.glinting;
+        this.playerCombatant.pistol = this.weapons.definition.class === 'PISTOL';
+
+        this.range?.step();
+        this.equipment.simulate(cmd, this.deps.player.sim, !this.playerDead);
+        this.meta.simulate(cmd, this.deps.player.sim, !this.playerDead);
+        // Nobody moves or shoots during the 3-2-1 (post-M8). The player's half is handled at the
+        // sampler in `Game.simulate`; this is the other half, and both sides freezing is the
+        // point — a countdown one side can use to take an angle is not a countdown.
+        this.bots.inputFrozen = this.inputFrozen;
+        if (!this.isNetworked) this.bots.simulate(cmd.tickIndex, cmd.sampledAtMs);
+        // Streaks tick after the bots that may have just shot one down, and before the flow that
+        // may declare the match over and end them all.
+        /**
+         * The server owns every live streak in a networked match (S4.15).
+         *
+         * Simulating here as well would put a second sentry, with its own aim and its own damage,
+         * on top of the one the server is already resolving shots against — the Domination flag bug
+         * with a trigger. The client keeps the object because the HUD and the renderer are written
+         * against it, and feeds them from `replicatedStreaks` instead.
+         */
+        if (!this.isNetworked) {
+            this.lastStreakCommand = cmd;
+            this.streaks.simulate(cmd.tickIndex);
+        }
+        this.syncChopperBody();
+        this.syncCarriedStreakWeapon();
+        if (!this.playerDead && !this.mortarOverlay.isOpen) this.stepStreakInput(cmd);
+        // Local matches only (M11 Gate B). A networked client's Use key is already in the command
+        // it just sent, and `ServerMatch.stepBombInteractions` acts on it there; running this as
+        // well would make the client a second authority over a plant timer the server owns, and
+        // §6.8 gives that to exactly one of them.
+        if (!this.isNetworked && !this.playerDead) this.stepBombInteraction(cmd);
+        // Both kinds of match, deliberately — see the `supply` field. After the bomb, so a station
+        // authored too near an objective cannot take the tick the plant wanted.
+        this.stepSupply();
+        this.stepInteractPose();
+        // The server owns when and where a body comes back (S4.15); the client is told. But
+        // `stepPlayerRespawn` also *decrements the display timer*, and skipping the whole method
+        // left the death screen frozen on the number `onPlayerKilled` set — see
+        // `stepRespawnDisplay`.
+        if (!this.isNetworked) this.stepPlayerRespawn();
+        else this.stepRespawnDisplay();
+        this.stepLowHealthAudio();
+
+        // The mode clock is a gameplay timer and runs on ticks like everything else (S4.1) —
+        // except when a server is running it, in which case score and round state arrive
+        // replicated and a second clock here would disagree with the first one that matters.
+        // Burns are health, and health is the server's over the network — the same line the mode
+        // clock is on, for the same reason. See the `burn` field.
+        if (!this.isNetworked) this.burn.simulate();
+
+        const t0 = performance.now();
+        if (!this.isNetworked) this.flow.simulate(cmd.tickIndex);
+        this.lastModeMs = performance.now() - t0;
+
+        /**
+         * The scoreboard used to be written from here, and that was the whole of B6.
+         *
+         * A tick is not a frame. `Game.simulate` stops calling this the moment the screen leaves
+         * `MATCH`, so the board kept whatever the last tick had put there — up, over the pause
+         * screen, holding a key `Input.clearHeld` had already dropped into a loop that was no
+         * longer running. It is derived once per frame in `Game.updateHudSurfaces` now, from
+         * `scoreboardHeld` below and from state that outlives the tick.
+         */
+        this.prevButtons = cmd.buttons;
+        this.latency.expire(performance.now());
+    }
+
+    /**
+     * Take the player's body out of play while they are flying a Chopper Gunner, and put it
+     * back the moment they are not (M7 playtest).
+     *
+     * Driven from the live streak rather than from the activate/expire events, so there is no
+     * state to get stuck: if there is no chopper, the body is in play, every tick, unarguably.
+     * That is the same reasoning the chopper's single-exit rule uses.
+     *
+     * Both flags are needed and they do different jobs. `active` false removes the body from
+     * perception, spawn scoring and bot target selection — nobody comes looking. `invulnerable`
+     * is checked at the damage door and stops anything already in flight (a grenade, a mortar,
+     * a sentry burst) from resolving against a player who is not there.
+     *
+     * This reverses M7's original reading of S6.1's "not invulnerable to a lucky mortar":
+     * playtesting found being killed by something you cannot see, react to or avoid reads as
+     * broken rather than as risk.
+     */
+    private syncChopperBody(): void {
+        const flying = this.streaks.activeChopperFor(this.localId) !== null;
+        /**
+         * `SPEC[]3` — free cam — is written from here too (round 4, F14).
+         *
+         * Not because it is a combat flag, but because this is already the one place that re-applies
+         * the body's state from state every tick, and `PlayerController.spawn` does not clear
+         * `noclip`. A latch set once by the toggle would survive a revoke into the next life. The
+         * server writes the same bit from `NetPlayer.step`, from the same replicated mask, which is
+         * what makes flying predictable rather than a running argument with collision.
+         */
+        this.deps.player.noclip = (this.deps.cheats() & Cheat.NoClip) !== 0;
+        // Post-M8: the QA spectator uses the same two levers, so it is folded in here rather
+        // than written from a second place. Driven from state every tick means there is still
+        // nothing to get stuck — turning god mode off puts the body back on the next tick,
+        // unarguably, which is the property this method was built for.
+        this.playerCombatant.active = !flying && !this.hiddenFromBots;
+        this.playerCombatant.invulnerable = flying || this.godMode;
+    }
+
+    /**
+     * Hold to plant, hold to defuse (M7 playtest).
+     *
+     * Held rather than tapped, and re-tested every tick: stepping off the site, releasing the
+     * key or dying all cancel, which is what makes a plant something the other side can
+     * interrupt. The mode owns the timer and the rules; this only reports that the player is
+     * standing in the right place with the key down.
+     */
+    private stepBombInteraction(cmd: InputCommand): void {
+        const mode = this.mode;
+        if (!(mode instanceof SearchAndDestroy)) return;
+
+        const holding = isDown(cmd.buttons, Btn.Use);
+        if (!holding) {
+            // Only cancel what *this* player started; a bot's plant is not the player's to stop.
+            if (mode.interactEntity === this.localId) mode.cancelInteract();
+            return;
+        }
+
+        const me = this.playerCombatant;
+        if (mode.bomb === 'PLANTED') {
+            if (me.team !== mode.defenders) return;
+            const site = mode.plantedSite;
+            if (site === null || !site.contains(me)) return;
+            mode.beginInteract(me, true);
+            return;
+        }
+        if (mode.bomb !== 'CARRIED') return;
+        if (me.team !== mode.attackers) return;
+        // Picking the bomb up is now the same key as planting it (post-M8 playtest): walking
+        // over it does nothing. Tested before the plant branch because you cannot plant a bomb
+        // you are not carrying, and one press should be able to do the first of the two.
+        if (!mode.isCarrier(this.localId)) {
+            mode.tryPickup(me);
+            return;
+        }
+        if (mode.siteContaining(me) === null) return;
+        mode.beginInteract(me, false);
+    }
+
+    /**
+     * Whoever is planting or defusing kneels over the bomb (post-M8, S6.3's visual indicator).
+     *
+     * Driven from mode state every tick rather than latched on start and cleared on finish,
+     * for the same reason `syncChopperBody` is: an interaction can end four ways — completed,
+     * stepped off, key released, killed — and a latch would have to be cleared correctly on
+     * all four. Asked every tick, there is nothing to get stuck, and a player who dies
+     * mid-defuse does not respawn permanently crouched.
+     *
+     * It applies to bots as well as the player, which is the half that actually matters: the
+     * crouch is how the *other* side can tell at a glance that somebody is on the bomb.
+     */
+    private stepInteractPose(): void {
+        const mode = this.mode;
+        if (!(mode instanceof SearchAndDestroy)) return;
+        const busy = mode.interactingEntity;
+
+        this.deps.player.forceCrouch = busy === this.localId;
+        for (const bot of this.bots.bots) bot.controller.forceCrouch = bot.entityId === busy;
+    }
+
+    /**
+     * Spend a killstreak on the player's say-so (M7).
+     *
+     * Three absolute keys rather than a cycle, and edge-detected in the sim from the bitfield
+     * exactly as S4.2 requires — there is no DOM handler anywhere near this.
+     *
+     * Where a streak lands is decided here rather than by the streak, because "in front of the
+     * player" is a fact about the player: a sentry goes a couple of metres ahead so it does not
+     * spawn inside them, a package drops on the spot, and a mortar marks wherever the overlay
+     * left its cursor.
+     */
+    /**
+     * Drive the mortar overlay while it is open. Returns true when it owns the input.
+     *
+     * Steered by the *look delta* rather than a mouse position, because pointer lock means
+     * there is no cursor to read and releasing the lock to open a map would drop the player's
+     * aim. The player moves the mark exactly as they would move their view.
+     */
+    private stepMortarOverlay(cmd: InputCommand): boolean {
+        if (!this.mortarOverlay.isOpen) return false;
+
+        const dYaw = angleDeltaRad(this.overlayYaw, cmd.yaw);
+        const dPitch = cmd.pitch - this.overlayPitch;
         this.overlayYaw = cmd.yaw;
         this.overlayPitch = cmd.pitch;
-        return;
-      }
-      this.spendStreak(id, sim.x, sim.z);
-      return;
-    }
-  }
+        // Yaw sweeps the mark east/west, pitch north/south. Scaled so a comfortable flick
+        // crosses the map rather than nudging it a metre.
+        //
+        // The yaw term is **negated**: a view yaw increase turns the player left, and the map is
+        // drawn in world axes rather than view axes, so passing it through unchanged sent the
+        // cursor the wrong way. Reported from a live match as inverted X.
+        this.mortarOverlay.moveBy(-dYaw * MORTAR_STEER_M_PER_RAD, -dPitch * MORTAR_STEER_M_PER_RAD);
 
-  /**
-   * Spend a streak — locally, or by asking the server (M11 Gate B, §8.22).
-   *
-   * The networked path sends a **request** and changes nothing locally. There is deliberately no
-   * optimistic activation: §4.15 puts killstreak activation on the replicated side, and a client
-   * that put a sentry down and then had it taken away by the next frame would be showing a
-   * correction for a thing that was never true. The round trip is one frame at any playable
-   * ping, and a sentry that appears a frame late is not something a player can perceive — a
-   * sentry that appears and vanishes is.
-   *
-   * The coordinates sent are the mortar's mark and nothing else; the server places every other
-   * streak from its own copy of where the player is standing.
-   */
-  private spendStreak(id: StreakId, markX: number, markZ: number): void {
-    if (this.isNetworked) {
-      this.deps.onStreakRequest?.(id, markX, markZ);
-      return;
-    }
-    const sim = this.deps.player.sim;
-    // Two metres along the facing, so a sentry is placed rather than worn.
-    const ahead = 2;
-    const px = sim.x - Math.sin(sim.yaw) * ahead;
-    const pz = sim.z - Math.cos(sim.yaw) * ahead;
-    const useAhead = id === 'sentry';
-    this.streaks.activate(
-      this.localId,
-      id,
-      id === 'mortar' ? markX : useAhead ? px : sim.x,
-      sim.y,
-      id === 'mortar' ? markZ : useAhead ? pz : sim.z,
-      sim.yaw,
-    );
-  }
-
-  /** Record the class's streaks, in both the shapes the rest of the match asks for. */
-  private setStreakLoadout(streaks: ReadonlyArray<StreakId | null>): void {
-    this.streakSlots = [streaks[0] ?? null, streaks[1] ?? null, streaks[2] ?? null];
-    this.equippedStreakIds = this.streakSlots.filter((id): id is StreakId => id !== null);
-  }
-
-  /**
-   * The three questions the streak strip and the keys ask, each behind one accessor.
-   *
-   * The server's answer in a networked match and the local system's otherwise. Routed through
-   * these rather than branched at each call site, because the failure when one of them is
-   * missed is a HUD that offers a streak the server will refuse, or a key that charges a price
-   * the screen never showed. There were two of these before round 4; the balance model added
-   * price and availability, and the pivot turned availability from a bit into a duration.
-   */
-  private streakBalance(): number {
-    return this.isNetworked ? this.replicatedStreaks.balance : this.streaks.balanceOf(this.localId);
-  }
-
-  private streakPrice(id: StreakId): number {
-    return this.isNetworked ? this.replicatedStreaks.priceOf(id) : this.streaks.priceOf(id, this.localId);
-  }
-
-  /**
-   * Seconds until this key works again, or 0 (round 4, the pivot).
-   *
-   * One number for the cooldown and for a previous instance still being in the world, because
-   * the strip draws them the same way and the player experiences them as the same thing: the
-   * key does nothing, and the slot says how long for without saying it in words.
-   */
-  private streakLockout(id: StreakId): number {
-    return this.isNetworked
-      ? this.replicatedStreaks.lockoutSeconds(id)
-      : this.streaks.lockoutSecondsFor(this.localId, id);
-  }
-
-  private canAffordStreak(id: StreakId): boolean {
-    return this.isNetworked ? this.replicatedStreaks.canAfford(id) : this.streaks.canAfford(this.localId, id);
-  }
-
-  private nextStreak(): { def: StreakDef; price: number } | null {
-    return this.isNetworked ? this.replicatedStreaks.next : this.streaks.nextFor(this.localId);
-  }
-
-  /**
-   * The body this dead player is watching, or null (M11 Gate B, §6.8).
-   *
-   * Only in a **one-life** mode, which is what makes this a spectator rather than a death cam:
-   * in Team Deathmatch a corpse is looking at the floor for four seconds and then playing again,
-   * and taking the camera somewhere else would be a worse experience than the wait. In Search &
-   * Destroy the wait is the rest of the round.
-   *
-   * Recomputed every frame rather than latched on death. A target can die, disconnect or be
-   * replaced by a bot at any moment, and a latch would have to be invalidated correctly on all
-   * three — asked every frame, there is nothing to get stuck.
-   */
-  get spectatorTargetId(): number {
-    if (!this.playerDead) return NO_SPECTATOR_TARGET;
-    if (this.deps.mode.usesRoundReset !== true) return NO_SPECTATOR_TARGET;
-    const chosen = pickSpectatorTarget(
-      this.localId,
-      this.localTeam,
-      this.spectatorCandidates(),
-      this.spectatorTarget,
-    );
-    this.spectatorTarget = chosen;
-    return chosen;
-  }
-
-  /**
-   * Where the spectator camera should sit, or null to leave it on the local body.
-   *
-   * The followed body's **feet**, its facing, and the eye height the stance it is drawn in
-   * actually has. A first-person framing rather than a chase camera, deliberately: a
-   * third-person spectator needs collision of its own, and one that clips through a wall while
-   * the player is already waiting out a round is a worse answer than looking through a
-   * teammate's eyes.
-   *
-   * Two things were wrong with the first version and both arrived as one report — *"the head of
-   * the body you are watching cuts into the camera"*.
-   *
-   * **The roster it looked in.** `deps.actors` is the *networked* supplier and is undefined in
-   * single-player, so every solo Search & Destroy death landed on `?? []` and returned null: the
-   * camera stayed at the eye the dead player left behind, while `BotRenderer` — told through
-   * `setEyesOf` that the camera was inside a teammate — dutifully hid that teammate. A frozen
-   * view of the room you died in with one of your own side invisible in it, and every other body
-   * in the match free to walk through the camera. `actorsForRender` is the supplier that answers
-   * both kinds of match, and it is the one the renderer itself draws from, which is what makes
-   * the body that is hidden and the body the camera is inside provably the same body.
-   *
-   * **The eye it used.** `PlayerSnapshot`'s own default is a standing 1.65 m and a spectated body
-   * is not always standing: a teammate who crouches drops their eyes to 0.95 m and a sliding one
-   * to 0.55 m, and the camera stayed a metre above their head with the body hidden under it.
-   * `eyeHeightFor` is the rule the living player's own camera is composed with, applied here to
-   * the stance the body is *drawn* in, so the spectator's eye is where that body's eyes are.
-   */
-  spectatorView(alpha: number): SpectatorView | null {
-    const id = this.spectatorTargetId;
-    if (id === NO_SPECTATOR_TARGET) return null;
-    for (const actor of this.actorsForRender()) {
-      if (actor.entityId !== id) continue;
-      return {
-        x: actor.renderX(alpha),
-        y: actor.renderY(alpha),
-        z: actor.renderZ(alpha),
-        yaw: actor.renderYaw(alpha),
-        eyeHeight: eyeHeightFor(this.deps.movementConfig, actor.animation.stance),
-      };
-    }
-    return null;
-  }
-
-  /**
-   * Put a carried killstreak weapon in the player's hands, or take it back (2026-09-26).
-   *
-   * Asked every tick from whichever list is authoritative here, and pushed by nothing — the
-   * same shape as `syncChopperBody` immediately above and for the same reason: with no edge to
-   * miss there is no state that can get stuck holding a minigun that expired. In a solo match
-   * the live streaks are this client's own; in a networked one they are the server's, arriving
-   * as replicated entities, because §4.15 puts activation on that side and this client does not
-   * activate its own streaks even when it asked for them.
-   *
-   * A dead player holds nothing: `StreakSystem.onDeath` retires a carried streak with the body
-   * that called it in, so the answer here goes to null on the same tick without a second rule.
-   */
-  private syncCarriedStreakWeapon(): void {
-    const weapon = this.isNetworked
-      ? this.replicatedStreaks.carriedWeaponFor(this.localId)
-      : this.streaks.carriedWeaponFor(this.localId);
-    this.weapons.holdStreakWeapon(weapon);
-    this.syncStreakModel();
-  }
-
-  /**
-   * The viewmodel for the slot a killstreak borrows (2026-09-27).
-   *
-   * `models` is built up front, one mesh per inventory slot, *"because building on demand would
-   * put a geometry merge and a GPU upload on the frame the player presses the swap key"*. A
-   * carried streak is the one weapon that cannot work that way: the slot does not exist until a
-   * streak is spent and stops existing when it ends, and a match cannot pre-build a mesh for
-   * every streak weapon a class might buy.
-   *
-   * So this slot alone is built on arrival — and the cost lands in the right place, because the
-   * hands are already a second into a swap-in the streak's own `swapInTime` is holding open. The
-   * minigun's 1.1 s spin-up and the shield's 1.2 s raise are not decoration here.
-   *
-   * Before this, `models[2]` was simply absent: `showSlot` looked the slot up, found nothing and
-   * returned, and the mesh left on screen was whatever the player had been holding — a minigun
-   * that looked like a carbine and a riot shield that looked like a rifle. The slab and the
-   * sidearm are the same placeholders the bodies wear; what changes is that the hands now hold
-   * the thing the game thinks they are holding.
-   *
-   * Driven from the **inventory** rather than from the streak, deliberately: the slot outlives
-   * the streak by the length of a put-away, and disposing the mesh on the tick the clock ran out
-   * would take it out of hands that are still lowering it.
-   */
-  private syncStreakModel(): void {
-    const held = this.weapons.inventory.at(STREAK_VIEWMODEL_SLOT)?.definition ?? null;
-    const wantId = held?.id ?? null;
-    const current = this.models[STREAK_VIEWMODEL_SLOT];
-    if ((current?.weaponId ?? null) === wantId) return;
-
-    if (current !== undefined) {
-      const wasVisible = current.root.visible;
-      this.deps.viewmodel.remove(current.root);
-      current.dispose();
-      this.models.length = STREAK_VIEWMODEL_SLOT;
-      // The hands are empty for one frame otherwise: the streak's mesh is gone and the slot the
-      // inventory has already gone back to was last drawn before it was taken away.
-      if (wasVisible) this.showSlot(this.weapons.inventory.activeSlotIndex);
-    }
-    if (held === null) return;
-
-    const model = buildWeaponModel(
-      held.id,
-      this.deps.anisotropy,
-      // No camo on a streak weapon: it is not in anybody's loadout and no challenge counts it.
-      null,
-      this.modelOptions(STREAK_VIEWMODEL_SLOT, held.id),
-    );
-    this.models[STREAK_VIEWMODEL_SLOT] = model;
-    this.deps.viewmodel.add(model.root);
-    model.root.visible = false;
-    this.upgradeWhenLoaded(STREAK_VIEWMODEL_SLOT);
-    this.syncShield(wantId);
-  }
-
-  /**
-   * The shield in the other hand (2026-09-27).
-   *
-   * The streak that gives you a shield gives you a **pistol** with it, and the pistol is what
-   * the slot above builds: `WeaponModelSpecs.streak_shield` has always described the sidearm,
-   * "the half of it a first-person camera can see". The plate was the other half, and until now
-   * the player could not see it — only the bodies around them could.
-   *
-   * So the shield is a second model hung beside that pistol, not instead of it, and the two
-   * hands are split between them: the pistol keeps the right, and its **left arm is collapsed**
-   * so the shield's own rig can hold the plate. Two rigs are on screen and each draws one arm;
-   * without the collapse the left arm is drawn twice, once on the grip and once on the cuff.
-   *
-   * Where it sits on screen is `VIEWMODEL_OFFSETS.streak_shield` and nothing else — a plate has
-   * no sight to land and no hip pose of its own. The hand tuner writes that row.
-   */
-  private syncShield(wantId: string | null): void {
-    const want = wantId === SHIELD_ASSET_ID;
-    if (!want) {
-      if (this.shieldModel === null) return;
-      this.anim.setShield(null);
-      this.deps.viewmodel.remove(this.shieldModel.root);
-      this.shieldModel.dispose();
-      this.shieldModel = null;
-      return;
-    }
-    if (this.shieldModel !== null) return;
-    const assets = this.deps.weaponAssets;
-    this.shieldModel = buildShieldModel(assets?.shield() ?? null, assets?.hands() ?? null);
-    this.shieldModel.root.visible = false;
-    this.deps.viewmodel.add(this.shieldModel.root);
-    this.anim.setShield(this.shieldModel);
-    // The pistol's left arm belongs to the plate now.
-    this.models[STREAK_VIEWMODEL_SLOT]?.hands?.showArm('L', false);
-    this.upgradeShieldWhenLoaded();
-  }
-
-  /**
-   * Rebuild the shield once its file lands, the way the knife's upgrade does.
-   *
-   * The plate is built from whatever `WeaponAssetService` has when the streak is first picked
-   * up, which on the first shield of a match is nothing: `preloadShield` is started here rather
-   * than at match start because most matches never see one, and 0.4 MB fetched for every player
-   * who never calls the streak is 0.4 MB the loadout's weapons wanted.
-   *
-   * Until it arrives the root is empty — no box stands in, because the *world* shield the body
-   * wears is already drawn and a second slab in the viewmodel would be the same object twice.
-   */
-  private upgradeShieldWhenLoaded(): void {
-    const assets = this.deps.weaponAssets;
-    if (assets === null || assets === undefined) return;
-    if (assets.shield() !== null && assets.hands() !== null) return;
-    const current = this.shieldModel;
-    void Promise.all([assets.preloadShield().catch(() => undefined), assets.preloadHands().catch(() => undefined)]).then(() => {
-      // Answered by looking rather than by a flag: the streak may have ended, or the match.
-      if (this.shieldModel !== current || current === null || current.root.parent === null) return;
-      const wasVisible = current.root.visible;
-      this.deps.viewmodel.remove(current.root);
-      current.dispose();
-      this.shieldModel = buildShieldModel(assets.shield(), assets.hands());
-      this.shieldModel.root.visible = wasVisible;
-      this.deps.viewmodel.add(this.shieldModel.root);
-      this.anim.setShield(this.shieldModel);
-      this.models[STREAK_VIEWMODEL_SLOT]?.hands?.showArm('L', false);
-    });
-  }
-
-  /**
-   * Whether this body is on fire, whichever kind of match this is (2026-09-26).
-   *
-   * The same split every other per-body fact makes here: in a solo match the burn system is the
-   * authority and is asked directly; over the network the answer arrived on the snapshot as
-   * `EFlag.Burning`, because the burn ticks where health lives and this client never saw the
-   * jet. One question, two routes, and the renderer is told neither of them.
-   */
-  isBurning(entityId: number): boolean {
-    if (!this.isNetworked) return this.burn.isBurning(entityId);
-    for (const actor of this.actorsForRender()) {
-      if (actor.entityId !== entityId) continue;
-      const remote = actor as { burning?: boolean };
-      return remote.burning === true;
-    }
-    return false;
-  }
-
-  /**
-   * A puff of fire on every body that is alight, four times a second (2026-09-26).
-   *
-   * The library has no flame particle and this session was told to use what exists rather than
-   * wait for one, so the burn borrows the impact puff: it is small, it is already pooled, and
-   * four a second at chest height reads as *that body is burning* from across a lane. It is
-   * driven from the render clock and spawns nothing on a tick, which is the rule for everything
-   * in this file below the simulation.
-   */
-  private renderBurns(dt: number): void {
-    this.burnFxTimer -= dt;
-    if (this.burnFxTimer > 0) return;
-    this.burnFxTimer = BURN_FX_INTERVAL;
-    for (const actor of this.actorsForRender()) {
-      if (!this.isBurning(actor.entityId)) continue;
-      const x = actor.renderX(1);
-      const y = actor.renderY(1) + BURN_FX_HEIGHT;
-      const z = actor.renderZ(1);
-      this.fx.spawnHitPuff(x, y, z, 0, 1, 0);
-    }
-  }
-
-  /** What the station under the player is doing this tick, for the HUD. */
-  get supplyState(): SupplyState {
-    return this.supply.stateOf(this.localId);
-  }
-
-  /**
-   * One tick at a resupply station.
-   *
-   * Everything it needs is already here: where the body is and what stance it is in — kneeling is
-   * the whole of the instruction since the use key came off it (2026-09-28) — the weapon **in the
-   * hand**, since `weapons.weapon` is the active slot rather than the loadout, and the grenade
-   * inventory. A dead body is passed through as not alive rather than skipped, so the state clears
-   * and the prompt goes with it.
-   */
-  private stepSupply(): void {
-    if (!this.supply.any) return;
-    this.supply.step(this.localId, this.deps.player.sim, !this.playerDead, this.weapons.weapon, this.equipment.inventory);
-  }
-
-  /** Cycle to the next living teammate. Bound to the fire key while dead (M7's verb). */
-  cycleSpectatorTarget(): void {
-    if (!this.playerDead) return;
-    this.spectatorTarget = nextSpectatorTarget(
-      this.localId,
-      this.localTeam,
-      this.spectatorCandidates(),
-      this.spectatorTarget,
-    );
-  }
-
-  /**
-   * Everything this client could watch.
-   *
-   * The **remote actors** in a networked match and the bot roster in single-player — the same
-   * split `actors` makes for rendering, and for the same reason: a networked client has no
-   * roster, only bodies rebuilt from snapshots.
-   */
-  private *spectatorCandidates(): Generator<SpectatorCandidate> {
-    if (this.isNetworked) {
-      for (const actor of this.deps.actors?.() ?? []) {
-        const remote = actor as { entityId?: number; team?: BotTeam; participating?: boolean };
-        if (typeof remote.entityId !== 'number' || remote.team === undefined) continue;
-        yield { entityId: remote.entityId, team: remote.team, alive: remote.participating === true };
-      }
-      return;
-    }
-    for (const bot of this.bots.bots) {
-      yield { entityId: bot.entityId, team: bot.team, alive: bot.participating };
-    }
-  }
-
-  /** Adopt one `Projectiles` frame (§8.24). Own grenades are skipped — they are predicted. */
-  applyReplicatedProjectiles(
-    projectiles: readonly ProjectileState[],
-    smoke: readonly SmokeState[],
-  ): void {
-    this.equipment.applyReplicated(projectiles, smoke, this.localId);
-  }
-
-  /** Drop every replicated grenade. Called on migration, per §4.18's obligation list. */
-  clearReplicatedProjectiles(): void {
-    this.equipment.applyReplicated(EMPTY_PROJECTILES, EMPTY_SMOKE, this.localId);
-  }
-
-  /** Adopt one `Streaks` frame (§8.22). Called by `MatchWorld` from the net session. */
-  applyReplicatedStreaks(view: StreakView): void {
-    this.replicatedStreaks.apply(view);
-  }
-
-  /** Drop every replicated streak. Called on migration, per §4.18's obligation list. */
-  clearReplicatedStreaks(): void {
-    this.replicatedStreaks.clear();
-  }
-
-  /**
-   * The player's side of S6.9. Same timer and the same spawn selector the bots use, and the
-   * same respawn gate — so "nobody comes back once the match is over" is one rule with one
-   * implementation rather than one for them and a different one for you.
-   */
-  private stepPlayerRespawn(): void {
-    if (!this.playerDead) return;
-    this.playerRespawnTimer = Math.max(0, this.playerRespawnTimer - DT);
-    if (this.playerRespawnTimer > 0) return;
-    if (!this.flow.respawnAllowed(this.localId)) return;
-    this.respawnPlayer();
-  }
-
-  /**
-   * Count the death-screen timer down, and **only** that.
-   *
-   * `stepPlayerRespawn` does two things — it decrements the timer *and* it brings the body back
-   * — and over the network the second belongs to the server, so the whole method was skipped.
-   * The timer was therefore set once by `onPlayerKilled` and never moved: the death screen
-   * showed a frozen 4.5 for the entire wait and then the player simply reappeared. The wait was
-   * always correct; the only thing broken was the number describing it.
-   *
-   * Purely presentational, and clamped at zero rather than allowed to run negative: the
-   * authoritative "you are alive again" is the replicated `EFlag.Alive` arriving through
-   * `applyReplicatedSelf`, and this must never be mistaken for a second opinion about it. If the
-   * server is slower than the local estimate the display sits at zero and waits, which reads as
-   * "any moment now" — the honest thing for a client that does not decide.
-   */
-  private stepRespawnDisplay(): void {
-    if (!this.playerDead || this.playerRespawnTimer <= 0) return;
-    this.playerRespawnTimer = Math.max(0, this.playerRespawnTimer - DT);
-  }
-
-  /**
-   * Everybody back to a spawn, the bomb back at the attackers' base (post-M8 playtest).
-   *
-   * The bomb half is already done by the time this runs — `SearchAndDestroy.onRoundStart`
-   * calls `resetBomb`, and the flow emits `round.started` after it — so this is the *people*
-   * half, which nothing owned. Rounds two and three previously began with whoever survived
-   * round one standing wherever they had finished it, which on a bomb site is a free plant.
-   *
-   * The player is reset through the same `respawnPlayer` a death uses, so a round start and a
-   * respawn cannot disagree about what a fresh life is: full health, full magazines, primary
-   * in hand, sights down, equipment refilled.
-   *
-   * **Single-player only** since round 4. Over the network the server owns the round reset and
-   * announces it by bumping the spawn serial; see the subscription that calls this.
-   */
-  private hardResetRound(): void {
-    this.bots.respawnAll();
-    this.playerDead = false;
-    this.playerRespawnTimer = 0;
-    this.respawnPlayer();
-  }
-
-  private respawnPlayer(): void {
-    const choice = this.spawnChoice;
-    // This path is single-player only — a networked respawn is `respawnNetworked`, where the
-    // server chose the point — but the side and the id are read from the match rather than
-    // from the two constants, so the local-only claim is not also a hidden assumption.
-    if (this.bots.selectSpawn(this.localTeam, this.localId, choice)) {
-      this.deps.player.spawn(choice.x, choice.y + 0.05, choice.z, choice.yaw);
-      this.deps.input.setView(choice.yaw, 0);
-    }
-    this.applyPendingLoadout();
-    this.playerHealth.reset();
-    this.weapons.reset();
-    /**
-     * The mesh follows the reset, explicitly (post-M8 playtest).
-     *
-     * `weapons.reset()` puts the *logic* back on slot 0, and the visible model normally
-     * follows the inventory through the `weapon.swapped` subscription in the constructor —
-     * but a reset is not a swap and emits no such event. So a player who died holding the
-     * pistol came back holding a pistol that fired the rifle's ballistics and reported the
-     * rifle's ammo: the two halves of "which weapon am I holding" had drifted apart.
-     *
-     * Asking the inventory which slot is live rather than hard-coding 0 keeps the two facts
-     * in the same place — if `Inventory.reset` ever comes back on a different slot, the
-     * viewmodel comes back with it.
-     */
-    this.showSlot(this.weapons.inventory.activeSlotIndex);
-    this.melee.reset();
-    // Equipment is per life (S6.3). `MatchEquipment` refills on `player.spawned`, which
-    // `PlayerController.spawn` above has already emitted.
-    this.playerCombatant.syncRig();
-    this.playerDead = false;
-    this.playerRespawnTimer = 0;
-    this.flow.noteRespawn(this.localId);
-  }
-
-  /**
-   * The audible half of the low-health state (brief S6.4).
-   *
-   * Driven from the same intensity the vignette uses, so what you see and what you hear
-   * cannot disagree. The muffle is a state and is set every tick; the heartbeat is an event
-   * and is scheduled on a tick timer that speeds up as health falls — 74 BPM at the
-   * threshold, 152 at nothing left.
-   */
-  private stepLowHealthAudio(): void {
-    const intensity = this.playerDead ? 0 : this.ui.lowHealthIntensity;
-    this.deps.audio.setMuffle(intensity);
-
-    if (intensity <= 0) {
-      this.heartbeatTimer = 0;
-      return;
-    }
-    const bpm = HEARTBEAT_BPM_CALM + (HEARTBEAT_BPM_PANIC - HEARTBEAT_BPM_CALM) * intensity;
-    this.heartbeatTimer -= DT;
-    if (this.heartbeatTimer > 0) return;
-    this.heartbeatTimer = 60 / bpm;
-    this.deps.audio.playHeartbeat(intensity);
-  }
-
-  /**
-   * Interpolate the weapon's visual state. Called before the camera is composed, because
-   * the aim-recoil offset it produces is part of where the camera points.
-   */
-  sampleVisual(alpha: number): void {
-    this.weapons.sample(alpha, this.visual);
-  }
-
-  /** Render pass. `yaw`/`pitch` already include the interpolated recoil offset. */
-  render(alpha: number, camera: THREE.PerspectiveCamera, dt: number, yaw: number, pitch: number): void {
-    const sim = this.deps.player.sim;
-    const weapon = this.weapons.weapon;
-    const def = weapon.definition;
-
-    this.listenerAt.x = camera.position.x;
-    this.listenerAt.y = camera.position.y;
-    this.listenerAt.z = camera.position.z;
-
-    const drive = this.drive;
-    drive.raise = this.visual.raise;
-    drive.adsFraction = this.visual.adsFraction;
-    drive.reloading = weapon.reloading;
-    drive.reloadFraction = this.visual.reloadFraction;
-    drive.reloadEmpty = weapon.reloadEmpty;
-    drive.visualPunch = this.visual.visualPunch;
-    drive.visualLateral = this.visual.visualLateral;
-    drive.tacSprint = sim.tacSprintActive;
-    drive.slide = sim.slideActive;
-    drive.throwing = this.equipment.thrower.busy;
-    /**
-     * The throw, as the animation reads it (2026-09-24).
-     *
-     * Two numbers straight off `ThrowController`, and nothing derived here: the cook the fuse
-     * is burning, and how far the release's follow-through has run. `ViewmodelAnim` turns them
-     * into a pose; it never turns a pose into a timing.
-     */
-    const thrower = this.equipment.thrower;
-    // READY is the grenade up in the hand with the pin still in, which is the throw at zero.
-    drive.throwCook = thrower.phase === 'IDLE' ? -1 : thrower.phase === 'READY' ? 0 : thrower.cook;
-    drive.throwRelease = thrower.releaseFraction;
-    this.showGrenade(
-      !this.playerDead && thrower.busy
-        ? thrower.slot === 'lethal'
-          ? this.equipment.inventory.lethal
-          : this.equipment.inventory.tactical
-        : null,
-    );
-    drive.swapping = this.weapons.inventory.swapping;
-    drive.melee = this.melee.fraction;
-    drive.bobPhase = sim.bobPhase;
-    drive.speed = sim.speed;
-    drive.speedRef = this.deps.movementConfig.sprintSpeed;
-    drive.grounded = sim.grounded;
-    drive.yaw = yaw;
-    drive.pitch = pitch;
-    this.anim.update(drive, this.deps.viewmodelConfig, dt);
-
-    this.range?.updateVisuals(alpha, camera);
-    // The body a dead player is watching through is not drawn (M17, C2) — see `BotRenderer.eyesOf`.
-    this.botRenderer.setEyesOf(this.spectatorTargetId);
-    this.botRenderer.update(alpha, dt, camera);
-    this.fx.update(dt);
-    this.flame.update(dt, camera);
-    this.renderBurns(dt);
-    this.equipment.render(alpha, dt, camera);
-    this.meta.render(dt);
-    /**
-     * One source of streaks, chosen once (M11 Gate B).
-     *
-     * `streaks.render` advances presentation state on locally-owned streak objects, of which a
-     * networked client has none — and `streakRenderer.update()` reconciles against that same
-     * empty local list, so calling it here as well would delete every replicated mesh the line
-     * above just built.
-     */
-    if (this.isNetworked) {
-      this.streakRenderer.updateReplicated(this.replicatedStreaks.entities);
-    } else {
-      this.streaks.render(dt, alpha);
-      this.streakRenderer.update();
-    }
-
-    // A dead player is not holding a rifle — and a scoped one is looking through an optic
-    // rather than at a weapon, so the viewmodel hands off to the scope overlay (M7). See
-    // `SCOPE_VIEWMODEL_HIDDEN`: the tube is a solid cylinder on the sight line and would
-    // otherwise fill the middle of the scope picture.
-    const scoped = def.scope !== undefined && this.visual.adsFraction >= SCOPE_VIEWMODEL_HIDDEN;
-    /**
-     * A knife swing takes the rifle off screen entirely (round 2).
-     *
-     * `melee.busy` is the same flag that sets `weapons.fireBlocked` in `simulate`, so what is
-     * in frame and what the player can do are one fact read twice — the contract the throw
-     * animation already follows. It is deliberately `busy` and not `fraction > 0`: the
-     * fraction is zero on the first tick of a wind-up, and swapping the meshes a tick late
-     * would show the rifle for one frame after the blade should have replaced it.
-     */
-    const knifing = !this.playerDead && this.melee.busy;
-    /**
-     * A grenade in the hand takes the weapon off screen, the way a knife swing does.
-     *
-     * Before the grenade had a model this was `drive.throwing` lowering the rifle out of frame
-     * over a fifth of a second, which was enough when a throw lasted as long as a button press.
-     * It is not enough now: a drawn grenade stays in the hand for as long as the player likes,
-     * and the rifle would still be there beside it — along with the second pair of gloves that
-     * hangs off it, since `ViewmodelHands` lives under the weapon's own root.
-     *
-     * The test is the grenade *model*, not `thrower.busy`: with no file for this equipment
-     * there is nothing to put in the hand, and hiding the rifle would leave an empty screen.
-     * That is the same fallback the throw had before any of this existed.
-     */
-    const grenadeInHand = this.grenadeShown !== null;
-    this.model.root.visible = !this.playerDead && !scoped && !knifing && !grenadeInHand;
-    this.knifeModel.root.visible = knifing;
-    if (this.knifeModel.arm !== null) this.knifeModel.arm.visible = knifing;
-
-    const state = this.ui.state;
-    /**
-     * The ammunition readout follows whichever gun the player is actually holding (round 2).
-     *
-     * A gunship belt is the same four facts a rifle magazine is — how many, out of how many,
-     * is it being fed, and how far through — so it goes through the same four fields rather
-     * than growing a second ammo widget that would have to be positioned, styled and hidden.
-     * The grounded rifle's numbers are *wrong* to show during a takeover for the same reason
-     * `weapons.suspended` exists: the player is not holding it, and the last thing they need
-     * while flying is a magazine count that never moves.
-     */
-    const chopper = this.streaks.activeChopperFor(this.localId);
-    if (chopper !== null) {
-      state.mag = chopper.mag;
-      state.magSize = chopper.magSize;
-      state.reserve = 0;
-      state.reserveInfinite = true;
-      state.reloading = chopper.reloading;
-      state.reloadFraction = chopper.reloadFraction;
-    } else {
-      state.mag = weapon.mag;
-      state.magSize = def.magSize;
-      state.reserve = weapon.reserve;
-      state.reserveInfinite = weapon.infiniteReserve;
-      state.reloading = weapon.reloading;
-      state.reloadFraction = this.visual.reloadFraction;
-    }
-    state.spreadDeg = this.weapons.spreadDeg;
-    state.adsFraction = this.visual.adsFraction;
-    state.fovDeg = this.deps.cameraRig.fov;
-    state.viewportHeight = window.innerHeight;
-    state.health = this.playerHealth.current;
-    state.healthMax = this.playerHealth.max;
-    state.dead = this.playerDead;
-    state.respawnSeconds = this.playerRespawnTimer;
-    // One life: there is no timer to show, because nobody is coming back until the round does.
-    state.awaitingRound = this.playerDead && !this.flow.respawnAllowed(this.localId);
-    // Only while dead: a report that outlived the body it describes would be a panel telling a
-    // living player how they died a minute ago (round 5, F9).
-    if (this.playerDead) this.settleDeathDistance();
-    state.deathReport = this.playerDead ? this.deathReport : null;
-    this.fillTacticalState();
-    this.fillStreakHud();
-    this.fillMinimapStreaks();
-    this.objectives.update(dt);
-    // Straight from the pass that just decided where the bomb mesh goes, so the arrow and
-    // the object it points at are the same frame's answer (round 4, F2).
-    this.objectives.readBombBearing(bombBearingScratch);
-    this.ui.hud.setObjectiveBearing(bombBearingScratch.active, bombBearingScratch.x, bombBearingScratch.z);
-    this.mortarOverlay.update(dt, MORTAR_MARK_RADIUS);
-    this.ui.update(this.flow, sim.x, sim.z, sim.yaw, dt);
-    this.feedback.render(camera);
-  }
-
-  /**
-   * The streak strip and the objective banner (M7).
-   *
-   * Everything here is read straight off `StreakSystem` and the mode. The requirement shown is
-   * already Hardline-discounted, so the HUD never learns that a perk exists.
-   */
-  private fillStreakHud(): void {
-    const hud = this.ui.streakState;
-    for (let i = 0; i < hud.slots.length; i++) {
-      const slot = hud.slots[i];
-      if (slot === undefined) continue;
-      const id = this.streakSlots[i] ?? null;
-      slot.name = id === null ? '' : streakDef(id).name;
-      // Four states, and the fourth is now a duration rather than a flag (round 4, the pivot).
-      // A slot dark because the player cannot afford it shows a price; a slot dark because the
-      // key is locked out shows how much of the wait is left, as a fill. The key does nothing in
-      // both, and the strip has to say which.
-      slot.price = id === null ? 0 : this.streakPrice(id);
-      slot.lockoutSeconds = id === null ? 0 : this.streakLockout(id);
-      slot.ready = id !== null && this.canAffordStreak(id);
-    }
-    // The **balance**, and the server's when there is one: it is the number a purchase is
-    // charged against, and two opinions about it is two opinions about whether a key works.
-    hud.balance = this.streakBalance();
-    const next = this.nextStreak();
-    hud.nextName = next?.def.name ?? '';
-    hud.nextPrice = next?.price ?? 0;
-
-    this.fillObjectiveBanner(hud);
-    this.fillFreeForAllBanner();
-  }
-
-  /**
-   * Free-for-All shows the leader and you, not team A and team B.
-   *
-   * Driven from `ScoreSystem.rows`, which is populated on a networked client the same way the
-   * scoreboard is. Recomputed per frame rather than cached on a score event — it is a scan of
-   * ten rows on a screen that is already walking them for the scoreboard.
-   */
-  private fillFreeForAllBanner(): void {
-    const banner = this.ui.state.banner;
-    banner.ffa = this.deps.mode.freeForAll === true;
-    if (!banner.ffa) return;
-
-    /**
-     * **Kills, not points** (M11 Gate B playtest).
-     *
-     * This read `row.score`, and over the network that column is zero for everybody, for ever:
-     * `MatchFlow`'s replicated branch records kills with **zero points** on purpose — what a
-     * kill is worth is a mode decision and the mode is not running on a client. So the banner
-     * showed `0` against a leader of `0` for the whole match, which is the reported "the kill
-     * counter isn't working in FFA over the network".
-     *
-     * Kills are the right number anyway, and not merely the available one: `checkWinCondition`
-     * decides Free-for-All on `row.kills` and the bar counts toward `scoreLimit`, which is a
-     * kill count. Showing points beside a limit measured in kills was a bar that could not
-     * reach its own end.
-     */
-    let leader: { name: string; score: number } | null = null;
-    let self = 0;
-    for (const row of this.score.rows) {
-      if (row.entityId === this.localId) self = row.kills;
-      if (leader === null || row.kills > leader.score) {
-        leader = { name: row.displayName, score: row.kills };
-      }
-    }
-    banner.leaderName = leader?.name ?? '';
-    banner.leaderScore = leader?.score ?? 0;
-    banner.selfScore = self;
-  }
-
-  /**
-   * The bomb timer, the plant/defuse ring and the capture prompt.
-   *
-   * Only one thing is ever shown, and the order is by urgency: a ticking bomb outranks an
-   * interaction, which outranks standing on a flag. A banner that tried to show all three
-   * would show none of them.
-   */
-  private fillObjectiveBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
-    hud.showAlive = false;
-    hud.objectiveLabel = '';
-    hud.objectiveSeconds = -1;
-    hud.interactFraction = -1;
-    hud.interactLabel = '';
-    hud.urgent = false;
-
-    this.fillModeBanner(hud);
-    this.fillDismantleBanner(hud);
-    this.fillSupplyBanner(hud);
-  }
-
-  /**
-   * The prompt at the player's own sentry (2026-09-28): stand at it, face it, hold the use key.
-   *
-   * Between the mode and the crate in urgency: an objective is the match, and a turret the player
-   * chose to go and stand at is a decision they are in the middle of, which a crate beside it is
-   * not. The reach test is `sentryInDismantleReach` — the function `SentryGun.stepDismantle`
-   * decides with — so the key is never offered where the simulation would refuse it. The ring is
-   * the simulation's own progress: the local sentry's in a solo match, the replicated `fraction`
-   * over the network, so it fills at the rate the server is actually counting.
-   */
-  private fillDismantleBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
-    if (hud.interactLabel.length > 0 || this.playerDead) return;
-    const sim = this.deps.player.sim;
-    const cfg = this.deps.streakConfig ?? DEFAULT_STREAK_CONFIG;
-    const reach = (x: number, y: number, z: number): boolean =>
-      sentryInDismantleReach(x, y, z, sim.x, sim.y, sim.z, sim.yaw, cfg);
-
-    let progress = -1;
-    if (this.isNetworked) {
-      for (const e of this.replicatedStreaks.entities) {
-        if (STREAK_DEFS[e.kind]?.id !== 'sentry' || !this.identity.is(e.ownerId)) continue;
-        if (!reach(e.x, e.y, e.z)) continue;
-        progress = e.fraction / 255;
-        break;
-      }
-    } else {
-      for (const sentry of this.streaks.sentries()) {
-        if (!this.identity.is(sentry.ownerId) || !reach(sentry.x, sentry.y, sentry.z)) continue;
-        progress = sentry.dismantleFraction;
-        break;
-      }
-    }
-    if (progress < 0) return;
-
-    if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'YOUR SENTRY';
-    hud.interactFraction = progress;
-    hud.interactLabel = progress > 0 ? 'DISMANTLING' : `HOLD ${this.useKeyLabel()} TO DISMANTLE`;
-  }
-
-  /**
-   * The resupply prompt, which is every mode's and therefore nobody's mode's.
-   *
-   * Written after the mode and only into a slot the mode left empty. The order is the same
-   * urgency rule `fillModeBanner` is built on: a bomb being planted, defused or counting down is
-   * the most important thing on the screen, and a crate is the least — and on a map where a
-   * station sits inside an objective the player is told about the objective.
-   *
-   * Three states rather than one, because the rule has to be teachable without a tutorial: near
-   * it and standing, kneeling and taking, and kneeling with nothing left to take. There is no key
-   * in any of them since 2026-09-28 — the crouch is the instruction. The ring is the held weapon's
-   * reserve rather than progress toward the next beat, which would be a quarter-second sawtooth;
-   * what the player watches climb is the ammunition counter.
-   */
-  private fillSupplyBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
-    if (hud.interactLabel.length > 0) return;
-    const state = this.supplyState;
-    if (state.pointId === NO_SUPPLY_POINT) return;
-
-    /**
-     * The banner carries the ring, and `HudStreaks.updateBanner` draws neither without a label:
-     * a ring with nothing above it is a progress bar for an unnamed thing, so the surface makes
-     * the two one decision. Written only into an empty slot, so a bomb that is counting down
-     * keeps the strip and this keeps the ring under it.
-     */
-    if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'RESUPPLY';
-
-    if (state.needsCrouch) {
-      hud.interactFraction = state.stock;
-      hud.interactLabel = 'CROUCH TO RESUPPLY';
-      return;
-    }
-    hud.interactFraction = state.stock;
-    // Kneeling and not yet `working` is the one tick before the first beat is counted.
-    hud.interactLabel = state.full ? 'RESUPPLIED' : 'RESUPPLYING';
-  }
-
-  /** The bomb timer, the plant/defuse ring and the capture prompt. See `fillObjectiveBanner`. */
-  private fillModeBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
-    const mode = this.mode;
-    if (mode instanceof SearchAndDestroy) {
-      // Alive counts, top of screen, every round (M7 playtest). Counted here rather than by
-      // the mode, and against the side the server actually assigned rather than the constant.
-      const friendly = this.localTeam;
-      hud.aliveFriendly = this.countAlive(friendly);
-      hud.aliveEnemy = this.countAlive(friendly === 'A' ? 'B' : 'A');
-      hud.showAlive = true;
-
-      if (mode.bomb === 'PLANTED') {
-        hud.objectiveLabel = `BOMB · SITE ${mode.plantedSite?.label ?? ''}`;
-        hud.objectiveSeconds = mode.bombSecondsLeft;
-        hud.urgent = true;
-      }
-      if (mode.interactEntity === this.localId && mode.interactFraction > 0) {
-        hud.interactFraction = mode.interactFraction;
-        hud.interactLabel = mode.bomb === 'PLANTED' ? 'DEFUSING' : 'PLANTING';
-        if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'OBJECTIVE';
-        return;
-      }
-      /**
-       * Somebody else already has it (post-M8 playtest).
-       *
-       * Telling a second defender to "hold T to defuse" while a team-mate is three seconds
-       * into the defuse is telling them to do something the mode will refuse —
-       * `beginInteract` ignores a newcomer while a live actor owns the interaction. The
-       * prompt is replaced by what is actually happening, which is the thing worth knowing:
-       * somebody is on it, so go and cover them.
-       */
-      const busyWith = mode.interactingEntity;
-      if (busyWith >= 0 && busyWith !== this.localId) {
-        hud.interactFraction = mode.interactFraction;
-        hud.interactLabel = mode.interactIsDefusing ? 'TEAMMATE DEFUSING' : 'PLANT IN PROGRESS';
-        if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'OBJECTIVE';
-        return;
-      }
-      if (mode.bomb === 'PLANTED' && this.playerCombatant.team === mode.defenders) {
-        const site = mode.plantedSite;
-        if (site !== null && site.contains(this.playerCombatant)) {
-          hud.interactFraction = 0;
-          hud.interactLabel = `HOLD ${this.useKeyLabel()} TO DEFUSE`;
+        if (justPressed(cmd.buttons, this.prevButtons, Btn.Fire)) this.mortarOverlay.confirm();
+        // The same key that opened it closes it, and the streak stays in hand.
+        else if (justPressed(cmd.buttons, this.prevButtons, Btn.Streak1) ||
+            justPressed(cmd.buttons, this.prevButtons, Btn.Streak2) ||
+            justPressed(cmd.buttons, this.prevButtons, Btn.Streak3)) {
+            this.mortarOverlay.cancel();
         }
-        return;
-      }
-      if (mode.bomb !== 'CARRIED') return;
-      if (this.playerCombatant.team !== mode.attackers) return;
-      if (!mode.isCarrier(this.localId)) {
-        // Tell them where the bomb is, because without it the round cannot be won.
-        if (mode.carrierId < 0) {
-          hud.objectiveLabel = 'RECOVER THE BOMB';
-          // Standing on it: the pick-up is a key press now, so it needs a prompt like any
-          // other interaction. Without one, "auto-pickup is off" reads as "the bomb is broken".
-          if (mode.tryPickupPrompt(this.playerCombatant)) {
-            hud.interactFraction = 0;
-            hud.interactLabel = `HOLD ${this.useKeyLabel()} TO TAKE THE BOMB`;
-          }
+        return true;
+    }
+
+    /**
+     * Keys 3, 4 and 5 spend **the class's** first, second and third streak (M11 Gate B playtest).
+     *
+     * They used to index the *earned* list, packed from zero, so which key fired a given streak
+     * depended on how many others happened to be in hand at that moment: a player who had earned
+     * only their Chopper Gunner found it on key 3, and key 5 — the key the loadout editor labels
+     * "Killstreak · key 5", the key it is bound to — did nothing at all. Reported as the chopper
+     * not responding to 5, and it is really the mapping moving underneath the player.
+     *
+     * Position is now fixed by the class and the earned list only decides whether the press is
+     * *honoured*, which is the same rule the HUD paints.
+     */
+    private stepStreakInput(cmd: InputCommand): void {
+        const bits = [Btn.Streak1, Btn.Streak2, Btn.Streak3] as const;
+        for (let i = 0; i < bits.length; i++) {
+            const bit = bits[i];
+            if (bit === undefined) continue;
+            if (!justPressed(cmd.buttons, this.prevButtons, bit)) continue;
+            const id = this.streakSlots[i];
+            if (id === undefined || id === null) continue;
+            // Affordable, cool, and not already in the sky, or the press is simply not honoured. The
+            // slot has already said which — a price it cannot meet, or a fill draining — so a press
+            // that does nothing is a press the player was told about before they made it.
+            if (!this.canAffordStreak(id)) continue;
+
+            const sim = this.deps.player.sim;
+            // A mortar is *marked* before it is spent: the overlay opens, and the streak is only
+            // consumed when the player confirms. Cancelling must not cost them the streak.
+            if (id === 'mortar') {
+                this.mortarOverlay.show(sim.x, sim.z);
+                this.overlayYaw = cmd.yaw;
+                this.overlayPitch = cmd.pitch;
+                return;
+            }
+            this.spendStreak(id, sim.x, sim.z);
+            return;
+        }
+    }
+
+    /**
+     * Spend a streak — locally, or by asking the server (M11 Gate B, §8.22).
+     *
+     * The networked path sends a **request** and changes nothing locally. There is deliberately no
+     * optimistic activation: §4.15 puts killstreak activation on the replicated side, and a client
+     * that put a sentry down and then had it taken away by the next frame would be showing a
+     * correction for a thing that was never true. The round trip is one frame at any playable
+     * ping, and a sentry that appears a frame late is not something a player can perceive — a
+     * sentry that appears and vanishes is.
+     *
+     * The coordinates sent are the mortar's mark and nothing else; the server places every other
+     * streak from its own copy of where the player is standing.
+     */
+    private spendStreak(id: StreakId, markX: number, markZ: number): void {
+        if (this.isNetworked) {
+            this.deps.onStreakRequest?.(id, markX, markZ);
+            return;
+        }
+        const sim = this.deps.player.sim;
+        // Two metres along the facing, so a sentry is placed rather than worn.
+        const ahead = 2;
+        const px = sim.x - Math.sin(sim.yaw) * ahead;
+        const pz = sim.z - Math.cos(sim.yaw) * ahead;
+        const useAhead = id === 'sentry';
+        this.streaks.activate(
+            this.localId,
+            id,
+            id === 'mortar' ? markX : useAhead ? px : sim.x,
+            sim.y,
+            id === 'mortar' ? markZ : useAhead ? pz : sim.z,
+            sim.yaw,
+        );
+    }
+
+    /** Record the class's streaks, in both the shapes the rest of the match asks for. */
+    private setStreakLoadout(streaks: ReadonlyArray<StreakId | null>): void {
+        this.streakSlots = [streaks[0] ?? null, streaks[1] ?? null, streaks[2] ?? null];
+        this.equippedStreakIds = this.streakSlots.filter((id): id is StreakId => id !== null);
+    }
+
+    /**
+     * The three questions the streak strip and the keys ask, each behind one accessor.
+     *
+     * The server's answer in a networked match and the local system's otherwise. Routed through
+     * these rather than branched at each call site, because the failure when one of them is
+     * missed is a HUD that offers a streak the server will refuse, or a key that charges a price
+     * the screen never showed. There were two of these before round 4; the balance model added
+     * price and availability, and the pivot turned availability from a bit into a duration.
+     */
+    private streakBalance(): number {
+        return this.isNetworked ? this.replicatedStreaks.balance : this.streaks.balanceOf(this.localId);
+    }
+
+    private streakPrice(id: StreakId): number {
+        return this.isNetworked ? this.replicatedStreaks.priceOf(id) : this.streaks.priceOf(id, this.localId);
+    }
+
+    /**
+     * Seconds until this key works again, or 0 (round 4, the pivot).
+     *
+     * One number for the cooldown and for a previous instance still being in the world, because
+     * the strip draws them the same way and the player experiences them as the same thing: the
+     * key does nothing, and the slot says how long for without saying it in words.
+     */
+    private streakLockout(id: StreakId): number {
+        return this.isNetworked
+            ? this.replicatedStreaks.lockoutSeconds(id)
+            : this.streaks.lockoutSecondsFor(this.localId, id);
+    }
+
+    private canAffordStreak(id: StreakId): boolean {
+        return this.isNetworked ? this.replicatedStreaks.canAfford(id) : this.streaks.canAfford(this.localId, id);
+    }
+
+    private nextStreak(): { def: StreakDef; price: number } | null {
+        return this.isNetworked ? this.replicatedStreaks.next : this.streaks.nextFor(this.localId);
+    }
+
+    /**
+     * The body this dead player is watching, or null (M11 Gate B, §6.8).
+     *
+     * Only in a **one-life** mode, which is what makes this a spectator rather than a death cam:
+     * in Team Deathmatch a corpse is looking at the floor for four seconds and then playing again,
+     * and taking the camera somewhere else would be a worse experience than the wait. In Search &
+     * Destroy the wait is the rest of the round.
+     *
+     * Recomputed every frame rather than latched on death. A target can die, disconnect or be
+     * replaced by a bot at any moment, and a latch would have to be invalidated correctly on all
+     * three — asked every frame, there is nothing to get stuck.
+     */
+    get spectatorTargetId(): number {
+        if (!this.playerDead) return NO_SPECTATOR_TARGET;
+        if (this.deps.mode.usesRoundReset !== true) return NO_SPECTATOR_TARGET;
+        const chosen = pickSpectatorTarget(
+            this.localId,
+            this.localTeam,
+            this.spectatorCandidates(),
+            this.spectatorTarget,
+        );
+        this.spectatorTarget = chosen;
+        return chosen;
+    }
+
+    /**
+     * Where the spectator camera should sit, or null to leave it on the local body.
+     *
+     * The followed body's **feet**, its facing, and the eye height the stance it is drawn in
+     * actually has. A first-person framing rather than a chase camera, deliberately: a
+     * third-person spectator needs collision of its own, and one that clips through a wall while
+     * the player is already waiting out a round is a worse answer than looking through a
+     * teammate's eyes.
+     *
+     * Two things were wrong with the first version and both arrived as one report — *"the head of
+     * the body you are watching cuts into the camera"*.
+     *
+     * **The roster it looked in.** `deps.actors` is the *networked* supplier and is undefined in
+     * single-player, so every solo Search & Destroy death landed on `?? []` and returned null: the
+     * camera stayed at the eye the dead player left behind, while `BotRenderer` — told through
+     * `setEyesOf` that the camera was inside a teammate — dutifully hid that teammate. A frozen
+     * view of the room you died in with one of your own side invisible in it, and every other body
+     * in the match free to walk through the camera. `actorsForRender` is the supplier that answers
+     * both kinds of match, and it is the one the renderer itself draws from, which is what makes
+     * the body that is hidden and the body the camera is inside provably the same body.
+     *
+     * **The eye it used.** `PlayerSnapshot`'s own default is a standing 1.65 m and a spectated body
+     * is not always standing: a teammate who crouches drops their eyes to 0.95 m and a sliding one
+     * to 0.55 m, and the camera stayed a metre above their head with the body hidden under it.
+     * `eyeHeightFor` is the rule the living player's own camera is composed with, applied here to
+     * the stance the body is *drawn* in, so the spectator's eye is where that body's eyes are.
+     */
+    spectatorView(alpha: number): SpectatorView | null {
+        const id = this.spectatorTargetId;
+        if (id === NO_SPECTATOR_TARGET) return null;
+        for (const actor of this.actorsForRender()) {
+            if (actor.entityId !== id) continue;
+            return {
+                x: actor.renderX(alpha),
+                y: actor.renderY(alpha),
+                z: actor.renderZ(alpha),
+                yaw: actor.renderYaw(alpha),
+                eyeHeight: eyeHeightFor(this.deps.movementConfig, actor.animation.stance),
+            };
+        }
+        return null;
+    }
+
+    /**
+     * Put a carried killstreak weapon in the player's hands, or take it back (2026-09-26).
+     *
+     * Asked every tick from whichever list is authoritative here, and pushed by nothing — the
+     * same shape as `syncChopperBody` immediately above and for the same reason: with no edge to
+     * miss there is no state that can get stuck holding a minigun that expired. In a solo match
+     * the live streaks are this client's own; in a networked one they are the server's, arriving
+     * as replicated entities, because §4.15 puts activation on that side and this client does not
+     * activate its own streaks even when it asked for them.
+     *
+     * A dead player holds nothing: `StreakSystem.onDeath` retires a carried streak with the body
+     * that called it in, so the answer here goes to null on the same tick without a second rule.
+     */
+    private syncCarriedStreakWeapon(): void {
+        const weapon = this.isNetworked
+            ? this.replicatedStreaks.carriedWeaponFor(this.localId)
+            : this.streaks.carriedWeaponFor(this.localId);
+        this.weapons.holdStreakWeapon(weapon);
+        this.syncStreakModel();
+    }
+
+    /**
+     * The viewmodel for the slot a killstreak borrows (2026-09-27).
+     *
+     * `models` is built up front, one mesh per inventory slot, *"because building on demand would
+     * put a geometry merge and a GPU upload on the frame the player presses the swap key"*. A
+     * carried streak is the one weapon that cannot work that way: the slot does not exist until a
+     * streak is spent and stops existing when it ends, and a match cannot pre-build a mesh for
+     * every streak weapon a class might buy.
+     *
+     * So this slot alone is built on arrival — and the cost lands in the right place, because the
+     * hands are already a second into a swap-in the streak's own `swapInTime` is holding open. The
+     * minigun's 1.1 s spin-up and the shield's 1.2 s raise are not decoration here.
+     *
+     * Before this, `models[2]` was simply absent: `showSlot` looked the slot up, found nothing and
+     * returned, and the mesh left on screen was whatever the player had been holding — a minigun
+     * that looked like a carbine and a riot shield that looked like a rifle. The slab and the
+     * sidearm are the same placeholders the bodies wear; what changes is that the hands now hold
+     * the thing the game thinks they are holding.
+     *
+     * Driven from the **inventory** rather than from the streak, deliberately: the slot outlives
+     * the streak by the length of a put-away, and disposing the mesh on the tick the clock ran out
+     * would take it out of hands that are still lowering it.
+     */
+    private syncStreakModel(): void {
+        const held = this.weapons.inventory.at(STREAK_VIEWMODEL_SLOT)?.definition ?? null;
+        const wantId = held?.id ?? null;
+        const current = this.models[STREAK_VIEWMODEL_SLOT];
+        if ((current?.weaponId ?? null) === wantId) return;
+
+        if (current !== undefined) {
+            const wasVisible = current.root.visible;
+            this.deps.viewmodel.remove(current.root);
+            current.dispose();
+            this.models.length = STREAK_VIEWMODEL_SLOT;
+            // The hands are empty for one frame otherwise: the streak's mesh is gone and the slot the
+            // inventory has already gone back to was last drawn before it was taken away.
+            if (wasVisible) this.showSlot(this.weapons.inventory.activeSlotIndex);
+        }
+        if (held === null) return;
+
+        const model = buildWeaponModel(
+            held.id,
+            this.deps.anisotropy,
+            // No camo on a streak weapon: it is not in anybody's loadout and no challenge counts it.
+            null,
+            this.modelOptions(STREAK_VIEWMODEL_SLOT, held.id),
+        );
+        this.models[STREAK_VIEWMODEL_SLOT] = model;
+        this.deps.viewmodel.add(model.root);
+        model.root.visible = false;
+        this.upgradeWhenLoaded(STREAK_VIEWMODEL_SLOT);
+        this.syncShield(wantId);
+    }
+
+    /**
+     * The shield in the other hand (2026-09-27).
+     *
+     * The streak that gives you a shield gives you a **pistol** with it, and the pistol is what
+     * the slot above builds: `WeaponModelSpecs.streak_shield` has always described the sidearm,
+     * "the half of it a first-person camera can see". The plate was the other half, and until now
+     * the player could not see it — only the bodies around them could.
+     *
+     * So the shield is a second model hung beside that pistol, not instead of it, and the two
+     * hands are split between them: the pistol keeps the right, and its **left arm is collapsed**
+     * so the shield's own rig can hold the plate. Two rigs are on screen and each draws one arm;
+     * without the collapse the left arm is drawn twice, once on the grip and once on the cuff.
+     *
+     * Where it sits on screen is `VIEWMODEL_OFFSETS.streak_shield` and nothing else — a plate has
+     * no sight to land and no hip pose of its own. The hand tuner writes that row.
+     */
+    private syncShield(wantId: string | null): void {
+        const want = wantId === SHIELD_ASSET_ID;
+        if (!want) {
+            if (this.shieldModel === null) return;
+            this.anim.setShield(null);
+            this.deps.viewmodel.remove(this.shieldModel.root);
+            this.shieldModel.dispose();
+            this.shieldModel = null;
+            return;
+        }
+        if (this.shieldModel !== null) return;
+        const assets = this.deps.weaponAssets;
+        this.shieldModel = buildShieldModel(assets?.shield() ?? null, assets?.hands() ?? null);
+        this.shieldModel.root.visible = false;
+        this.deps.viewmodel.add(this.shieldModel.root);
+        this.anim.setShield(this.shieldModel);
+        // The pistol's left arm belongs to the plate now.
+        this.models[STREAK_VIEWMODEL_SLOT]?.hands?.showArm('L', false);
+        this.upgradeShieldWhenLoaded();
+    }
+
+    /**
+     * Rebuild the shield once its file lands, the way the knife's upgrade does.
+     *
+     * The plate is built from whatever `WeaponAssetService` has when the streak is first picked
+     * up, which on the first shield of a match is nothing: `preloadShield` is started here rather
+     * than at match start because most matches never see one, and 0.4 MB fetched for every player
+     * who never calls the streak is 0.4 MB the loadout's weapons wanted.
+     *
+     * Until it arrives the root is empty — no box stands in, because the *world* shield the body
+     * wears is already drawn and a second slab in the viewmodel would be the same object twice.
+     */
+    private upgradeShieldWhenLoaded(): void {
+        const assets = this.deps.weaponAssets;
+        if (assets === null || assets === undefined) return;
+        if (assets.shield() !== null && assets.hands() !== null) return;
+        const current = this.shieldModel;
+        void Promise.all([assets.preloadShield().catch(() => undefined), assets.preloadHands().catch(() => undefined)]).then(() => {
+            // Answered by looking rather than by a flag: the streak may have ended, or the match.
+            if (this.shieldModel !== current || current === null || current.root.parent === null) return;
+            const wasVisible = current.root.visible;
+            this.deps.viewmodel.remove(current.root);
+            current.dispose();
+            this.shieldModel = buildShieldModel(assets.shield(), assets.hands());
+            this.shieldModel.root.visible = wasVisible;
+            this.deps.viewmodel.add(this.shieldModel.root);
+            this.anim.setShield(this.shieldModel);
+            this.models[STREAK_VIEWMODEL_SLOT]?.hands?.showArm('L', false);
+        });
+    }
+
+    /**
+     * Whether this body is on fire, whichever kind of match this is (2026-09-26).
+     *
+     * The same split every other per-body fact makes here: in a solo match the burn system is the
+     * authority and is asked directly; over the network the answer arrived on the snapshot as
+     * `EFlag.Burning`, because the burn ticks where health lives and this client never saw the
+     * jet. One question, two routes, and the renderer is told neither of them.
+     */
+    isBurning(entityId: number): boolean {
+        if (!this.isNetworked) return this.burn.isBurning(entityId);
+        for (const actor of this.actorsForRender()) {
+            if (actor.entityId !== entityId) continue;
+            const remote = actor as { burning?: boolean };
+            return remote.burning === true;
+        }
+        return false;
+    }
+
+    /**
+     * A puff of fire on every body that is alight, four times a second (2026-09-26).
+     *
+     * The library has no flame particle and this session was told to use what exists rather than
+     * wait for one, so the burn borrows the impact puff: it is small, it is already pooled, and
+     * four a second at chest height reads as *that body is burning* from across a lane. It is
+     * driven from the render clock and spawns nothing on a tick, which is the rule for everything
+     * in this file below the simulation.
+     */
+    private renderBurns(dt: number): void {
+        this.burnFxTimer -= dt;
+        if (this.burnFxTimer > 0) return;
+        this.burnFxTimer = BURN_FX_INTERVAL;
+        for (const actor of this.actorsForRender()) {
+            const burning = this.isNetworked
+                ? (actor as { burning?: boolean }).burning === true
+                : this.burn.isBurning(actor.entityId);
+            if (!burning) continue;
+            const x = actor.renderX(1);
+            const y = actor.renderY(1) + BURN_FX_HEIGHT;
+            const z = actor.renderZ(1);
+            this.fx.spawnHitPuff(x, y, z, 0, 1, 0);
+        }
+    }
+
+    /** What the station under the player is doing this tick, for the HUD. */
+    get supplyState(): SupplyState {
+        return this.supply.stateOf(this.localId);
+    }
+
+    /**
+     * One tick at a resupply station.
+     *
+     * Everything it needs is already here: where the body is and what stance it is in — kneeling is
+     * the whole of the instruction since the use key came off it (2026-09-28) — the weapon **in the
+     * hand**, since `weapons.weapon` is the active slot rather than the loadout, and the grenade
+     * inventory. A dead body is passed through as not alive rather than skipped, so the state clears
+     * and the prompt goes with it.
+     */
+    private stepSupply(): void {
+        if (!this.supply.any) return;
+        this.supply.step(this.localId, this.deps.player.sim, !this.playerDead, this.weapons.weapon, this.equipment.inventory);
+    }
+
+    /** Cycle to the next living teammate. Bound to the fire key while dead (M7's verb). */
+    cycleSpectatorTarget(): void {
+        if (!this.playerDead) return;
+        this.spectatorTarget = nextSpectatorTarget(
+            this.localId,
+            this.localTeam,
+            this.spectatorCandidates(),
+            this.spectatorTarget,
+        );
+    }
+
+    /**
+     * Everything this client could watch.
+     *
+     * The **remote actors** in a networked match and the bot roster in single-player — the same
+     * split `actors` makes for rendering, and for the same reason: a networked client has no
+     * roster, only bodies rebuilt from snapshots.
+     */
+    private *spectatorCandidates(): Generator<SpectatorCandidate> {
+        if (this.isNetworked) {
+            for (const actor of this.deps.actors?.() ?? []) {
+                const remote = actor as { entityId?: number; team?: BotTeam; participating?: boolean };
+                if (typeof remote.entityId !== 'number' || remote.team === undefined) continue;
+                yield { entityId: remote.entityId, team: remote.team, alive: remote.participating === true };
+            }
+            return;
+        }
+        for (const bot of this.bots.bots) {
+            yield { entityId: bot.entityId, team: bot.team, alive: bot.participating };
+        }
+    }
+
+    /** Adopt one `Projectiles` frame (§8.24). Own grenades are skipped — they are predicted. */
+    applyReplicatedProjectiles(
+        projectiles: readonly ProjectileState[],
+        smoke: readonly SmokeState[],
+    ): void {
+        this.equipment.applyReplicated(projectiles, smoke, this.localId);
+    }
+
+    /** Drop every replicated grenade. Called on migration, per §4.18's obligation list. */
+    clearReplicatedProjectiles(): void {
+        this.equipment.applyReplicated(EMPTY_PROJECTILES, EMPTY_SMOKE, this.localId);
+    }
+
+    /** Adopt one `Streaks` frame (§8.22). Called by `MatchWorld` from the net session. */
+    applyReplicatedStreaks(view: StreakView): void {
+        this.replicatedStreaks.apply(view);
+    }
+
+    /** Drop every replicated streak. Called on migration, per §4.18's obligation list. */
+    clearReplicatedStreaks(): void {
+        this.replicatedStreaks.clear();
+    }
+
+    /**
+     * The player's side of S6.9. Same timer and the same spawn selector the bots use, and the
+     * same respawn gate — so "nobody comes back once the match is over" is one rule with one
+     * implementation rather than one for them and a different one for you.
+     */
+    private stepPlayerRespawn(): void {
+        if (!this.playerDead) return;
+        this.playerRespawnTimer = Math.max(0, this.playerRespawnTimer - DT);
+        if (this.playerRespawnTimer > 0) return;
+        if (!this.flow.respawnAllowed(this.localId)) return;
+        this.respawnPlayer();
+    }
+
+    /**
+     * Count the death-screen timer down, and **only** that.
+     *
+     * `stepPlayerRespawn` does two things — it decrements the timer *and* it brings the body back
+     * — and over the network the second belongs to the server, so the whole method was skipped.
+     * The timer was therefore set once by `onPlayerKilled` and never moved: the death screen
+     * showed a frozen 4.5 for the entire wait and then the player simply reappeared. The wait was
+     * always correct; the only thing broken was the number describing it.
+     *
+     * Purely presentational, and clamped at zero rather than allowed to run negative: the
+     * authoritative "you are alive again" is the replicated `EFlag.Alive` arriving through
+     * `applyReplicatedSelf`, and this must never be mistaken for a second opinion about it. If the
+     * server is slower than the local estimate the display sits at zero and waits, which reads as
+     * "any moment now" — the honest thing for a client that does not decide.
+     */
+    private stepRespawnDisplay(): void {
+        if (!this.playerDead || this.playerRespawnTimer <= 0) return;
+        this.playerRespawnTimer = Math.max(0, this.playerRespawnTimer - DT);
+    }
+
+    /**
+     * Everybody back to a spawn, the bomb back at the attackers' base (post-M8 playtest).
+     *
+     * The bomb half is already done by the time this runs — `SearchAndDestroy.onRoundStart`
+     * calls `resetBomb`, and the flow emits `round.started` after it — so this is the *people*
+     * half, which nothing owned. Rounds two and three previously began with whoever survived
+     * round one standing wherever they had finished it, which on a bomb site is a free plant.
+     *
+     * The player is reset through the same `respawnPlayer` a death uses, so a round start and a
+     * respawn cannot disagree about what a fresh life is: full health, full magazines, primary
+     * in hand, sights down, equipment refilled.
+     *
+     * **Single-player only** since round 4. Over the network the server owns the round reset and
+     * announces it by bumping the spawn serial; see the subscription that calls this.
+     */
+    private hardResetRound(): void {
+        this.bots.respawnAll();
+        this.playerDead = false;
+        this.playerRespawnTimer = 0;
+        this.respawnPlayer();
+    }
+
+    private respawnPlayer(): void {
+        const choice = this.spawnChoice;
+        // This path is single-player only — a networked respawn is `respawnNetworked`, where the
+        // server chose the point — but the side and the id are read from the match rather than
+        // from the two constants, so the local-only claim is not also a hidden assumption.
+        if (this.bots.selectSpawn(this.localTeam, this.localId, choice)) {
+            this.deps.player.spawn(choice.x, choice.y + 0.05, choice.z, choice.yaw);
+            this.deps.input.setView(choice.yaw, 0);
+        }
+        this.applyPendingLoadout();
+        this.playerHealth.reset();
+        this.weapons.reset();
+        /**
+         * The mesh follows the reset, explicitly (post-M8 playtest).
+         *
+         * `weapons.reset()` puts the *logic* back on slot 0, and the visible model normally
+         * follows the inventory through the `weapon.swapped` subscription in the constructor —
+         * but a reset is not a swap and emits no such event. So a player who died holding the
+         * pistol came back holding a pistol that fired the rifle's ballistics and reported the
+         * rifle's ammo: the two halves of "which weapon am I holding" had drifted apart.
+         *
+         * Asking the inventory which slot is live rather than hard-coding 0 keeps the two facts
+         * in the same place — if `Inventory.reset` ever comes back on a different slot, the
+         * viewmodel comes back with it.
+         */
+        this.showSlot(this.weapons.inventory.activeSlotIndex);
+        this.melee.reset();
+        // Equipment is per life (S6.3). `MatchEquipment` refills on `player.spawned`, which
+        // `PlayerController.spawn` above has already emitted.
+        this.playerCombatant.syncRig();
+        this.playerDead = false;
+        this.playerRespawnTimer = 0;
+        this.flow.noteRespawn(this.localId);
+    }
+
+    /**
+     * The audible half of the low-health state (brief S6.4).
+     *
+     * Driven from the same intensity the vignette uses, so what you see and what you hear
+     * cannot disagree. The muffle is a state and is set every tick; the heartbeat is an event
+     * and is scheduled on a tick timer that speeds up as health falls — 74 BPM at the
+     * threshold, 152 at nothing left.
+     */
+    private stepLowHealthAudio(): void {
+        const intensity = this.playerDead ? 0 : this.ui.lowHealthIntensity;
+        this.deps.audio.setMuffle(intensity);
+
+        if (intensity <= 0) {
+            this.heartbeatTimer = 0;
+            return;
+        }
+        const bpm = HEARTBEAT_BPM_CALM + (HEARTBEAT_BPM_PANIC - HEARTBEAT_BPM_CALM) * intensity;
+        this.heartbeatTimer -= DT;
+        if (this.heartbeatTimer > 0) return;
+        this.heartbeatTimer = 60 / bpm;
+        this.deps.audio.playHeartbeat(intensity);
+    }
+
+    /**
+     * Interpolate the weapon's visual state. Called before the camera is composed, because
+     * the aim-recoil offset it produces is part of where the camera points.
+     */
+    sampleVisual(alpha: number): void {
+        this.weapons.sample(alpha, this.visual);
+    }
+
+    /** Render pass. `yaw`/`pitch` already include the interpolated recoil offset. */
+    render(alpha: number, camera: THREE.PerspectiveCamera, dt: number, yaw: number, pitch: number): void {
+        const sim = this.deps.player.sim;
+        const weapon = this.weapons.weapon;
+        const def = weapon.definition;
+
+        this.listenerAt.x = camera.position.x;
+        this.listenerAt.y = camera.position.y;
+        this.listenerAt.z = camera.position.z;
+
+        const drive = this.drive;
+        drive.raise = this.visual.raise;
+        drive.adsFraction = this.visual.adsFraction;
+        drive.reloading = weapon.reloading;
+        drive.reloadFraction = this.visual.reloadFraction;
+        drive.reloadEmpty = weapon.reloadEmpty;
+        drive.visualPunch = this.visual.visualPunch;
+        drive.visualLateral = this.visual.visualLateral;
+        drive.tacSprint = sim.tacSprintActive;
+        drive.slide = sim.slideActive;
+        drive.throwing = this.equipment.thrower.busy;
+        /**
+         * The throw, as the animation reads it (2026-09-24).
+         *
+         * Two numbers straight off `ThrowController`, and nothing derived here: the cook the fuse
+         * is burning, and how far the release's follow-through has run. `ViewmodelAnim` turns them
+         * into a pose; it never turns a pose into a timing.
+         */
+        const thrower = this.equipment.thrower;
+        // READY is the grenade up in the hand with the pin still in, which is the throw at zero.
+        drive.throwCook = thrower.phase === 'IDLE' ? -1 : thrower.phase === 'READY' ? 0 : thrower.cook;
+        drive.throwRelease = thrower.releaseFraction;
+        this.showGrenade(
+            !this.playerDead && thrower.busy
+                ? thrower.slot === 'lethal'
+                    ? this.equipment.inventory.lethal
+                    : this.equipment.inventory.tactical
+                : null,
+        );
+        drive.swapping = this.weapons.inventory.swapping;
+        drive.melee = this.melee.fraction;
+        drive.bobPhase = sim.bobPhase;
+        drive.speed = sim.speed;
+        drive.speedRef = this.deps.movementConfig.sprintSpeed;
+        drive.grounded = sim.grounded;
+        drive.yaw = yaw;
+        drive.pitch = pitch;
+        this.anim.update(drive, this.deps.viewmodelConfig, dt);
+
+        this.range?.updateVisuals(alpha, camera);
+        // The body a dead player is watching through is not drawn (M17, C2) — see `BotRenderer.eyesOf`.
+        this.botRenderer.setEyesOf(this.spectatorTargetId);
+        this.botRenderer.update(alpha, dt, camera);
+        this.fx.update(dt);
+        this.flame.update(dt, camera);
+        this.renderBurns(dt);
+        this.equipment.render(alpha, dt, camera);
+        this.meta.render(dt);
+        /**
+         * One source of streaks, chosen once (M11 Gate B).
+         *
+         * `streaks.render` advances presentation state on locally-owned streak objects, of which a
+         * networked client has none — and `streakRenderer.update()` reconciles against that same
+         * empty local list, so calling it here as well would delete every replicated mesh the line
+         * above just built.
+         */
+        if (this.isNetworked) {
+            this.streakRenderer.updateReplicated(this.replicatedStreaks.entities);
         } else {
-          hud.objectiveLabel = 'BOMB CARRIER OUT';
+            this.streaks.render(dt, alpha);
+            this.streakRenderer.update();
         }
-        return;
-      }
-      const site = mode.siteContaining(this.playerCombatant);
-      hud.objectiveLabel = site === null ? 'CARRYING THE BOMB' : `SITE ${site.label}`;
-      if (site !== null) {
-        hud.interactFraction = 0;
-        hud.interactLabel = `HOLD ${this.useKeyLabel()} TO PLANT`;
-      }
-      return;
-    }
 
-    if (mode instanceof Domination) {
-      for (const zone of mode.zones) {
-        if (!zone.contains(this.playerCombatant)) continue;
-        hud.objectiveLabel = `FLAG ${zone.label}`;
-        hud.interactFraction = zone.progress;
-        hud.interactLabel = zone.contested
-          ? 'CONTESTED'
-          : zone.owner === this.localTeam
-            ? 'HELD'
-            : 'CAPTURING';
-        return;
-      }
-    }
-  }
+        // A dead player is not holding a rifle — and a scoped one is looking through an optic
+        // rather than at a weapon, so the viewmodel hands off to the scope overlay (M7). See
+        // `SCOPE_VIEWMODEL_HIDDEN`: the tube is a solid cylinder on the sight line and would
+        // otherwise fill the middle of the scope picture.
+        const scoped = def.scope !== undefined && this.visual.adsFraction >= SCOPE_VIEWMODEL_HIDDEN;
+        /**
+         * A knife swing takes the rifle off screen entirely (round 2).
+         *
+         * `melee.busy` is the same flag that sets `weapons.fireBlocked` in `simulate`, so what is
+         * in frame and what the player can do are one fact read twice — the contract the throw
+         * animation already follows. It is deliberately `busy` and not `fraction > 0`: the
+         * fraction is zero on the first tick of a wind-up, and swapping the meshes a tick late
+         * would show the rifle for one frame after the blade should have replaced it.
+         */
+        const knifing = !this.playerDead && this.melee.busy;
+        /**
+         * A grenade in the hand takes the weapon off screen, the way a knife swing does.
+         *
+         * Before the grenade had a model this was `drive.throwing` lowering the rifle out of frame
+         * over a fifth of a second, which was enough when a throw lasted as long as a button press.
+         * It is not enough now: a drawn grenade stays in the hand for as long as the player likes,
+         * and the rifle would still be there beside it — along with the second pair of gloves that
+         * hangs off it, since `ViewmodelHands` lives under the weapon's own root.
+         *
+         * The test is the grenade *model*, not `thrower.busy`: with no file for this equipment
+         * there is nothing to put in the hand, and hiding the rifle would leave an empty screen.
+         * That is the same fallback the throw had before any of this existed.
+         */
+        const grenadeInHand = this.grenadeShown !== null;
+        this.model.root.visible = !this.playerDead && !scoped && !knifing && !grenadeInHand;
+        this.knifeModel.root.visible = knifing;
+        if (this.knifeModel.arm !== null) this.knifeModel.arm.visible = knifing;
 
-  /**
-   * What the Use key is actually bound to, for the objective prompts (post-M8).
-   *
-   * The prompts used to read "HOLD P", hard-coded, which was wrong the moment M8 shipped
-   * rebinding and wrong again when the default moved to T. Asked of the live binding table
-   * so the HUD says the key the player will actually press, whatever they set it to.
-   */
-  private useKeyLabel(): string {
-    const bound = this.deps.input.keybinds.inputsFor('use')[0];
-    return bound === undefined ? 'USE' : inputLabel(bound).toUpperCase();
-  }
-
-  /**
-   * Push UAV contacts, the sweep bearing, the scramble flag and flag ownership at the minimap.
-   *
-   * Written into preallocated records rather than rebuilt, so a UAV costs no allocation per
-   * frame — the minimap sizes both arrays at construction for exactly this.
-   */
-  private fillMinimapStreaks(): void {
-    const map = this.ui.hud.minimap;
-    // Whose UAV this is, and whose minimap is being scrambled, is "which side am I on".
-    const friendly = this.localTeam;
-    for (const slot of map.contacts) slot.active = false;
-    map.contactFadeSeconds = this.streaks.contactFadeSeconds;
-
-    if (this.isNetworked) {
-      /**
-       * The server's intel, and only ever this team's (M11 Gate B, §8.22).
-       *
-       * The client is not filtering here — there is nothing to filter. `MatchInstance` sends
-       * each seat only the contacts its own team's UAV recorded, and a Ghost player was never
-       * recorded in the first place. What arrives is already the whole truth this player is
-       * entitled to, which is the point: a client that received both teams' contacts and chose
-       * to draw one would be one edited line away from a wallhack.
-       */
-      const rep = this.replicatedStreaks;
-      map.sweepAngle = rep.sweepAngle < 0 ? null : rep.sweepAngle;
-      map.scrambled = rep.scrambled;
-      let n = 0;
-      for (const contact of rep.contacts) {
-        if (n >= map.contacts.length) break;
-        const slot = map.contacts[n];
-        if (slot === undefined) continue;
-        slot.x = contact.x;
-        slot.z = contact.z;
-        slot.age = contact.ageCs / 100;
-        slot.active = true;
-        n++;
-      }
-    } else {
-      const uav = this.streaks.uavFor(friendly);
-      map.sweepAngle = uav === null ? null : uav.sweepAngle;
-      map.scrambled = this.streaks.minimapScrambledFor(friendly);
-      if (uav !== null) {
-        let i = 0;
-        for (const contact of uav.contacts) {
-          if (!contact.active || i >= map.contacts.length) continue;
-          const slot = map.contacts[i];
-          if (slot === undefined) continue;
-          slot.x = contact.x;
-          slot.z = contact.z;
-          slot.age = contact.age;
-          slot.active = true;
-          i++;
+        const state = this.ui.state;
+        /**
+         * The ammunition readout follows whichever gun the player is actually holding (round 2).
+         *
+         * A gunship belt is the same four facts a rifle magazine is — how many, out of how many,
+         * is it being fed, and how far through — so it goes through the same four fields rather
+         * than growing a second ammo widget that would have to be positioned, styled and hidden.
+         * The grounded rifle's numbers are *wrong* to show during a takeover for the same reason
+         * `weapons.suspended` exists: the player is not holding it, and the last thing they need
+         * while flying is a magazine count that never moves.
+         */
+        const chopper = this.streaks.activeChopperFor(this.localId);
+        if (chopper !== null) {
+            state.mag = chopper.mag;
+            state.magSize = chopper.magSize;
+            state.reserve = 0;
+            state.reserveInfinite = true;
+            state.reloading = chopper.reloading;
+            state.reloadFraction = chopper.reloadFraction;
+        } else {
+            state.mag = weapon.mag;
+            state.magSize = def.magSize;
+            state.reserve = weapon.reserve;
+            state.reserveInfinite = weapon.infiniteReserve;
+            state.reloading = weapon.reloading;
+            state.reloadFraction = this.visual.reloadFraction;
         }
-      }
+        state.spreadDeg = this.weapons.spreadDeg;
+        state.adsFraction = this.visual.adsFraction;
+        state.fovDeg = this.deps.cameraRig.fov;
+        state.viewportHeight = window.innerHeight;
+        state.health = this.playerHealth.current;
+        state.healthMax = this.playerHealth.max;
+        state.dead = this.playerDead;
+        state.respawnSeconds = this.playerRespawnTimer;
+        // One life: there is no timer to show, because nobody is coming back until the round does.
+        state.awaitingRound = this.playerDead && !this.flow.respawnAllowed(this.localId);
+        // Only while dead: a report that outlived the body it describes would be a panel telling a
+        // living player how they died a minute ago (round 5, F9).
+        if (this.playerDead) this.settleDeathDistance();
+        state.deathReport = this.playerDead ? this.deathReport : null;
+        this.fillTacticalState();
+        this.fillStreakHud();
+        this.fillMinimapStreaks();
+        this.objectives.update(dt);
+        // Straight from the pass that just decided where the bomb mesh goes, so the arrow and
+        // the object it points at are the same frame's answer (round 4, F2).
+        this.objectives.readBombBearing(bombBearingScratch);
+        this.ui.hud.setObjectiveBearing(bombBearingScratch.active, bombBearingScratch.x, bombBearingScratch.z);
+        this.mortarOverlay.update(dt, MORTAR_MARK_RADIUS);
+        this.ui.update(this.flow, sim.x, sim.z, sim.yaw, dt);
+        this.feedback.render(camera);
     }
 
-    if (!(this.mode instanceof Domination)) return;
-    const states = map.objectiveStates;
-    if (states.length !== this.mode.zones.length) {
-      states.length = 0;
-      for (const zone of this.mode.zones) {
-        states.push({ id: zone.id, owner: 'NONE', progress: 0, contested: false });
-      }
-    }
-    for (let i = 0; i < this.mode.zones.length; i++) {
-      const zone = this.mode.zones[i];
-      const state = states[i];
-      if (zone === undefined || state === undefined) continue;
-      // The constant is team A, so a networked player the server put on team B had every flag
-      // on their minimap coloured backwards: their own held zones read as enemy and the
-      // enemy's as theirs.
-      const friendly = this.localTeam;
-      state.owner = zone.owner === 'NONE' ? 'NONE' : zone.owner === friendly ? 'FRIENDLY' : 'ENEMY';
-      state.progress = zone.progress;
-      state.contested = zone.contested;
-    }
-  }
-
-  /**
-   * The M5 half of the HUD state: which weapons are in hand, what equipment is left, the
-   * scope, and the cook timer. Read straight off the systems that own them.
-   */
-  private fillTacticalState(): void {
-    const tac = this.ui.state.tactical;
-    const inventory = this.weapons.inventory;
-    const def = inventory.active.definition;
-    const otherIndex = inventory.activeSlotIndex === 0 ? 1 : 0;
-
-    tac.weaponName = def.name;
-    tac.slotIndex = inventory.activeSlotIndex;
-    tac.otherName = inventory.at(otherIndex)?.definition.name ?? '';
-
-    const inv = this.equipment.inventory;
-    tac.lethalId = inv.lethal;
-    tac.lethalCount = inv.lethalCount;
-    tac.tacticalId = inv.tactical;
-    tac.tacticalCount = inv.tacticalCount;
-
-    const thrower = this.equipment.thrower;
-    tac.cookRemaining = thrower.remainingFuse(inv);
-    tac.cookTotal = EquipmentSystem.slotDef(inv, thrower.slot).fuseSeconds;
-
-    tac.hasScope = def.scope !== undefined;
-    tac.scopeFraction = tac.hasScope ? this.visual.adsFraction : 0;
-    tac.breath = this.weapons.scope.breath;
-    tac.breathHeld = this.weapons.scope.holding;
-
-    tac.fieldUpgradeName = this.meta.fieldUpgrade.name;
-    tac.fieldUpgradeCharge = this.meta.fieldUpgrade.charge;
-  }
-
-  /**
-   * Take the match apart.
-   *
-   * Everything constructed in the constructor is undone here, in the reverse order, and
-   * every subscription is dropped — this is the method acceptance criterion 1 and the heap
-   * harness are really testing. Anything added to `Match` that is not released here shows up
-   * as a step in `usedJSHeapSize` at the next match boundary.
-   */
-  /**
-   * Close progression out and hand back the summary's XP report.
-   *
-   * Called by `Game` on the way into SUMMARY rather than from the mode, because banking a
-   * match is a *state machine* event: the mode declares a winner, and the profile is
-   * written once the match is genuinely over and nothing else is going to change.
-   */
-  bankProgression(won: boolean): XpReport {
-    return this.meta.finish(won);
-  }
-
-  dispose(): void {
-    // First: a live Chopper Gunner has the camera, and nothing else may run until it is back.
-    this.streaks.dispose();
-    // The streaks are gone, so the body is unconditionally back in play.
-    this.playerCombatant.active = true;
-    this.playerCombatant.invulnerable = false;
-    this.objectives.dispose();
-    this.mortarOverlay.dispose();
-    this.meta.dispose();
-    this.equipment.dispose();
-    this.feedback.dispose();
-    this.flow.dispose();
-    this.score.dispose();
-    this.ui.dispose();
-    this.bots.dispose();
-    this.botRenderer.dispose();
-    this.streakRenderer.dispose();
-    if (this.range !== null) {
-      this.range.dispose();
-      this.deps.scene.remove(this.range.group);
-    }
-    this.fx.dispose();
-    this.deps.scene.remove(this.fx.group);
-    this.flame.dispose();
-    this.deps.scene.remove(this.flame.group);
-    this.swapSubscription?.();
-    this.deathSubscription?.();
-    this.swapSubscription = null;
-    this.roundResetSubscription?.();
-    this.roundResetSubscription = null;
-    for (const model of this.models) {
-      this.deps.viewmodel.remove(model.root);
-      model.dispose();
-    }
-    this.models.length = 0;
-    this.anim.setKnife(null, null, null);
-    this.deps.viewmodel.remove(this.knifeModel.root);
-    if (this.knifeModel.arm !== null) this.deps.viewmodel.remove(this.knifeModel.arm);
-    this.knifeModel.dispose();
-    if (this.shieldModel !== null) {
-      this.anim.setShield(null);
-      this.deps.viewmodel.remove(this.shieldModel.root);
-      this.shieldModel.dispose();
-      this.shieldModel = null;
-    }
-    this.deps.audio.setOccluder(null);
-    this.deps.audio.resetMatchState();
-  }
-
-  /**
-   * The local player died. Owned here rather than in `MatchFeedback` because what follows is
-   * gameplay: the respawn timer, and the respawn gate the mode controls.
-   */
-  private onPlayerKilled(): void {
-    if (this.playerDead) return;
-    this.playerDead = true;
-    this.playerRespawnTimer = PLAYER_RESPAWN_SECONDS;
     /**
-     * Out of the sights, on the tick of death (post-M8 playtest).
+     * The streak strip and the objective banner (M7).
      *
-     * A dead player's weapon is not stepped — `simulate` skips it — so `adsFraction` freezes
-     * at whatever it held when the round landed, and `Game` keeps feeding that to the camera
-     * as an FOV scale. With a sniper that is a scoped picture the player is stuck inside for
-     * the whole death screen. Forcing it down here is the only place that works, because
-     * every other candidate is code that has just stopped running.
+     * Everything here is read straight off `StreakSystem` and the mode. The requirement shown is
+     * already Hardline-discounted, so the HUD never learns that a perk exists.
      */
-    this.weapons.clearAim();
-    this.melee.reset();
-    const sim = this.deps.player.sim;
-    this.weaponAudio.playDeath(sim.x, sim.y + 0.4, sim.z);
-    this.deps.cameraRig.shake.add(0.45);
-    // Dying clears the low-health state: the muffle belongs to being nearly dead, not to being
-    // dead, and holding it through a respawn is state leaking across a life.
-    this.deps.audio.setMuffle(0);
-  }
+    private fillStreakHud(): void {
+        const hud = this.ui.streakState;
+        for (let i = 0; i < hud.slots.length; i++) {
+            const slot = hud.slots[i];
+            if (slot === undefined) continue;
+            const id = this.streakSlots[i] ?? null;
+            slot.name = id === null ? '' : streakDef(id).name;
+            // Four states, and the fourth is now a duration rather than a flag (round 4, the pivot).
+            // A slot dark because the player cannot afford it shows a price; a slot dark because the
+            // key is locked out shows how much of the wait is left, as a fill. The key does nothing in
+            // both, and the strip has to say which.
+            slot.price = id === null ? 0 : this.streakPrice(id);
+            slot.lockoutSeconds = id === null ? 0 : this.streakLockout(id);
+            slot.ready = id !== null && this.canAffordStreak(id);
+        }
+        // The **balance**, and the server's when there is one: it is the number a purchase is
+        // charged against, and two opinions about it is two opinions about whether a key works.
+        hud.balance = this.streakBalance();
+        const next = this.nextStreak();
+        hud.nextName = next?.def.name ?? '';
+        hud.nextPrice = next?.price ?? 0;
 
-  /** Radians of interpolated aim recoil, for the camera. */
-  get aimYawRad(): number {
-    return this.visual.aimYaw * DEG2RAD;
-  }
+        this.fillObjectiveBanner(hud);
+        this.fillFreeForAllBanner();
+    }
 
-  get aimPitchRad(): number {
-    return this.visual.aimPitch * DEG2RAD;
-  }
+    /**
+     * Free-for-All shows the leader and you, not team A and team B.
+     *
+     * Driven from `ScoreSystem.rows`, which is populated on a networked client the same way the
+     * scoreboard is. Recomputed per frame rather than cached on a score event — it is a scan of
+     * ten rows on a screen that is already walking them for the scoreboard.
+     */
+    private fillFreeForAllBanner(): void {
+        const banner = this.ui.state.banner;
+        banner.ffa = this.deps.mode.freeForAll === true;
+        if (!banner.ffa) return;
 
-  /** The threshold the low-health state begins at. Exposed for the debug read-out. */
-  get lowHealthThreshold(): number {
-    return LOW_HEALTH_THRESHOLD;
-  }
+        /**
+         * **Kills, not points** (M11 Gate B playtest).
+         *
+         * This read `row.score`, and over the network that column is zero for everybody, for ever:
+         * `MatchFlow`'s replicated branch records kills with **zero points** on purpose — what a
+         * kill is worth is a mode decision and the mode is not running on a client. So the banner
+         * showed `0` against a leader of `0` for the whole match, which is the reported "the kill
+         * counter isn't working in FFA over the network".
+         *
+         * Kills are the right number anyway, and not merely the available one: `checkWinCondition`
+         * decides Free-for-All on `row.kills` and the bar counts toward `scoreLimit`, which is a
+         * kill count. Showing points beside a limit measured in kills was a bar that could not
+         * reach its own end.
+         */
+        let leader: { name: string; score: number } | null = null;
+        let self = 0;
+        for (const row of this.score.rows) {
+            if (row.entityId === this.localId) self = row.kills;
+            if (leader === null || row.kills > leader.score) {
+                leader = { name: row.displayName, score: row.kills };
+            }
+        }
+        banner.leaderName = leader?.name ?? '';
+        banner.leaderScore = leader?.score ?? 0;
+        banner.selfScore = self;
+    }
+
+    /**
+     * The bomb timer, the plant/defuse ring and the capture prompt.
+     *
+     * Only one thing is ever shown, and the order is by urgency: a ticking bomb outranks an
+     * interaction, which outranks standing on a flag. A banner that tried to show all three
+     * would show none of them.
+     */
+    private fillObjectiveBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
+        hud.showAlive = false;
+        hud.objectiveLabel = '';
+        hud.objectiveSeconds = -1;
+        hud.interactFraction = -1;
+        hud.interactLabel = '';
+        hud.urgent = false;
+
+        this.fillModeBanner(hud);
+        this.fillDismantleBanner(hud);
+        this.fillSupplyBanner(hud);
+    }
+
+    /**
+     * The prompt at the player's own sentry (2026-09-28): stand at it, face it, hold the use key.
+     *
+     * Between the mode and the crate in urgency: an objective is the match, and a turret the player
+     * chose to go and stand at is a decision they are in the middle of, which a crate beside it is
+     * not. The reach test is `sentryInDismantleReach` — the function `SentryGun.stepDismantle`
+     * decides with — so the key is never offered where the simulation would refuse it. The ring is
+     * the simulation's own progress: the local sentry's in a solo match, the replicated `fraction`
+     * over the network, so it fills at the rate the server is actually counting.
+     */
+    private fillDismantleBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
+        if (hud.interactLabel.length > 0 || this.playerDead) return;
+        const sim = this.deps.player.sim;
+        const cfg = this.deps.streakConfig ?? DEFAULT_STREAK_CONFIG;
+        const reach = (x: number, y: number, z: number): boolean =>
+            sentryInDismantleReach(x, y, z, sim.x, sim.y, sim.z, sim.yaw, cfg);
+
+        let progress = -1;
+        if (this.isNetworked) {
+            for (const e of this.replicatedStreaks.entities) {
+                if (STREAK_DEFS[e.kind]?.id !== 'sentry' || !this.identity.is(e.ownerId)) continue;
+                if (!reach(e.x, e.y, e.z)) continue;
+                progress = e.fraction / 255;
+                break;
+            }
+        } else {
+            for (const sentry of this.streaks.sentries()) {
+                if (!this.identity.is(sentry.ownerId) || !reach(sentry.x, sentry.y, sentry.z)) continue;
+                progress = sentry.dismantleFraction;
+                break;
+            }
+        }
+        if (progress < 0) return;
+
+        if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'YOUR SENTRY';
+        hud.interactFraction = progress;
+        hud.interactLabel = progress > 0 ? 'DISMANTLING' : `HOLD ${this.useKeyLabel()} TO DISMANTLE`;
+    }
+
+    /**
+     * The resupply prompt, which is every mode's and therefore nobody's mode's.
+     *
+     * Written after the mode and only into a slot the mode left empty. The order is the same
+     * urgency rule `fillModeBanner` is built on: a bomb being planted, defused or counting down is
+     * the most important thing on the screen, and a crate is the least — and on a map where a
+     * station sits inside an objective the player is told about the objective.
+     *
+     * Three states rather than one, because the rule has to be teachable without a tutorial: near
+     * it and standing, kneeling and taking, and kneeling with nothing left to take. There is no key
+     * in any of them since 2026-09-28 — the crouch is the instruction. The ring is the held weapon's
+     * reserve rather than progress toward the next beat, which would be a quarter-second sawtooth;
+     * what the player watches climb is the ammunition counter.
+     */
+    private fillSupplyBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
+        if (hud.interactLabel.length > 0) return;
+        const state = this.supplyState;
+        if (state.pointId === NO_SUPPLY_POINT) return;
+
+        /**
+         * The banner carries the ring, and `HudStreaks.updateBanner` draws neither without a label:
+         * a ring with nothing above it is a progress bar for an unnamed thing, so the surface makes
+         * the two one decision. Written only into an empty slot, so a bomb that is counting down
+         * keeps the strip and this keeps the ring under it.
+         */
+        if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'RESUPPLY';
+
+        if (state.needsCrouch) {
+            hud.interactFraction = state.stock;
+            hud.interactLabel = 'CROUCH TO RESUPPLY';
+            return;
+        }
+        hud.interactFraction = state.stock;
+        // Kneeling and not yet `working` is the one tick before the first beat is counted.
+        hud.interactLabel = state.full ? 'RESUPPLIED' : 'RESUPPLYING';
+    }
+
+    /** The bomb timer, the plant/defuse ring and the capture prompt. See `fillObjectiveBanner`. */
+    private fillModeBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
+        const mode = this.mode;
+        if (mode instanceof SearchAndDestroy) {
+            // Alive counts, top of screen, every round (M7 playtest). Counted here rather than by
+            // the mode, and against the side the server actually assigned rather than the constant.
+            const friendly = this.localTeam;
+            hud.aliveFriendly = this.countAlive(friendly);
+            hud.aliveEnemy = this.countAlive(friendly === 'A' ? 'B' : 'A');
+            hud.showAlive = true;
+
+            if (mode.bomb === 'PLANTED') {
+                hud.objectiveLabel = `BOMB · SITE ${mode.plantedSite?.label ?? ''}`;
+                hud.objectiveSeconds = mode.bombSecondsLeft;
+                hud.urgent = true;
+            }
+            if (mode.interactEntity === this.localId && mode.interactFraction > 0) {
+                hud.interactFraction = mode.interactFraction;
+                hud.interactLabel = mode.bomb === 'PLANTED' ? 'DEFUSING' : 'PLANTING';
+                if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'OBJECTIVE';
+                return;
+            }
+            /**
+             * Somebody else already has it (post-M8 playtest).
+             *
+             * Telling a second defender to "hold T to defuse" while a team-mate is three seconds
+             * into the defuse is telling them to do something the mode will refuse —
+             * `beginInteract` ignores a newcomer while a live actor owns the interaction. The
+             * prompt is replaced by what is actually happening, which is the thing worth knowing:
+             * somebody is on it, so go and cover them.
+             */
+            const busyWith = mode.interactingEntity;
+            if (busyWith >= 0 && busyWith !== this.localId) {
+                hud.interactFraction = mode.interactFraction;
+                hud.interactLabel = mode.interactIsDefusing ? 'TEAMMATE DEFUSING' : 'PLANT IN PROGRESS';
+                if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'OBJECTIVE';
+                return;
+            }
+            if (mode.bomb === 'PLANTED' && this.playerCombatant.team === mode.defenders) {
+                const site = mode.plantedSite;
+                if (site !== null && site.contains(this.playerCombatant)) {
+                    hud.interactFraction = 0;
+                    hud.interactLabel = `HOLD ${this.useKeyLabel()} TO DEFUSE`;
+                }
+                return;
+            }
+            if (mode.bomb !== 'CARRIED') return;
+            if (this.playerCombatant.team !== mode.attackers) return;
+            if (!mode.isCarrier(this.localId)) {
+                // Tell them where the bomb is, because without it the round cannot be won.
+                if (mode.carrierId < 0) {
+                    hud.objectiveLabel = 'RECOVER THE BOMB';
+                    // Standing on it: the pick-up is a key press now, so it needs a prompt like any
+                    // other interaction. Without one, "auto-pickup is off" reads as "the bomb is broken".
+                    if (mode.tryPickupPrompt(this.playerCombatant)) {
+                        hud.interactFraction = 0;
+                        hud.interactLabel = `HOLD ${this.useKeyLabel()} TO TAKE THE BOMB`;
+                    }
+                } else {
+                    hud.objectiveLabel = 'BOMB CARRIER OUT';
+                }
+                return;
+            }
+            const site = mode.siteContaining(this.playerCombatant);
+            hud.objectiveLabel = site === null ? 'CARRYING THE BOMB' : `SITE ${site.label}`;
+            if (site !== null) {
+                hud.interactFraction = 0;
+                hud.interactLabel = `HOLD ${this.useKeyLabel()} TO PLANT`;
+            }
+            return;
+        }
+
+        if (mode instanceof Domination) {
+            for (const zone of mode.zones) {
+                if (!zone.contains(this.playerCombatant)) continue;
+                hud.objectiveLabel = `FLAG ${zone.label}`;
+                hud.interactFraction = zone.progress;
+                hud.interactLabel = zone.contested
+                    ? 'CONTESTED'
+                    : zone.owner === this.localTeam
+                        ? 'HELD'
+                        : 'CAPTURING';
+                return;
+            }
+        }
+    }
+
+    /**
+     * What the Use key is actually bound to, for the objective prompts (post-M8).
+     *
+     * The prompts used to read "HOLD P", hard-coded, which was wrong the moment M8 shipped
+     * rebinding and wrong again when the default moved to T. Asked of the live binding table
+     * so the HUD says the key the player will actually press, whatever they set it to.
+     */
+    private useKeyLabel(): string {
+        const bound = this.deps.input.keybinds.inputsFor('use')[0];
+        return bound === undefined ? 'USE' : inputLabel(bound).toUpperCase();
+    }
+
+    /**
+     * Push UAV contacts, the sweep bearing, the scramble flag and flag ownership at the minimap.
+     *
+     * Written into preallocated records rather than rebuilt, so a UAV costs no allocation per
+     * frame — the minimap sizes both arrays at construction for exactly this.
+     */
+    private fillMinimapStreaks(): void {
+        const map = this.ui.hud.minimap;
+        // Whose UAV this is, and whose minimap is being scrambled, is "which side am I on".
+        const friendly = this.localTeam;
+        for (const slot of map.contacts) slot.active = false;
+        map.contactFadeSeconds = this.streaks.contactFadeSeconds;
+
+        if (this.isNetworked) {
+            /**
+             * The server's intel, and only ever this team's (M11 Gate B, §8.22).
+             *
+             * The client is not filtering here — there is nothing to filter. `MatchInstance` sends
+             * each seat only the contacts its own team's UAV recorded, and a Ghost player was never
+             * recorded in the first place. What arrives is already the whole truth this player is
+             * entitled to, which is the point: a client that received both teams' contacts and chose
+             * to draw one would be one edited line away from a wallhack.
+             */
+            const rep = this.replicatedStreaks;
+            map.sweepAngle = rep.sweepAngle < 0 ? null : rep.sweepAngle;
+            map.scrambled = rep.scrambled;
+            let n = 0;
+            for (const contact of rep.contacts) {
+                if (n >= map.contacts.length) break;
+                const slot = map.contacts[n];
+                if (slot === undefined) continue;
+                slot.x = contact.x;
+                slot.z = contact.z;
+                slot.age = contact.ageCs / 100;
+                slot.active = true;
+                n++;
+            }
+        } else {
+            const uav = this.streaks.uavFor(friendly);
+            map.sweepAngle = uav === null ? null : uav.sweepAngle;
+            map.scrambled = this.streaks.minimapScrambledFor(friendly);
+            if (uav !== null) {
+                let i = 0;
+                for (const contact of uav.contacts) {
+                    if (!contact.active || i >= map.contacts.length) continue;
+                    const slot = map.contacts[i];
+                    if (slot === undefined) continue;
+                    slot.x = contact.x;
+                    slot.z = contact.z;
+                    slot.age = contact.age;
+                    slot.active = true;
+                    i++;
+                }
+            }
+        }
+
+        if (!(this.mode instanceof Domination)) return;
+        const states = map.objectiveStates;
+        if (states.length !== this.mode.zones.length) {
+            states.length = 0;
+            for (const zone of this.mode.zones) {
+                states.push({ id: zone.id, owner: 'NONE', progress: 0, contested: false });
+            }
+        }
+        for (let i = 0; i < this.mode.zones.length; i++) {
+            const zone = this.mode.zones[i];
+            const state = states[i];
+            if (zone === undefined || state === undefined) continue;
+            // The constant is team A, so a networked player the server put on team B had every flag
+            // on their minimap coloured backwards: their own held zones read as enemy and the
+            // enemy's as theirs.
+            const friendly = this.localTeam;
+            state.owner = zone.owner === 'NONE' ? 'NONE' : zone.owner === friendly ? 'FRIENDLY' : 'ENEMY';
+            state.progress = zone.progress;
+            state.contested = zone.contested;
+        }
+    }
+
+    /**
+     * The M5 half of the HUD state: which weapons are in hand, what equipment is left, the
+     * scope, and the cook timer. Read straight off the systems that own them.
+     */
+    private fillTacticalState(): void {
+        const tac = this.ui.state.tactical;
+        const inventory = this.weapons.inventory;
+        const def = inventory.active.definition;
+        const otherIndex = inventory.activeSlotIndex === 0 ? 1 : 0;
+
+        tac.weaponName = def.name;
+        tac.slotIndex = inventory.activeSlotIndex;
+        tac.otherName = inventory.at(otherIndex)?.definition.name ?? '';
+
+        const inv = this.equipment.inventory;
+        tac.lethalId = inv.lethal;
+        tac.lethalCount = inv.lethalCount;
+        tac.tacticalId = inv.tactical;
+        tac.tacticalCount = inv.tacticalCount;
+
+        const thrower = this.equipment.thrower;
+        tac.cookRemaining = thrower.remainingFuse(inv);
+        tac.cookTotal = EquipmentSystem.slotDef(inv, thrower.slot).fuseSeconds;
+
+        tac.hasScope = def.scope !== undefined;
+        tac.scopeFraction = tac.hasScope ? this.visual.adsFraction : 0;
+        tac.breath = this.weapons.scope.breath;
+        tac.breathHeld = this.weapons.scope.holding;
+
+        tac.fieldUpgradeName = this.meta.fieldUpgrade.name;
+        tac.fieldUpgradeCharge = this.meta.fieldUpgrade.charge;
+    }
+
+    /**
+     * Take the match apart.
+     *
+     * Everything constructed in the constructor is undone here, in the reverse order, and
+     * every subscription is dropped — this is the method acceptance criterion 1 and the heap
+     * harness are really testing. Anything added to `Match` that is not released here shows up
+     * as a step in `usedJSHeapSize` at the next match boundary.
+     */
+    /**
+     * Close progression out and hand back the summary's XP report.
+     *
+     * Called by `Game` on the way into SUMMARY rather than from the mode, because banking a
+     * match is a *state machine* event: the mode declares a winner, and the profile is
+     * written once the match is genuinely over and nothing else is going to change.
+     */
+    bankProgression(won: boolean): XpReport {
+        return this.meta.finish(won);
+    }
+
+    dispose(): void {
+        // First: a live Chopper Gunner has the camera, and nothing else may run until it is back.
+        this.streaks.dispose();
+        // The streaks are gone, so the body is unconditionally back in play.
+        this.playerCombatant.active = true;
+        this.playerCombatant.invulnerable = false;
+        this.objectives.dispose();
+        this.mortarOverlay.dispose();
+        this.meta.dispose();
+        this.equipment.dispose();
+        this.feedback.dispose();
+        this.flow.dispose();
+        this.score.dispose();
+        this.ui.dispose();
+        this.bots.dispose();
+        this.botRenderer.dispose();
+        this.streakRenderer.dispose();
+        if (this.range !== null) {
+            this.range.dispose();
+            this.deps.scene.remove(this.range.group);
+        }
+        this.fx.dispose();
+        this.deps.scene.remove(this.fx.group);
+        this.flame.dispose();
+        this.deps.scene.remove(this.flame.group);
+        this.swapSubscription?.();
+        this.deathSubscription?.();
+        this.swapSubscription = null;
+        this.roundResetSubscription?.();
+        this.roundResetSubscription = null;
+        for (const model of this.models) {
+            this.deps.viewmodel.remove(model.root);
+            model.dispose();
+        }
+        this.models.length = 0;
+        this.anim.setKnife(null, null, null);
+        this.deps.viewmodel.remove(this.knifeModel.root);
+        if (this.knifeModel.arm !== null) this.deps.viewmodel.remove(this.knifeModel.arm);
+        this.knifeModel.dispose();
+        if (this.shieldModel !== null) {
+            this.anim.setShield(null);
+            this.deps.viewmodel.remove(this.shieldModel.root);
+            this.shieldModel.dispose();
+            this.shieldModel = null;
+        }
+        this.deps.audio.setOccluder(null);
+        this.deps.audio.resetMatchState();
+    }
+
+    /**
+     * The local player died. Owned here rather than in `MatchFeedback` because what follows is
+     * gameplay: the respawn timer, and the respawn gate the mode controls.
+     */
+    private onPlayerKilled(): void {
+        if (this.playerDead) return;
+        this.playerDead = true;
+        this.playerRespawnTimer = PLAYER_RESPAWN_SECONDS;
+        /**
+         * Out of the sights, on the tick of death (post-M8 playtest).
+         *
+         * A dead player's weapon is not stepped — `simulate` skips it — so `adsFraction` freezes
+         * at whatever it held when the round landed, and `Game` keeps feeding that to the camera
+         * as an FOV scale. With a sniper that is a scoped picture the player is stuck inside for
+         * the whole death screen. Forcing it down here is the only place that works, because
+         * every other candidate is code that has just stopped running.
+         */
+        this.weapons.clearAim();
+        this.melee.reset();
+        const sim = this.deps.player.sim;
+        this.weaponAudio.playDeath(sim.x, sim.y + 0.4, sim.z);
+        this.deps.cameraRig.shake.add(0.45);
+        // Dying clears the low-health state: the muffle belongs to being nearly dead, not to being
+        // dead, and holding it through a respawn is state leaking across a life.
+        this.deps.audio.setMuffle(0);
+    }
+
+    /** Radians of interpolated aim recoil, for the camera. */
+    get aimYawRad(): number {
+        return this.visual.aimYaw * DEG2RAD;
+    }
+
+    get aimPitchRad(): number {
+        return this.visual.aimPitch * DEG2RAD;
+    }
+
+    /** The threshold the low-health state begins at. Exposed for the debug read-out. */
+    get lowHealthThreshold(): number {
+        return LOW_HEALTH_THRESHOLD;
+    }
 }
 
 /**
@@ -3429,15 +3435,15 @@ export class Match {
  * one is worse than noise because it looks like something you can capture.
  */
 function objectiveKindsFor(mode: GameMode): readonly ObjectiveKind[] {
-  if (mode instanceof Domination) return ['flag'];
-  if (mode instanceof SearchAndDestroy) return ['bombsite'];
-  return [];
+    if (mode instanceof Domination) return ['flag'];
+    if (mode instanceof SearchAndDestroy) return ['bombsite'];
+    return [];
 }
 
 /** Shortest signed angle from `a` to `b`, radians. */
 function angleDeltaRad(a: number, b: number): number {
-  let d = b - a;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d < -Math.PI) d += Math.PI * 2;
-  return d;
+    let d = b - a;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return d;
 }

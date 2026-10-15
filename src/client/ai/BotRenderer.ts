@@ -11,8 +11,8 @@ import type { WeaponAssetService } from '../weapons/WeaponAssetService';
 import type { ActorAvatar, HeldEquipmentAsset, HeldWeaponAsset } from '../characters/ActorAvatar';
 import type { EquipmentId } from '../../shared/equipment/EquipmentDefs';
 import type {
-  CharacterAvatarProvider,
-  CharacterAvatarProviderResolver,
+    CharacterAvatarProvider,
+    CharacterAvatarProviderResolver,
 } from '../characters/CharacterAvatarProvider';
 
 // Skeleton cloning and material setup are intentionally amortized. A finished preload can make
@@ -74,439 +74,440 @@ const BODY_REACH = 2.1;
  * for the process would mean holding geometry across map changes for a saving nobody measured.
  */
 export class BotRenderer {
-  /** Everything this renderer owns, as one node. Added to the scene by `ClientMatch`. */
-  readonly group = new THREE.Group();
+    /** Everything this renderer owns, as one node. Added to the scene by `ClientMatch`. */
+    readonly group = new THREE.Group();
 
-  /**
-   * The roster split by side, as two scene graph nodes (post-M8).
-   *
-   * Built for the Chopper Gunner's IFF: the gunship view draws team-mates dark and enemies
-   * hot, and doing that per *object* would mean the renderer walking the bot list and knowing
-   * what a team is. Two groups means the render pass is handed "these are cold, those are
-   * hot" and stays a render pass.
-   */
-  readonly groupA = new THREE.Group();
-  readonly groupB = new THREE.Group();
-  /** Client-only relation markers; deliberately outside either thermal body group. */
-  private readonly indicatorGroup = new THREE.Group();
+    /**
+     * The roster split by side, as two scene graph nodes (post-M8).
+     *
+     * Built for the Chopper Gunner's IFF: the gunship view draws team-mates dark and enemies
+     * hot, and doing that per *object* would mean the renderer walking the bot list and knowing
+     * what a team is. Two groups means the render pass is handed "these are cold, those are
+     * hot" and stays a render pass.
+     */
+    readonly groupA = new THREE.Group();
+    readonly groupB = new THREE.Group();
+    /** Client-only relation markers; deliberately outside either thermal body group. */
+    private readonly indicatorGroup = new THREE.Group();
 
-  private readonly assets: BotAssets;
-  private readonly indicatorAssets = buildActorIndicatorAssets();
-  /** One held weapon per id — merged geometry, anchors, the shared material — for every body carrying it. */
-  private readonly weapons = new Map<string, HeldWeaponAsset>();
-  /** One grenade per equipment id, for the bodies throwing one. The file is the asset service's. */
-  private readonly grenades = new Map<string, HeldEquipmentAsset>();
-  private readonly grenadesAsked = new Set<string>();
-  private readonly weaponMaterial: THREE.Material;
-  /** GLB avatars once ready; `BotMesh` instances are the safe procedural fallback. */
-  private readonly avatars = new Map<number, ActorAvatar>();
-  /** One client-only nameplate/health/marker presentation per rendered actor. */
-  private readonly indicators = new Map<number, ActorIndicator>();
-  /** Each actor keeps one skin provider for its entire rendered lifetime. */
-  private readonly characterProviders = new Map<number, CharacterAvatarProvider>();
-  /** Last serial this renderer acted on, per bot. */
-  private readonly seen = new Map<number, { death: number; spawn: number; flinch: number }>();
-  private readonly present = new Set<number>();
-  private gltfAvatarCreationsRemaining = 0;
-  /**
-   * The actor whose eyes the camera is in (M17, C2), or `NO_SPECTATOR_TARGET`.
-   *
-   * A dead player in Search & Destroy watches through a teammate's eyes (§6.8), and the
-   * camera sat inside that teammate's head — its own skull and nameplate in the middle of
-   * the view, which was the report. The body a camera is *inside* is not drawn, exactly as
-   * the player's own body is not: its avatar and its indicator are hidden while it is the
-   * one, and shown again the frame it is not.
-   */
-  private eyesOf = NO_SPECTATOR_TARGET;
-  /**
-   * The actors hidden on the last frame, so each avatar is shown again the frame it stops being
-   * hidden. Two sets, swapped rather than reallocated: this runs every frame for every body.
-   */
-  private hidden = new Set<number>();
-  private hiddenNext = new Set<number>();
+    private readonly assets: BotAssets;
+    private readonly indicatorAssets = buildActorIndicatorAssets();
+    /** One held weapon per id — merged geometry, anchors, the shared material — for every body carrying it. */
+    private readonly weapons = new Map<string, HeldWeaponAsset>();
+    /** One grenade per equipment id, for the bodies throwing one. The file is the asset service's. */
+    private readonly grenades = new Map<string, HeldEquipmentAsset>();
+    private readonly grenadesAsked = new Set<string>();
+    private readonly weaponMaterial: THREE.Material;
+    /** GLB avatars once ready; `BotMesh` instances are the safe procedural fallback. */
+    private readonly avatars = new Map<number, ActorAvatar>();
+    /** One client-only nameplate/health/marker presentation per rendered actor. */
+    private readonly indicators = new Map<number, ActorIndicator>();
+    /** Each actor keeps one skin provider for its entire rendered lifetime. */
+    private readonly characterProviders = new Map<number, CharacterAvatarProvider>();
+    /** Last serial this renderer acted on, per bot. */
+    private readonly seen = new Map<number, { death: number; spawn: number; flinch: number }>();
+    private readonly present = new Set<number>();
+    private gltfAvatarCreationsRemaining = 0;
+    /**
+     * The actor whose eyes the camera is in (M17, C2), or `NO_SPECTATOR_TARGET`.
+     *
+     * A dead player in Search & Destroy watches through a teammate's eyes (§6.8), and the
+     * camera sat inside that teammate's head — its own skull and nameplate in the middle of
+     * the view, which was the report. The body a camera is *inside* is not drawn, exactly as
+     * the player's own body is not: its avatar and its indicator are hidden while it is the
+     * one, and shown again the frame it is not.
+     */
+    private eyesOf = NO_SPECTATOR_TARGET;
+    /**
+     * The actors hidden on the last frame, so each avatar is shown again the frame it stops being
+     * hidden. Two sets, swapped rather than reallocated: this runs every frame for every body.
+     */
+    private hidden = new Set<number>();
+    private hiddenNext = new Set<number>();
 
-  /**
-   * `actors` is a supplier rather than an array so the caller can decide per frame what is
-   * drawable — the bot director's roster in single-player, the snapshot's remote set when
-   * networked — without this class knowing which world it is in.
-   */
-  constructor(
-    private readonly actors: () => Iterable<RenderableActor>,
-    private readonly viewer: () => ViewerContext,
-    anisotropy = 1,
-    private readonly characterProviderFor: CharacterAvatarProviderResolver,
-    /** Game's weapon files (M19, stage 3); null and every body carries the primitives. */
-    private readonly weaponAssets: WeaponAssetService | null = null,
-  ) {
-    this.assets = buildBotAssets();
-    // The viewmodel's own gunmetal, already built for the process. A held weapon allocates no
-    // material of its own — see `heldWeaponMaterial`.
-    this.weaponMaterial = heldWeaponMaterial(anisotropy);
-    this.group.name = 'bots';
-    this.groupA.name = 'bots:A';
-    this.groupB.name = 'bots:B';
-    this.indicatorGroup.name = 'actor-indicators';
-    this.group.add(this.groupA, this.groupB, this.indicatorGroup);
-  }
-
-  /**
-   * Whether the nameplates, health bars and pads are drawn at all (M15, E). The fight behind
-   * the menu is a picture, not a HUD; the markers are one layer, so it is one flag.
-   */
-  setIndicatorsVisible(on: boolean): void {
-    this.indicatorGroup.visible = on;
-  }
-
-  /** Which actor the camera is looking out of this frame; `NO_SPECTATOR_TARGET` for none. See `eyesOf`. */
-  setEyesOf(entityId: number): void {
-    this.eyesOf = entityId;
-  }
-
-  /** The scene node holding one side's bodies. See `groupA`. */
-  groupFor(team: BotTeam): THREE.Group {
-    return team === 'A' ? this.groupA : this.groupB;
-  }
-
-  /**
-   * Render pass: reconcile the mesh set, apply poses, advance animations. `camera` is the
-   * player's, for the pads' screen-space floor (M13 C3); the thermal optic passes none.
-   */
-  update(alpha: number, dt: number, camera?: THREE.PerspectiveCamera): void {
-    this.present.clear();
-    this.gltfAvatarCreationsRemaining = MAX_GLTF_AVATAR_CREATIONS_PER_FRAME;
-    const viewer = this.viewer();
-
-    for (const actor of this.actors()) {
-      this.present.add(actor.entityId);
-      const mesh = this.avatarFor(actor);
-      const animation = actor.animation;
-      this.applyEvents(actor, mesh, animation);
-      // Cheap and idempotent: `setWeapon` returns immediately unless the id actually moved,
-      // which it does once per body per life rather than once per frame.
-      mesh.setWeapon(this.heldWeapon(actor.weaponId));
-      // The throw has the hand from the draw to the end of the follow-through, and the grenade is
-      // in it until it leaves. Idempotent too: both change a handful of times per throw.
-      mesh.setThrow(animation.throwing, this.heldGrenade(actor.heldEquipmentId));
-      const x = actor.renderX(alpha);
-      const y = actor.renderY(alpha);
-      const z = actor.renderZ(alpha);
-      const yaw = actor.renderYaw(alpha);
-      const scale = actor.renderScale(alpha);
-      mesh.update(
-        animation,
-        x,
-        y,
-        z,
-        yaw,
-        scale,
-        dt,
-      );
-      const indicator = this.indicatorFor(actor);
-      indicator.update(
-        {
-          displayName: actor.displayName,
-          healthFraction: actor.healthFraction,
-          relation: relationTo(viewer, actor.team),
-          participating: actor.participating,
-        },
-        mesh,
-        dt,
-        camera,
-      );
-      // The bodies in the spectator camera's lap are not drawn — after `applyEvents`, whose
-      // respawn edge sets the avatar visible, and after the indicator's own update, so this is
-      // the last word on the frame. Only *those* bodies: the indicator hides itself on a death,
-      // and a first version that wrote `visible = true` to every other actor here put a
-      // nameplate and a health bar back over every corpse in the match.
-      // Dormant (protocol 28): the server is not saying where this body is, so neither it nor its
-      // nameplate is drawn — through the same switch as the spectator's lap, which keeps the
-      // avatar, so a body that comes back into view is not rebuilt from its asset.
-      if (actor.dormant === true || this.hiddenFromSpectator(actor, x, y, z, camera)) {
-        mesh.setVisible(false);
-        indicator.group.visible = false;
-        this.hiddenNext.add(actor.entityId);
-      } else if (this.hidden.has(actor.entityId)) {
-        // Out of the camera's lap: the avatar comes back; the indicator decides for itself
-        // next frame.
-        mesh.setVisible(true);
-      }
-    }
-    const recycled = this.hidden;
-    recycled.clear();
-    this.hidden = this.hiddenNext;
-    this.hiddenNext = recycled;
-
-    if (this.avatars.size !== this.present.size) this.retireAbsent();
-  }
-
-  /**
-   * Whether this body is kept out of the frame for the spectator camera (M17 C2, and the
-   * playtest report that followed it).
-   *
-   * Three states, in order. Not spectating: nothing is ever hidden, and the living player's
-   * camera is left exactly as it was. The body the camera is *inside*: hidden, because a camera
-   * in a skull renders the inside of it. Anything else within `SPECTATOR_BODY_CLEARANCE` of the
-   * eye: hidden too, which is the corpse at the watched player's feet and the teammate sharing
-   * their doorway.
-   *
-   * `camera` is optional on `update` — the thermal optic's passes hand none — and a missing one
-   * can only mean a pass that is not the spectator's, so the distance rule sits out that frame
-   * rather than guessing where the eye is.
-   */
-  private hiddenFromSpectator(
-    actor: RenderableActor,
-    x: number,
-    y: number,
-    z: number,
-    camera?: THREE.PerspectiveCamera,
-  ): boolean {
-    if (this.eyesOf === NO_SPECTATOR_TARGET) return false;
-    if (actor.entityId === this.eyesOf) return true;
-    if (camera === undefined) return false;
-    const dx = x - camera.position.x;
-    const dz = z - camera.position.z;
-    if (dx * dx + dz * dz > SPECTATOR_BODY_CLEARANCE * SPECTATOR_BODY_CLEARANCE) return false;
-    const rise = camera.position.y - y;
-    return rise > -SPECTATOR_BODY_CLEARANCE && rise < BODY_REACH;
-  }
-
-  private avatarFor(bot: RenderableActor): ActorAvatar {
-    const characterProvider = this.characterProviderForActor(bot);
-    const existing = this.avatars.get(bot.entityId);
-    if (existing !== undefined) {
-      if (
-        existing instanceof BotMesh &&
-        this.gltfAvatarCreationsRemaining > 0 &&
-        characterProvider.isReady
-      ) {
-        return this.replaceFallback(bot, existing, characterProvider);
-      }
-      return existing;
-    }
-
-    const avatar = this.createAvatar(characterProvider);
-    this.avatars.set(bot.entityId, avatar);
-    this.groupFor(bot.team).add(avatar.group);
-
-    // Adopt the bot's current serials rather than zero, so a renderer built mid-match does
-    // not replay every death the roster has already had.
-    const v = bot.visual;
-    this.seen.set(bot.entityId, { death: v.deathSerial, spawn: v.spawnSerial, flinch: v.flinchSerial });
-    avatar.setLife(bot.entityId, v.spawnSerial);
-    if (!bot.participating) avatar.beginDeath(v.deathDirX, v.deathDirZ, v.deathVariant, bot.animation);
-    return avatar;
-  }
-
-  private characterProviderForActor(actor: RenderableActor): CharacterAvatarProvider {
-    const existing = this.characterProviders.get(actor.entityId);
-    if (existing !== undefined) return existing;
-
-    const provider = this.characterProviderFor(actor);
-    this.characterProviders.set(actor.entityId, provider);
-    return provider;
-  }
-
-  private indicatorFor(actor: RenderableActor): ActorIndicator {
-    const existing = this.indicators.get(actor.entityId);
-    if (existing !== undefined) return existing;
-
-    const indicator = new ActorIndicator(actor.entityId, this.indicatorAssets);
-    this.indicators.set(actor.entityId, indicator);
-    this.indicatorGroup.add(indicator.group);
-    return indicator;
-  }
-
-  private applyEvents(bot: RenderableActor, mesh: ActorAvatar, animation: RenderableActor['animation']): void {
-    const v = bot.visual;
-    const seen = this.seen.get(bot.entityId);
-    if (seen === undefined) return;
-
-    if (v.spawnSerial !== seen.spawn) {
-      seen.spawn = v.spawnSerial;
-      mesh.endDeath();
-      mesh.setLife(bot.entityId, v.spawnSerial);
-      mesh.setVisible(true);
-    }
-    if (v.deathSerial !== seen.death) {
-      seen.death = v.deathSerial;
-      mesh.beginDeath(v.deathDirX, v.deathDirZ, v.deathVariant, animation);
-    }
-    if (v.flinchSerial !== seen.flinch) {
-      seen.flinch = v.flinchSerial;
-      mesh.flinch(v.flinchDirX, v.flinchDirZ);
+    /**
+     * `actors` is a supplier rather than an array so the caller can decide per frame what is
+     * drawable — the bot director's roster in single-player, the snapshot's remote set when
+     * networked — without this class knowing which world it is in.
+     */
+    constructor(
+        private readonly actors: () => Iterable<RenderableActor>,
+        private readonly viewer: () => ViewerContext,
+        anisotropy = 1,
+        private readonly characterProviderFor: CharacterAvatarProviderResolver,
+        /** Game's weapon files (M19, stage 3); null and every body carries the primitives. */
+        private readonly weaponAssets: WeaponAssetService | null = null,
+    ) {
+        this.assets = buildBotAssets();
+        // The viewmodel's own gunmetal, already built for the process. A held weapon allocates no
+        // material of its own — see `heldWeaponMaterial`.
+        this.weaponMaterial = heldWeaponMaterial(anisotropy);
+        this.group.name = 'bots';
+        this.groupA.name = 'bots:A';
+        this.groupB.name = 'bots:B';
+        this.indicatorGroup.name = 'actor-indicators';
+        this.group.add(this.groupA, this.groupB, this.indicatorGroup);
     }
 
     /**
-     * The authoritative bit has the last word.
-     *
-     * Both branches above are edge-triggered, and over the network **both edges routinely
-     * arrive in the same frame**: snapshots are delta-compressed at 20 Hz against a 60 Hz sim,
-     * so a body that died and respawned between two snapshots presents a changed death serial
-     * *and* a changed spawn serial at once. With the death check second the mesh ends up
-     * face-down on a player who is alive, running around and shooting.
-     *
-     * Reordering cannot fix it — spawn-then-die inside one frame is equally possible and would
-     * leave a corpse standing up. The serials carry no ordering relative to *each other*, so no
-     * order is right. `participating` — `EFlag.Alive` off the newest snapshot — does.
-     *
-     * The animations stay edge-triggered for their *effects* (fall direction, variant) and the
-     * final state is reconciled against the fact. Single-player reaches this with the same
-     * `Combatant.participating` it always had, so the two paths agree by construction rather
-     * than by coincidence.
+     * Whether the nameplates, health bars and pads are drawn at all (M15, E). The fight behind
+     * the menu is a picture, not a HUD; the markers are one layer, so it is one flag.
      */
-    if (bot.participating && mesh.isDying) {
-      mesh.endDeath();
-      mesh.setVisible(true);
-    } else if (!bot.participating && !mesh.isDying) {
-      mesh.beginDeath(v.deathDirX, v.deathDirZ, v.deathVariant, animation);
+    setIndicatorsVisible(on: boolean): void {
+        this.indicatorGroup.visible = on;
     }
-  }
 
-  /** Create a GLB avatar if its already-preloaded template is trustworthy; otherwise fallback. */
-  private createAvatar(characterProvider: CharacterAvatarProvider): ActorAvatar {
-    if (this.gltfAvatarCreationsRemaining > 0) {
-      const character = characterProvider.create();
-      if (character !== null) {
+    /** Which actor the camera is looking out of this frame; `NO_SPECTATOR_TARGET` for none. See `eyesOf`. */
+    setEyesOf(entityId: number): void {
+        this.eyesOf = entityId;
+    }
+
+    /** The scene node holding one side's bodies. See `groupA`. */
+    groupFor(team: BotTeam): THREE.Group {
+        return team === 'A' ? this.groupA : this.groupB;
+    }
+
+    /**
+     * Render pass: reconcile the mesh set, apply poses, advance animations. `camera` is the
+     * player's, for the pads' screen-space floor (M13 C3); the thermal optic passes none.
+     */
+    update(alpha: number, dt: number, camera?: THREE.PerspectiveCamera): void {
+        this.present.clear();
+        this.gltfAvatarCreationsRemaining = MAX_GLTF_AVATAR_CREATIONS_PER_FRAME;
+        const viewer = this.viewer();
+
+        for (const actor of this.actors()) {
+            this.present.add(actor.entityId);
+            const mesh = this.avatarFor(actor);
+            const animation = actor.animation;
+            this.applyEvents(actor, mesh, animation);
+            // Cheap and idempotent: `setWeapon` returns immediately unless the id actually moved,
+            // which it does once per body per life rather than once per frame.
+            mesh.setWeapon(this.heldWeapon(actor.weaponId));
+            // The throw has the hand from the draw to the end of the follow-through, and the grenade is
+            // in it until it leaves. Idempotent too: both change a handful of times per throw.
+            mesh.setThrow(animation.throwing, this.heldGrenade(actor.heldEquipmentId));
+            const x = actor.renderX(alpha);
+            const y = actor.renderY(alpha);
+            const z = actor.renderZ(alpha);
+            const yaw = actor.renderYaw(alpha);
+            const scale = actor.renderScale(alpha);
+            mesh.update(
+                animation,
+                x,
+                y,
+                z,
+                yaw,
+                scale,
+                dt,
+                camera,
+            );
+            const indicator = this.indicatorFor(actor);
+            indicator.update(
+                {
+                    displayName: actor.displayName,
+                    healthFraction: actor.healthFraction,
+                    relation: relationTo(viewer, actor.team),
+                    participating: actor.participating,
+                },
+                mesh,
+                dt,
+                camera,
+            );
+            // The bodies in the spectator camera's lap are not drawn — after `applyEvents`, whose
+            // respawn edge sets the avatar visible, and after the indicator's own update, so this is
+            // the last word on the frame. Only *those* bodies: the indicator hides itself on a death,
+            // and a first version that wrote `visible = true` to every other actor here put a
+            // nameplate and a health bar back over every corpse in the match.
+            // Dormant (protocol 28): the server is not saying where this body is, so neither it nor its
+            // nameplate is drawn — through the same switch as the spectator's lap, which keeps the
+            // avatar, so a body that comes back into view is not rebuilt from its asset.
+            if (actor.dormant === true || this.hiddenFromSpectator(actor, x, y, z, camera)) {
+                mesh.setVisible(false);
+                indicator.group.visible = false;
+                this.hiddenNext.add(actor.entityId);
+            } else if (this.hidden.has(actor.entityId)) {
+                // Out of the camera's lap: the avatar comes back; the indicator decides for itself
+                // next frame.
+                mesh.setVisible(true);
+            }
+        }
+        const recycled = this.hidden;
+        recycled.clear();
+        this.hidden = this.hiddenNext;
+        this.hiddenNext = recycled;
+
+        if (this.avatars.size !== this.present.size) this.retireAbsent();
+    }
+
+    /**
+     * Whether this body is kept out of the frame for the spectator camera (M17 C2, and the
+     * playtest report that followed it).
+     *
+     * Three states, in order. Not spectating: nothing is ever hidden, and the living player's
+     * camera is left exactly as it was. The body the camera is *inside*: hidden, because a camera
+     * in a skull renders the inside of it. Anything else within `SPECTATOR_BODY_CLEARANCE` of the
+     * eye: hidden too, which is the corpse at the watched player's feet and the teammate sharing
+     * their doorway.
+     *
+     * `camera` is optional on `update` — the thermal optic's passes hand none — and a missing one
+     * can only mean a pass that is not the spectator's, so the distance rule sits out that frame
+     * rather than guessing where the eye is.
+     */
+    private hiddenFromSpectator(
+        actor: RenderableActor,
+        x: number,
+        y: number,
+        z: number,
+        camera?: THREE.PerspectiveCamera,
+    ): boolean {
+        if (this.eyesOf === NO_SPECTATOR_TARGET) return false;
+        if (actor.entityId === this.eyesOf) return true;
+        if (camera === undefined) return false;
+        const dx = x - camera.position.x;
+        const dz = z - camera.position.z;
+        if (dx * dx + dz * dz > SPECTATOR_BODY_CLEARANCE * SPECTATOR_BODY_CLEARANCE) return false;
+        const rise = camera.position.y - y;
+        return rise > -SPECTATOR_BODY_CLEARANCE && rise < BODY_REACH;
+    }
+
+    private avatarFor(bot: RenderableActor): ActorAvatar {
+        const characterProvider = this.characterProviderForActor(bot);
+        const existing = this.avatars.get(bot.entityId);
+        if (existing !== undefined) {
+            if (
+                existing instanceof BotMesh &&
+                this.gltfAvatarCreationsRemaining > 0 &&
+                characterProvider.isReady
+            ) {
+                return this.replaceFallback(bot, existing, characterProvider);
+            }
+            return existing;
+        }
+
+        const avatar = this.createAvatar(characterProvider);
+        this.avatars.set(bot.entityId, avatar);
+        this.groupFor(bot.team).add(avatar.group);
+
+        // Adopt the bot's current serials rather than zero, so a renderer built mid-match does
+        // not replay every death the roster has already had.
+        const v = bot.visual;
+        this.seen.set(bot.entityId, { death: v.deathSerial, spawn: v.spawnSerial, flinch: v.flinchSerial });
+        avatar.setLife(bot.entityId, v.spawnSerial);
+        if (!bot.participating) avatar.beginDeath(v.deathDirX, v.deathDirZ, v.deathVariant, bot.animation);
+        return avatar;
+    }
+
+    private characterProviderForActor(actor: RenderableActor): CharacterAvatarProvider {
+        const existing = this.characterProviders.get(actor.entityId);
+        if (existing !== undefined) return existing;
+
+        const provider = this.characterProviderFor(actor);
+        this.characterProviders.set(actor.entityId, provider);
+        return provider;
+    }
+
+    private indicatorFor(actor: RenderableActor): ActorIndicator {
+        const existing = this.indicators.get(actor.entityId);
+        if (existing !== undefined) return existing;
+
+        const indicator = new ActorIndicator(actor.entityId, this.indicatorAssets);
+        this.indicators.set(actor.entityId, indicator);
+        this.indicatorGroup.add(indicator.group);
+        return indicator;
+    }
+
+    private applyEvents(bot: RenderableActor, mesh: ActorAvatar, animation: RenderableActor['animation']): void {
+        const v = bot.visual;
+        const seen = this.seen.get(bot.entityId);
+        if (seen === undefined) return;
+
+        if (v.spawnSerial !== seen.spawn) {
+            seen.spawn = v.spawnSerial;
+            mesh.endDeath();
+            mesh.setLife(bot.entityId, v.spawnSerial);
+            mesh.setVisible(true);
+        }
+        if (v.deathSerial !== seen.death) {
+            seen.death = v.deathSerial;
+            mesh.beginDeath(v.deathDirX, v.deathDirZ, v.deathVariant, animation);
+        }
+        if (v.flinchSerial !== seen.flinch) {
+            seen.flinch = v.flinchSerial;
+            mesh.flinch(v.flinchDirX, v.flinchDirZ);
+        }
+
+        /**
+         * The authoritative bit has the last word.
+         *
+         * Both branches above are edge-triggered, and over the network **both edges routinely
+         * arrive in the same frame**: snapshots are delta-compressed at 20 Hz against a 60 Hz sim,
+         * so a body that died and respawned between two snapshots presents a changed death serial
+         * *and* a changed spawn serial at once. With the death check second the mesh ends up
+         * face-down on a player who is alive, running around and shooting.
+         *
+         * Reordering cannot fix it — spawn-then-die inside one frame is equally possible and would
+         * leave a corpse standing up. The serials carry no ordering relative to *each other*, so no
+         * order is right. `participating` — `EFlag.Alive` off the newest snapshot — does.
+         *
+         * The animations stay edge-triggered for their *effects* (fall direction, variant) and the
+         * final state is reconciled against the fact. Single-player reaches this with the same
+         * `Combatant.participating` it always had, so the two paths agree by construction rather
+         * than by coincidence.
+         */
+        if (bot.participating && mesh.isDying) {
+            mesh.endDeath();
+            mesh.setVisible(true);
+        } else if (!bot.participating && !mesh.isDying) {
+            mesh.beginDeath(v.deathDirX, v.deathDirZ, v.deathVariant, animation);
+        }
+    }
+
+    /** Create a GLB avatar if its already-preloaded template is trustworthy; otherwise fallback. */
+    private createAvatar(characterProvider: CharacterAvatarProvider): ActorAvatar {
+        if (this.gltfAvatarCreationsRemaining > 0) {
+            const character = characterProvider.create();
+            if (character !== null) {
+                this.gltfAvatarCreationsRemaining--;
+                return character;
+            }
+        }
+        // The fallback stays neutral while a GLB template is loading or unavailable. IFF belongs
+        // to the separate markers/nameplate layer, never to a broad body-colour wash.
+        return new BotMesh(this.assets);
+    }
+
+    /** Swap an existing fallback only at a frame boundary, preserving serial/event semantics. */
+    private replaceFallback(
+        bot: RenderableActor,
+        fallback: BotMesh,
+        characterProvider: CharacterAvatarProvider,
+    ): ActorAvatar {
+        const avatar = characterProvider.create();
+        if (avatar === null) return fallback;
+
         this.gltfAvatarCreationsRemaining--;
-        return character;
-      }
+
+        fallback.group.removeFromParent();
+        fallback.dispose();
+        this.avatars.set(bot.entityId, avatar);
+        this.groupFor(bot.team).add(avatar.group);
+        const visual = bot.visual;
+        avatar.setLife(bot.entityId, visual.spawnSerial);
+        if (!bot.participating) {
+            avatar.beginDeath(visual.deathDirX, visual.deathDirZ, visual.deathVariant, bot.animation);
+        }
+        return avatar;
     }
-    // The fallback stays neutral while a GLB template is loading or unavailable. IFF belongs
-    // to the separate markers/nameplate layer, never to a broad body-colour wash.
-    return new BotMesh(this.assets);
-  }
 
-  /** Swap an existing fallback only at a frame boundary, preserving serial/event semantics. */
-  private replaceFallback(
-    bot: RenderableActor,
-    fallback: BotMesh,
-    characterProvider: CharacterAvatarProvider,
-  ): ActorAvatar {
-    const avatar = characterProvider.create();
-    if (avatar === null) return fallback;
-
-    this.gltfAvatarCreationsRemaining--;
-
-    fallback.group.removeFromParent();
-    fallback.dispose();
-    this.avatars.set(bot.entityId, avatar);
-    this.groupFor(bot.team).add(avatar.group);
-    const visual = bot.visual;
-    avatar.setLife(bot.entityId, visual.spawnSerial);
-    if (!bot.participating) {
-      avatar.beginDeath(visual.deathDirX, visual.deathDirZ, visual.deathVariant, bot.animation);
+    /**
+     * The held weapon for an id, built once and kept. Null for an unknown id.
+     *
+     * This is where the weapon module and the avatar contract meet: `buildHeldWeapon` knows
+     * nothing about avatars and `HeldWeaponAsset` nothing about specs, and the renderer — which
+     * already depends on both — is the one place that joins them.
+     */
+    private heldWeapon(weaponId: string | null): HeldWeaponAsset | null {
+        if (weaponId === null) return null;
+        const existing = this.weapons.get(weaponId);
+        if (existing !== undefined) return existing;
+        const built = buildHeldWeapon(weaponId);
+        // The weapon's own file for the bodies when it has arrived (M19, stage 3); the primitives
+        // until then, and the cache entry dropped when the file lands so the next frame's
+        // `setWeapon` sees a new asset and swaps the mesh.
+        const lod = this.weaponAssets?.lod(weaponId) ?? null;
+        if (lod === null && this.weaponAssets !== null && this.weaponAssets.statusFor(weaponId) !== 'none') {
+            void this.weaponAssets.preloadLod(weaponId).then(
+                () => {
+                    if (this.weapons.get(weaponId) === asset) this.weapons.delete(weaponId);
+                },
+                () => undefined,
+            );
+        }
+        const asset: HeldWeaponAsset = {
+            weaponId,
+            // `anyWeaponDef`: a remote body carrying a killstreak weapon is armed like any other,
+            // and reading only the loadout table would draw it empty-handed.
+            weaponClass: anyWeaponDef(weaponId)?.class ?? null,
+            geometry: built.geometry,
+            material: this.weaponMaterial,
+            template: lod?.scene ?? null,
+            gripAnchor: lod?.gripAnchor ?? built.gripAnchor,
+            supportAnchor: lod?.supportAnchor ?? built.supportAnchor,
+        };
+        this.weapons.set(weaponId, asset);
+        return asset;
     }
-    return avatar;
-  }
 
-  /**
-   * The held weapon for an id, built once and kept. Null for an unknown id.
-   *
-   * This is where the weapon module and the avatar contract meet: `buildHeldWeapon` knows
-   * nothing about avatars and `HeldWeaponAsset` nothing about specs, and the renderer — which
-   * already depends on both — is the one place that joins them.
-   */
-  private heldWeapon(weaponId: string | null): HeldWeaponAsset | null {
-    if (weaponId === null) return null;
-    const existing = this.weapons.get(weaponId);
-    if (existing !== undefined) return existing;
-    const built = buildHeldWeapon(weaponId);
-    // The weapon's own file for the bodies when it has arrived (M19, stage 3); the primitives
-    // until then, and the cache entry dropped when the file lands so the next frame's
-    // `setWeapon` sees a new asset and swaps the mesh.
-    const lod = this.weaponAssets?.lod(weaponId) ?? null;
-    if (lod === null && this.weaponAssets !== null && this.weaponAssets.statusFor(weaponId) !== 'none') {
-      void this.weaponAssets.preloadLod(weaponId).then(
-        () => {
-          if (this.weapons.get(weaponId) === asset) this.weapons.delete(weaponId);
-        },
-        () => undefined,
-      );
+    /**
+     * The grenade for an equipment id, built once and kept; null for none, or while its file is on
+     * its way (2026-09-28).
+     *
+     * The equipment's own file — the one the viewmodel holds and the world throws — asked for the
+     * first time a body is seen with one out, so a match nobody throws in fetches nothing. Until it
+     * lands the hand is empty and the weapon is still put away: a body mid-throw with nothing in its
+     * hand is the less wrong of the two, and five files of a few hundred kilobytes land fast.
+     */
+    private heldGrenade(equipmentId: EquipmentId | null): HeldEquipmentAsset | null {
+        if (equipmentId === null || this.weaponAssets === null) return null;
+        const existing = this.grenades.get(equipmentId);
+        if (existing !== undefined) return existing;
+        const template = this.weaponAssets.equipment(equipmentId);
+        if (template === null) {
+            // Asked once: a file that failed stays failed for this match rather than being fetched
+            // again on every frame some body holds one.
+            if (!this.grenadesAsked.has(equipmentId)) {
+                this.grenadesAsked.add(equipmentId);
+                void this.weaponAssets.preloadEquipment(equipmentId).catch(() => undefined);
+            }
+            return null;
+        }
+        const asset: HeldEquipmentAsset = {
+            equipmentId,
+            template: template.scene,
+            gripAnchor: template.sockets.socket_grip ?? new THREE.Vector3(),
+        };
+        this.grenades.set(equipmentId, asset);
+        return asset;
     }
-    const asset: HeldWeaponAsset = {
-      weaponId,
-      // `anyWeaponDef`: a remote body carrying a killstreak weapon is armed like any other,
-      // and reading only the loadout table would draw it empty-handed.
-      weaponClass: anyWeaponDef(weaponId)?.class ?? null,
-      geometry: built.geometry,
-      material: this.weaponMaterial,
-      template: lod?.scene ?? null,
-      gripAnchor: lod?.gripAnchor ?? built.gripAnchor,
-      supportAnchor: lod?.supportAnchor ?? built.supportAnchor,
-    };
-    this.weapons.set(weaponId, asset);
-    return asset;
-  }
 
-  /**
-   * The grenade for an equipment id, built once and kept; null for none, or while its file is on
-   * its way (2026-09-28).
-   *
-   * The equipment's own file — the one the viewmodel holds and the world throws — asked for the
-   * first time a body is seen with one out, so a match nobody throws in fetches nothing. Until it
-   * lands the hand is empty and the weapon is still put away: a body mid-throw with nothing in its
-   * hand is the less wrong of the two, and five files of a few hundred kilobytes land fast.
-   */
-  private heldGrenade(equipmentId: EquipmentId | null): HeldEquipmentAsset | null {
-    if (equipmentId === null || this.weaponAssets === null) return null;
-    const existing = this.grenades.get(equipmentId);
-    if (existing !== undefined) return existing;
-    const template = this.weaponAssets.equipment(equipmentId);
-    if (template === null) {
-      // Asked once: a file that failed stays failed for this match rather than being fetched
-      // again on every frame some body holds one.
-      if (!this.grenadesAsked.has(equipmentId)) {
-        this.grenadesAsked.add(equipmentId);
-        void this.weaponAssets.preloadEquipment(equipmentId).catch(() => undefined);
-      }
-      return null;
+    /** Only walked when the counts disagree, which is a roster change and not a frame event. */
+    private retireAbsent(): void {
+        for (const [id, mesh] of this.avatars) {
+            if (this.present.has(id)) continue;
+            mesh.group.removeFromParent();
+            mesh.dispose();
+            this.avatars.delete(id);
+            const indicator = this.indicators.get(id);
+            indicator?.dispose();
+            this.indicators.delete(id);
+            this.seen.delete(id);
+            this.characterProviders.get(id)?.dispose();
+            this.characterProviders.delete(id);
+        }
     }
-    const asset: HeldEquipmentAsset = {
-      equipmentId,
-      template: template.scene,
-      gripAnchor: template.sockets.socket_grip ?? new THREE.Vector3(),
-    };
-    this.grenades.set(equipmentId, asset);
-    return asset;
-  }
 
-  /** Only walked when the counts disagree, which is a roster change and not a frame event. */
-  private retireAbsent(): void {
-    for (const [id, mesh] of this.avatars) {
-      if (this.present.has(id)) continue;
-      mesh.group.removeFromParent();
-      mesh.dispose();
-      this.avatars.delete(id);
-      const indicator = this.indicators.get(id);
-      indicator?.dispose();
-      this.indicators.delete(id);
-      this.seen.delete(id);
-      this.characterProviders.get(id)?.dispose();
-      this.characterProviders.delete(id);
+    dispose(): void {
+        for (const mesh of this.avatars.values()) {
+            mesh.group.removeFromParent();
+            mesh.dispose();
+        }
+        this.avatars.clear();
+        for (const indicator of this.indicators.values()) indicator.dispose();
+        this.indicators.clear();
+        for (const provider of this.characterProviders.values()) provider.dispose();
+        this.characterProviders.clear();
+        this.seen.clear();
+        this.group.removeFromParent();
+        this.group.clear();
+        // The bodies reference these and are already gone; the weapon material is the viewmodel's
+        // and lives for the process in `WeaponMesh`'s shared caches; a page teardown, if one is ever
+        // built, releases it there.
+        for (const weapon of this.weapons.values()) weapon.geometry.dispose();
+        this.weapons.clear();
+        // The grenades are the asset service's templates, held by reference; nothing here to free.
+        this.grenades.clear();
+        this.indicatorAssets.dispose();
+        this.assets.dispose();
     }
-  }
-
-  dispose(): void {
-    for (const mesh of this.avatars.values()) {
-      mesh.group.removeFromParent();
-      mesh.dispose();
-    }
-    this.avatars.clear();
-    for (const indicator of this.indicators.values()) indicator.dispose();
-    this.indicators.clear();
-    for (const provider of this.characterProviders.values()) provider.dispose();
-    this.characterProviders.clear();
-    this.seen.clear();
-    this.group.removeFromParent();
-    this.group.clear();
-    // The bodies reference these and are already gone; the weapon material is the viewmodel's
-    // and lives for the process in `WeaponMesh`'s shared caches; a page teardown, if one is ever
-    // built, releases it there.
-    for (const weapon of this.weapons.values()) weapon.geometry.dispose();
-    this.weapons.clear();
-    // The grenades are the asset service's templates, held by reference; nothing here to free.
-    this.grenades.clear();
-    this.indicatorAssets.dispose();
-    this.assets.dispose();
-  }
 }

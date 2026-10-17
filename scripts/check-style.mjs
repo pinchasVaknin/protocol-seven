@@ -320,6 +320,9 @@ const FINISHED = {
     'src/shared/net/Transport.ts',
     'src/shared/net/Skirmish.ts',
   ],
+  A24: [
+    'src/shared/cinematic/IntroPlan.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

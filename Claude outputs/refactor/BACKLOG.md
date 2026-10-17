@@ -10,7 +10,7 @@ usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects h
 measurement nobody has taken yet.
 
 **29 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and opened none. Three numbers are gone and
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. Three numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12.
 
@@ -43,7 +43,6 @@ and belong in its Step 2 plan.
 | ~~A23~~ | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | **closed** — A23 absorbed #1's shared half under an approved fence exception: `shortestAngle` is gone and both call sites moved. What is left of #1 is the three local copies, which are not the same function |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
-| A24 | `shared/cinematic/IntroPlan.ts` | #1 (local copy, `[-PI, PI]`) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
 Everything else below lands in a **completed** unit's files and therefore needs a session of its
@@ -269,11 +268,11 @@ changed, and all fifteen columns through `applyReplicated` and `reset`. Do not w
 
 ## 4. Independent — one decision each
 
-### #1 — Three local angle helpers that are **not** the shared one · `needs a decision from the user`
+### #1 — Two local angle helpers that are **not** the shared one · `needs a decision from the user`
 
-**Files** `src/client/cinematic/IntroCamera.ts:83`, `src/shared/cinematic/IntroPlan.ts:237`,
-`src/client/ClientMatch.ts:3444`. **Origin** A1; the export half was **closed by A23** on
-2026-10-17. **Touches three upcoming units** — see §1.
+**Files** `src/client/cinematic/IntroCamera.ts:83` and `src/client/ClientMatch.ts:3444`.
+**Origin** A1; the export half was **closed by A23** and `IntroPlan`'s copy **folded by A24**,
+both on 2026-10-17/18. **Touches two upcoming units** — see §1.
 
 **What A23 finished.** `MathUtil` exported one function under two names, `angleDelta` and
 `shortestAngle`, and the duplicate export is gone: the two call sites moved onto the survivor
@@ -285,12 +284,12 @@ helpers that are left. The 3,600-tick SIM hash was byte-identical across the cha
 what a no-op looks like. It took an approved fence exception (R2 and R3) because the edit lands
 in A1's finished files.
 
-**What is left, and it is not a no-op.** Three files still define their own copy, and **none of
+**What is left, and it is not a no-op.** Two files still define their own copy, and **neither of
 them is the shared function**:
 
 ```
 MathUtil.angleDelta   if (d > PI) d -= TAU;  if (d <= -PI) d += TAU;   ->  (-PI, PI]
-IntroCamera / IntroPlan   if (d > PI) d -= TAU;  if (d <  -PI) d += TAU;   ->  [-PI, PI]
+IntroCamera           if (d > PI) d -= TAU;  if (d <  -PI) d += TAU;   ->  [-PI, PI]
 ClientMatch.angleDeltaRad while (d > PI) d -= TAU; while (d < -PI) d += TAU;  ->  [-PI, PI], no %
 ```
 
@@ -298,22 +297,24 @@ The difference is `<=` against `<` at exactly **d = -PI**: the shared helper map
 `+PI`, the local copies keep `-PI`. `ClientMatch`'s is a third spelling again — `while` loops
 rather than `%`, which agrees everywhere the modulus does but is its own code.
 
-So folding them in is a **behaviour change at one input value**, in three places that are all
-about where a camera or an overlay points: the intro cinematic's yaw blend, the camera rig's
-follow, and the mortar overlay's bearing. At d = -PI the two answers are a half turn apart in
-sign, which is the one input where a blend would visibly swing the other way.
+So folding them in is a **behaviour change at one input value**, in two places that are both
+about where a camera or an overlay points: the camera rig's follow and the mortar overlay's
+bearing. A24 folded the third — the intro plan's yaw blend — and `intro.txt` was byte-identical
+across every map and mode, which is the evidence the other two can be judged against.
+
+At d = -PI the two answers are a half turn apart in sign, which is the one input where a blend
+would visibly swing the other way.
 
 **Decide** per site: fold it in and accept the `(-PI, PI]` boundary (and pin the new value in
 that unit's tests), or keep the local copy and write down *why* it wants `[-PI, PI]`. What is
 not acceptable is a fourth copy.
 
-**Where each one is done:** `IntroCamera.ts` in **C1**, `IntroPlan.ts` in **A24**,
-`ClientMatch.ts` in **C24** — each inside its own unit's fence, under that unit's approval,
-because each is a behaviour question about that unit's code rather than a mechanical merge.
+**Where each one is done:** `IntroCamera.ts` in **C1** and `ClientMatch.ts` in **C24** — each
+inside its own unit's fence, under that unit's approval, because each is a behaviour question
+about that unit's code rather than a mechanical merge.
 
-**Verify** `npm run check` + SIM snapshot/compare. `IntroPlan` is covered by the `intro` oracle,
-which is byte-compared; the other two are camera work and need the BROWSER check their units
-already run.
+**Verify** `npm run check` + SIM snapshot/compare. Both are camera work and need the BROWSER
+check their units already run; neither is covered by an oracle the way `IntroPlan` was.
 
 ### #3 — Replace greybox's two hand-computed ramps with `rampAlongX` / `rampAlongZ` · `needs measurement`
 

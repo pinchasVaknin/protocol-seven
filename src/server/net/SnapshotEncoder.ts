@@ -58,6 +58,9 @@ export class SnapshotEncoder {
   private readonly pool: EntitySnapshot[] = [];
   private nextId = 1;
 
+  /** The slot `store` writes next, which is always the oldest one. See `store`. */
+  private head = 0;
+
   /** Entities this client was told about that are no longer present. */
   private readonly removed: number[] = [];
 
@@ -155,11 +158,23 @@ export class SnapshotEncoder {
 
   /** Record what was sent, so a later ack naming this id can be used as a baseline. */
   private store(id: number, entities: readonly EntitySnapshot[], count: number): void {
-    // Oldest slot: the ring is small and scanning it is cheaper than tracking a head that
-    // has to stay correct across the wrap.
-    let slot = this.frames[0];
+    /**
+     * The oldest slot is the one the head points at, not the one holding the smallest id.
+     *
+     * This scanned for `f.id < slot.id` until 2026-10-18, on the reasoning that a ring this
+     * small is cheaper to scan than to keep a head correct across the wrap. The scan is only
+     * correct while the ids ascend, and `encode` wraps them at 16 bits: about 54 minutes into
+     * a run the new ids restart at 1 while thirty-one slots still hold ids near 65,535. None
+     * of those is ever the minimum again, so the ring collapses onto the one slot holding the
+     * newest id — and since a client acks a snapshot it received a round trip ago rather than
+     * the one just sent, every lookup from then on misses and every snapshot is sent in full.
+     *
+     * A head is one integer and cannot be wrong: slots are written in the order the ids are
+     * issued, so the next one round is always the oldest.
+     */
+    const slot = this.frames[this.head];
     if (slot === undefined) return;
-    for (const f of this.frames) if (f.id < slot.id) slot = f;
+    this.head = (this.head + 1) % BASELINE_HISTORY;
 
     for (const rec of slot.entities.values()) this.pool.push(rec);
     slot.entities.clear();

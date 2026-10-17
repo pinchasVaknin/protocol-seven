@@ -346,8 +346,7 @@ export abstract class MatchInstance {
         // A new encoder has no baseline, so the next snapshot to this client is a full one. Reset
         // the acks with it, or the encoder would be asked to delta against a snapshot id that
         // belonged to the instance this player just left.
-        session.ackedSnapshot = 0;
-        session.lastSnapshotId = 0;
+        session.restartSnapshotStream();
         // The board too: a fresh seat has seen none of it, so the next send is the whole set,
         // whatever the serial (M13 Phase B).
         this.boardSent.set(session.playerId, { serial: -1, tick: -1 });
@@ -605,7 +604,9 @@ export abstract class MatchInstance {
                 session.cheats.mask,
             );
             if (frame.length === 0) continue;
-            session.lastSnapshotId = h.snapshotId;
+            // Through the session rather than onto the field: it stamps the id with the time,
+            // which is what turns this client's next ack into a round-trip measurement.
+            session.noteSnapshotSent(h.snapshotId);
             session.send(frame);
         }
     }

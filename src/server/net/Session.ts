@@ -65,15 +65,6 @@ import {
 const log = logger('session');
 
 /**
- * The cadence clients ping at, mirrored from `NetClient`.
- *
- * The server subtracts it from the observed gap between pings to recover the delay. A client
- * that pinged at a different rate would produce a wrong estimate rather than no estimate, so
- * the two constants are deliberately named the same thing on both sides.
- */
-const PING_INTERVAL_MS = 250;
-
-/**
  * One client's protocol state (M10, S6.1).
  *
  * The lifecycle S6.1 asks for, in order: handshake, **protocol version check**, entity
@@ -317,7 +308,7 @@ export class Session {
 
   /** Last snapshot id this client acknowledged. 0 means "nothing yet, send a full one". */
   ackedSnapshot = 0;
-  /** Newest snapshot id sent. */
+  /** Newest snapshot id sent. Written through `noteSnapshotSent`. */
   lastSnapshotId = 0;
 
   /** Set by the client's `Hello` name suffix. Opts into the S7 rewind panel feed. */
@@ -364,7 +355,17 @@ export class Session {
   private readonly reader = new ByteReader(new Uint8Array(0));
   private readonly out = new ByteWriter(MAX_SERVER_FRAME_BYTES);
   private rttSamples = 0;
-  private lastPingAtMs = 0;
+
+  /**
+   * When each of the last `BASELINE_HISTORY` snapshots went out, by id. The round trip.
+   *
+   * As deep as the encoder's baseline ring on purpose: an ack naming anything older than that
+   * is already too old to delta against, so there is nothing to lose by not timing it either.
+   * Id 0 is never issued, so it doubles as "empty".
+   */
+  private readonly sentIds = new Int32Array(BASELINE_HISTORY);
+  private readonly sentAtMs = new Float64Array(BASELINE_HISTORY);
+  private sentHead = 0;
 
   /**
    * When this player last did something a person does (security audit 2026-10-04, S6).
@@ -747,6 +748,9 @@ export class Session {
     // sense: an older ack arriving late must not walk the baseline backwards.
     if (snapshotAck !== 0 && isNewerSnapshot(snapshotAck, this.ackedSnapshot)) {
       this.ackedSnapshot = snapshotAck;
+      // Only on an ack that moved: a client repeating the same ack while its next snapshot is
+      // in flight would otherwise inject a sample that grows by a frame each time.
+      this.noteAckRtt(snapshotAck);
     }
 
     const tick = this.serverTick();
@@ -769,32 +773,36 @@ export class Session {
     }
   }
 
-  private handlePing(id: number, clientMs: number): void {
-    const now = nowMs();
-
-    /**
-     * The server's own RTT estimate, from the gap between a client's pings.
-     *
-     * The server never sees a round trip of its own — the client measures those. What it can
-     * see is how long ago it answered this client's previous ping, and since the client pings
-     * on a fixed interval, the *excess* over that interval is the round-trip delay.
-     *
-     * This matters more than it looks: `Rewind` sizes itself from `session.rttMs`, and while
-     * this was left at zero the server was compensating for the interpolation delay alone.
-     * Lag compensation was running at 100 ms when it should have been running at
-     * 100 + RTT/2 — under-rewinding by half a ping on every shot, which is exactly the
-     * half-metre miss S4.13 exists to prevent, just smaller.
-     */
-    if (this.lastPingAtMs > 0) {
-      const gap = now - this.lastPingAtMs;
-      const excess = gap - PING_INTERVAL_MS;
-      // Only positive excess is signal; a ping that arrived early is jitter, not negative
-      // latency. Bounded so a paused client resuming does not inject a huge sample.
-      if (excess > 0 && excess < 1000) this.noteRtt(excess);
+  /**
+   * The round trip of one snapshot, from the ack that named it (2026-10-18).
+   *
+   * The server does have a round trip of its own, and this is it: a snapshot leaves on one
+   * tick and the ack for it comes back inside a command packet. What this replaced inferred
+   * the RTT from the *gap between a client's pings* instead — the excess over the fixed 250 ms
+   * interval — and on a stable link there is no excess, because a ping sent every 250 ms
+   * arrives every 250 ms whatever the transit time is. The estimate therefore sat at zero on
+   * exactly the connections it mattered most for, and `viewLagTicks` compensated for the
+   * interpolation delay alone: lag compensation ran at 100 ms where it owed 100 + RTT/2, which
+   * is the under-rewind S4.13 exists to prevent.
+   *
+   * The sample carries one known bias. A client acks the newest snapshot it has decoded on its
+   * next command packet, and it sends those once per simulation step, so the ack waits up to
+   * one tick — 0-16.7 ms, 8 ms on average. Half of that reaches the rewind, which rounds to
+   * ticks: a quarter of one, consistently in the safe direction.
+   */
+  private noteAckRtt(id: number): void {
+    for (let i = 0; i < BASELINE_HISTORY; i++) {
+      if (this.sentIds[i] !== id) continue;
+      this.noteRtt(nowMs() - (this.sentAtMs[i] ?? 0));
+      return;
     }
-    this.lastPingAtMs = now;
+  }
 
-    this.send(writePong(this.out, id, clientMs, now, this.serverTick()));
+  private handlePing(id: number, clientMs: number): void {
+    // The pong carries the client's own transmit stamp back so *it* can measure the trip, and
+    // the server's clock and tick so it can place itself on the server's timeline. The
+    // server's own estimate comes from `noteAckRtt`, not from the rhythm of these.
+    this.send(writePong(this.out, id, clientMs, nowMs(), this.serverTick()));
   }
 
   /**
@@ -940,6 +948,38 @@ export class Session {
 
   sendStateHash(tick: number, hash: number, sections: readonly number[]): void {
     this.send(writeStateHash(this.out, tick, hash, sections));
+  }
+
+  /**
+   * A snapshot just went out. Remember when, so its ack can be timed (2026-10-18).
+   *
+   * The ids come from this client's own encoder and only ever move forward — the 16-bit wrap
+   * included, which `isNewerSnapshot` reads as forward. An id that is *not* newer therefore
+   * means a different encoder is writing them: a migration between instances hands this
+   * session to a new one, whose ids start at 1 again. The entries from the old instance would
+   * otherwise sit in the ring waiting to be matched by id and timed against a send that
+   * happened in another match, so they go.
+   */
+  /**
+   * This client's snapshot stream starts over: a new encoder, with no baseline (migration).
+   *
+   * The acks and the send times are reset together because they answer for the same ids. An
+   * ack left over from the instance this player just left would ask the new encoder to delta
+   * against a frame it never sent, and a send time left over would be matched by id and timed
+   * against a snapshot from another match.
+   */
+  restartSnapshotStream(): void {
+    this.ackedSnapshot = 0;
+    this.lastSnapshotId = 0;
+    this.sentIds.fill(0);
+  }
+
+  noteSnapshotSent(id: number): void {
+    if (!isNewerSnapshot(id, this.lastSnapshotId)) this.sentIds.fill(0);
+    this.lastSnapshotId = id;
+    this.sentIds[this.sentHead] = id;
+    this.sentAtMs[this.sentHead] = nowMs();
+    this.sentHead = (this.sentHead + 1) % BASELINE_HISTORY;
   }
 
   /**

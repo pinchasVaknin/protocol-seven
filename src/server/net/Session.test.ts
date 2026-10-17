@@ -262,3 +262,90 @@ describe('the idle disconnect', () => {
     expect(session.state).toBe('live');
   });
 });
+
+/**
+ * The server's own round trip (2026-10-18).
+ *
+ * It used to be inferred from the gap between a client's pings, minus the 250 ms they are sent
+ * at — which is zero on any link whose delay is steady, because a ping sent every 250 ms
+ * arrives every 250 ms however long it takes to get there. The estimate sat at zero and
+ * `viewLagTicks` rewound for the interpolation delay alone. A snapshot and the ack that names
+ * it are a real round trip, and the session has both ends of it.
+ */
+describe('the round trip, from the ack of a snapshot', () => {
+  /** One commands frame acking `id`, the way a client sends one. */
+  function ack(session: Session, link: FakeLink, id: number): void {
+    const command = {
+      seq: now,
+      tickIndex: 100,
+      moveX: 0,
+      moveZ: 0,
+      yaw: 0,
+      pitch: 0,
+      buttons: 0,
+      sampledAtMs: now,
+    };
+    link.inbox.push(frame((w) => writeCommands(w, [command], 1, id)));
+    session.receive();
+  }
+
+  it('is the time between the snapshot going out and its ack coming back', () => {
+    const { session, link } = seated();
+    session.noteSnapshotSent(1);
+    now += 120;
+    ack(session, link, 1);
+    expect(session.rttMs).toBe(120);
+  });
+
+  it('smooths, so one late ack does not move the rewind by its whole delay', () => {
+    const { session, link } = seated();
+    session.noteSnapshotSent(1);
+    now += 100;
+    ack(session, link, 1);
+
+    session.noteSnapshotSent(2);
+    now += 200;
+    ack(session, link, 2);
+
+    // The first sample is taken as it stands; after that it is nine parts estimate to one
+    // part sample, which is what keeps a single stalled packet out of the hitboxes.
+    expect(session.rttMs).toBeCloseTo(110, 6);
+    expect(session.jitterMs).toBeCloseTo(10, 6);
+  });
+
+  it('takes no sample from an ack the client is repeating', () => {
+    const { session, link } = seated();
+    session.noteSnapshotSent(1);
+    now += 100;
+    ack(session, link, 1);
+
+    // The next snapshot is still in flight, so the client acks the same id again. Timing that
+    // against the same send would add a frame to the estimate every tick.
+    now += 500;
+    ack(session, link, 1);
+    expect(session.rttMs).toBe(100);
+  });
+
+  it('takes no sample across a migration, where the ids start over', () => {
+    const { session, link } = seated();
+    session.noteSnapshotSent(1);
+
+    // The player moves to another instance: a new encoder, issuing id 1 again.
+    session.restartSnapshotStream();
+    now += 5_000;
+    ack(session, link, 1);
+
+    expect(session.rttMs).toBe(0);
+  });
+
+  it('forgets the ids of the instance a player left, even without the reset', () => {
+    const { session, link } = seated();
+    session.noteSnapshotSent(400);
+    // An id that is not newer than the last can only come from a different encoder.
+    session.noteSnapshotSent(1);
+    now += 5_000;
+    ack(session, link, 400);
+
+    expect(session.rttMs).toBe(0);
+  });
+});

@@ -1,6 +1,5 @@
-import { nowMs } from '../core/Clock';
-import { DT } from '../core/Loop';
-
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 /**
  * Which tick the client should be simulating (M10, S4.11).
  *
@@ -43,6 +42,12 @@ import { DT } from '../core/Loop';
  * for the same reason.
  */
 
+import { nowMs } from '../core/Clock';
+import { DT } from '../core/Loop';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Round-trip samples kept for the offset and jitter estimates. ~4 s at 4 Hz. */
 const WINDOW = 16;
 
@@ -92,12 +97,19 @@ const STARVATION_DECAY_MS = 0.15;
  * snapshot's starvation report, so about twenty-four times a second.
  */
 const LEAD_EASE = 0.25;
+//#endregion
 
+// ====================================== CLASS ClockSync ======================================= \\
+//#region Class ClockSync
 export class ClockSync {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Smoothed round-trip time, ms. */
   rttMs = 0;
+
   /** Mean absolute deviation of the RTT samples, ms. The jitter the margin is sized from. */
   jitterMs = 0;
+
   /** Estimated `serverMs - clientMs`. Add to a local reading to get server time. */
   offsetMs = 0;
 
@@ -124,6 +136,7 @@ export class ClockSync {
   private leadEasedMs = -1;
 
   private readonly rtts = new Float64Array(WINDOW);
+
   private readonly offsets = new Float64Array(WINDOW);
 
   /**
@@ -132,13 +145,19 @@ export class ClockSync {
    * Cleared by the first real round-trip sample, which replaces the guess outright. See `seed`.
    */
   private seeded = false;
+
   private count = 0;
+
   private head = 0;
 
   /** Server tick reported in the most recent pong, and the server time it came with. */
   private lastServerTick = 0;
-  private lastServerMs = 0;
 
+  private lastServerMs = 0;
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Fold in one completed round trip.
    *
@@ -281,7 +300,10 @@ export class ClockSync {
     this.adaptiveMs = 0;
     this.leadEasedMs = -1;
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /** Move the lead in use a quarter of the way to the one wanted; the first is taken whole. */
   private easeLead(): void {
     const wanted = this.wantedLeadMs();
@@ -292,31 +314,52 @@ export class ClockSync {
     const n = this.count;
     if (n === 0) return;
 
+    const mean = this.meanRtt(n);
+    this.rttMs = mean;
+    this.jitterMs = this.meanDeviation(n, mean);
+    this.adoptOffset(this.offsetOfFastest(n));
+    this.easeLead();
+  }
+
+  /** The window's mean round trip, in the order the samples were taken. */
+  private meanRtt(n: number): number {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += this.rtts[i] ?? 0;
+    return sum / n;
+  }
+
+  /** Mean absolute deviation from `mean`. The jitter the margin is sized from. */
+  private meanDeviation(n: number, mean: number): number {
+    let deviation = 0;
+    for (let i = 0; i < n; i++) deviation += Math.abs((this.rtts[i] ?? 0) - mean);
+    return deviation / n;
+  }
+
+  /**
+   * The offset belonging to the **fastest** round trip in the window.
+   *
+   * See the file header: delay is one-sided, so the least-delayed sample is the least-biased
+   * one. A mean would fold every queued, retried and coalesced packet into the estimate.
+   */
+  private offsetOfFastest(n: number): number {
     let best = Infinity;
     let bestOffset = 0;
-    let sum = 0;
     for (let i = 0; i < n; i++) {
       const rtt = this.rtts[i] ?? 0;
-      sum += rtt;
       if (rtt < best) {
         best = rtt;
         bestOffset = this.offsets[i] ?? 0;
       }
     }
-    const mean = sum / n;
+    return bestOffset;
+  }
 
-    let deviation = 0;
-    for (let i = 0; i < n; i++) deviation += Math.abs((this.rtts[i] ?? 0) - mean);
-    deviation /= n;
-
-    this.rttMs = mean;
-    this.jitterMs = deviation;
-
-    // The offset from the *fastest* round trip in the window. See the file header: delay is
-    // one-sided, so the least-delayed sample is the least-biased one.
-    //
-    // Moved toward rather than snapped to, so a single unusually fast sample does not jerk
-    // the whole client's tick number and produce a command gap the server has to fill.
+  /**
+   * Move the offset toward `bestOffset` rather than snapping to it, so a single unusually fast
+   * sample does not jerk the whole client's tick number and produce a command gap the server
+   * has to fill.
+   */
+  private adoptOffset(bestOffset: number): void {
     if (this.offsetMs === 0 || this.seeded) {
       // Nothing to ease away from: either this is the first sample, or the current value is the
       // handshake's provisional guess, which is not a measurement and must not be averaged with
@@ -326,6 +369,7 @@ export class ClockSync {
     } else {
       this.offsetMs += (bestOffset - this.offsetMs) * 0.25;
     }
-    this.easeLead();
   }
+  //#endregion
 }
+//#endregion

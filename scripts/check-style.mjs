@@ -312,6 +312,14 @@ const FINISHED = {
     'src/shared/net/NetClient.ts',
     'src/shared/net/CommandPipeline.ts',
   ],
+  A23: [
+    'src/shared/net/Prediction.ts',
+    'src/shared/net/Interpolation.ts',
+    'src/shared/net/ClockSync.ts',
+    'src/shared/net/NetSim.ts',
+    'src/shared/net/Transport.ts',
+    'src/shared/net/Skirmish.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

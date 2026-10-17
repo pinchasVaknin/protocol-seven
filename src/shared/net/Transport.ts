@@ -1,45 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { copyCommand, type InputCommand, type MutableInputCommand } from '../core/InputCommand';
 import { logger } from '../core/Log';
+//#endregion
 
-const log = logger('LocalBotTransport');
-
-/**
- * The netcode seam, after contact with a real socket (M10, S5.1).
- *
- * ## What was here before, and why it went
- *
- * M1 shipped `INetworkTransport`: `submit(cmd)` / `drain(out, max)` / `pending` / `rttMs`,
- * with one pass-through implementation. S5.1 asked M10 to *"report whether it holds, and if
- * it does not, propose the real interface"*. It does not hold, for four reasons:
- *
- * 1. **It is one-directional.** It carries `InputCommand` client-to-sim and has nowhere to
- *    put a snapshot, an ack, a handshake or an event.
- * 2. **It sits on the wrong side of prediction.** `drain()` returns "commands ready to
- *    simulate", which is a queue the local player would have to *wait in*. S4.11 makes
- *    prediction mandatory precisely so the local player never waits, so the shape encodes
- *    the round trip the milestone exists to remove.
- * 3. **It has no connection state.** No connecting, no closed, no error, no protocol
- *    version, no entity assignment, no close reason. All of those are S6.1 requirements.
- * 4. **It moves object references, not bytes.** `drain` even hands out live ring slots.
- *    Correct for a pass-through; meaningless over a wire.
- *
- * What it got *right* is worth keeping and is the reason this milestone was tractable: it
- * forced the simulation to only ever see command data. That is why a bot, the headless
- * harness and a remote human all feed one pipeline. **The interface goes; the discipline
- * stays.**
- *
- * ## What replaced it
- *
- * `INetLink` below — bidirectional, byte-oriented and connection-stateful. The queueing job
- * did not disappear; it moved to `server/net/InputBuffer.ts`, which is where it always
- * belonged, because only the authority has a reason to buffer commands and reorder them by
- * `seq` (S6.2).
- *
- * `LocalBotTransport` survives unchanged under a name that describes what it always was.
- * Single-player still runs through it, and S HARD RULE 8 says the browser build must not
- * regress — so the local path is exactly the code that shipped at M8.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** Connection state of a link. */
 export type LinkState = 'idle' | 'connecting' | 'open' | 'closed';
 
@@ -113,7 +79,52 @@ export interface ICommandQueue {
   readonly pending: number;
   readonly rttMs: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('LocalBotTransport');
+
+/**
+ * The netcode seam, after contact with a real socket (M10, S5.1).
+ *
+ * ## What was here before, and why it went
+ *
+ * M1 shipped `INetworkTransport`: `submit(cmd)` / `drain(out, max)` / `pending` / `rttMs`,
+ * with one pass-through implementation. S5.1 asked M10 to *"report whether it holds, and if
+ * it does not, propose the real interface"*. It does not hold, for four reasons:
+ *
+ * 1. **It is one-directional.** It carries `InputCommand` client-to-sim and has nowhere to
+ *    put a snapshot, an ack, a handshake or an event.
+ * 2. **It sits on the wrong side of prediction.** `drain()` returns "commands ready to
+ *    simulate", which is a queue the local player would have to *wait in*. S4.11 makes
+ *    prediction mandatory precisely so the local player never waits, so the shape encodes
+ *    the round trip the milestone exists to remove.
+ * 3. **It has no connection state.** No connecting, no closed, no error, no protocol
+ *    version, no entity assignment, no close reason. All of those are S6.1 requirements.
+ * 4. **It moves object references, not bytes.** `drain` even hands out live ring slots.
+ *    Correct for a pass-through; meaningless over a wire.
+ *
+ * What it got *right* is worth keeping and is the reason this milestone was tractable: it
+ * forced the simulation to only ever see command data. That is why a bot, the headless
+ * harness and a remote human all feed one pipeline. **The interface goes; the discipline
+ * stays.**
+ *
+ * ## What replaced it
+ *
+ * `INetLink` below — bidirectional, byte-oriented and connection-stateful. The queueing job
+ * did not disappear; it moved to `server/net/InputBuffer.ts`, which is where it always
+ * belonged, because only the authority has a reason to buffer commands and reorder them by
+ * `seq` (S6.2).
+ *
+ * `LocalBotTransport` survives unchanged under a name that describes what it always was.
+ * Single-player still runs through it, and S HARD RULE 8 says the browser build must not
+ * regress — so the local path is exactly the code that shipped at M8.
+ */
+//#endregion
+
+// ================================== CLASS LocalBotTransport =================================== \\
+//#region Class LocalBotTransport
 /**
  * Single-player queue. Commands submitted on a tick are available to drain on the same tick —
  * zero latency, zero loss, zero reordering.
@@ -122,17 +133,29 @@ export interface ICommandQueue {
  * that keeps the sim honest about only seeing command data.
  */
 export class LocalBotTransport implements ICommandQueue {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly kind = 'local' as const;
+
   readonly rttMs = 0;
 
   private readonly queue: MutableInputCommand[] = [];
-  private readonly capacity: number;
-  private head = 0;
-  private tail = 0;
-  private count = 0;
-  private open_ = false;
-  private overflowWarned = false;
 
+  private readonly capacity: number;
+
+  private head = 0;
+
+  private tail = 0;
+
+  private count = 0;
+
+  private open_ = false;
+
+  private overflowWarned = false;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(capacity = 64) {
     this.capacity = capacity;
     for (let i = 0; i < capacity; i++) {
@@ -148,7 +171,10 @@ export class LocalBotTransport implements ICommandQueue {
       });
     }
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   open(): void {
     this.open_ = true;
   }
@@ -199,4 +225,6 @@ export class LocalBotTransport implements ICommandQueue {
     }
     return written;
   }
+  //#endregion
 }
+//#endregion

@@ -5,7 +5,7 @@ import { HitboxRig, HUMANOID_RIG, rigLayoutFor } from '../combat/HitboxRig';
 import type { DamageSystem } from '../combat/DamageSystem';
 import { EV, type GameBus } from '../core/Events';
 import { Btn, isDown, type MutableInputCommand, type InputCommand } from '../core/InputCommand';
-import { shortestAngle } from '../core/MathUtil';
+import { angleDelta } from '../core/MathUtil';
 import { DT } from '../core/Loop';
 import { Rng } from '../core/Rng';
 import type { ThrowPhase } from '../equipment/ThrowController';
@@ -524,7 +524,7 @@ export class Bot implements Combatant, PathClient {
 
   /** Interpolated facing, radians. Interpolated the short way round. */
   renderYaw(alpha: number): number {
-    return this.prevYaw + shortestAngle(this.prevYaw, this.currYaw) * alpha;
+    return this.prevYaw + angleDelta(this.prevYaw, this.currYaw) * alpha;
   }
 
   /** Interpolated stance compression, 1 standing. */

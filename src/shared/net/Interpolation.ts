@@ -1,7 +1,5 @@
-import { shortestAngle } from '../core/MathUtil';
-import type { StanceId } from '../player/Stance';
-import { copyEntitySnapshot, makeEntitySnapshot, type EntitySnapshot } from './Snapshot';
-
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 /**
  * Remote entities, rendered in the past (M10, S4.12).
  *
@@ -32,15 +30,13 @@ import { copyEntitySnapshot, makeEntitySnapshot, type EntitySnapshot } from './S
  * through a wall because the server stopped talking is worse than a body standing still.
  */
 
-/** How far in the past remote entities are rendered, ms (S4.12). */
-export const DEFAULT_INTERPOLATION_DELAY_MS = 100;
+import { angleDelta } from '../core/MathUtil';
+import type { StanceId } from '../player/Stance';
+import { copyEntitySnapshot, makeEntitySnapshot, type EntitySnapshot } from './Snapshot';
+//#endregion
 
-/** Longest extrapolation past the newest sample before the entity freezes, ms (S4.12). */
-const MAX_EXTRAPOLATION_MS = 250;
-
-/** Samples retained per entity. At 20 Hz this is 1.6 s of history. */
-const SAMPLES = 32;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 interface Sample {
   /** Server time this state is for, ms. */
   serverMs: number;
@@ -62,21 +58,30 @@ export interface InterpolatedPose {
   /** True when the buffer has starved past the extrapolation cap and the body is frozen. */
   frozen: boolean;
 }
+//#endregion
 
-export function makeInterpolatedPose(): InterpolatedPose {
-  return {
-    x: 0,
-    y: 0,
-    z: 0,
-    yaw: 0,
-    pitch: 0,
-    heightScale: 1,
-    stance: 'STAND',
-    extrapolated: false,
-    frozen: false,
-  };
-}
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** How far in the past remote entities are rendered, ms (S4.12). */
+export const DEFAULT_INTERPOLATION_DELAY_MS = 100;
 
+/** Longest extrapolation past the newest sample before the entity freezes, ms (S4.12). */
+const MAX_EXTRAPOLATION_MS = 250;
+
+/** Samples retained per entity. At 20 Hz this is 1.6 s of history. */
+const SAMPLES = 32;
+
+/**
+ * The bracketing pair, found once per `sample` call. Scratch, not state.
+ *
+ * One record for the module: `sample` runs for every remote body every frame, and a pair
+ * returned as an object would be an allocation per body per frame on the render path.
+ */
+const BRACKET: { before: Sample | null; after: Sample | null } = { before: null, after: null };
+//#endregion
+
+// ================================== CLASS EntityInterpolator ================================== \\
+//#region Class EntityInterpolator
 /**
  * One remote entity's sample history.
  *
@@ -86,6 +91,8 @@ export function makeInterpolatedPose(): InterpolatedPose {
  * different gun; blending a death serial would produce nothing at all.
  */
 export class EntityInterpolator {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** The newest state received, applied as-is for everything discrete. */
   readonly latest: EntitySnapshot = makeEntitySnapshot();
 
@@ -93,15 +100,23 @@ export class EntityInterpolator {
   latestMs = 0;
 
   private readonly samples: Sample[] = [];
-  private head = 0;
-  private count = 0;
 
+  private head = 0;
+
+  private count = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor() {
     for (let i = 0; i < SAMPLES; i++) {
       this.samples.push({ serverMs: 0, state: makeEntitySnapshot(), used: false });
     }
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Add a state observed at `serverMs`. */
   push(state: EntitySnapshot, serverMs: number): void {
     const slot = this.samples[this.head];
@@ -149,34 +164,16 @@ export class EntityInterpolator {
       return;
     }
 
-    // Find the bracketing pair.
-    let before: Sample | null = null;
-    let after: Sample | null = null;
-    for (const s of this.samples) {
-      if (!s.used) continue;
-      if (s.serverMs <= renderMs && (before === null || s.serverMs > before.serverMs)) before = s;
-      if (s.serverMs > renderMs && (after === null || s.serverMs < after.serverMs)) after = s;
-    }
+    this.findBracket(renderMs);
+    const before = BRACKET.before;
+    const after = BRACKET.after;
 
     if (before === null || after === null) {
       write(newest.state, out);
       return;
     }
 
-    const span = after.serverMs - before.serverMs;
-    const t = span <= 0 ? 0 : (renderMs - before.serverMs) / span;
-    const a = before.state;
-    const b = after.state;
-
-    out.x = a.x + (b.x - a.x) * t;
-    out.y = a.y + (b.y - a.y) * t;
-    out.z = a.z + (b.z - a.z) * t;
-    // Angles the short way round, or a player turning through north spins the long way.
-    out.yaw = a.yaw + shortestAngle(a.yaw, b.yaw) * t;
-    out.pitch = a.pitch + (b.pitch - a.pitch) * t;
-    out.heightScale = a.heightScale + (b.heightScale - a.heightScale) * t;
-    // Stance is discrete: it changes at the sample that carries it, never halfway between.
-    out.stance = b.stance;
+    blendInto(before, after, renderMs, out);
   }
 
   /**
@@ -212,8 +209,28 @@ export class EntityInterpolator {
   get sampleCount(): number {
     return this.count;
   }
+  //#endregion
 
-  // -- internals --------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * The two held samples that bracket `renderMs`, into `BRACKET`.
+   *
+   * Written into a record this module owns rather than returned as a pair, because this runs
+   * per entity per frame and nothing on that path allocates. The values are read by the one
+   * `sample` call that asked for them, immediately and before any other entity is touched.
+   */
+  private findBracket(renderMs: number): void {
+    let before: Sample | null = null;
+    let after: Sample | null = null;
+    for (const s of this.samples) {
+      if (!s.used) continue;
+      if (s.serverMs <= renderMs && (before === null || s.serverMs > before.serverMs)) before = s;
+      if (s.serverMs > renderMs && (after === null || s.serverMs < after.serverMs)) after = s;
+    }
+    BRACKET.before = before;
+    BRACKET.after = after;
+  }
 
   /**
    * Continue past the newest sample along the last observed velocity, then stop.
@@ -252,7 +269,7 @@ export class EntityInterpolator {
     out.x = b.x + (b.x - a.x) * scale;
     out.y = b.y + (b.y - a.y) * scale;
     out.z = b.z + (b.z - a.z) * scale;
-    out.yaw = b.yaw + shortestAngle(a.yaw, b.yaw) * scale;
+    out.yaw = b.yaw + angleDelta(a.yaw, b.yaw) * scale;
     out.pitch = b.pitch;
     out.extrapolated = true;
   }
@@ -283,6 +300,54 @@ export class EntityInterpolator {
     }
     return best;
   }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeInterpolatedPose(): InterpolatedPose {
+  return {
+    x: 0,
+    y: 0,
+    z: 0,
+    yaw: 0,
+    pitch: 0,
+    heightScale: 1,
+    stance: 'STAND',
+    extrapolated: false,
+    frozen: false,
+  };
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Blend `before` into `after` at the render time, into `out`.
+ *
+ * Position and pitch are linear; yaw goes the short way round, or a player turning through
+ * north spins the long way; stance is discrete and changes at the sample that carries it,
+ * never halfway between two.
+ */
+function blendInto(
+  before: Sample,
+  after: Sample,
+  renderMs: number,
+  out: InterpolatedPose,
+): void {
+  const span = after.serverMs - before.serverMs;
+  const t = span <= 0 ? 0 : (renderMs - before.serverMs) / span;
+  const a = before.state;
+  const b = after.state;
+
+  out.x = a.x + (b.x - a.x) * t;
+  out.y = a.y + (b.y - a.y) * t;
+  out.z = a.z + (b.z - a.z) * t;
+  out.yaw = a.yaw + angleDelta(a.yaw, b.yaw) * t;
+  out.pitch = a.pitch + (b.pitch - a.pitch) * t;
+  out.heightScale = a.heightScale + (b.heightScale - a.heightScale) * t;
+  out.stance = b.stance;
 }
 
 function write(state: EntitySnapshot, out: InterpolatedPose): void {
@@ -294,3 +359,4 @@ function write(state: EntitySnapshot, out: InterpolatedPose): void {
   out.heightScale = state.heightScale;
   out.stance = state.stance;
 }
+//#endregion

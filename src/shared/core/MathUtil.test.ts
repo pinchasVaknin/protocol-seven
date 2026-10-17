@@ -8,7 +8,6 @@ import {
   lerp,
   moveTowards,
   RAD2DEG,
-  shortestAngle,
   smoothstep,
   TAU,
   wrapAngle,
@@ -21,9 +20,9 @@ import {
  * is a simulation divergence rather than a rounding detail — which is why nothing here is
  * asserted with `toBeCloseTo`.
  *
- * `angleDelta` and `shortestAngle` are given the **same** argument table and asserted equal on
- * every row, because the two are one function under two names and the refactor makes the second
- * delegate to the first.
+ * `ANGLE_PAIRS` is walked by `angleDelta` and by `wrapAngle`, which is what is left of the row
+ * table after A23 deleted `shortestAngle`: the rows were chosen to cover both wrap branches, the
+ * (-PI, PI] boundary and -0, and they still assert that the two survivors agree on every one.
  */
 
 /** Argument rows chosen to cover both wrap branches, the (-PI, PI] boundary and -0. */
@@ -184,20 +183,13 @@ describe('angleDelta', () => {
   });
 });
 
-describe('shortestAngle', () => {
-  it('agrees with angleDelta bit for bit on every argument row', () => {
-    for (const [from, to] of ANGLE_PAIRS) {
-      expect(shortestAngle(from, to)).toBe(angleDelta(from, to));
+describe('angleDelta over the row table', () => {
+  it('is wrapAngle of the difference on every row', () => {
+    // What `shortestAngle`'s agreement test asserted until A23, now between the two helpers
+    // that are left: one of them is the other with `from` at zero, bit for bit.
+    for (const [from_, to_] of ANGLE_PAIRS) {
+      expect(angleDelta(from_, to_)).toBe(wrapAngle(to_ - from_));
     }
-  });
-
-  it('pins the same values independently of angleDelta', () => {
-    expect(shortestAngle(0, Math.PI)).toBe(3.141592653589793);
-    expect(shortestAngle(0, -Math.PI)).toBe(3.141592653589793);
-    expect(shortestAngle(0, -TAU)).toBe(-0);
-    expect(shortestAngle(-3, 3)).toBe(-0.28318530717958623);
-    expect(shortestAngle(10, -10)).toBe(-1.1504440784612413);
-    expect(shortestAngle(0.5, 0.25)).toBe(-0.25);
   });
 });
 

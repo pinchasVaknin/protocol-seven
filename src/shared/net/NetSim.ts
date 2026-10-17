@@ -1,6 +1,5 @@
-import { nowMs } from '../core/Clock';
-import { Rng } from '../core/Rng';
-
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 /**
  * Artificial network conditions, applied to a byte stream (M10, S7).
  *
@@ -45,6 +44,12 @@ import { Rng } from '../core/Rng';
  * S7 names 2% loss and the netcode's recovery from a missing snapshot is what that measures.
  */
 
+import { nowMs } from '../core/Clock';
+import { Rng } from '../core/Rng';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface NetConditions {
   /** Added round-trip time in ms. Split evenly across the two hops. */
   readonly latencyMs: number;
@@ -54,6 +59,20 @@ export interface NetConditions {
   readonly lossPct: number;
 }
 
+interface Pending {
+  /** Monotonic ms at which this frame becomes deliverable. */
+  dueMs: number;
+  /** Payload. Owned by this record and reused; `length` says how much of it is live. */
+  bytes: Uint8Array;
+  length: number;
+  /** Send order, so equal due times deliver deterministically rather than by sort luck. */
+  serial: number;
+  active: boolean;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const NET_PERFECT: NetConditions = {
   latencyMs: 0,
   jitterMs: 0,
@@ -74,29 +93,18 @@ export const NET_PRESETS: Readonly<Record<string, NetConditions>> = {
   bad: { latencyMs: 100, jitterMs: 30, lossPct: 2 },
 };
 
-/** Look a preset up by name, or null. Used by the URL flag and the live toggle. */
-export function findPreset(name: string): NetConditions | null {
-  return NET_PRESETS[name.trim().toLowerCase()] ?? null;
-}
-
-interface Pending {
-  /** Monotonic ms at which this frame becomes deliverable. */
-  dueMs: number;
-  /** Payload. Owned by this record and reused; `length` says how much of it is live. */
-  bytes: Uint8Array;
-  length: number;
-  /** Send order, so equal due times deliver deterministically rather than by sort luck. */
-  serial: number;
-  active: boolean;
-}
-
 /** Frames in flight in one direction before the simulator starts dropping them. */
 const MAX_IN_FLIGHT = 256;
 
 /** Backing buffer per pending frame. Sized for the largest frame the protocol allows. */
 const FRAME_CAPACITY = 8192;
+//#endregion
 
+// ======================================== CLASS NetSim ======================================== \\
+//#region Class NetSim
 export class NetSim {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /**
    * Live conditions. Assignable so the debug panel can change them mid-match without
    * tearing the connection down — S7 asks for "toggleable live", and a toggle that
@@ -106,17 +114,25 @@ export class NetSim {
 
   /** Frames dropped by the loss model since the last `resetStats()`. */
   dropped = 0;
+
   /** Frames delivered. */
   delivered = 0;
+
   /** Frames dropped because the in-flight pool was full. A real problem, not a simulated one. */
   overflowed = 0;
 
   private readonly pool: Pending[] = [];
+
   private readonly rng: Rng;
+
   private serial = 0;
+
   /** When the last frame offered becomes deliverable. The next is never due before it. */
   private lastDueMs = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   /**
    * Seeded, not `Math.random` (M1's ban, and it is not incidental here): a loss pattern that
    * differs between two runs makes two measurements incomparable, and the whole purpose of
@@ -135,7 +151,10 @@ export class NetSim {
       });
     }
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** True when this simulator is a no-op and the caller may skip it entirely. */
   get idle(): boolean {
     const c = this.conditions;
@@ -234,11 +253,23 @@ export class NetSim {
       deliver(best.bytes.subarray(0, best.length));
     }
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private free(): Pending | null {
     for (const p of this.pool) if (!p.active) return p;
     return null;
   }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** Look a preset up by name, or null. Used by the URL flag and the live toggle. */
+export function findPreset(name: string): NetConditions | null {
+  return NET_PRESETS[name.trim().toLowerCase()] ?? null;
 }
 
 /**
@@ -273,3 +304,4 @@ export function describeConditions(c: NetConditions): string {
   if (c.lossPct > 0) bits.push(`${c.lossPct.toFixed(1)}% loss`);
   return bits.join(', ');
 }
+//#endregion

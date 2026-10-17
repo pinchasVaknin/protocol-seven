@@ -1,12 +1,5 @@
-import { copyCommand, type InputCommand, type MutableInputCommand } from '../core/InputCommand';
-import type { PlayerController } from '../player/PlayerController';
-import {
-  loadPlayerSim,
-  makePlayerSimState,
-  savePlayerSim,
-  type PlayerSimState,
-} from '../player/PlayerState';
-
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 /**
  * Client-side prediction and reconciliation (M10, S4.11 and S6.3).
  *
@@ -76,6 +69,55 @@ import {
  * the command, for the same reason the angles are data in it.
  */
 
+import { copyCommand, type InputCommand, type MutableInputCommand } from '../core/InputCommand';
+import type { PlayerController } from '../player/PlayerController';
+import {
+  loadPlayerSim,
+  makePlayerSimState,
+  savePlayerSim,
+  type PlayerSimState,
+} from '../player/PlayerState';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+/** One recorded prediction: the command, and the state it was expected to produce. */
+interface PredictedTick {
+  seq: number;
+  tick: number;
+  /** What the client predicted the state would be *after* this command. */
+  readonly state: PlayerSimState;
+  /** The command itself, kept so it can be replayed. */
+  readonly cmd: MutableInputCommand;
+  /**
+   * `PlayerController.weaponSpeedScale` as it was when this command was stepped (2026-09-28).
+   *
+   * The one input to movement that is neither in the command nor in the sim: it comes from the
+   * weapon in the hands, and the weapon is exactly what a replay does not run. Kept here for the
+   * same reason the command is — so the replay steps with what the prediction stepped with.
+   */
+  weaponSpeedScale: number;
+  used: boolean;
+}
+
+export interface PredictionStats {
+  /** Corrections applied. S8.4 requires this to be zero at zero added latency. */
+  mispredictions: number;
+  /** Authoritative updates compared. The denominator for a misprediction rate. */
+  comparisons: number;
+  /** Commands replayed by the most recent correction. */
+  lastReplayDepth: number;
+  /** Largest replay depth seen. */
+  maxReplayDepth: number;
+  /** Distance of the most recent correction, metres. */
+  lastErrorM: number;
+  /** Correction distances, for the p50/p99 S8.5 asks for. */
+  readonly errors: number[];
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * How far the prediction may be from the authoritative state before it counts as wrong.
  *
@@ -126,42 +168,13 @@ const TELEPORT_DISTANCE = 5;
 
 /** Commands held awaiting acknowledgement. Two seconds at 60 Hz. */
 const RING = 128;
+//#endregion
 
-/** One recorded prediction: the command, and the state it was expected to produce. */
-interface PredictedTick {
-  seq: number;
-  tick: number;
-  /** What the client predicted the state would be *after* this command. */
-  readonly state: PlayerSimState;
-  /** The command itself, kept so it can be replayed. */
-  readonly cmd: MutableInputCommand;
-  /**
-   * `PlayerController.weaponSpeedScale` as it was when this command was stepped (2026-09-28).
-   *
-   * The one input to movement that is neither in the command nor in the sim: it comes from the
-   * weapon in the hands, and the weapon is exactly what a replay does not run. Kept here for the
-   * same reason the command is — so the replay steps with what the prediction stepped with.
-   */
-  weaponSpeedScale: number;
-  used: boolean;
-}
-
-export interface PredictionStats {
-  /** Corrections applied. S8.4 requires this to be zero at zero added latency. */
-  mispredictions: number;
-  /** Authoritative updates compared. The denominator for a misprediction rate. */
-  comparisons: number;
-  /** Commands replayed by the most recent correction. */
-  lastReplayDepth: number;
-  /** Largest replay depth seen. */
-  maxReplayDepth: number;
-  /** Distance of the most recent correction, metres. */
-  lastErrorM: number;
-  /** Correction distances, for the p50/p99 S8.5 asks for. */
-  readonly errors: number[];
-}
-
+// ====================================== CLASS Prediction ====================================== \\
+//#region Class Prediction
 export class Prediction {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly stats: PredictionStats = {
     mispredictions: 0,
     comparisons: 0,
@@ -179,15 +192,20 @@ export class Prediction {
    * `CORRECTION_SMOOTHING_TICKS`. Read by the camera rig and by nothing that affects gameplay.
    */
   offsetX = 0;
+
   offsetY = 0;
+
   offsetZ = 0;
 
   private readonly ring: PredictedTick[] = [];
+
   private head = 0;
 
   /** The offset at the moment of the correction. The live offset is this, scaled by time. */
   private originX = 0;
+
   private originY = 0;
+
   private originZ = 0;
 
   /**
@@ -202,8 +220,12 @@ export class Prediction {
   replaying = false;
 
   private lastAckedSeq = -1;
-  private smoothingTicksLeft = 0;
 
+  private smoothingTicksLeft = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor() {
     for (let i = 0; i < RING; i++) {
       this.ring.push({
@@ -225,7 +247,10 @@ export class Prediction {
       });
     }
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Commands predicted but not yet acknowledged. */
   get unacked(): number {
     let n = 0;
@@ -282,95 +307,24 @@ export class Prediction {
     const dy = state.y - predicted.state.y;
     const dz = state.z - predicted.state.z;
     const distance = Math.hypot(dx, dy, dz);
-    const velocityOff =
-      Math.abs(state.vx - predicted.state.vx) > VELOCITY_EPSILON ||
-      Math.abs(state.vy - predicted.state.vy) > VELOCITY_EPSILON ||
-      Math.abs(state.vz - predicted.state.vz) > VELOCITY_EPSILON;
 
-    if (distance <= POSITION_EPSILON && !velocityOff && state.stance === predicted.state.stance) {
+    if (
+      distance <= POSITION_EPSILON &&
+      !velocityDiverged(state, predicted.state) &&
+      state.stance === predicted.state.stance
+    ) {
       // The prediction was right. Do nothing — in particular, do **not** load the
       // authoritative state, which is older than what this client has already simulated.
       return false;
     }
 
-    /**
-     * Past a certain distance it is not a wrong prediction, it is a relocation (M11).
-     *
-     * A client running at the §4.3 speed ceiling with a 200 ms round trip can be at most a
-     * couple of metres out through prediction error alone. Anything beyond that is the server
-     * having *put the player somewhere else* — a spawn, a round reset, a killstreak
-     * teleporting them into a gunship seat — and no client could have predicted any of it.
-     *
-     * `respawned` catches the common case by watching the replicated spawn serial, and this is
-     * the backstop for the ones it cannot see: a relocation that arrives in an owner block
-     * without a corresponding entity update, which is exactly what a delta snapshot is
-     * entitled to send.
-     *
-     * It was measured before this existed as a **p99 of 30.26 m** on one harness client — the
-     * width of Foundry, and the same signature M10 recorded before the respawn case was
-     * handled. One such event is enough to dominate a percentile and to turn a criterion that
-     * asks for zero mispredictions into one that can never be met.
-     */
     if (distance > TELEPORT_DISTANCE) {
-      loadPlayerSim(state, controller.sim);
-      this.replayAfter(ackSeq, controller);
-      this.originX = 0;
-      this.originY = 0;
-      this.originZ = 0;
-      this.smoothingTicksLeft = 0;
-      this.applyOffset();
+      this.adoptRelocation(ackSeq, state, controller);
       return false;
     }
 
-    this.stats.mispredictions++;
-    this.stats.lastErrorM = distance;
-    this.stats.errors.push(distance);
-    if (this.stats.errors.length > 4096) this.stats.errors.shift();
-
-    /**
-     * Where the player is currently being *drawn* — simulation plus any offset still being
-     * eased out from a previous correction.
-     *
-     * Measuring against the drawn position rather than the simulated one is what makes
-     * back-to-back corrections stack smoothly. Under packet loss they arrive every few
-     * ticks, and an offset computed from the raw sim position would discard the residual of
-     * the correction still in flight, producing a visible pop on every one after the first.
-     */
-    const beforeX = controller.sim.x + this.offsetX;
-    const beforeY = controller.sim.y + this.offsetY;
-    const beforeZ = controller.sim.z + this.offsetZ;
-
-    // 1. Snap the simulation to the truth.
-    loadPlayerSim(state, controller.sim);
-
-    // 2. Replay every command the server has not seen yet, through the same step function.
-    const depth = this.replayAfter(ackSeq, controller);
-    this.stats.lastReplayDepth = depth;
-    if (depth > this.stats.maxReplayDepth) this.stats.maxReplayDepth = depth;
-
-    // 3. Carry the visible difference as a decaying offset rather than a jump.
-    const afterX = controller.sim.x;
-    const afterY = controller.sim.y;
-    const afterZ = controller.sim.z;
-    const visualDx = beforeX - afterX;
-    const visualDy = beforeY - afterY;
-    const visualDz = beforeZ - afterZ;
-    const visualDistance = Math.hypot(visualDx, visualDy, visualDz);
-
-    if (visualDistance > MAX_SMOOTHED_DISTANCE) {
-      // Too far to hide. Cut, and let the player see where they actually are.
-      this.originX = 0;
-      this.originY = 0;
-      this.originZ = 0;
-      this.smoothingTicksLeft = 0;
-    } else {
-      this.originX = visualDx;
-      this.originY = visualDy;
-      this.originZ = visualDz;
-      this.smoothingTicksLeft = CORRECTION_SMOOTHING_TICKS;
-    }
-    this.applyOffset();
-
+    this.noteMisprediction(distance);
+    this.applyCorrection(ackSeq, state, controller);
     return true;
   }
 
@@ -390,21 +344,6 @@ export class Prediction {
     }
     this.smoothingTicksLeft--;
     this.applyOffset();
-  }
-
-  /**
-   * The live offset is the correction scaled by how much of the window is left.
-   *
-   * Recomputed from the origin each tick rather than multiplied down, so it reaches exactly
-   * zero on the last tick. A repeated multiply is an exponential decay that never quite
-   * arrives, and a player who took one correction would spend the rest of the match drawn a
-   * fraction of a millimetre away from their own body.
-   */
-  private applyOffset(): void {
-    const t = this.smoothingTicksLeft / CORRECTION_SMOOTHING_TICKS;
-    this.offsetX = this.originX * t;
-    this.offsetY = this.originY * t;
-    this.offsetZ = this.originZ * t;
   }
 
   /**
@@ -472,8 +411,118 @@ export class Prediction {
     const at = (p: number): number => sorted[Math.min(n - 1, Math.floor(p * n))] ?? 0;
     return { p50: at(0.5), p99: at(0.99), count: n };
   }
+  //#endregion
 
-  // -- internals --------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Past a certain distance it is not a wrong prediction, it is a relocation (M11).
+   *
+   * A client running at the §4.3 speed ceiling with a 200 ms round trip can be at most a
+   * couple of metres out through prediction error alone. Anything beyond that is the server
+   * having *put the player somewhere else* — a spawn, a round reset, a killstreak
+   * teleporting them into a gunship seat — and no client could have predicted any of it.
+   *
+   * `respawned` catches the common case by watching the replicated spawn serial, and this is
+   * the backstop for the ones it cannot see: a relocation that arrives in an owner block
+   * without a corresponding entity update, which is exactly what a delta snapshot is
+   * entitled to send.
+   *
+   * It was measured before this existed as a **p99 of 30.26 m** on one harness client — the
+   * width of Foundry, and the same signature M10 recorded before the respawn case was
+   * handled. One such event is enough to dominate a percentile and to turn a criterion that
+   * asks for zero mispredictions into one that can never be met.
+   *
+   * Nothing is counted and nothing is smoothed: the player is told where they are.
+   */
+  private adoptRelocation(
+    ackSeq: number,
+    state: PlayerSimState,
+    controller: PlayerController,
+  ): void {
+    loadPlayerSim(state, controller.sim);
+    this.replayAfter(ackSeq, controller);
+    this.originX = 0;
+    this.originY = 0;
+    this.originZ = 0;
+    this.smoothingTicksLeft = 0;
+    this.applyOffset();
+  }
+
+  /** Count one correction and keep its size for the percentiles S8.5 asks for. */
+  private noteMisprediction(distance: number): void {
+    this.stats.mispredictions++;
+    this.stats.lastErrorM = distance;
+    this.stats.errors.push(distance);
+    if (this.stats.errors.length > 4096) this.stats.errors.shift();
+  }
+
+  /**
+   * Snap the simulation to the truth, replay what the server has not seen, and carry the
+   * visible difference as a decaying offset rather than a jump.
+   *
+   * The "before" position is where the player is currently being *drawn* — simulation plus any
+   * offset still being eased out from a previous correction. Measuring against the drawn
+   * position rather than the simulated one is what makes back-to-back corrections stack
+   * smoothly. Under packet loss they arrive every few ticks, and an offset computed from the
+   * raw sim position would discard the residual of the correction still in flight, producing a
+   * visible pop on every one after the first.
+   */
+  private applyCorrection(
+    ackSeq: number,
+    state: PlayerSimState,
+    controller: PlayerController,
+  ): void {
+    const beforeX = controller.sim.x + this.offsetX;
+    const beforeY = controller.sim.y + this.offsetY;
+    const beforeZ = controller.sim.z + this.offsetZ;
+
+    // 1. Snap the simulation to the truth.
+    loadPlayerSim(state, controller.sim);
+
+    // 2. Replay every command the server has not seen yet, through the same step function.
+    const depth = this.replayAfter(ackSeq, controller);
+    this.stats.lastReplayDepth = depth;
+    if (depth > this.stats.maxReplayDepth) this.stats.maxReplayDepth = depth;
+
+    // 3. Carry the visible difference as a decaying offset rather than a jump.
+    const afterX = controller.sim.x;
+    const afterY = controller.sim.y;
+    const afterZ = controller.sim.z;
+    const visualDx = beforeX - afterX;
+    const visualDy = beforeY - afterY;
+    const visualDz = beforeZ - afterZ;
+    const visualDistance = Math.hypot(visualDx, visualDy, visualDz);
+
+    if (visualDistance > MAX_SMOOTHED_DISTANCE) {
+      // Too far to hide. Cut, and let the player see where they actually are.
+      this.originX = 0;
+      this.originY = 0;
+      this.originZ = 0;
+      this.smoothingTicksLeft = 0;
+    } else {
+      this.originX = visualDx;
+      this.originY = visualDy;
+      this.originZ = visualDz;
+      this.smoothingTicksLeft = CORRECTION_SMOOTHING_TICKS;
+    }
+    this.applyOffset();
+  }
+
+  /**
+   * The live offset is the correction scaled by how much of the window is left.
+   *
+   * Recomputed from the origin each tick rather than multiplied down, so it reaches exactly
+   * zero on the last tick. A repeated multiply is an exponential decay that never quite
+   * arrives, and a player who took one correction would spend the rest of the match drawn a
+   * fraction of a millimetre away from their own body.
+   */
+  private applyOffset(): void {
+    const t = this.smoothingTicksLeft / CORRECTION_SMOOTHING_TICKS;
+    this.offsetX = this.originX * t;
+    this.offsetY = this.originY * t;
+    this.offsetZ = this.originZ * t;
+  }
 
   private find(seq: number): PredictedTick | null {
     for (const p of this.ring) {
@@ -512,4 +561,24 @@ export class Prediction {
     }
     return pending.length;
   }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Whether the authoritative velocity disagrees with what was predicted.
+ *
+ * Its own rule beside the position's, because a body can be in the right place with the wrong
+ * momentum — a landing the client missed, a slide the server ended — and the next tick computes
+ * from the velocity.
+ */
+function velocityDiverged(state: PlayerSimState, predicted: PlayerSimState): boolean {
+  return (
+    Math.abs(state.vx - predicted.vx) > VELOCITY_EPSILON ||
+    Math.abs(state.vy - predicted.vy) > VELOCITY_EPSILON ||
+    Math.abs(state.vz - predicted.vz) > VELOCITY_EPSILON
+  );
+}
+//#endregion

@@ -1,3 +1,16 @@
+/**
+ * The skirmish flow's vocabulary, shared by both runtimes (M11, §3).
+ *
+ * Everything here is either a number both sides must agree on or a shape both sides must
+ * decode. S3: *"Config is shared and singular. The client must never hold its own copy of a
+ * gameplay number — that is how client and server drift apart in ways that look like netcode
+ * bugs."* The vote durations are the sharpest case: the client renders a countdown from them
+ * and the server decides phase boundaries from them, and two copies would produce a client
+ * that votes into a window the server has already closed.
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { EQUIPMENT_DEFS, type EquipmentId } from '../equipment/EquipmentDefs';
 import { CAMOS, type CamoId } from '../meta/Camos';
 import { FIELD_UPGRADES, type FieldUpgradeId } from '../meta/FieldUpgrades';
@@ -16,135 +29,16 @@ import { STREAK_DEFS, type StreakId } from '../streaks/StreakDefs';
 import { ATTACHMENTS, type AttachmentId } from '../weapons/Attachments';
 import { WEAPON_DEFS } from '../weapons/WeaponDefs';
 import { cleanDisplayText } from './DisplayText';
+//#endregion
 
-/**
- * The skirmish flow's vocabulary, shared by both runtimes (M11, §3).
- *
- * Everything here is either a number both sides must agree on or a shape both sides must
- * decode. S3: *"Config is shared and singular. The client must never hold its own copy of a
- * gameplay number — that is how client and server drift apart in ways that look like netcode
- * bugs."* The vote durations are the sharpest case: the client renders a countdown from them
- * and the server decides phase boundaries from them, and two copies would produce a client
- * that votes into a window the server has already closed.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** Which instance a message belongs to. 0 is the permanent warmup arena. */
 export type MatchId = number;
 
-/** The warmup arena's id. Fixed, because it is created at boot and never destroyed. */
-export const WARMUP_MATCH_ID: MatchId = 0;
-
-/**
- * Is this instance the permanent arena (playtest round 4, F7 and F12)?
- *
- * **The only place in the codebase that compares against `WARMUP_MATCH_ID`**, and it is a
- * function rather than a constant for that reason alone. The room's rules are spreading — no
- * combatant takes health, nothing is recorded, the caption says where you are, three HUD
- * surfaces stay down — and each of those is somewhere a bare `matchId === WARMUP_MATCH_ID`
- * could be written instead. Written enough times, the id becomes the fact; and then the next
- * surface added forgets it, silently, because forgetting a comparison looks like nothing.
- *
- * Server-side the fact needs no id at all: it is the **kind of instance**, and
- * `MatchInstance.isArena` carries it. This is the same question asked from the one place a
- * client can ask it — the id in its `Welcome` — and it is asked exactly once, in `MatchWorld`.
- */
-export function isArenaInstance(matchId: MatchId): boolean {
-  return matchId === WARMUP_MATCH_ID;
-}
-
-/**
- * Instance lifecycle (§4.18).
- *
- * `WarmupMatch` only ever occupies `BOOTING` and `RUNNING`; there is no path from it to
- * `DESTROYED`. `LiveMatch` walks the whole list in order.
- */
-export const InstanceState = {
-  BOOTING: 0,
-  ALLOCATING: 1,
-  LOADING: 2,
-  READY_WAIT: 3,
-  RUNNING: 4,
-  ENDED: 5,
-  DESTROYED: 6,
-  /** Reached only by an instance whose step threw (§4.18). Its players go back to warmup. */
-  FAILED: 7,
-} as const;
 export type InstanceStateId = (typeof InstanceState)[keyof typeof InstanceState];
 
-export function instanceStateName(state: number): string {
-  for (const [name, value] of Object.entries(InstanceState)) {
-    if (value === state) return name;
-  }
-  return 'UNKNOWN';
-}
-
-// -- the vote cycle (§4.20, §6.4) --------------------------------------------
-
-/**
- * The phases of the 60 s cycle.
- *
- * `IDLE` is not in the brief's table and is required by §4.20's last rule: *"If every human
- * leaves during a vote phase, the cycle cancels and the arena returns to idle warmup."* An
- * arena with nobody in it is not in a phase of a countdown, and modelling it as `PLAY` would
- * mean a vote opening for zero people every forty seconds forever.
- */
-export const VotePhase = {
-  IDLE: 0,
-  PLAY: 1,
-  MODE_VOTE: 2,
-  MAP_VOTE: 3,
-  /** The map is decided and the instance is being allocated. Voting is closed. */
-  ALLOCATING: 4,
-} as const;
 export type VotePhaseId = (typeof VotePhase)[keyof typeof VotePhase];
-
-export function votePhaseName(phase: number): string {
-  for (const [name, value] of Object.entries(VotePhase)) {
-    if (value === phase) return name;
-  }
-  return 'UNKNOWN';
-}
-
-/**
- * Which ballot just *appeared*, or `null` for no opening (playtest round 4, F13).
- *
- * ## One detector over the phase, not one per ballot
- *
- * The first version of this answered only the map ballot, because F13 names the map and because
- * "one sound per cycle" was a tidy thing to be able to assert. Both were wrong reasons. The
- * **mode** ballot is the one that opens the whole twenty-second question while the player is
- * mid-firefight, and it arrived in silence — so the cue was missing from the moment it was most
- * needed, and a second detector beside this one is how that gets fixed twice.
- *
- * The rule is a property of the phase machine rather than of either ballot: a ballot has opened
- * when the phase becomes a ballot it was not already. `PLAY -> MODE_VOTE` and
- * `MODE_VOTE -> MAP_VOTE` are both openings; the forty broadcasts inside either one are not.
- *
- * ## Why the two do not sound the same
- *
- * They are two stages of one question, so they should be recognisably the same event and
- * distinguishable without looking up. `ProceduralAudio.playBallotOpen` takes the phase and
- * pitches the same two-note figure from it — the map ballot a fourth above the mode ballot — so
- * the second cue says *the mode is settled, the map is the question now* to a player who never
- * takes their eyes off the fight. One generator, two pitches, rather than two sounds.
- *
- * ## The trap this exists to avoid
- *
- * Vote state is broadcast at 4 Hz. Anything hung off the broadcast rather than off the change
- * fires at the broadcast rate — measured, 43 times across one ten-second ballot. Holding the
- * previous phase and acting only on the difference is the general form, and it is why this takes
- * `previous` as an argument instead of keeping a flag: the caller already has the old phase,
- * `VoteOverlay.apply` in the browser and `HeadlessClient.onVoteState` in the harness, and
- * neither has anything extra to reset.
- *
- * `IDLE` for `previous` is not a special case: a client that has just been migrated back into
- * the arena mid-ballot has genuinely just had one appear in front of it.
- */
-export function ballotOpened(previous: number, next: number): VotePhaseId | null {
-  if (next !== VotePhase.MODE_VOTE && next !== VotePhase.MAP_VOTE) return null;
-  if (previous === next) return null;
-  return next;
-}
 
 export interface VoteCycleConfig {
   /** Free warmup play before the ballot opens, seconds. */
@@ -152,35 +46,6 @@ export interface VoteCycleConfig {
   readonly modeVoteSeconds: number;
   readonly mapVoteSeconds: number;
 }
-
-/**
- * §4.20's table, verbatim, and the only copy of it.
- *
- * The client derives its countdown from the *server's* phase-end tick rather than from these
- * numbers (§4.20: *"the client renders a countdown derived from the synced server clock and
- * never runs its own timer"*), so they exist here for the server's phase machine and for a
- * client that wants to draw a progress bar of the right total width.
- */
-export const VOTE_CYCLE_CONFIG: VoteCycleConfig = {
-  playSeconds: 40,
-  modeVoteSeconds: 10,
-  mapVoteSeconds: 10,
-};
-
-/**
- * What can be voted for, in a fixed wire order.
- *
- * Standing lesson 8 from the handover: *"Ids on the wire, not resolved numbers. A def-table
- * reorder must not silently change what a byte means. Net modules should declare their own
- * wire-order tables."* So the ballot's order is declared here rather than being whatever order
- * `MODES` happens to be in — reordering the menu must not change what vote index 2 means.
- */
-export const MODE_BALLOT: readonly GameModeId[] = ['TDM', 'DOM', 'KC', 'FFA', 'SND'];
-
-/** The three real maps. The greybox room is the arena you vote *from*, never a destination. */
-export const MAP_BALLOT: readonly string[] = ['mp_foundry', 'mp_dunes', 'mp_depot'];
-
-// -- objective state (M11 Gate B, §6.8) ---------------------------------------
 
 /**
  * One objective's replicated state.
@@ -205,48 +70,6 @@ export interface ObjectiveState {
   readonly countA: number;
   readonly countB: number;
 }
-
-/** Owner codes on the wire. `BotTeam` is a string and this is two bits. */
-const OBJ_NEUTRAL = 0;
-export const OBJ_TEAM_A = 1;
-export const OBJ_TEAM_B = 2;
-
-export function ownerCode(owner: string): number {
-  if (owner === 'A') return OBJ_TEAM_A;
-  if (owner === 'B') return OBJ_TEAM_B;
-  return OBJ_NEUTRAL;
-}
-
-export function ownerFromCode(code: number): 'A' | 'B' | 'NONE' {
-  if (code === OBJ_TEAM_A) return 'A';
-  if (code === OBJ_TEAM_B) return 'B';
-  return 'NONE';
-}
-
-/** Most objectives a map authors. Three flags or two bomb sites; eight is headroom. */
-export const MAX_OBJECTIVES = 8;
-
-// -- dog tags (M11 Gate B, §6.8) ----------------------------------------------
-
-/**
- * Tags carried in one frame.
- *
- * A tag lives 20 s and a busy Kill Confirmed match kills roughly once a second across a
- * ten-player roster, so twenty-odd tags is a plausible steady state and 32 is the headroom
- * over it. Beyond the cap the *oldest* are dropped from the frame rather than the newest —
- * see `writeTags` — because a tag about to expire matters less than one that just landed.
- */
-export const MAX_TAGS = 32;
-
-// -- the bomb (M11 Gate B, §6.8) ----------------------------------------------
-
-/** Bomb states on the wire, in `BombState`'s own order. */
-export const BOMB_CARRIED = 0;
-export const BOMB_PLANTED = 1;
-export const BOMB_DEFUSED = 2;
-export const BOMB_EXPLODED = 3;
-
-// -- killstreaks (M11 Gate B, §6.8, §8.22) ------------------------------------
 
 /**
  * One live streak entity, as everybody sees it.
@@ -284,15 +107,6 @@ export interface StreakEntityState {
   /** `SEFlag` bits. */
   readonly flags: number;
 }
-
-/** Bits in `StreakEntityState.flags`. */
-export const SEFlag = {
-  /** A care package that has touched the ground, or a sentry that is still alive. */
-  Landed: 1 << 0,
-  Alive: 1 << 1,
-  /** Somebody is currently claiming this crate. */
-  Claiming: 1 << 2,
-} as const;
 
 /**
  * One UAV contact — **intel, and the thing Ghost actually hides**.
@@ -376,15 +190,6 @@ export interface StreakView {
   readonly entities: readonly StreakEntityState[];
 }
 
-/** Live streak entities in one frame. Two instances of six streaks is already unusual. */
-export const MAX_STREAK_ENTITIES = 16;
-/** Contacts a sweep can carry. One per roster slot, and the roster caps well below this. */
-export const MAX_UAV_CONTACTS = 24;
-/** Offers a player can be shown at once — three keys, three slots (M7 playtest). */
-export const MAX_STREAK_OFFERS = 3;
-
-// -- equipment in flight (M11 Gate B, §6.8, §8.24) ----------------------------
-
 /**
  * One grenade in the air, or lying armed on the floor.
  *
@@ -417,16 +222,6 @@ export interface ProjectileState {
   readonly flags: number;
 }
 
-/** Bits in `ProjectileState.flags`. */
-export const PEFlag = {
-  /** Come to rest, rather than still bouncing. */
-  Resting: 1 << 0,
-  /** Armed — past its arming fuse, live. */
-  Armed: 1 << 1,
-  /** Stuck to a surface or a body (semtex). */
-  Stuck: 1 << 2,
-} as const;
-
 /**
  * One smoke cloud.
  *
@@ -443,13 +238,6 @@ export interface SmokeState {
   /** Seconds left, in tenths. Drives the fade and the bloom. */
   readonly remainingDs: number;
 }
-
-/** The projectile pool is 32; a frame carrying more than that is malformed. */
-export const MAX_PROJECTILES = 32;
-/** The smoke field is 8. */
-export const MAX_SMOKE = 8;
-
-// -- loadout on the wire (Tier 1 #20) ----------------------------------------
 
 /**
  * A class, as ids (handover #20, rule 1).
@@ -476,9 +264,290 @@ export interface NetLoadout {
   readonly fieldUpgrade: string;
   readonly streaks: readonly (string | null)[];
 }
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** The warmup arena's id. Fixed, because it is created at boot and never destroyed. */
+export const WARMUP_MATCH_ID: MatchId = 0;
+
+/**
+ * Instance lifecycle (§4.18).
+ *
+ * `WarmupMatch` only ever occupies `BOOTING` and `RUNNING`; there is no path from it to
+ * `DESTROYED`. `LiveMatch` walks the whole list in order.
+ */
+export const InstanceState = {
+  BOOTING: 0,
+  ALLOCATING: 1,
+  LOADING: 2,
+  READY_WAIT: 3,
+  RUNNING: 4,
+  ENDED: 5,
+  DESTROYED: 6,
+  /** Reached only by an instance whose step threw (§4.18). Its players go back to warmup. */
+  FAILED: 7,
+} as const;
+
+// -- the vote cycle (§4.20, §6.4) --------------------------------------------
+
+/**
+ * The phases of the 60 s cycle.
+ *
+ * `IDLE` is not in the brief's table and is required by §4.20's last rule: *"If every human
+ * leaves during a vote phase, the cycle cancels and the arena returns to idle warmup."* An
+ * arena with nobody in it is not in a phase of a countdown, and modelling it as `PLAY` would
+ * mean a vote opening for zero people every forty seconds forever.
+ */
+export const VotePhase = {
+  IDLE: 0,
+  PLAY: 1,
+  MODE_VOTE: 2,
+  MAP_VOTE: 3,
+  /** The map is decided and the instance is being allocated. Voting is closed. */
+  ALLOCATING: 4,
+} as const;
+
+/**
+ * §4.20's table, verbatim, and the only copy of it.
+ *
+ * The client derives its countdown from the *server's* phase-end tick rather than from these
+ * numbers (§4.20: *"the client renders a countdown derived from the synced server clock and
+ * never runs its own timer"*), so they exist here for the server's phase machine and for a
+ * client that wants to draw a progress bar of the right total width.
+ */
+export const VOTE_CYCLE_CONFIG: VoteCycleConfig = {
+  playSeconds: 40,
+  modeVoteSeconds: 10,
+  mapVoteSeconds: 10,
+};
+
+/**
+ * What can be voted for, in a fixed wire order.
+ *
+ * Standing lesson 8 from the handover: *"Ids on the wire, not resolved numbers. A def-table
+ * reorder must not silently change what a byte means. Net modules should declare their own
+ * wire-order tables."* So the ballot's order is declared here rather than being whatever order
+ * `MODES` happens to be in — reordering the menu must not change what vote index 2 means.
+ */
+export const MODE_BALLOT: readonly GameModeId[] = ['TDM', 'DOM', 'KC', 'FFA', 'SND'];
+
+/** The three real maps. The greybox room is the arena you vote *from*, never a destination. */
+export const MAP_BALLOT: readonly string[] = ['mp_foundry', 'mp_dunes', 'mp_depot'];
+
+
+// -- objective state (M11 Gate B, §6.8) ---------------------------------------
+
+/** Owner codes on the wire. `BotTeam` is a string and this is two bits. */
+const OBJ_NEUTRAL = 0;
+
+export const OBJ_TEAM_A = 1;
+
+export const OBJ_TEAM_B = 2;
+
+/** Most objectives a map authors. Three flags or two bomb sites; eight is headroom. */
+export const MAX_OBJECTIVES = 8;
+
+
+// -- dog tags (M11 Gate B, §6.8) ----------------------------------------------
+
+/**
+ * Tags carried in one frame.
+ *
+ * A tag lives 20 s and a busy Kill Confirmed match kills roughly once a second across a
+ * ten-player roster, so twenty-odd tags is a plausible steady state and 32 is the headroom
+ * over it. Beyond the cap the *oldest* are dropped from the frame rather than the newest —
+ * see `writeTags` — because a tag about to expire matters less than one that just landed.
+ */
+export const MAX_TAGS = 32;
+
+
+// -- the bomb (M11 Gate B, §6.8) ----------------------------------------------
+
+/** Bomb states on the wire, in `BombState`'s own order. */
+export const BOMB_CARRIED = 0;
+
+export const BOMB_PLANTED = 1;
+
+export const BOMB_DEFUSED = 2;
+
+export const BOMB_EXPLODED = 3;
+
+
+// -- killstreaks (M11 Gate B, §6.8, §8.22) ------------------------------------
+
+/** Bits in `StreakEntityState.flags`. */
+export const SEFlag = {
+  /** A care package that has touched the ground, or a sentry that is still alive. */
+  Landed: 1 << 0,
+  Alive: 1 << 1,
+  /** Somebody is currently claiming this crate. */
+  Claiming: 1 << 2,
+} as const;
+
+/** Live streak entities in one frame. Two instances of six streaks is already unusual. */
+export const MAX_STREAK_ENTITIES = 16;
+
+/** Contacts a sweep can carry. One per roster slot, and the roster caps well below this. */
+export const MAX_UAV_CONTACTS = 24;
+
+/** Offers a player can be shown at once — three keys, three slots (M7 playtest). */
+export const MAX_STREAK_OFFERS = 3;
+
+
+// -- equipment in flight (M11 Gate B, §6.8, §8.24) ----------------------------
+
+/** Bits in `ProjectileState.flags`. */
+export const PEFlag = {
+  /** Come to rest, rather than still bouncing. */
+  Resting: 1 << 0,
+  /** Armed — past its arming fuse, live. */
+  Armed: 1 << 1,
+  /** Stuck to a surface or a body (semtex). */
+  Stuck: 1 << 2,
+} as const;
+
+/** The projectile pool is 32; a frame carrying more than that is malformed. */
+export const MAX_PROJECTILES = 32;
+
+/** The smoke field is 8. */
+export const MAX_SMOKE = 8;
+
+
+// -- loadout on the wire (Tier 1 #20) ----------------------------------------
 
 /** Caps, so a hostile client cannot make the server allocate on its say-so (S4.16). */
 const MAX_ATTACHMENTS_PER_WEAPON = 5;
+
+// -- ballots against the registry --------------------------------------------
+
+/**
+ * Legal ids, read straight off the registries rather than listed again here.
+ *
+ * A second list would be a place for the validator to fall behind the game: a weapon added in
+ * a later milestone and not added here would be silently unequippable over the network, and
+ * the symptom — "my class works in solo and not online" — points nowhere near this file.
+ */
+const WEAPON_IDS: ReadonlySet<string> = new Set(Object.keys(WEAPON_DEFS));
+
+const ATTACHMENT_IDS: ReadonlySet<string> = new Set(Object.keys(ATTACHMENTS));
+
+const CAMO_IDS: ReadonlySet<string> = new Set(Object.keys(CAMOS));
+
+const EQUIPMENT_IDS: ReadonlySet<string> = new Set(Object.keys(EQUIPMENT_DEFS));
+
+const LEGAL_PERK_IDS: ReadonlySet<string> = new Set(ALL_PERK_IDS);
+
+const STREAK_IDS: ReadonlySet<string> = new Set(STREAK_DEFS.map((s) => s.id));
+
+const FIELD_UPGRADE_IDS: ReadonlySet<string> = new Set(Object.keys(FIELD_UPGRADES));
+
+
+/**
+ * The ballots, checked against the registry at module load.
+ *
+ * A ballot naming a mode or map that does not exist would throw at the moment the vote
+ * resolved — forty seconds into a cycle, in front of everybody. Better to refuse to start.
+ */
+for (const modeId of MODE_BALLOT) {
+  if (!MODES.some((m) => m.id === modeId)) {
+    throw new Error(`MODE_BALLOT names "${modeId}", which is not in the mode registry.`);
+  }
+}
+for (const mapId of MAP_BALLOT) {
+  if (!MAPS.some((m) => m.id === mapId)) {
+    throw new Error(`MAP_BALLOT names "${mapId}", which is not in the map registry.`);
+  }
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/**
+ * Is this instance the permanent arena (playtest round 4, F7 and F12)?
+ *
+ * **The only place in the codebase that compares against `WARMUP_MATCH_ID`**, and it is a
+ * function rather than a constant for that reason alone. The room's rules are spreading — no
+ * combatant takes health, nothing is recorded, the caption says where you are, three HUD
+ * surfaces stay down — and each of those is somewhere a bare `matchId === WARMUP_MATCH_ID`
+ * could be written instead. Written enough times, the id becomes the fact; and then the next
+ * surface added forgets it, silently, because forgetting a comparison looks like nothing.
+ *
+ * Server-side the fact needs no id at all: it is the **kind of instance**, and
+ * `MatchInstance.isArena` carries it. This is the same question asked from the one place a
+ * client can ask it — the id in its `Welcome` — and it is asked exactly once, in `MatchWorld`.
+ */
+export function isArenaInstance(matchId: MatchId): boolean {
+  return matchId === WARMUP_MATCH_ID;
+}
+
+export function instanceStateName(state: number): string {
+  for (const [name, value] of Object.entries(InstanceState)) {
+    if (value === state) return name;
+  }
+  return 'UNKNOWN';
+}
+
+
+export function votePhaseName(phase: number): string {
+  for (const [name, value] of Object.entries(VotePhase)) {
+    if (value === phase) return name;
+  }
+  return 'UNKNOWN';
+}
+
+/**
+ * Which ballot just *appeared*, or `null` for no opening (playtest round 4, F13).
+ *
+ * ## One detector over the phase, not one per ballot
+ *
+ * The first version of this answered only the map ballot, because F13 names the map and because
+ * "one sound per cycle" was a tidy thing to be able to assert. Both were wrong reasons. The
+ * **mode** ballot is the one that opens the whole twenty-second question while the player is
+ * mid-firefight, and it arrived in silence — so the cue was missing from the moment it was most
+ * needed, and a second detector beside this one is how that gets fixed twice.
+ *
+ * The rule is a property of the phase machine rather than of either ballot: a ballot has opened
+ * when the phase becomes a ballot it was not already. `PLAY -> MODE_VOTE` and
+ * `MODE_VOTE -> MAP_VOTE` are both openings; the forty broadcasts inside either one are not.
+ *
+ * ## Why the two do not sound the same
+ *
+ * They are two stages of one question, so they should be recognisably the same event and
+ * distinguishable without looking up. `ProceduralAudio.playBallotOpen` takes the phase and
+ * pitches the same two-note figure from it — the map ballot a fourth above the mode ballot — so
+ * the second cue says *the mode is settled, the map is the question now* to a player who never
+ * takes their eyes off the fight. One generator, two pitches, rather than two sounds.
+ *
+ * ## The trap this exists to avoid
+ *
+ * Vote state is broadcast at 4 Hz. Anything hung off the broadcast rather than off the change
+ * fires at the broadcast rate — measured, 43 times across one ten-second ballot. Holding the
+ * previous phase and acting only on the difference is the general form, and it is why this takes
+ * `previous` as an argument instead of keeping a flag: the caller already has the old phase,
+ * `VoteOverlay.apply` in the browser and `HeadlessClient.onVoteState` in the harness, and
+ * neither has anything extra to reset.
+ *
+ * `IDLE` for `previous` is not a special case: a client that has just been migrated back into
+ * the arena mid-ballot has genuinely just had one appear in front of it.
+ */
+export function ballotOpened(previous: number, next: number): VotePhaseId | null {
+  if (next !== VotePhase.MODE_VOTE && next !== VotePhase.MAP_VOTE) return null;
+  if (previous === next) return null;
+  return next;
+}
+
+export function ownerCode(owner: string): number {
+  if (owner === 'A') return OBJ_TEAM_A;
+  if (owner === 'B') return OBJ_TEAM_B;
+  return OBJ_NEUTRAL;
+}
+
+export function ownerFromCode(code: number): 'A' | 'B' | 'NONE' {
+  if (code === OBJ_TEAM_A) return 'A';
+  if (code === OBJ_TEAM_B) return 'B';
+  return 'NONE';
+}
 
 /**
  * A local `LoadoutSlot`, flattened to the ids that cross the wire (Tier 1 #20, rule 1).
@@ -553,25 +622,37 @@ export function sanitiseNetLoadout(raw: NetLoadout | null, losses: string[] = []
   enforceLoadoutStructure(slot, losses);
   return slot;
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function sanitiseWeapon(raw: NetWeaponLoadout | null | undefined): WeaponLoadout | null {
   if (raw === null || raw === undefined) return null;
   const weaponId = typeof raw.weaponId === 'string' ? raw.weaponId : '';
   if (!WEAPON_IDS.has(weaponId)) return null;
 
+  const attachments = legalAttachments(raw.attachments);
+  const camo = typeof raw.camo === 'string' && CAMO_IDS.has(raw.camo) ? (raw.camo as CamoId) : null;
+  return { weaponId, attachments, camo };
+}
+
+/**
+ * The attachments the server will honour, in the order they arrived.
+ *
+ * Capped at what a weapon can carry, checked against the registry, and deduplicated — a
+ * duplicate attachment would stack its modifier twice on the server and once on the client,
+ * which is #20's divergence arriving through a different door.
+ */
+function legalAttachments(raw: readonly string[] | undefined): AttachmentId[] {
   const attachments: AttachmentId[] = [];
-  const source = Array.isArray(raw.attachments) ? raw.attachments : [];
+  const source = Array.isArray(raw) ? raw : [];
   for (const id of source) {
     if (attachments.length >= MAX_ATTACHMENTS_PER_WEAPON) break;
     if (typeof id !== 'string' || !ATTACHMENT_IDS.has(id)) continue;
-    // A duplicate attachment would stack its modifier twice on the server and once on the
-    // client, which is #20's divergence arriving through a different door.
     if (attachments.includes(id as AttachmentId)) continue;
     attachments.push(id as AttachmentId);
   }
-
-  const camo = typeof raw.camo === 'string' && CAMO_IDS.has(raw.camo) ? (raw.camo as CamoId) : null;
-  return { weaponId, attachments, camo };
+  return attachments;
 }
 
 function fixedLength<T extends string>(
@@ -591,38 +672,4 @@ function fixedLength<T extends string>(
 function pick<T extends string>(raw: string, legal: ReadonlySet<string>, fallback: T): T {
   return typeof raw === 'string' && legal.has(raw) ? (raw as T) : fallback;
 }
-
-
-/**
- * Legal ids, read straight off the registries rather than listed again here.
- *
- * A second list would be a place for the validator to fall behind the game: a weapon added in
- * a later milestone and not added here would be silently unequippable over the network, and
- * the symptom — "my class works in solo and not online" — points nowhere near this file.
- */
-const WEAPON_IDS: ReadonlySet<string> = new Set(Object.keys(WEAPON_DEFS));
-const ATTACHMENT_IDS: ReadonlySet<string> = new Set(Object.keys(ATTACHMENTS));
-const CAMO_IDS: ReadonlySet<string> = new Set(Object.keys(CAMOS));
-const EQUIPMENT_IDS: ReadonlySet<string> = new Set(Object.keys(EQUIPMENT_DEFS));
-const LEGAL_PERK_IDS: ReadonlySet<string> = new Set(ALL_PERK_IDS);
-const STREAK_IDS: ReadonlySet<string> = new Set(STREAK_DEFS.map((s) => s.id));
-const FIELD_UPGRADE_IDS: ReadonlySet<string> = new Set(Object.keys(FIELD_UPGRADES));
-
-// -- ballots against the registry --------------------------------------------
-
-/**
- * The ballots, checked against the registry at module load.
- *
- * A ballot naming a mode or map that does not exist would throw at the moment the vote
- * resolved — forty seconds into a cycle, in front of everybody. Better to refuse to start.
- */
-for (const modeId of MODE_BALLOT) {
-  if (!MODES.some((m) => m.id === modeId)) {
-    throw new Error(`MODE_BALLOT names "${modeId}", which is not in the mode registry.`);
-  }
-}
-for (const mapId of MAP_BALLOT) {
-  if (!MAPS.some((m) => m.id === mapId)) {
-    throw new Error(`MAP_BALLOT names "${mapId}", which is not in the map registry.`);
-  }
-}
+//#endregion

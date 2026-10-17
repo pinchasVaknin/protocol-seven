@@ -10,7 +10,7 @@ usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects h
 measurement nobody has taken yet.
 
 **29 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14. Three numbers are gone and
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and opened none. Three numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12.
 
@@ -40,11 +40,11 @@ and belong in its Step 2 plan.
 | ~~A20~~ | `shared/net/` Wire, Protocol, Snapshot, UrlFlags, DisplayText | **declined with a reason** — #1 owns no A20 file: the edit is in `MathUtil.ts` (A1) and both call sites are A23 (`Interpolation`) and A12 (`ai/Bot`). A20 opened #30 and #31 |
 | ~~A21~~ | `shared/net/Messages.ts` + the seven files it was split into | **declined with a reason** — `Messages.ts` calls neither angle helper, so #1 has no edit to make here. A21 opened none |
 | ~~A22~~ | `shared/net/NetClient.ts` + `CommandPipeline.ts` | **closed** — nothing was bound to it; A22 opened #32 |
-| A23 | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | #1 (`Interpolation` is the one remaining caller of `shortestAngle`) |
+| ~~A23~~ | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | **closed** — A23 absorbed #1's shared half under an approved fence exception: `shortestAngle` is gone and both call sites moved. What is left of #1 is the three local copies, which are not the same function |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
-| C1 | `client/cinematic/IntroCamera.ts` | #1 (local `angleDelta` copy) |
-| C6 | `client/weapons/ViewmodelAnim.ts` | #1 (caller of `angleDelta`) |
-| A24 | `shared/cinematic/IntroPlan.ts` | #1 (local `angleDelta` copy) |
+| C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
+| A24 | `shared/cinematic/IntroPlan.ts` | #1 (local copy, `[-PI, PI]`) |
+| C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
 Everything else below lands in a **completed** unit's files and therefore needs a session of its
 own. Those sessions are not refactor units: they may change behaviour where the task says so, and
@@ -269,53 +269,51 @@ changed, and all fifteen columns through `applyReplicated` and `reset`. Do not w
 
 ## 4. Independent — one decision each
 
-### #1 — Retire the duplicate angle helper export · `open` · **the survivor is `angleDelta`**
+### #1 — Three local angle helpers that are **not** the shared one · `needs a decision from the user`
 
-**Files** `src/shared/core/MathUtil.ts` and every caller. **Origin** A1. **Touches three upcoming
-units** — see §1.
+**Files** `src/client/cinematic/IntroCamera.ts:83`, `src/shared/cinematic/IntroPlan.ts:237`,
+`src/client/ClientMatch.ts:3444`. **Origin** A1; the export half was **closed by A23** on
+2026-10-17. **Touches three upcoming units** — see §1.
 
-**Decided 2026-10-12 (the user, at A16's Step 2): the name that stays is `angleDelta`.** That was
-the open question, and it is now closed — the work itself is not.
+**What A23 finished.** `MathUtil` exported one function under two names, `angleDelta` and
+`shortestAngle`, and the duplicate export is gone: the two call sites moved onto the survivor
+(`shared/net/Interpolation.ts`'s `sample` and `extrapolate`, `shared/ai/Bot.ts`'s `renderYaw`),
+`shortestAngle` was deleted, the two JSDoc blocks were merged onto `angleDelta` with the M10
+provenance note intact, and `MathUtil.test.ts`'s fifteen-row agreement table now asserts
+`angleDelta(from, to) === wrapAngle(to - from)` on every row — the same rows, between the two
+helpers that are left. The 3,600-tick SIM hash was byte-identical across the change, which is
+what a no-op looks like. It took an approved fence exception (R2 and R3) because the edit lands
+in A1's finished files.
 
-**Why no unit can close this, which A16 established by trying.** The edit is in `MathUtil.ts`,
-which belongs to A1: finished, in the `check:style` ratchet, and outside every later unit's fence
-(R3). A16 owned the only caller in `shared/streaks/` and still could do nothing, in either
-direction — with `angleDelta` surviving, `SentryGun` is *already* on the survivor and the unit has
-no edit to make; had `shortestAngle` won, A16 would have had to change two call sites that only
-make sense after a `MathUtil` change it is not allowed to make. So this is an **unbound task that
-needs its own session** (§7.2), and what is left of it is mechanical:
-delete the `shortestAngle` export, move the two callers below onto `angleDelta`, and merge the two
-JSDoc blocks onto the survivor.
+**What is left, and it is not a no-op.** Three files still define their own copy, and **none of
+them is the shared function**:
 
-`MathUtil` exports two names for one function: `angleDelta(from, to)` and
-`shortestAngle(from, to)`. Before A1 their bodies were byte-identical, five lines each. The JSDoc
-on `shortestAngle` argues it was moved out of `ai/Bot.ts` at M10 precisely so there would not be
-two copies of an angle-wrapping helper that *"ends with one of them fixed and the other not"* —
-while sitting directly below the other copy. A1 merged the bodies (`shortestAngle` now returns
-`angleDelta(from, to)`) so they can no longer drift, and the SIM oracles confirmed bit-identical
-output. What A1 could not do is remove the redundant export, because R2 freezes the public surface.
+```
+MathUtil.angleDelta   if (d > PI) d -= TAU;  if (d <= -PI) d += TAU;   ->  (-PI, PI]
+IntroCamera / IntroPlan   if (d > PI) d -= TAU;  if (d <  -PI) d += TAU;   ->  [-PI, PI]
+ClientMatch.angleDeltaRad while (d > PI) d -= TAU; while (d < -PI) d += TAU;  ->  [-PI, PI], no %
+```
 
-**Why `angleDelta` was the right pick**: `wrapAngle` already delegates to it and `shortestAngle`'s
-range comment duplicates what `angleDelta` documents.
+The difference is `<=` against `<` at exactly **d = -PI**: the shared helper maps a half turn to
+`+PI`, the local copies keep `-PI`. `ClientMatch`'s is a third spelling again — `while` loops
+rather than `%`, which agrees everywhere the modulus does but is its own code.
 
-Callers of `shortestAngle`, which are the two sites to move: `shared/net/Interpolation.ts`
-(`sample`, `extrapolate`), `shared/ai/Bot.ts` (`renderYaw`). Callers of `angleDelta`, which do not
-change: `shared/ai/CombatBehaviour.ts` (`updateAim`, `lookToward`), `shared/streaks/SentryGun.ts`
-(`isInWatchedArc`, `applyPose` — renamed from `acquire` by A16, same two calls),
-`client/weapons/ViewmodelAnim.ts` (`updateSway`), and `wrapAngle` in `MathUtil` itself.
+So folding them in is a **behaviour change at one input value**, in three places that are all
+about where a camera or an overlay points: the intro cinematic's yaw blend, the camera rig's
+follow, and the mortar overlay's bearing. At d = -PI the two answers are a half turn apart in
+sign, which is the one input where a blend would visibly swing the other way.
 
-**Three local copies**, not two — A16 found the third while checking the call sites:
-`client/cinematic/IntroCamera.ts:83` and `shared/cinematic/IntroPlan.ts:237` both define their own
-`angleDelta`, and `client/ClientMatch.ts:3438` defines the same function as `angleDeltaRad`
-(used at line 2193 for the mortar overlay's yaw). Decide whether those fold into the shared one.
-Note that the third lands in **C24**, a unit the §1 lookup did not list for this task.
+**Decide** per site: fold it in and accept the `(-PI, PI]` boundary (and pin the new value in
+that unit's tests), or keep the local copy and write down *why* it wants `[-PI, PI]`. What is
+not acceptable is a fourth copy.
 
-Merge the two JSDoc blocks so the survivor keeps the history both carry, including the M10
-provenance note. Both call sites are hot paths (per-entity per-tick), so the result must stay a
-direct call to a primitive-in/primitive-out function. `MathUtil.test.ts` (A1) asserts the two agree
-on a 15-row argument table — fold those rows into the survivor's tests rather than dropping them.
+**Where each one is done:** `IntroCamera.ts` in **C1**, `IntroPlan.ts` in **A24**,
+`ClientMatch.ts` in **C24** — each inside its own unit's fence, under that unit's approval,
+because each is a behaviour question about that unit's code rather than a mechanical merge.
 
-**Verify** `npm run check` + SIM snapshot/compare → `PASS`.
+**Verify** `npm run check` + SIM snapshot/compare. `IntroPlan` is covered by the `intro` oracle,
+which is byte-compared; the other two are camera work and need the BROWSER check their units
+already run.
 
 ### #3 — Replace greybox's two hand-computed ramps with `rampAlongX` / `rampAlongZ` · `needs measurement`
 

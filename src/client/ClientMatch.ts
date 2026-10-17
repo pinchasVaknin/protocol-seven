@@ -3346,6 +3346,10 @@ export class Match {
         this.mortarOverlay.dispose();
         this.meta.dispose();
         this.equipment.dispose();
+        // The fire, for the same reason the server puts it out (2026-10-18): four handlers per
+        // match on a bus that outlives it, and a player who plays ten of them without reloading
+        // the page is forty listeners into a leak nothing else reports.
+        this.burn.dispose();
         this.feedback.dispose();
         this.flow.dispose();
         this.score.dispose();

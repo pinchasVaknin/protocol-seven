@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { EventBus } from '../core/EventBus';
 import { createGameBus, EV, type GameBus } from '../core/Events';
 import { installClock } from '../core/Clock';
 import { DT } from '../core/Loop';
@@ -307,5 +308,27 @@ describe('a kill the fire finished', () => {
     run(burn, 2);
     expect(enemy.health.alive).toBe(false);
     expect(score.row(1)?.kills).toBe(0);
+  });
+});
+
+/**
+ * The teardown (2026-10-18).
+ *
+ * A live match is built and destroyed on every cycle, and §8.13 asks a hundred of them to leave
+ * `EventBus.liveSubscriptions` exactly flat. This system is a `Disposable` that takes four
+ * handlers in its constructor and was the one neither `ServerMatch.dispose` nor
+ * `ClientMatch.dispose` released, which is what that gate was failing on.
+ */
+describe('the burn system, torn down', () => {
+  it('releases every handler it took, and stops reacting', () => {
+    const bus: GameBus = createGameBus();
+    const damage = new DamageSystem(bus);
+    const before = EventBus.liveSubscriptions;
+
+    const burn = new BurnSystem(bus, damage, burnWeapon());
+    expect(EventBus.liveSubscriptions).toBe(before + 4);
+
+    burn.dispose();
+    expect(EventBus.liveSubscriptions).toBe(before);
   });
 });

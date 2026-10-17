@@ -1639,6 +1639,17 @@ export class ServerMatch extends Disposable {
     // it is a reference into a world that no longer exists.
     this.bots.perception.occluder = null;
     this.equipment.clear();
+    /**
+     * The fire, which nothing was putting out (2026-10-18).
+     *
+     * `BurnSystem` takes four handlers in its constructor — the damage that lights a fire, and
+     * the three doors that put one out — and it was the one `Disposable` this method never
+     * released. Four subscriptions per match, on a bus that outlives the match: §8.13's
+     * hundred cycles ran `EventBus.liveSubscriptions` from 38 to 434 while the heap stayed
+     * almost flat, which is exactly the shape a leak of listeners takes and the reason that
+     * gate counts them rather than bytes.
+     */
+    this.burn.dispose();
     this.bots.dispose();
   }
 

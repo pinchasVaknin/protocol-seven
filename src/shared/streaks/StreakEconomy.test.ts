@@ -158,6 +158,16 @@ describe('the four refusals, in the order they are tested', () => {
 
   it('refuses a cooling streak before asking whether it is affordable', () => {
     const { led } = ledger();
+    /**
+     * An open life first, here and in the lockout fixtures below.
+     *
+     * A cooldown belongs to an entity the ledger is tracking, and since 2026-10-18 arming one
+     * says so: it writes into the row this entity has rather than building a new one. Nothing
+     * in the game arms a cooldown for a player it has not seen — `activate` charges before it
+     * arms, and charging opens the row — so these fixtures open one too. `resetLife` is the
+     * door that costs nothing and banks nothing.
+     */
+    led.resetLife(A, 0, 0);
     led.armCooldown(A, 'uav', 500);
     expect(led.quote(A, 'uav', 99, 0)).toBe('cooling');
     expect(led.charge(A, 'uav', 99, 0)).toBe('cooling');
@@ -215,6 +225,7 @@ describe('the lockout', () => {
 
   it('counts down toward the tick the streak is ready on', () => {
     const { led } = ledger();
+    led.resetLife(A, 0, 0);
     led.armCooldown(A, 'uav', 1000);
     expect(led.lockoutTicks(A, 'uav', 400)).toBe(600);
     expect(led.lockoutTicks(A, 'uav', 1000)).toBe(0);
@@ -223,6 +234,7 @@ describe('the lockout', () => {
 
   it('is the larger of the cooldown and the live instance, never their sum', () => {
     const { led, stubs } = ledger();
+    led.resetLife(A, 0, 0);
     led.armCooldown(A, 'uav', 1000);
     stubs.live = 200;
     // 600 against 200 — the cooldown already contains the instance's remaining time.
@@ -233,6 +245,7 @@ describe('the lockout', () => {
 
   it('is replaced by a later arming rather than extended by it', () => {
     const { led } = ledger();
+    led.resetLife(A, 0, 0);
     led.armCooldown(A, 'sentry', 5000);
     led.armCooldown(A, 'sentry', 900);
     // The estimate armed at activation is overwritten by the fact at retire, even when the
@@ -242,6 +255,7 @@ describe('the lockout', () => {
 
   it('lists every streak that is locked out, and nothing that is not', () => {
     const { led } = ledger();
+    led.resetLife(A, 0, 0);
     led.armCooldown(A, 'uav', 1000);
     led.armCooldown(A, 'sentry', 300);
     expect(led.lockoutsOf(A, 400)).toEqual([{ id: 'uav', ticks: 600 }]);
@@ -285,6 +299,7 @@ describe('the life boundary', () => {
 
   it('leaves the cooldowns running, and counts the ones that crossed', () => {
     const { led } = ledger();
+    led.resetLife(A, 0, 0);
     led.armCooldown(A, 'uav', 1000);
     led.armCooldown(A, 'sentry', 50);
     led.resetLife(A, 0, 100);

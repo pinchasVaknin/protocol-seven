@@ -66,3 +66,44 @@ describe('a second killstreak weapon in hands that already hold one', () => {
     expect(buy(ledgerWith(hands), 'uav')).toBe('ok');
   });
 });
+
+/**
+ * The owner left; their sentry is still standing (2026-10-18).
+ *
+ * `onOwnerRemoved` banks the row and drops it the moment a player disconnects, but a sentry and
+ * a crate are deliberately left in the world — and when one of them expires, up to ninety
+ * seconds later, `retire` arms a cooldown against an owner who is no longer there. The ledger
+ * has to be able to say "nobody", because the alternative is a row with two Maps that nothing
+ * deletes and that the next holder of a reused entity id inherits.
+ */
+describe('a cooldown armed for an owner who has already left', () => {
+  const COOLDOWN_AT = 5400;
+
+  it('does not build them a new row', () => {
+    const ledger = ledgerWith({ held: false });
+    ledger.forget(1);
+    const banked = ledger.report().lives;
+
+    ledger.armCooldown(1, 'sentry', COOLDOWN_AT);
+
+    // `report` folds every open row, so a row built here would show up as a second life.
+    expect(ledger.report().lives).toBe(banked);
+  });
+
+  it('leaves nothing for the next player on that entity id to inherit', () => {
+    const ledger = ledgerWith({ held: false });
+    ledger.forget(1);
+
+    ledger.armCooldown(1, 'sentry', COOLDOWN_AT);
+
+    expect(ledger.lockoutsOf(1, 0)).toEqual([]);
+  });
+
+  it('still arms the cooldown for an owner who is present', () => {
+    const ledger = ledgerWith({ held: false });
+
+    ledger.armCooldown(1, 'sentry', COOLDOWN_AT);
+
+    expect(ledger.lockoutsOf(1, 0)).toEqual([{ id: 'sentry', ticks: COOLDOWN_AT }]);
+  });
+});

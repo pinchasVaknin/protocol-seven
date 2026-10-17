@@ -326,7 +326,24 @@ export class StreakLedger {
    * rather than from the ninety seconds it was never going to see.
    */
   armCooldown(entityId: number, id: StreakId, readyAtTick: number): void {
-    this.rowFor(entityId).cooldowns.set(id, readyAtTick);
+    /**
+     * The row this entity still has — `rows.get`, never `rowFor` (2026-10-18).
+     *
+     * A sentry and a crate outlive the player who put them there; `endsWithOwnersLife` says so
+     * in the table, and `StreakSystem.onDeath` leaves them standing on purpose. So the owner
+     * can be gone by the time one of them expires: `onOwnerRemoved` banks their row and drops
+     * it, and up to ninety seconds later `retire` arms this cooldown for an entity that has
+     * left. `rowFor` answered that by building a fresh row, with two Maps, that nothing would
+     * ever delete — and entity ids are reused, so the next player to be handed this one
+     * inherited a cooldown they never started and `forget` folded the empty row into the
+     * match totals as a second life.
+     *
+     * `lockoutTicks` has always read through `rows.get`. Arming is the same question from the
+     * other side, and it deserves the same answer: no row, nobody to lock out.
+     */
+    const row = this.rows.get(entityId);
+    if (row === undefined) return;
+    row.cooldowns.set(id, readyAtTick);
   }
 
   /** Every streak this entity is locked out of, and by how many ticks. The debug panel's read. */

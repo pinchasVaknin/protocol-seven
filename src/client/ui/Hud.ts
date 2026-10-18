@@ -14,6 +14,7 @@ import { HudBanner, makeBannerState, type BannerState } from './HudBanner';
 import { HudTactical, makeTacticalState, type TacticalState } from './HudTactical';
 import { KillfeedView } from './Killfeed';
 import { Minimap } from './Minimap';
+import { viewport } from './Viewport';
 
 /**
  * The in-match HUD (brief S6.4).
@@ -98,9 +99,14 @@ export interface HudState {
   /** Current cone half-angle, degrees. */
   spreadDeg: number;
   adsFraction: number;
-  /** World FOV in degrees and viewport height in CSS pixels, to size the crosshair. */
+  /**
+   * World FOV in degrees, to size the crosshair.
+   *
+   * The viewport height used to travel beside it, which meant `ClientMatch` read
+   * `window.innerHeight` every frame to fill the field in — a layout read after a frame of
+   * HUD writes, so a forced reflow every frame. The HUD asks `ui/Viewport` for it instead.
+   */
   fovDeg: number;
-  viewportHeight: number;
   reloading: boolean;
   reloadFraction: number;
   /** M3: damage flows both ways now, so the player needs to see their own health. */
@@ -168,7 +174,6 @@ export function makeHudState(): HudState {
     spreadDeg: 0,
     adsFraction: 0,
     fovDeg: 90,
-    viewportHeight: 1080,
     reloading: false,
     reloadFraction: 0,
     health: 100,
@@ -746,7 +751,7 @@ export class Hud {
   private updateCrosshair(state: HudState): void {
     // The projection, the floor and the ADS fade all live in `shared/ui/Crosshair` now, so
     // they can be measured without a browser (round 4, B2). What is left here is the writes.
-    const gap = crosshairGapPx(state.spreadDeg, state.fovDeg, state.viewportHeight);
+    const gap = crosshairGapPx(state.spreadDeg, state.fovDeg, viewport.height);
 
     if (gap !== this.lastGap) {
       this.lastGap = gap;
@@ -842,10 +847,22 @@ export class Hud {
         continue;
       }
       const t = 1 - n.life / DAMAGE_NUMBER_SECONDS;
-      n.el.style.transform = `translate(-50%, -50%) translateY(${(-28 * t).toFixed(1)}px)`;
+      /**
+       * Placed by the transform rather than by `left`/`top` (2026-10-18).
+       *
+       * `left` and `top` are layout properties: writing them every frame, for every live
+       * number, dirties the layout tree that the next `window.innerHeight` read then has to
+       * rebuild. A transform is composited — same pixels, no layout — and the element is
+       * pinned at the layer's origin in CSS so the translate carries the whole position.
+       *
+       * The order is the old declaration's: move to the projected point, then centre on it,
+       * then float up. `translate(-50%, -50%)` is a percentage of the element's own box, so
+       * it has to come after the pixel move and before the drift.
+       */
+      n.el.style.transform =
+        `translate(${n.x.toFixed(0)}px, ${n.y.toFixed(0)}px) ` +
+        `translate(-50%, -50%) translateY(${(-28 * t).toFixed(1)}px)`;
       n.el.style.opacity = (1 - t * t).toFixed(2);
-      n.el.style.left = `${n.x.toFixed(0)}px`;
-      n.el.style.top = `${n.y.toFixed(0)}px`;
     }
   }
 

@@ -241,8 +241,17 @@
   inset: 0;
 }
 
+/*
+ * Pinned at the layer's origin: the position is in the transform (2026-10-18).
+ *
+ * `left`/`top` are layout properties, and writing them on every live number every frame
+ * dirtied the layout tree that the next window measurement then had to rebuild. The transform
+ * carries the projected point now, so a damage number costs the compositor and nothing else.
+ */
 .hud-number {
   position: absolute;
+  left: 0;
+  top: 0;
   font-size: var(--t-body);
   font-weight: var(--w-heavy);
   color: var(--c-text);

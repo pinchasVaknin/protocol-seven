@@ -7,6 +7,7 @@ import {
   type SchedulerConfig,
 } from '../../shared/ai/AiScheduler';
 import type { BotDirector } from '../../shared/ai/BotDirector';
+import { viewport } from '../ui/Viewport';
 import {
   BOT_TIERS,
   DEFAULT_PERCEPTION,
@@ -101,8 +102,10 @@ export class AiPanel {
 
     const bots = this.director.bots;
     this.ensureLabels(bots.length);
-    const halfW = window.innerWidth * 0.5;
-    const halfH = window.innerHeight * 0.5;
+    // Cached, for the reason the HUD's own projection is: a layout read in a render pass that
+    // has just written styles costs a reflow. See `ui/Viewport.ts`.
+    const halfW = viewport.width * 0.5;
+    const halfH = viewport.height * 0.5;
 
     for (let i = 0; i < this.labels.length; i++) {
       const el = this.labels[i];

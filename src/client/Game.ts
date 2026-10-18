@@ -29,6 +29,7 @@ import type { SkirmishSink } from '../shared/net/NetClient';
 import { isArenaInstance, toNetLoadout, type NetLoadout } from '../shared/net/Skirmish';
 import { skinIndexOf } from '../shared/meta/Skins';
 import { applyFrameScale } from './ui/Frame';
+import { viewport } from './ui/Viewport';
 import { LoadingScreen } from './ui/LoadingScreen';
 import { VoteOverlay } from './ui/VoteOverlay';
 import { QuickLoadout } from './ui/QuickLoadout';
@@ -589,10 +590,14 @@ export class Game {
       canvas,
       consoleApiWanted(window.location.search, import.meta.env.DEV),
     );
-    this.renderer.setSize(window.innerWidth, window.innerHeight, settings.renderScale);
+    // One measurement of the window, for the three things that are the same fact: the canvas,
+    // the front end's frame, and the HUD's own pixels. Everything downstream reads `viewport`
+    // rather than the window, so nothing forces a reflow mid-frame — see `ui/Viewport.ts`.
+    viewport.set(window.innerWidth, window.innerHeight);
+    this.renderer.setSize(viewport.width, viewport.height, settings.renderScale);
     this.introCamera = new IntroCamera({ movement: this.movementConfig });
     // The same fact for the DOM: the front end's 1920x1080 frame scales to this window (M15, A1).
-    applyFrameScale(uiHost, window.innerWidth, window.innerHeight);
+    applyFrameScale(uiHost, viewport.width, viewport.height);
     this.textures = new ProceduralTextures(this.renderer.three);
     this.backdrop = new MenuBackdrop({
       scene: this.scene,
@@ -3083,8 +3088,9 @@ export class Game {
   }
 
   private readonly onResize = (): void => {
-    this.renderer.setSize(window.innerWidth, window.innerHeight, this.profile.settings.renderScale);
-    applyFrameScale(this.uiHost, window.innerWidth, window.innerHeight);
+    viewport.set(window.innerWidth, window.innerHeight);
+    this.renderer.setSize(viewport.width, viewport.height, this.profile.settings.renderScale);
+    applyFrameScale(this.uiHost, viewport.width, viewport.height);
     this.cameraRig.resize(this.renderer.aspect);
     this.viewmodel.resize(this.renderer.aspect);
   };

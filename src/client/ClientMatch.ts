@@ -2980,7 +2980,6 @@ export class Match {
         state.spreadDeg = this.weapons.spreadDeg;
         state.adsFraction = this.visual.adsFraction;
         state.fovDeg = this.deps.cameraRig.fov;
-        state.viewportHeight = window.innerHeight;
         state.health = this.playerHealth.current;
         state.healthMax = this.playerHealth.max;
         state.dead = this.playerDead;

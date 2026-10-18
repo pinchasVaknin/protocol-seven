@@ -15,6 +15,7 @@ import type { Health } from '../shared/player/Health';
 import type { PlayerController } from '../shared/player/PlayerController';
 import type { LatencyProbe } from './debug/LatencyProbe';
 import type { Hud } from './ui/Hud';
+import { viewport } from './ui/Viewport';
 import type { WeaponAudio } from './weapons/WeaponAudio';
 import { anyWeaponDef } from '../shared/weapons/AnyWeapon';
 import { Disposable } from '../shared/core/Disposable';
@@ -416,8 +417,10 @@ export class MatchFeedback extends Disposable {
   private flushDamageNumbers(camera: THREE.PerspectiveCamera): void {
     if (this.numberCount === 0) return;
     if (this.deps.hud.damageNumbersEnabled) {
-      const halfW = window.innerWidth * 0.5;
-      const halfH = window.innerHeight * 0.5;
+      // The cached window size: reading it here, after a frame of HUD writes, forced a reflow
+      // every frame a number was on screen. See `ui/Viewport.ts`.
+      const halfW = viewport.width * 0.5;
+      const halfH = viewport.height * 0.5;
       for (let i = 0; i < this.numberCount; i++) {
         const n = this.numberQueue[i];
         if (n === undefined) continue;

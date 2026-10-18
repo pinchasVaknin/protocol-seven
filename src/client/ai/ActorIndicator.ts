@@ -68,6 +68,28 @@ const LABEL_WORLD_HEIGHT = LABEL_WORLD_WIDTH * (LABEL_HEIGHT / LABEL_WIDTH);
 const LABEL_CLEARANCE = 0.38;
 const HEALTH_SMOOTHING = 16;
 
+/**
+ * The health bar's geometry on the label canvas, named here because `drawLabel` draws it and
+ * `update` has to know what a *visible* change to it is (2026-10-18, C4).
+ *
+ * `BAR_FILL_WIDTH` is the number that matters: the filled run is `fraction * BAR_FILL_WIDTH`
+ * texels wide, so one texel is `1 / BAR_FILL_WIDTH` of health and anything finer cannot be
+ * drawn. The repaint used to be gated at 1e-3, which is two and a half times finer than that —
+ * so an exponential smoothing that approaches its target without reaching it repainted a
+ * 512x160 canvas and re-uploaded its texture every frame for about a second after every hit,
+ * on every body that had been hit, to move a bar by less than a pixel.
+ */
+const BAR_X = 52;
+const BAR_Y = 92;
+const BAR_HEIGHT = 34;
+const BAR_WIDTH = LABEL_WIDTH - BAR_X * 2;
+const BAR_FILL_WIDTH = BAR_WIDTH - 6;
+
+/** Which texel the bar's fill ends on: the whole of what a repaint can change. */
+function barTexel(health: number): number {
+  return Math.round(clamp01(health) * BAR_FILL_WIDTH);
+}
+
 /** Canvas fill styles for one relation, derived from the live palette and nothing else. */
 interface RelationColours {
   readonly name: string;
@@ -317,7 +339,7 @@ export class ActorIndicator {
       name !== this.paintedName ||
       state.relation !== this.paintedRelation ||
       this.assets.paletteSerial !== this.paintedPaletteSerial ||
-      Math.abs(this.shownHealth - this.paintedHealth) > 1e-3
+      barTexel(this.shownHealth) !== barTexel(this.paintedHealth)
     ) {
       this.drawLabel(name, state.relation, this.shownHealth);
       this.paintedName = name;
@@ -372,13 +394,13 @@ export class ActorIndicator {
     ctx.font = `800 38px ${family}`;
     ctx.fillText(name, LABEL_WIDTH * 0.5, 49, LABEL_WIDTH - 42);
 
-    const barX = 52;
-    const barY = 92;
-    const barWidth = LABEL_WIDTH - barX * 2;
-    const barHeight = 34;
+    const barX = BAR_X;
+    const barY = BAR_Y;
+    const barWidth = BAR_WIDTH;
+    const barHeight = BAR_HEIGHT;
     const innerX = barX + 3;
     const innerY = barY + 3;
-    const innerWidth = barWidth - 6;
+    const innerWidth = BAR_FILL_WIDTH;
     const innerHeight = barHeight - 6;
 
     ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';

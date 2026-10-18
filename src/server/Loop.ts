@@ -54,7 +54,7 @@ const TICK_MS = 1000 / SIM_HZ;
  * Node's `setTimeout` never fires early but is regularly late. Waking a whisker early and
  * finding nothing due yet costs one cheap re-arm; waking late costs jitter on every tick.
  */
-const WAKE_MARGIN_MS = 1;
+const WAKE_MARGIN_MS = 3;
 
 /**
  * Ticks that may be run back to back to catch up after a stall.
@@ -106,6 +106,8 @@ export class ServerLoop {
   private tickIndex = 0;
   private running = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** The last stretch before a tick is due runs here instead. See `arm`. */
+  private immediate: ReturnType<typeof setImmediate> | null = null;
 
   private lastTickMs = 0;
   private readonly intervals = new Float64Array(JITTER_WINDOW);
@@ -152,6 +154,12 @@ export class ServerLoop {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    // §4.18 counts a pending immediate the same way it counts a timer, and `wake` would
+    // otherwise get one more turn after the loop has been told it is done.
+    if (this.immediate !== null) {
+      clearImmediate(this.immediate);
+      this.immediate = null;
+    }
     this.opts.onStop?.();
   }
 
@@ -191,11 +199,30 @@ export class ServerLoop {
     if (!this.running) return;
     const dueMs = this.startMs + this.tickIndex * TICK_MS;
     const delay = dueMs - nowMs() - WAKE_MARGIN_MS;
-    this.timer = setTimeout(this.wake, delay > 0 ? delay : 0);
+    if (delay > 0) {
+      this.timer = setTimeout(this.wake, delay);
+      return;
+    }
+    /**
+     * The last stretch before the tick is due is waited out on the immediate queue.
+     *
+     * A timer here would be the expensive half of this loop rather than the cheap one. Waking
+     * early is deliberate — see `WAKE_MARGIN_MS` — but the re-arm that follows asks for a
+     * millisecond or less, and a millisecond is not what the platform delivers: the poll phase
+     * sleeps until the host's scheduler quantum comes round, which on Windows is 15.6 ms with
+     * nothing raising it. So the cheap re-arm the margin is supposed to cost turns into a whole
+     * tick, and the next one lands 31 ms after the last. That is the measured p99.
+     *
+     * `setImmediate` runs on the check phase without entering that wait, so the remaining
+     * fraction of a millisecond is paid in event-loop turns instead of in a sleep — and each
+     * turn still services the socket, which a spin would not.
+     */
+    this.immediate = setImmediate(this.wake);
   }
 
   private readonly wake = (): void => {
     this.timer = null;
+    this.immediate = null;
     if (!this.running) return;
 
     let ran = 0;

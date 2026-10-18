@@ -583,7 +583,12 @@ export class Game {
       difficulty: settings.botDifficulty,
     };
 
-    this.renderer = new Renderer(canvas);
+    // The shader-error check costs four synchronous GPU round trips per program on its first
+    // draw, so it follows the debug gate rather than shipping on. See `Renderer`'s constructor.
+    this.renderer = new Renderer(
+      canvas,
+      consoleApiWanted(window.location.search, import.meta.env.DEV),
+    );
     this.renderer.setSize(window.innerWidth, window.innerHeight, settings.renderScale);
     this.introCamera = new IntroCamera({ movement: this.movementConfig });
     // The same fact for the DOM: the front end's 1920x1080 frame scales to this window (M15, A1).
@@ -838,15 +843,25 @@ export class Game {
   }
 
   /**
-   * What the GPU is holding (M15, A3): three.js's own counts of live geometries and textures.
+   * What the GPU is holding (M15, A3): three.js's own counts of live geometries, textures and
+   * linked programs.
    *
    * The instrument for a build/dispose cycle — the menu's backdrop map goes up and comes
    * down around every match now — read before and after N cycles in the pane, the way
    * `npm run leak` reads the heap and the bus count on the server.
+   *
+   * `programs` is the oracle for the light-count fix of 2026-10-18 (`equipment/EquipmentFx.ts`).
+   * A program's cache key carries `numPointLights`, so a scene that changes how many lights it
+   * has asks for a second complete set of programs; the number is expected to settle after the
+   * warm-up hold and then stay put for the rest of the match, grenades included.
    */
-  get gpuMemory(): { geometries: number; textures: number } {
+  get gpuMemory(): { geometries: number; textures: number; programs: number } {
     const m = this.renderer.info.memory;
-    return { geometries: m.geometries, textures: m.textures };
+    return {
+      geometries: m.geometries,
+      textures: m.textures,
+      programs: this.renderer.info.programs?.length ?? 0,
+    };
   }
 
   get inputState(): Input {

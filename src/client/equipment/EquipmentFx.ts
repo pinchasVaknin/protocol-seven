@@ -212,8 +212,21 @@ export class EquipmentFx {
       this.blasts.push({ mesh, age: 0, life: 0.5, radius: 1, active: false });
     }
 
+    /**
+     * Left in the scene and dimmed to nothing, never hidden (2026-10-18).
+     *
+     * three.js bakes `NUM_POINT_LIGHTS` into the source of every lit program and pushes the
+     * count into the program cache key, and `projectObject` returns early on an object whose
+     * `visible` is false — so hiding this light does not save a light, it changes how many
+     * there are, and asks the renderer for a second complete set of programs for every
+     * material in the scene. The first grenade of a match paid for that mid-fight, in
+     * synchronous link stalls long enough to trip `NetClient`'s `RESYNC_TICKS`.
+     *
+     * An intensity of zero costs the same shader a lit frame already runs and nothing else:
+     * the light is in the uniform array either way. `engine/Fx.ts`'s muzzle light has always
+     * been written this way; this is the same thing said in the second place that needed it.
+     */
     this.light = new THREE.PointLight(0xffc07a, 0, 26, 2);
-    this.light.visible = false;
     this.group.add(this.light);
   }
 
@@ -240,7 +253,6 @@ export class EquipmentFx {
     this.light.position.set(x, y, z);
     this.light.color.setHex(bright ? 0xffffff : 0xffb46e);
     this.lightTimer = bright ? 0.3 : 0.22;
-    this.light.visible = true;
   }
 
   /**
@@ -399,19 +411,14 @@ export class EquipmentFx {
       if (mat instanceof THREE.MeshBasicMaterial) mat.opacity = (1 - t) * 0.75;
     }
 
+    // Dimmed rather than hidden, both on the way down and at rest — see the constructor.
     if (this.lightTimer <= 0) {
-      if (this.light.visible) {
-        this.light.visible = false;
-        this.light.intensity = 0;
-      }
+      if (this.light.intensity !== 0) this.light.intensity = 0;
       return;
     }
     this.lightTimer -= dt;
     this.light.intensity = Math.max(0, this.lightTimer) * 160;
-    if (this.lightTimer <= 0) {
-      this.light.visible = false;
-      this.light.intensity = 0;
-    }
+    if (this.lightTimer <= 0) this.light.intensity = 0;
   }
 }
 

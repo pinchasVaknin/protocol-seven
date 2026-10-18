@@ -88,7 +88,28 @@ export class Renderer {
   /** M8. Null unless the player has asked for motion blur. */
   private blur: MotionBlur | null = null;
 
-  constructor(canvas: HTMLCanvasElement) {
+  /**
+   * `checkShaderErrors` is the diagnostic build's switch, and it is off everywhere else
+   * (2026-10-18).
+   *
+   * three.js checks a program for link errors in `onFirstUse` — the first frame that actually
+   * *draws* the material, not the compile that prepared it — and the check is four synchronous
+   * calls into the GPU process: `getProgramInfoLog`, `getShaderInfoLog` twice, and
+   * `getProgramParameter(LINK_STATUS)`. Each is a round trip the main thread waits out, and
+   * `getProgramInfoLog` in particular forces a parallel link to finish — which is exactly what
+   * `KHR_parallel_shader_compile` and `engine/GpuWarmup.ts` exist to avoid. A Chrome profile of
+   * the deployed build measured **701 ms of `getProgramInfoLog` in a twenty-second trace**, the
+   * largest single item in it, and a stall that long trips `NetClient`'s `RESYNC_TICKS` (20
+   * ticks, 333 ms) — which throws the prediction away and teleports the player. The hitch and
+   * the rubberbanding reported from that session are one cause.
+   *
+   * Off, a bad program draws nothing and says nothing, so the flag follows the same gate that
+   * decides whether this page gets `__p7` at all: on under `npm run dev`, on with `?debug=1`,
+   * off for everybody else. `ui/CharacterStage.ts` and `ui/WeaponPreview.ts` have shipped with
+   * it off unconditionally since they were written; this is that decision for the renderer that
+   * draws the match.
+   */
+  constructor(canvas: HTMLCanvasElement, checkShaderErrors = false) {
     this.three = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
@@ -123,6 +144,7 @@ export class Renderer {
     // PCFShadowMap with a console warning. Ask for what we actually get; softness
     // comes from the map size and the light's shadow radius instead.
     this.three.shadowMap.type = THREE.PCFShadowMap;
+    this.three.debug.checkShaderErrors = checkShaderErrors;
   }
 
   /** `scale` is the user's render-scale setting; device pixel ratio is capped at 2. */

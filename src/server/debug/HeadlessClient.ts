@@ -17,7 +17,11 @@ import {
   type NetLoadout,
 } from '../../shared/net/Skirmish';
 import { resolveLoadout } from '../../shared/meta/Loadouts';
-import { DEFAULT_INTERPOLATION_DELAY_MS, makeInterpolatedPose } from '../../shared/net/Interpolation';
+import {
+  DEFAULT_INTERPOLATION_DELAY_MS,
+  makeInterpolatedPose,
+  type InterpolationOutcomes,
+} from '../../shared/net/Interpolation';
 import { EFlag, THROW_PHASES, weaponIdAt } from '../../shared/net/Snapshot';
 import { AR_DEFAULT, heldMoveScale, WEAPON_DEFS, type WeaponDef } from '../../shared/weapons/WeaponDefs';
 import { hitsFrom, shotsFrom } from '../../shared/combat/ShotAccounting';
@@ -259,6 +263,13 @@ export interface HeadlessClientReport {
   readonly mispredictionP50: number;
   readonly mispredictionP99: number;
   readonly maxReplayDepth: number;
+  /**
+   * How the remote bodies this client aimed at were drawn (2026-10-18).
+   *
+   * Only the live, non-dormant enemies `aimAtNearest` samples, which is the subset that
+   * matters: those are the bodies a player is looking at when they report one jumping.
+   */
+  readonly interpolation: InterpolationOutcomes;
   readonly ticksSimulated: number;
   /** Damage events in which this client was the shooter. Not a hit count — see `shotsHit`. */
   readonly hitsDealt: number;
@@ -1796,6 +1807,7 @@ export class HeadlessClient {
       mispredictionP50: round(p.p50),
       mispredictionP99: round(p.p99),
       maxReplayDepth: this.net.prediction.stats.maxReplayDepth,
+      interpolation: this.net.interpolation(),
       ticksSimulated: this.ticks,
       hitsDealt: this.hitsDealt,
       shotsFired: this.shotsFired,

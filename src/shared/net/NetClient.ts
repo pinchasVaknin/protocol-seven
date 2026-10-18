@@ -38,7 +38,11 @@ import { withRewindSuffix } from './UrlFlags';
 import type { PlayerController } from '../player/PlayerController';
 import { makePlayerSimState, type PlayerSimState } from '../player/PlayerState';
 import { ClockSync } from './ClockSync';
-import { EntityInterpolator } from './Interpolation';
+import {
+  EntityInterpolator,
+  makeInterpolationOutcomes,
+  type InterpolationOutcomes,
+} from './Interpolation';
 import {
   decodeHeader,
   makeSnapshotHeader,
@@ -696,6 +700,33 @@ export class NetClient {
    */
   renderTimeMs(interpolationDelayMs: number): number {
     return this.clock.serverTickFractional() * DT * 1000 - interpolationDelayMs;
+  }
+
+  /**
+   * How every remote body's pose was produced, summed over the match (2026-10-18).
+   *
+   * The instrument for the question the interpolation delay raises and cannot answer about
+   * itself. `DEFAULT_INTERPOLATION_DELAY_MS` is 100 ms against a 50 ms snapshot interval —
+   * Valve's two-intervals default, which tolerates exactly one lost snapshot and no jitter.
+   * Past that the body is extrapolated and then cut back to the truth when the real sample
+   * lands, which is what a player reports as other players jumping. Whether that is actually
+   * happening, and how often, is a measurement rather than an argument, and this is it.
+   *
+   * The local player is excluded: they are predicted, not interpolated, and their
+   * interpolator is never sampled by anything that draws.
+   */
+  interpolation(): InterpolationOutcomes {
+    const total = makeInterpolationOutcomes();
+    for (const [id, interp] of this.remotes) {
+      if (id === this.entityId) continue;
+      const o = interp.outcomes;
+      total.blended += o.blended;
+      total.extrapolated += o.extrapolated;
+      total.frozen += o.frozen;
+      total.stale += o.stale;
+      total.empty += o.empty;
+    }
+    return total;
   }
 
   /**

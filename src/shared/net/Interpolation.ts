@@ -57,6 +57,49 @@ export interface InterpolatedPose {
   extrapolated: boolean;
   /** True when the buffer has starved past the extrapolation cap and the body is frozen. */
   frozen: boolean;
+  /**
+   * True when a single sample was written because no pair bracketed the render time
+   * (2026-10-18).
+   *
+   * The third way this can fail to interpolate, and the one that had no name. It happens
+   * when the render time lands inside the buffer's span but the pair either side of it is
+   * missing — a dropped snapshot in the middle of the window — and when the buffer is
+   * over-full and the render time is behind everything held, which is the join. Either way
+   * the body is drawn on one sample and stops moving until the next one lands.
+   */
+  stale: boolean;
+}
+
+/**
+ * How a body's poses were produced over a run (2026-10-18).
+ *
+ * The five outcomes of `sample` are mutually exclusive and sum to the number of calls, which
+ * is what makes a degraded fraction meaningful rather than a count without a denominator.
+ * `blended` is the healthy one. The others are the interpolator saying the data it needed was
+ * not there: `extrapolated` and `frozen` mean the render time had run past the newest sample,
+ * `stale` means no pair bracketed it, and `empty` means nothing had arrived yet.
+ *
+ * The reason this exists: the interpolation delay is a fixed 100 ms against a 50 ms snapshot
+ * interval, which is Valve's two-intervals default and tolerates exactly one lost snapshot
+ * and no jitter. Whether that is actually being exceeded in play is a measurement nobody had
+ * taken, and it has to be taken before the delay is changed.
+ */
+export interface InterpolationOutcomes {
+  blended: number;
+  extrapolated: number;
+  frozen: number;
+  stale: number;
+  empty: number;
+}
+
+export function makeInterpolationOutcomes(): InterpolationOutcomes {
+  return { blended: 0, extrapolated: 0, frozen: 0, stale: 0, empty: 0 };
+}
+
+/** The share of samples that were not a clean blend. 0 when nothing has been sampled. */
+export function degradedFraction(o: InterpolationOutcomes): number {
+  const total = o.blended + o.extrapolated + o.frozen + o.stale + o.empty;
+  return total === 0 ? 0 : (total - o.blended) / total;
 }
 //#endregion
 
@@ -98,6 +141,9 @@ export class EntityInterpolator {
 
   /** Server time of the newest sample. */
   latestMs = 0;
+
+  /** How this body's poses were produced since it joined. See `InterpolationOutcomes`. */
+  readonly outcomes: InterpolationOutcomes = makeInterpolationOutcomes();
 
   private readonly samples: Sample[] = [];
 
@@ -143,9 +189,13 @@ export class EntityInterpolator {
   sample(renderMs: number, out: InterpolatedPose): void {
     out.extrapolated = false;
     out.frozen = false;
+    out.stale = false;
 
     const newest = this.newest();
-    if (newest === null) return;
+    if (newest === null) {
+      this.outcomes.empty++;
+      return;
+    }
 
     // Discrete fields always come from the newest sample, never blended.
     out.heightScale = newest.state.heightScale;
@@ -153,6 +203,9 @@ export class EntityInterpolator {
 
     if (renderMs >= newest.serverMs) {
       this.extrapolate(newest, renderMs, out);
+      // `extrapolate` decides between the two: past the cap it freezes, under it it predicts.
+      if (out.frozen) this.outcomes.frozen++;
+      else this.outcomes.extrapolated++;
       return;
     }
 
@@ -161,6 +214,8 @@ export class EntityInterpolator {
       // Behind everything held: the buffer is over-full, which happens right after a join.
       // Draw the oldest rather than inventing a pose before it.
       write(oldest.state, out);
+      out.stale = true;
+      this.outcomes.stale++;
       return;
     }
 
@@ -170,10 +225,13 @@ export class EntityInterpolator {
 
     if (before === null || after === null) {
       write(newest.state, out);
+      out.stale = true;
+      this.outcomes.stale++;
       return;
     }
 
     blendInto(before, after, renderMs, out);
+    this.outcomes.blended++;
   }
 
   /**
@@ -317,6 +375,7 @@ export function makeInterpolatedPose(): InterpolatedPose {
     stance: 'STAND',
     extrapolated: false,
     frozen: false,
+    stale: false,
   };
 }
 //#endregion

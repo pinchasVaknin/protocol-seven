@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { angleDelta } from '../core/MathUtil';
 import {
   DEFAULT_INTERPOLATION_DELAY_MS,
+  degradedFraction,
   EntityInterpolator,
   makeInterpolatedPose,
+  makeInterpolationOutcomes,
   type InterpolatedPose,
 } from './Interpolation';
 import { makeEntitySnapshot, type EntitySnapshot } from './Snapshot';
@@ -199,6 +201,90 @@ describe('extrapolating past the newest sample', () => {
     at(interp, 1000, 0, (e) => (e.pitch = 0));
     at(interp, 1100, 10, (e) => (e.pitch = 0.4));
     expect(poseAt(interp, 1150).pitch).toBe(0.4);
+  });
+});
+
+/**
+ * The outcome counters (2026-10-18).
+ *
+ * They exist to answer one question with a measurement instead of an argument: at a fixed
+ * 100 ms delay against a 50 ms snapshot interval, how often does a body fail to be blended?
+ * A counter nobody has pinned is a counter that quietly stops counting, so each of the five
+ * outcomes is driven here, and the five are asserted to sum to the number of calls — which is
+ * what makes the degraded fraction a fraction of something.
+ */
+describe('counting how each pose was produced', () => {
+  it('counts a clean blend', () => {
+    const interp = new EntityInterpolator();
+    at(interp, 1000, 0);
+    at(interp, 1100, 10);
+    poseAt(interp, 1050);
+    expect(interp.outcomes).toEqual({ ...makeInterpolationOutcomes(), blended: 1 });
+  });
+
+  it('counts an extrapolation, and the freeze past the cap, separately', () => {
+    const interp = new EntityInterpolator();
+    at(interp, 1000, 0);
+    at(interp, 1100, 10);
+
+    const ahead = poseAt(interp, 1150);
+    expect(ahead.extrapolated).toBe(true);
+    expect(ahead.frozen).toBe(false);
+
+    const frozen = poseAt(interp, 1100 + 400);
+    expect(frozen.frozen).toBe(true);
+
+    expect(interp.outcomes.extrapolated).toBe(1);
+    expect(interp.outcomes.frozen).toBe(1);
+    expect(interp.outcomes.blended).toBe(0);
+  });
+
+  it('counts a pose drawn from one sample because no pair bracketed it', () => {
+    const interp = new EntityInterpolator();
+    at(interp, 1000, 0);
+    at(interp, 1100, 10);
+    // Behind everything held: the buffer is over-full, which is the join.
+    const early = poseAt(interp, 900);
+    expect(early.stale).toBe(true);
+    expect(early.extrapolated).toBe(false);
+    expect(interp.outcomes.stale).toBe(1);
+  });
+
+  it('counts a sample taken before anything arrived', () => {
+    const interp = new EntityInterpolator();
+    poseAt(interp, 1000);
+    expect(interp.outcomes).toEqual({ ...makeInterpolationOutcomes(), empty: 1 });
+  });
+
+  it('clears the flags on a pose that is blended after a degraded one', () => {
+    const interp = new EntityInterpolator();
+    at(interp, 1000, 0);
+    at(interp, 1100, 10);
+    const out = makeInterpolatedPose();
+    interp.sample(1150, out);
+    expect(out.extrapolated).toBe(true);
+    interp.sample(1050, out);
+    // The same pose object, reused every frame: a stale flag would outlive its frame.
+    expect(out.extrapolated).toBe(false);
+    expect(out.frozen).toBe(false);
+    expect(out.stale).toBe(false);
+  });
+
+  it('reports the degraded share of everything it has drawn', () => {
+    const interp = new EntityInterpolator();
+    at(interp, 1000, 0);
+    at(interp, 1100, 10);
+    poseAt(interp, 1025);
+    poseAt(interp, 1050);
+    poseAt(interp, 1075);
+    poseAt(interp, 1150);
+
+    const o = interp.outcomes;
+    const total = o.blended + o.extrapolated + o.frozen + o.stale + o.empty;
+    expect(total).toBe(4);
+    expect(o.blended).toBe(3);
+    expect(degradedFraction(o)).toBeCloseTo(0.25, 6);
+    expect(degradedFraction(makeInterpolationOutcomes())).toBe(0);
   });
 });
 

@@ -2,6 +2,7 @@ import { BOT_ID_BASE } from '../shared/ai/BotDirector';
 import { installClock } from '../shared/core/Clock';
 import { logger } from '../shared/core/Log';
 import { NO_SKIN_INDEX, SKIN_IDS } from '../shared/meta/Skins';
+import { degradedFraction } from '../shared/net/Interpolation';
 import { describeConditions, NET_PERFECT, parseConditions, type NetConditions } from '../shared/net/NetSim';
 import { HeadlessClient, type ClientBehaviour } from './debug/HeadlessClient';
 import { installServerLogging, metric } from './log';
@@ -262,6 +263,18 @@ async function main(): Promise<number> {
       mispredictionP50: r.mispredictionP50,
       mispredictionP99: r.mispredictionP99,
       maxReplayDepth: r.maxReplayDepth,
+      // How the enemy bodies were drawn (2026-10-18). `blended` is the healthy outcome; the
+      // rest are the interpolation buffer running out of data at a fixed 100 ms delay.
+      poseSamples:
+        r.interpolation.blended +
+        r.interpolation.extrapolated +
+        r.interpolation.frozen +
+        r.interpolation.stale +
+        r.interpolation.empty,
+      poseExtrapolated: r.interpolation.extrapolated,
+      poseFrozen: r.interpolation.frozen,
+      poseStale: r.interpolation.stale,
+      poseDegradedPct: round(degradedFraction(r.interpolation) * 100),
       snapshots: r.stats.snapshotsReceived,
       snapshotsPerSec: round(r.stats.snapshotsPerSecond),
       snapshotBytesMean: round(r.stats.meanSnapshotBytes),

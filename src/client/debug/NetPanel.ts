@@ -1,6 +1,6 @@
 import { describeConditions, findPreset, NET_PRESETS, parseConditions } from '../../shared/net/NetSim';
 import { MAX_REWIND_MS } from '../../shared/net/Protocol';
-import { DEFAULT_INTERPOLATION_DELAY_MS } from '../../shared/net/Interpolation';
+import { DEFAULT_INTERPOLATION_DELAY_MS, degradedFraction } from '../../shared/net/Interpolation';
 import {
   CORRECTION_SMOOTHING_TICKS,
   MAX_SMOOTHED_DISTANCE,
@@ -61,6 +61,16 @@ export class NetPanel {
     const fBandwidth = net.addField('Bandwidth');
     const fLoss = net.addField('Loss');
     const fSim = net.addField('Simulated');
+    /**
+     * How the other bodies on screen were actually drawn (2026-10-18).
+     *
+     * `blended` is the healthy outcome. The rest are the interpolation buffer running out of
+     * data at a fixed 100 ms delay — two snapshot intervals, so one lost snapshot and no
+     * jitter is the whole budget — and an extrapolated body is cut back to the truth when the
+     * real sample lands, which is what gets reported as other players jumping. This is the
+     * number to read before anyone changes the delay.
+     */
+    const fPoses = net.addField('Remote poses');
 
     // ---- PREDICTION --------------------------------------------------------
     const pred = overlay.section('Prediction', left);
@@ -117,6 +127,15 @@ export class NetPanel {
           `snap past ${MAX_SMOOTHED_DISTANCE} m`,
       );
       setField(fUnacked, String(p.unacked));
+
+      const io = c.interpolation();
+      const poseTotal = io.blended + io.extrapolated + io.frozen + io.stale + io.empty;
+      setField(fPoses, 
+        poseTotal === 0
+          ? 'nothing drawn yet'
+          : `${(degradedFraction(io) * 100).toFixed(1)}% not blended · ` +
+            `extrap ${io.extrapolated} · frozen ${io.frozen} · stale ${io.stale} / ${poseTotal}`,
+      );
 
       // Rewind: this client's contribution to the server's calculation. The delay comes from
       // the constant both sides compile against, not from a literal here — a panel that keeps

@@ -77,7 +77,7 @@ import type {
   StreakView,
 } from './Skirmish';
 import type { BombInfo, TagInfo } from '../modes/GameMode';
-import { rejectText } from './Protocol';
+import { MAX_REWIND_MS, rejectText } from './Protocol';
 import { CommandPipeline } from './CommandPipeline';
 import { copyEntitySnapshot, EFlag, makeEntitySnapshot, type EntitySnapshot } from './Snapshot';
 import { NO_SKIN_INDEX } from '../meta/Skins';
@@ -699,7 +699,46 @@ export class NetClient {
    * makes hit registration agree with what the player saw.
    */
   renderTimeMs(interpolationDelayMs: number): number {
-    return this.clock.serverTickFractional() * DT * 1000 - interpolationDelayMs;
+    return this.clock.serverTickFractional() * DT * 1000 - this.viewLagMs(interpolationDelayMs);
+  }
+
+  /**
+   * How far behind the truth this client draws the world: half a round trip, plus the
+   * interpolation delay (2026-10-18).
+   *
+   * **The `RTT/2` is the fix, and it is the client catching up with what the rest of the
+   * system already believed.** `serverTickFractional()` is the server's clock *now*. The
+   * newest sample in the buffer left the server `RTT/2` ago and was already up to one
+   * snapshot interval old when it did, so subtracting the delay alone put the render time
+   * ahead of the newest sample held as soon as `RTT/2 + 50 ms` passed 100 — that is, at a
+   * round trip of about 100 ms. Past it `EntityInterpolator.sample` takes the extrapolation
+   * branch every frame and each pose is cut back to the truth when the real sample lands,
+   * which is what a player reports as other players jumping. Measured with the outcome
+   * counters added in 8f9b690: 0.6% of poses degraded at 28 ms RTT, 22.4% at 135, 97.2% at
+   * 230.
+   *
+   * Every other party to this already used this sum. `MatchInstance` rewinds by
+   * `session.rttMs * 0.5 + interpolationDelayMs` for lag compensation and sizes the relevance
+   * look-ahead by it, with a comment that states the contract outright — "how far behind the
+   * truth this client draws the world — half its round trip, the interpolation delay and one
+   * snapshot interval". `NetPanel` prints the same sum as the view lag. Only the thing that
+   * actually drew the bodies left the `RTT/2` out, so the server was rewinding to a moment
+   * the client had never shown: at 230 ms RTT, 115 ms further back than what the player shot
+   * at. This closes that too.
+   *
+   * `MAX_REWIND_MS` is the ceiling because it is the server's: past it the rewind is clamped,
+   * and a client drawing further back than the server will rewind would be aiming at a world
+   * the server refuses to restore. Agreeing on a clamped number beats disagreeing on an exact
+   * one. The cost is that above about 300 ms of round trip the budget is negative again and
+   * the interpolator goes back to extrapolating — acknowledged, and the same ceiling the
+   * lag compensation has always had.
+   *
+   * The RTT here is this client's own estimate and the server uses its own; the two measure
+   * the same round trip and differ by their sampling, not by their meaning.
+   */
+  viewLagMs(interpolationDelayMs: number): number {
+    const lag = this.clock.rttMs * 0.5 + interpolationDelayMs;
+    return lag > MAX_REWIND_MS ? MAX_REWIND_MS : lag;
   }
 
   /**

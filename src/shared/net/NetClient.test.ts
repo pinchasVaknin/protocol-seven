@@ -7,6 +7,8 @@ import { Btn, type InputCommand, type MutableInputCommand } from '../core/InputC
 import { DT } from '../core/Loop';
 import type { BombInfo, TagInfo } from '../modes/GameMode';
 import { NO_SKIN_INDEX } from '../meta/Skins';
+import { DEFAULT_INTERPOLATION_DELAY_MS } from './Interpolation';
+import { MAX_REWIND_MS } from './Protocol';
 import { DEFAULT_MOVEMENT_CONFIG } from '../player/MovementConfig';
 import { PlayerController } from '../player/PlayerController';
 import { makePlayerSimState } from '../player/PlayerState';
@@ -852,6 +854,55 @@ describe('the command pipeline', () => {
     fakeNow += 2 * DT * 1000;
     r.net.update();
     expect(seen.length).toBe(2);
+  });
+});
+
+/**
+ * Where this client draws everybody else (2026-10-18).
+ *
+ * The render time used to be the server's clock minus the interpolation delay alone, which
+ * put it ahead of the newest sample the buffer actually held as soon as half a round trip
+ * plus a snapshot interval passed the delay — about 100 ms of RTT. Past that the
+ * interpolator extrapolated every frame and cut back each time a real sample landed, which
+ * is what was reported as other players jumping. The rule now is the one the server has
+ * always rewound by.
+ */
+describe('the render time', () => {
+  it('draws the world half a round trip further back than the delay alone', () => {
+    const r = rig();
+    r.seat();
+
+    r.net.clock.rttMs = 0;
+    const atZero = r.net.renderTimeMs(DEFAULT_INTERPOLATION_DELAY_MS);
+    r.net.clock.rttMs = 120;
+    const atLag = r.net.renderTimeMs(DEFAULT_INTERPOLATION_DELAY_MS);
+
+    // Exactly RTT/2 further into the past, which is the transit the samples spent in flight.
+    expect(atZero - atLag).toBeCloseTo(60, 6);
+  });
+
+  it('is the sum the server rewinds by, and stops where the server stops', () => {
+    const r = rig();
+    r.seat();
+
+    r.net.clock.rttMs = 0;
+    expect(r.net.viewLagMs(100)).toBe(100);
+
+    r.net.clock.rttMs = 120;
+    expect(r.net.viewLagMs(100)).toBe(160);
+
+    // Past the ceiling the server clamps its own rewind to. Agreeing on a clamped number
+    // beats disagreeing on an exact one.
+    r.net.clock.rttMs = 400;
+    expect(r.net.viewLagMs(100)).toBe(MAX_REWIND_MS);
+  });
+
+  it('leaves a client with no measured round trip exactly where it was', () => {
+    const r = rig();
+    r.seat();
+    r.net.clock.rttMs = 0;
+    const expected = r.net.clock.serverTickFractional() * DT * 1000 - DEFAULT_INTERPOLATION_DELAY_MS;
+    expect(r.net.renderTimeMs(DEFAULT_INTERPOLATION_DELAY_MS)).toBeCloseTo(expected, 6);
   });
 });
 

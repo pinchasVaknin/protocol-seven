@@ -141,7 +141,10 @@ export class NetPanel {
       // the constant both sides compile against, not from a literal here — a panel that keeps
       // its own copy of a replicated number is a panel that lies the day the number moves.
       const interpMs = DEFAULT_INTERPOLATION_DELAY_MS;
-      const viewLag = st.rttMs * 0.5 + interpMs;
+      // The client's own number now, not a second copy of the formula: `NetClient.viewLagMs`
+      // is what actually places the bodies, so a panel computing its own would be free to
+      // disagree with the thing it is reporting on.
+      const viewLag = c.viewLagMs(interpMs);
       const applied = Math.min(viewLag, MAX_REWIND_MS);
       setField(fViewLag, `${viewLag.toFixed(0)} ms (RTT/2 ${(st.rttMs * 0.5).toFixed(0)} + interp ${interpMs})`);
       setField(fRewindTicks, `${applied.toFixed(0)} ms ≈ ${Math.round(applied / (1000 / 60))} ticks`);

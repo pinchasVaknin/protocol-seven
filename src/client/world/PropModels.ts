@@ -121,6 +121,26 @@ export class PropModels {
         mesh.receiveShadow = true;
       });
       root.add(clone);
+      /**
+       * Frozen like everything else the map root holds (2026-10-18).
+       *
+       * `MapRender` ends its build by walking its root and turning `matrixAutoUpdate` and
+       * `matrixWorldAutoUpdate` off on all of it, because a map does not move. A station is
+       * added *after* that walk — the model is fetched over the network and arrives whenever
+       * it arrives — so it missed the freeze and recomposed every node's matrix every frame
+       * for the life of the match: measured at 136 of the scene's 1,236 auto-updating
+       * objects, the two stations Foundry places.
+       *
+       * Worth about six microseconds a frame, so this is the invariant and not the clock:
+       * "everything under the map root is static" is either true or it is not worth stating,
+       * and the next prop that arrives late should land in a root where it already holds.
+       * `updateMatrixWorld` first, or the clone keeps the identity matrix it was added with.
+       */
+      clone.updateMatrixWorld(true);
+      clone.traverse((node) => {
+        node.matrixAutoUpdate = false;
+        node.matrixWorldAutoUpdate = false;
+      });
       n += 1;
     }
     return n;

@@ -708,6 +708,8 @@ export class HeadlessClient {
   private gatedUntilMs = -1;
   private readonly notices: string[] = [];
   private currentMapId = '';
+  /** Whether a seat assignment has ever named this client's world. See `adoptWorld`. */
+  private adoptedWorld = false;
   /** What this client's body holds, for `moveScale`: its class's primary, or the server's default. */
   private heldDef: WeaponDef = AR_DEFAULT;
   private controllerInUse: PlayerController;
@@ -1376,20 +1378,38 @@ export class HeadlessClient {
    * the stall the background build exists to avoid, and is the correct fallback: being late is
    * better than predicting against the wrong walls.
    */
-  private onMigrated(welcome: WelcomeInfo): void {
+  /**
+   * Hold the predicted controller to the map this seat is in.
+   *
+   * Idempotent, and called from both doors: `onMigrated` for the transition it was written
+   * for, and `update` for every other way a seat arrives — the first join above all, which
+   * fires no migration callback at all.
+   *
+   * A background build that matches is taken; anything else is built here and now, which is
+   * the stall `onPrepare` exists to avoid and the correct fallback, because being late is
+   * better than predicting against the wrong walls. The first seat assignment is not counted
+   * as a late build: there was no transition for it to have been late for.
+   */
+  private adoptWorld(mapId: string): void {
+    if (mapId === '') return;
     const prepared = this.preparing;
-    if (prepared !== null && prepared.mapId === welcome.mapId) {
+    if (prepared !== null && prepared.mapId === mapId) {
       this.net.swapController(prepared.controller);
       this.controllerInUse = prepared.controller;
       this.preparing = null;
-    } else if (welcome.mapId !== this.currentMapId) {
-      this.lateBuilds++;
-      const controller = this.buildController(welcome.mapId);
+    } else if (mapId !== this.currentMapId) {
+      if (this.adoptedWorld) this.lateBuilds++;
+      const controller = this.buildController(mapId);
       this.net.swapController(controller);
       this.controllerInUse = controller;
       this.preparing = null;
     }
-    this.currentMapId = welcome.mapId;
+    this.currentMapId = mapId;
+    this.adoptedWorld = true;
+  }
+
+  private onMigrated(welcome: WelcomeInfo): void {
+    this.adoptWorld(welcome.mapId);
 
     /**
      * Close the post-match hold (playtest round 4, B4).
@@ -1600,6 +1620,25 @@ export class HeadlessClient {
 
     const steps = this.net.update();
     this.ticks += steps;
+
+    /**
+     * Predict against the map this seat is actually in (2026-10-18).
+     *
+     * The controller was built once, from `opts.mapId`, and then only ever rebuilt from
+     * `onMigrated` — which the *initial* seat assignment does not fire. So a client that
+     * connected and stayed in the warmup arena predicted against whatever map the run was
+     * started with: `netHarness` defaults to `mp_foundry` and the arena is `mp_testbed`, which
+     * is the exact failure `NetClient.swapController` is documented to prevent, arriving
+     * through the one door nothing was watching.
+     *
+     * It was worth 35x on the instrument. One run, one seed, 15 seconds in the arena:
+     * `--map mp_foundry` reported 148 mispredictions of 296 comparisons and `--map mp_testbed`
+     * reported 4 — and every netcode claim in this project is measured here. Asked from the
+     * `NetClient`'s own field rather than from a callback, because the question is "what world
+     * am I in" and that is state, not an event: whichever door the seat arrived through —
+     * first join, migration, reconnect — this sees it.
+     */
+    this.adoptWorld(this.net.mapId);
 
     // Opened on the first tick this client is actually simulating, closed SPAWN_WINDOW_TICKS
     // later. See `spawnWindowMispredictions`.

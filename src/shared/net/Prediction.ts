@@ -296,10 +296,11 @@ export class Prediction {
 
     const predicted = this.find(ackSeq);
     if (predicted === null) {
-      // No record: this client has been alive for less than the ring, or the server acked a
-      // command from before a respawn. Accept the server's word without counting it as a
-      // misprediction — there was no prediction to be wrong.
-      loadPlayerSim(state, controller.sim);
+      // No record: this client has been alive for less than the ring, the server acked a
+      // command from before a respawn, or the ring was thrown away by a resync. Accept the
+      // server's word without counting it as a misprediction — there was no prediction to be
+      // wrong — but ease the move rather than jumping it. See `adoptUnpredicted`.
+      this.adoptUnpredicted(state, controller);
       return false;
     }
 
@@ -449,6 +450,72 @@ export class Prediction {
     this.applyOffset();
   }
 
+  /**
+   * The server's word, with the visible difference eased out rather than jumped (2026-10-18).
+   *
+   * This is the branch a **resync** lands in, and it is what the lag report was describing:
+   * "he moves in a direction and then jumps somewhere else, as if the prediction is not
+   * working". It is not the prediction failing. `NetClient.stepSimulation` throws the ring
+   * away when the client falls more than `RESYNC_TICKS` behind its clock — 20 ticks, 333 ms —
+   * which is what any main-thread stall longer than a third of a second does. The server has
+   * meanwhile simulated those ticks with the last command it was given, so it has kept the
+   * player walking in whatever direction they were last heading; the next snapshot arrives,
+   * `find` returns null because the ring is empty, and the state was loaded straight over the
+   * simulation with no smoothing at all. One frame, several metres, no warning.
+   *
+   * The same two rules a correction already follows apply here, and for the same reasons: the
+   * difference is measured from where the player is being **drawn** rather than from the raw
+   * simulation, and anything past `MAX_SMOOTHED_DISTANCE` cuts instead of easing, because a
+   * camera held two metres from its own body is worse than a visible jump. A join and a
+   * relocation are both well past that and still snap; a stall of half a second at walking
+   * pace is not, and now eases over `CORRECTION_SMOOTHING_TICKS`.
+   *
+   * Nothing is counted, exactly as before. There was no prediction to be wrong, and S8.4's
+   * zero-at-zero-latency criterion stays a statement about prediction rather than about
+   * whether this machine dropped a frame.
+   */
+  private adoptUnpredicted(state: PlayerSimState, controller: PlayerController): void {
+    const beforeX = controller.sim.x + this.offsetX;
+    const beforeY = controller.sim.y + this.offsetY;
+    const beforeZ = controller.sim.z + this.offsetZ;
+    loadPlayerSim(state, controller.sim);
+    this.carryVisualDifference(controller, beforeX, beforeY, beforeZ);
+  }
+
+  /**
+   * Carry the move from where the player was drawn to where they now are as a decaying
+   * offset — or cut it, when it is too far to hide.
+   *
+   * One copy, because `applyCorrection` and `adoptUnpredicted` have to make the same
+   * judgement: the threshold, the linear decay and the measurement against the drawn position
+   * are a single policy, and two of them would drift.
+   */
+  private carryVisualDifference(
+    controller: PlayerController,
+    beforeX: number,
+    beforeY: number,
+    beforeZ: number,
+  ): void {
+    const visualDx = beforeX - controller.sim.x;
+    const visualDy = beforeY - controller.sim.y;
+    const visualDz = beforeZ - controller.sim.z;
+    const visualDistance = Math.hypot(visualDx, visualDy, visualDz);
+
+    if (visualDistance > MAX_SMOOTHED_DISTANCE) {
+      // Too far to hide. Cut, and let the player see where they actually are.
+      this.originX = 0;
+      this.originY = 0;
+      this.originZ = 0;
+      this.smoothingTicksLeft = 0;
+    } else {
+      this.originX = visualDx;
+      this.originY = visualDy;
+      this.originZ = visualDz;
+      this.smoothingTicksLeft = CORRECTION_SMOOTHING_TICKS;
+    }
+    this.applyOffset();
+  }
+
   /** Count one correction and keep its size for the percentiles S8.5 asks for. */
   private noteMisprediction(distance: number): void {
     this.stats.mispredictions++;
@@ -486,27 +553,7 @@ export class Prediction {
     if (depth > this.stats.maxReplayDepth) this.stats.maxReplayDepth = depth;
 
     // 3. Carry the visible difference as a decaying offset rather than a jump.
-    const afterX = controller.sim.x;
-    const afterY = controller.sim.y;
-    const afterZ = controller.sim.z;
-    const visualDx = beforeX - afterX;
-    const visualDy = beforeY - afterY;
-    const visualDz = beforeZ - afterZ;
-    const visualDistance = Math.hypot(visualDx, visualDy, visualDz);
-
-    if (visualDistance > MAX_SMOOTHED_DISTANCE) {
-      // Too far to hide. Cut, and let the player see where they actually are.
-      this.originX = 0;
-      this.originY = 0;
-      this.originZ = 0;
-      this.smoothingTicksLeft = 0;
-    } else {
-      this.originX = visualDx;
-      this.originY = visualDy;
-      this.originZ = visualDz;
-      this.smoothingTicksLeft = CORRECTION_SMOOTHING_TICKS;
-    }
-    this.applyOffset();
+    this.carryVisualDifference(controller, beforeX, beforeY, beforeZ);
   }
 
   /**

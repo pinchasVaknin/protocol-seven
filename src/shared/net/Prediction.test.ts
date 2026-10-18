@@ -154,6 +154,56 @@ describe('reconcile, on an ack it cannot use', () => {
     // There was no prediction to be wrong, so nothing is counted — but the state is adopted.
     expect(r.prediction.stats.mispredictions).toBe(0);
     expect(r.controller.sim.x).toBe(12.5);
+    // Twelve metres is past `MAX_SMOOTHED_DISTANCE`, so it cuts: a join or a relocation that
+    // lands here must not ease the camera across the map.
+    expect(r.prediction.offsetX).toBe(0);
+    expect(r.prediction.smoothingFraction).toBe(0);
+  });
+
+  /**
+   * The resync, which is what a main-thread stall looks like from here (2026-10-18).
+   *
+   * `NetClient` throws the ring away past `RESYNC_TICKS`, so the next snapshot finds no
+   * record and this branch adopts it. It used to load the state straight over the simulation,
+   * which is the jump the lag report described. Under `MAX_SMOOTHED_DISTANCE` it now eases,
+   * on the same terms as any other correction.
+   */
+  it('eases a resync-sized move instead of jumping it', () => {
+    const r = rig();
+    r.step();
+    const drawnBefore = r.controller.sim.x + r.prediction.offsetX;
+    r.prediction.reset();
+
+    const authoritative = r.state();
+    authoritative.x += 0.8;
+    expect(r.prediction.reconcile(99, authoritative, r.controller)).toBe(false);
+
+    // Still not a misprediction, and the simulation is authoritative at once.
+    expect(r.prediction.stats.mispredictions).toBe(0);
+    expect(r.controller.sim.x).toBeCloseTo(drawnBefore + 0.8, 6);
+    // What the player sees does not move this frame.
+    expect(r.controller.sim.x + r.prediction.offsetX).toBeCloseTo(drawnBefore, 6);
+    expect(r.prediction.smoothingFraction).toBe(1);
+
+    const seen: number[] = [];
+    for (let i = 0; i < CORRECTION_SMOOTHING_TICKS; i++) {
+      r.prediction.step();
+      seen.push(Math.abs(r.prediction.offsetX));
+    }
+    expect(seen[seen.length - 1]).toBe(0);
+    for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeLessThan(seen[i - 1] ?? 0);
+  });
+
+  it('still cuts a resync too large to hide', () => {
+    const r = rig();
+    r.step();
+    r.prediction.reset();
+    const authoritative = r.state();
+    authoritative.x += MAX_SMOOTHED_DISTANCE + 0.5;
+
+    r.prediction.reconcile(99, authoritative, r.controller);
+    expect(r.prediction.offsetX).toBe(0);
+    expect(r.prediction.smoothingFraction).toBe(0);
   });
 });
 

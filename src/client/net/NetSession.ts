@@ -370,7 +370,29 @@ export class NetSession {
            * shot carried. The normal is the reverse of the travel direction, which is right
            * for a flat wall and slightly wrong for a glancing hit; the alternative is four
            * more bytes per shot to make a spark point differently.
+           *
+           * **Never for a round that stopped in a body** (2026-10-18). A terminus on a body is
+           * not a surface, and the sim has said so since M8: `Ballistics` emits no
+           * `bullet.impact` for a rig that does not ask for holes, which is every person —
+           * see `Damageable.decals` for why people do not. This synthesis was the one place
+           * that overrode that rule, and only online, which is why it read as a netcode
+           * mystery: the hole was stamped in *world* space where the body stood, so it hung in
+           * mid-air the moment they walked on or were killed. The click that came with it was
+           * wrong too — a body hit leaves `EventCollector`'s `lastImpactMaterial` holding
+           * whatever wall preceded it this tick, so flesh arrived with the last surface's
+           * voice. What a body hit *should* present is already presented from `damage.dealt`:
+           * the flesh impact for anyone near enough to hear it, and the hitmarker, the debris
+           * and the number for the client that fired it.
+           *
+           * `hitTarget` is the gate, and it is one bit short of exact: `endX` is the *first*
+           * pellet's terminus while the count behind this bit is of all eight, so a shotgun
+           * pull that put one pellet in a body and the rest in a wall loses that wall's decal.
+           * The exact answer is a bit on the wire saying what the first pellet stopped in, and
+           * it is not worth a protocol version: a decal that is missing is a hole nobody
+           * notices, and a decal that is wrong is a hole hanging in the air.
            */
+          if (evFired.hitTarget) return;
+
           evImpact.x = e.endX;
           evImpact.y = e.endY;
           evImpact.z = e.endZ;

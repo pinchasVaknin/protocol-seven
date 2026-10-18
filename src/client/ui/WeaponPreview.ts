@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { CamoId } from '../../shared/meta/Camos';
 import { buildWeaponModel, type WeaponModel } from '../weapons/WeaponMesh';
+import { hasWeaponTemplate } from '../weapons/WeaponAssetCatalog';
 import type { WeaponAssetService } from '../weapons/WeaponAssetService';
 import type { AttachmentId } from '../../shared/weapons/Attachments';
 
@@ -154,86 +155,155 @@ export class WeaponPreview {
             }
 
             let model = this.modelCache.get(key);
-            if (model === undefined) {
-                // A picture of the weapon, not of somebody holding it: no gloves.
-                model = buildWeaponModel(weaponId, this.deps.anisotropy(), camo, {
-                    hands: false,
-                    assets: this.deps.weaponAssets,
-                    attachments,
-                });
+            if (model !== undefined && model.source !== 'glb' && this.templateInHand(weaponId)) {
+                // The file arrived after this entry fell back to primitives — a weapon whose fetch
+                // failed and was retried by `Game` on a later screen. Drop it and build again.
+                this.modelCache.delete(key);
+                model.dispose();
+                model = undefined;
+            }
+            if (model === undefined && this.fileStillComing(weaponId)) {
                 /**
-                 * Framed by its own size rather than by a per-weapon number.
+                 * Nothing on the turntable while the file is still coming (2026-10-18).
                  *
-                 * The pistol is genuinely a different object from the LMG — `WeaponModelSpec.scale`
-                 * says so — and a fixed camera distance would draw one as a speck and clip the other.
-                 * The bounding box comes from the geometry that was just built, so a spec change moves
-                 * the framing with it and there is no second table to keep in step.
-                 */
-                const bounds = new THREE.Box3().setFromObject(model.root);
-                const centre = bounds.getCenter(new THREE.Vector3());
-                const span = Math.max(bounds.getSize(new THREE.Vector3()).length(), 0.001);
-                const fit = FIT_DIAGONAL / span;
-                /**
-                 * Scale, **then** offset by the *scaled* centre, and the order is not cosmetic.
+                 * `buildWeaponModel` always answers, and with no template in hand it answers in
+                 * primitives — so the first hover over a weapon drew the grey stand-in and the
+                 * real receiver replaced it a fraction of a second later. One hover, two
+                 * pictures, which is the pop the human reported. The *match* wants that trade,
+                 * and `WeaponAssetService` says so: a gun in your hands beats an empty pair of
+                 * arms, and it upgrades in place. A shop screen does not. Nobody is shooting
+                 * with this one, and a picture that is wrong for 300 ms is worse than a frame
+                 * that is empty for 300 ms.
                  *
-                 * A group's local matrix is `T · R · S`, so the translation is applied outside the
-                 * scale: a child ends up at `fit · s · c + position`. The box was measured at `s`, so
-                 * subtracting its raw centre would leave the model off the turntable's axis by
-                 * `(fit - 1)` times that centre — a weapon that wobbles as it spins rather than turning
-                 * on the spot, which is subtle enough to look like a modelling choice.
+                 * So it is built once, from the file, and the caption carries the wait.
+                 * `LoadoutEditor` warms every weapon in the list as it paints the cards, so by
+                 * the time the pointer reaches one the template is usually already here and this
+                 * branch is not taken at all.
                  */
-                model.root.scale.multiplyScalar(fit);
-                model.root.position.copy(centre).multiplyScalar(-fit);
+                this.showWhenLoaded(weaponId, key, camo, name, attachments);
+            } else if (model === undefined) {
+                model = this.buildFitted(weaponId, camo, attachments);
                 this.modelCache.set(key, model);
-                this.upgradeWhenLoaded(model, key, weaponId, camo, name, attachments);
             }
 
-            this.turntable.add(model.root);
-            this.model = model;
+            if (model !== undefined) {
+                this.turntable.add(model.root);
+                this.model = model;
+            }
         }
-        if (this.caption.textContent !== name) this.caption.textContent = name;
+        // The wait goes in the caption, the one line of text this panel has. It clears itself:
+        // the file landing re-enters `show`, and then the name is the whole of the label.
+        const label = this.model === null ? `${name} · LOADING…` : name;
+        if (this.caption.textContent !== label) this.caption.textContent = label;
+    }
+
+
+    /** Whether this weapon's template is parsed and in hand right now. */
+    private templateInHand(weaponId: string): boolean {
+        return this.deps.weaponAssets?.statusFor(weaponId) === 'ready';
     }
 
     /**
-     * The file in place of the primitives once it lands (M19): the same swap `ClientMatch` makes,
-     * done by evicting the procedural entry from the cache and showing again.
+     * Whether a file for this weapon is on its way: there is one, and it is not here yet.
+     *
+     * `hasWeaponTemplate` rather than the status alone, because the status does not answer for
+     * every id: the shield is in the catalogue and has a file, but `preload` refuses it as a
+     * non-firearm and resolves without ever moving the status off `idle`. A wait on that is a
+     * wait with nothing on the other end. An `error` is not coming either — it is the
+     * procedural fallback the catalogue promises, kept until a retry elsewhere succeeds.
      */
-    private upgradeWhenLoaded(
-        model: WeaponModel,
-        key: string,
+    private fileStillComing(weaponId: string): boolean {
+        const assets = this.deps.weaponAssets;
+        if (assets === null || !hasWeaponTemplate(weaponId)) return false;
+        const status = assets.statusFor(weaponId);
+        return status === 'idle' || status === 'loading';
+    }
+
+    /**
+     * Show this selection once its file lands (M19; the wait, 2026-10-18).
+     *
+     * Both arms of the promise do the same thing, and the rejection arm is not an oversight: a
+     * failed fetch leaves the status on `error`, so re-entering `show` builds the primitives and
+     * the panel degrades to the picture it used to lead with rather than waiting for ever.
+     */
+    private showWhenLoaded(
         weaponId: string,
+        key: string,
         camo: CamoId | null,
         name: string,
         attachments: readonly AttachmentId[],
     ): void {
         const assets = this.deps.weaponAssets;
-        if (assets === null || model.source === 'glb' || assets.statusFor(weaponId) === 'none') return;
-        void assets.preload(weaponId).then(
-            () => {
-                const cached = this.modelCache.get(key);
-                if (cached === model) {
-                    this.modelCache.delete(key);
-                    if (this.model === model) {
-                        this.turntable.remove(model.root);
-                        this.model = null;
-                    }
-                    model.dispose();
-                }
-                if (this.modelKey !== key) return;
-                this.modelKey = '';
-                this.show(weaponId, camo, name, attachments);
-            },
-            () => undefined,
-        );
+        if (assets === null) return;
+        const again = (): void => {
+            // Only while this is still the selection that asked. The pointer may have crossed
+            // three more cards while the file was in flight, and the last one owns the panel.
+            if (this.modelKey !== key) return;
+            this.modelKey = '';
+            this.show(weaponId, camo, name, attachments);
+        };
+        void assets.preload(weaponId).then(again, again);
     }
 
-    /** One frame. Driven from the render pass — see `LoadoutEditor.tick`. */
+    /**
+     * The model, framed by its own size. Lifted out of `show` when the wait landed above it.
+     *
+     * Built from the file whenever there is one in hand, which is now the only way this is
+     * reached for a weapon that has a file at all — see `show`.
+     */
+    private buildFitted(
+        weaponId: string,
+        camo: CamoId | null,
+        attachments: readonly AttachmentId[],
+    ): WeaponModel {
+        // A picture of the weapon, not of somebody holding it: no gloves.
+        const model = buildWeaponModel(weaponId, this.deps.anisotropy(), camo, {
+            hands: false,
+            assets: this.deps.weaponAssets,
+            attachments,
+        });
+        /**
+         * Framed by its own size rather than by a per-weapon number.
+         *
+         * The pistol is genuinely a different object from the LMG — `WeaponModelSpec.scale`
+         * says so — and a fixed camera distance would draw one as a speck and clip the other.
+         * The bounding box comes from the geometry that was just built, so a spec change moves
+         * the framing with it and there is no second table to keep in step.
+         */
+        const bounds = new THREE.Box3().setFromObject(model.root);
+        const centre = bounds.getCenter(new THREE.Vector3());
+        const span = Math.max(bounds.getSize(new THREE.Vector3()).length(), 0.001);
+        const fit = FIT_DIAGONAL / span;
+        /**
+         * Scale, **then** offset by the *scaled* centre, and the order is not cosmetic.
+         *
+         * A group's local matrix is `T · R · S`, so the translation is applied outside the
+         * scale: a child ends up at `fit · s · c + position`. The box was measured at `s`, so
+         * subtracting its raw centre would leave the model off the turntable's axis by
+         * `(fit - 1)` times that centre — a weapon that wobbles as it spins rather than turning
+         * on the spot, which is subtle enough to look like a modelling choice.
+         */
+        model.root.scale.multiplyScalar(fit);
+        model.root.position.copy(centre).multiplyScalar(-fit);
+        return model;
+    }
+
+    /**
+     * One frame. Driven from the render pass — see `LoadoutEditor.tick`.
+     *
+     * An empty turntable is rendered too, and that is the point of the frame being drawn at
+     * all: a canvas keeps the last picture put on it, so a hover from a weapon that is loaded
+     * onto one whose file is still coming would leave the *previous* weapon spinning under the
+     * new name. The empty scene clears it — the context is built with `alpha`, so what shows
+     * through is the panel's own gradient.
+     */
     tick(dt: number): void {
-        if (this.model === null) return;
-        this.spinRadians += SPIN_DEG_PER_SEC * (Math.PI / 180) * dt;
-        this.turntable.rotation.y = this.spinRadians;
         const renderer = this.ensureRenderer();
         if (this.sizeDirty) this.fitBackingStore(renderer);
+        if (this.model !== null) {
+            this.spinRadians += SPIN_DEG_PER_SEC * (Math.PI / 180) * dt;
+            this.turntable.rotation.y = this.spinRadians;
+        }
         renderer.render(this.scene, this.camera);
     }
 

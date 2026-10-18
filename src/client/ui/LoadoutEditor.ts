@@ -979,6 +979,24 @@ export class LoadoutEditor {
                     // F15: the operator holds the weapon under the cursor, so "the weapon you are
                     // choosing" is visible before the choice is made rather than after it.
                     this.holdOnHover(el, def.id);
+                    /**
+                     * And its file is fetched now, while the cards are being painted (2026-10-18).
+                     *
+                     * The preview waits for the template instead of leading with the primitives
+                     * (`WeaponPreview.show`), and a wait the player can see is a wait worth moving
+                     * off the hover. `Game.warmWeaponAssets` warms the two weapons in the equipped
+                     * class and deliberately not the arsenal — a match needs two of twelve — so
+                     * every other card was a cold fetch at the moment the pointer arrived on it.
+                     * This is the moment the list opens, which is seconds earlier and is time the
+                     * player spends reading the first card either way.
+                     *
+                     * `preload` is a no-op for a template already in hand and joins the request
+                     * for one in flight, so a list repainted on every edit costs nothing after
+                     * the first paint. The failures are the service’s to log: a weapon whose file
+                     * does not arrive keeps the procedural picture, which is the catalogue’s own
+                     * promise, so there is nothing for this screen to do about one.
+                     */
+                    void this.deps.weaponAssets?.preload(def.id).catch(() => undefined);
                     out.push(el);
                 }
                 break;

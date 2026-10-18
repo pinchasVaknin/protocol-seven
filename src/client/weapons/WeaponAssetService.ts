@@ -98,8 +98,13 @@ export type WeaponAssetStatus = 'idle' | 'loading' | 'ready' | 'error' | 'none';
  * file for the life of the page, a promise cache so two callers in one frame share a request, a
  * failed request evicted so a retry can try again, and a synchronous read (`template`) for the
  * callers that build models on a frame — `ClientMatch` builds both slots in its constructor and
- * `WeaponPreview` on a hover, and neither can await. A caller that finds no template yet builds
- * the procedural model and asks `preload` to tell it when the file lands.
+ * cannot await, so a match that finds no template yet builds the procedural model and asks
+ * `preload` to tell it when the file lands.
+ *
+ * `WeaponPreview` used to do the same on a hover and stopped (2026-10-18): a stand-in that is
+ * replaced a moment later is a pop, and a shop screen has nothing to lose by waiting. It asks
+ * `statusFor`, shows nothing until `preload` resolves, and falls back to the primitives only
+ * when the status says `error` or `none`.
  *
  * What it does *not* do is decide which weapons have files: that is `WeaponAssetCatalog`'s
  * list, and `weaponAssetUrl` never sees an id outside it. `Game` warms the equipped loadout's

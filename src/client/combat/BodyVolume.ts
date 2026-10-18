@@ -12,9 +12,16 @@ import type { StanceId } from '../../shared/player/Stance';
  *  - the impact synthesised from a replicated shot's terminus (`NetSession`), for a shooter
  *    this client is not told about, which carries a point and a material and no way to say
  *    that the point is an operator's chest;
- *  - its own predicted trace online, where the remote bodies are not registered as targets
- *    — the server owns hit registration — so a round travels straight through the enemy it
- *    just killed and marks whatever is behind them.
+ *  - its own trace through a body the simulation deliberately does **not** stop on: a
+ *    teammate, because stopping harmlessly in one would be a free body block, and a corpse,
+ *    because `nearestTarget` skips a rig that is not alive. Both end on whatever is behind the
+ *    body, which is the authoritative answer and a hole in somebody all the same.
+ *
+ * Its own predicted round at a living enemy was a third, and is not any more: `Ballistics`
+ * stops that round on the body as of 2026-10-18 (`RoundBlocker`), which is the honest fix —
+ * the tracer, the spark and the click were wrong there too, and a veto can only ever suppress
+ * the hole. What is left above is what no terminus can be moved to the right place: one the
+ * server already chose, and two the simulation chose on purpose.
  *
  * A decal is placed in *world* space by `DecalField`, which is the whole reason this matters:
  * a hole that lands inside a body hangs in mid-air the moment that body walks on or is

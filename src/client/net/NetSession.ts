@@ -225,6 +225,15 @@ export class NetSession {
   private readonly deps: NetSessionDeps;
   private readonly interpolationDelayMs: number;
   private readonly renderable: RenderableActor[] = [];
+  /**
+   * The same bodies as a flat array for `Ballistics.blockers`, rebuilt where the poses are.
+   *
+   * Rebuilt in `syncActors` rather than on demand like `renderables()`, because the reader is
+   * the shot path: it asks once per trace pass, up to five times per pellet, and a `Map`
+   * iterator per ask would allocate inside the one function in the game that is documented
+   * allocation free. The instance never changes, so whoever holds it holds the live set.
+   */
+  private readonly blockers: RemoteActor[] = [];
 
   constructor(deps: NetSessionDeps) {
     this.deps = deps;
@@ -560,6 +569,7 @@ export class NetSession {
     this.onLocalState = null;
     this.actors.clear();
     this.renderable.length = 0;
+    this.blockers.length = 0;
   }
 
   /**
@@ -688,6 +698,25 @@ export class NetSession {
         if (!this.client.remotes.has(id)) this.actors.delete(id);
       }
     }
+
+    // Refilled after the removals and after every pose is current, so the array the shot path
+    // reads this frame holds exactly the bodies that are in the scene with the rigs they are
+    // drawn at. The filter is in `RoundBlocker.stopsRounds`, which the trace asks per body:
+    // liveness and dormancy change between frames, and a set that pre-filtered them would be
+    // the client's own copy of a fact that is one field away.
+    this.blockers.length = 0;
+    for (const actor of this.actors.values()) this.blockers.push(actor);
+  }
+
+  /**
+   * The bodies the local player's predicted round stops in (2026-10-18).
+   *
+   * Handed to `Ballistics.blockers`, which owns the whole reasoning: these are targets without
+   * health, so the client stops its tracer on the enemy it is shooting at without ever
+   * deciding that anybody was hit. The array is the live one — see the field.
+   */
+  roundBlockers(): readonly RemoteActor[] {
+    return this.blockers;
   }
 
   /** The renderable set, rebuilt per frame. Handed to `BotRenderer`. */

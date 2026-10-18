@@ -9,14 +9,23 @@
  * `THREE.Raycaster`, and interleaves world geometry with damageable rigs so a round that
  * punches through a thin wall goes on to hit whatever is standing behind it.
  *
+ * ## Two kinds of body, and why
+ *
+ * A round stops in the nearest *body*, and whether that body can be hurt is a separate
+ * question asked afterwards. `DamageSystem.list` holds the ones this runtime resolves hits on;
+ * `blockers` holds the ones it must not — a networked client's remote players, whose hits the
+ * server owns (S4.13). The split exists because the two facts came as one and only one of them
+ * was ever the client's: *where the round stops* is presentation, drawn as a tracer and an
+ * impact on this machine, while *what the round cost* is replicated. See `blockers`.
+ *
  * Allocation free: every record here is owned by the instance and reused.
  */
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { DamageRequest, DamageSystem } from '../combat/DamageSystem';
+import type { DamageRequest, DamageSystem, Damageable } from '../combat/DamageSystem';
 import { isHostile } from '../combat/Hostility';
-import { makeRigHit, type HitZone, type RigHit } from '../combat/HitboxRig';
+import { makeRigHit, type HitboxRig, type HitZone, type RigHit } from '../combat/HitboxRig';
 import { EV, type GameBus } from '../core/Events';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import { makeRayHit, rayBoxExit, type RayHit } from '../world/Geometry';
@@ -27,6 +36,40 @@ import type { WeaponDef } from './WeaponDefs';
 
 // =========================================== TYPES ============================================ \\
 //#region Types
+/**
+ * A body that stops a round without anybody deciding it was hit (2026-10-18).
+ *
+ * The networked client's own shot, and nothing else so far. Its remote players are drawn from
+ * snapshots and carry a `HitboxRig` kept in step with the drawn pose, but they are **not**
+ * `Damageable` — a client that registered them would be a client resolving hits on them, and
+ * the server owns hit registration (S4.13). Without them in any list at all the predicted
+ * round went straight through the enemy it had just hit: the tracer carried on past them, and
+ * the spark, the hole and the surface click landed on whatever was behind.
+ *
+ * So this is the half of a target the client is entitled to: the rig and the side, and no
+ * health. **That is the authority property, and it is structural rather than remembered** —
+ * there is no health here to take, so no path through `Ballistics` can reach `DamageSystem`
+ * with one of these, and `hitTarget` stays false for a round that stopped in one. What a body
+ * hit should present already arrives from the server's `damage.dealt`: the flesh impact, the
+ * hitmarker, the debris and the number.
+ */
+export interface RoundBlocker {
+  readonly entityId: number;
+  /** Which side this body is on. Read for the same reason `Damageable.team` is. */
+  readonly team?: Damageable['team'];
+  readonly rig: HitboxRig;
+  /**
+   * False while this body must not stop a round.
+   *
+   * The two cases are a dead one and a body the server is not placing for this viewer
+   * (`EFlag.Dormant`, protocol 28). The first is the rule `nearestTarget` applies to a
+   * `Damageable` — *"if (!entity.health.alive) continue"* — and the client has to apply the
+   * same one or it would stop a round the server passes through a corpse; the second is a body
+   * frozen where it was last seen, which is not drawn and must not be measured from.
+   */
+  readonly stopsRounds: boolean;
+}
+
 export interface ShotTrace {
   /** Total path length from muzzle to termination, metres. */
   distance: number;
@@ -49,6 +92,18 @@ export interface ShotTrace {
   upperTorso: boolean;
   damage: number;
   lethal: boolean;
+
+  /**
+   * The round stopped in a body this runtime may not resolve a hit on. See `RoundBlocker`.
+   *
+   * Deliberately *not* `hitTarget`. That bit means "this runtime decided a hit", and it is read
+   * as one: `WeaponSystem` counts it into `pelletsHit`, which is the accuracy figure the
+   * scoreboard is built from, and the shotgun's hit count on the wire. A predicted stop is
+   * neither — the hit it suggests may not have happened, and the one that did is replicated —
+   * so this is the bit, and `hitTarget`, `targetId`, `damage` and `lethal` all stay as they
+   * are for a round that found nobody to hurt.
+   */
+  hitBlocker: boolean;
 
   surfacesPenetrated: number;
   /** Surviving damage fraction after penetration, 0..1. */
@@ -77,6 +132,9 @@ const evImpact = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0, material: 0, penetrate
  * material table, and hard-coding one here would be the one place that does not move with it.
  */
 const DUMMY_IMPACT_MATERIAL = materialIndex('metal');
+
+/** Nobody, for every runtime that resolves its own hits. See `Ballistics.blockers`. */
+const NO_BLOCKERS: readonly RoundBlocker[] = [];
 //#endregion
 
 // ====================================== CLASS Ballistics ====================================== \\
@@ -86,6 +144,23 @@ export class Ballistics {
   //#region Fields
   /** Diagnostics: rig tests performed by the last shot. */
   lastRigTests = 0;
+
+  /**
+   * Bodies that stop a round without taking damage, asked once per pass (2026-10-18).
+   *
+   * **Asked, never told**, and the same shape `DamageSystem.shieldOf` argues for: the set
+   * changes as players join, die, respawn and go dormant, several times a second, and a list
+   * this object was *pushed* would eventually be holding a body that had left. The client
+   * already rebuilds a flat array of its remote actors per frame for the renderer; this reads
+   * that array rather than keeping a second copy of it.
+   *
+   * Default: nobody. A runtime that resolves its own hits — the server, both killstreaks,
+   * single-player — never sets it and behaves exactly as it did before blockers existed. One
+   * instance in the game sets it, the player's own `WeaponSystem` on a networked client, which
+   * is the one trace whose terminus a player watches and whose hits are somebody else's to
+   * decide. See `RoundBlocker`.
+   */
+  blockers: () => readonly RoundBlocker[] = () => NO_BLOCKERS;
 
   private readonly rayHit: RayHit = makeRayHit();
   private readonly rigHit: RigHit = makeRigHit();
@@ -178,7 +253,17 @@ export class Ballistics {
     if (remaining <= EXIT_EPSILON) return false;
 
     const targetId = this.nearestTarget(remaining, request.sourceId);
-    const targetT = targetId >= 0 ? this.bestRig.t : Infinity;
+    /**
+     * The blocker scan is bounded by whatever the target scan found, so a blocker wins only by
+     * being **strictly nearer** — which is what lets the two share one `bestRig` and keeps the
+     * record holding the hit that actually stopped the round.
+     */
+    const blocked = this.nearestBlocker(
+      targetId >= 0 ? this.bestRig.t : remaining,
+      request.sourceId,
+    );
+    const foundBody = blocked || targetId >= 0;
+    const targetT = foundBody ? this.bestRig.t : Infinity;
     const worldFound = this.world.raycast(
       this.px,
       this.py,
@@ -192,8 +277,26 @@ export class Ballistics {
     const worldT = worldFound ? this.rayHit.t : Infinity;
 
     // ---- a body stops the round -----------------------------------------
-    if (targetId >= 0 && targetT <= worldT) {
+    if (foundBody && targetT <= worldT) {
       this.writeEnd(out, targetT, this.travelled + targetT);
+      /**
+       * A blocker is the end of the round and nothing else: no damage request, no door, no
+       * `bullet.impact`.
+       *
+       * The silence is the fix, not a side effect of it. A person leaves no hole — see
+       * `Damageable.decals` — so a round that stops in one has never emitted an impact, and
+       * everything the player should see and hear comes from the replicated `damage.dealt`
+       * instead. The bug was the wall *behind* the enemy getting the spark, the hole and the
+       * click that the enemy's own hit was about to be announced with.
+       *
+       * No penetration either, for the same reason the damageable branch below has none: a
+       * body is a full stop on both sides of the wire, so there is no cost to cross and no
+       * second pass to spend it on.
+       */
+      if (blocked) {
+        out.hitBlocker = true;
+        return false;
+      }
       this.landOnTarget(out, request, targetId);
       return false;
     }
@@ -218,12 +321,9 @@ export class Ballistics {
    */
   private nearestTarget(maxT: number, excludeId: number): number {
     const list = this.damage.list;
-    // A round passes *through* a teammate rather than stopping harmlessly in one, so the
-    // filter belongs in target selection and not only in `DamageSystem.apply`. The shooter's
-    // side is resolved once per pass, not once per candidate; a shooter on no side (a sentry
-    // is on one, a range dummy never fires) skips nobody.
+    // The shooter's side is resolved once per pass, not once per candidate; a shooter on no
+    // side (a sentry is on one, a range dummy never fires) skips nobody.
     const shooterTeam = this.damage.get(excludeId)?.team;
-    const freeForAll = this.damage.freeForAll;
     let bestT = maxT;
     let bestId = -1;
     for (let i = 0; i < list.length; i++) {
@@ -231,13 +331,7 @@ export class Ballistics {
       if (entity === undefined) continue;
       if (entity.entityId === excludeId) continue;
       if (!entity.health.alive) continue;
-      if (
-        shooterTeam !== undefined &&
-        entity.team !== undefined &&
-        !isHostile(shooterTeam, entity.team, freeForAll)
-      ) {
-        continue;
-      }
+      if (this.passesThrough(shooterTeam, entity.team)) continue;
       this.lastRigTests++;
       if (!entity.rig.raycast(this.px, this.py, this.pz, this.dirX, this.dirY, this.dirZ, bestT, this.rigHit)) {
         continue;
@@ -245,15 +339,65 @@ export class Ballistics {
       if (this.rigHit.t >= bestT) continue;
       bestT = this.rigHit.t;
       bestId = entity.entityId;
-      this.bestRig.t = this.rigHit.t;
-      this.bestRig.zone = this.rigHit.zone;
-      this.bestRig.boxIndex = this.rigHit.boxIndex;
-      this.bestRig.upper = this.rigHit.upper;
-      this.bestRig.nx = this.rigHit.nx;
-      this.bestRig.ny = this.rigHit.ny;
-      this.bestRig.nz = this.rigHit.nz;
+      adoptRigHit(this.bestRig, this.rigHit);
     }
     return bestId;
+  }
+
+  /**
+   * Nearest blocker along the ray within `maxT`, as `nearestTarget` is for a damageable one and
+   * leaving its hit in the same `this.bestRig`. Returns whether one was found, which — because
+   * `maxT` is the nearer of the damageable body and the remaining range — means "a blocker
+   * stopped this round".
+   *
+   * Every rule the scan above applies is applied here, and that is the requirement rather than
+   * tidiness: the client stops its round where the server stops it or the two disagree about
+   * what the player just watched. The shooter's own body, a corpse, a dormant one and a
+   * teammate are all passed through on both sides of the wire.
+   *
+   * Nothing to do when nobody set the list, which is every runtime but one — and the early
+   * return is what keeps the cost of this at one call per pass for all of them.
+   */
+  private nearestBlocker(maxT: number, excludeId: number): boolean {
+    const list = this.blockers();
+    if (list.length === 0) return false;
+    const shooterTeam = this.damage.get(excludeId)?.team;
+    let bestT = maxT;
+    let found = false;
+    for (let i = 0; i < list.length; i++) {
+      const body = list[i];
+      if (body === undefined) continue;
+      if (body.entityId === excludeId) continue;
+      if (!body.stopsRounds) continue;
+      if (this.passesThrough(shooterTeam, body.team)) continue;
+      this.lastRigTests++;
+      if (!body.rig.raycast(this.px, this.py, this.pz, this.dirX, this.dirY, this.dirZ, bestT, this.rigHit)) {
+        continue;
+      }
+      if (this.rigHit.t >= bestT) continue;
+      bestT = this.rigHit.t;
+      found = true;
+      adoptRigHit(this.bestRig, this.rigHit);
+    }
+    return found;
+  }
+
+  /**
+   * Whether a round from `shooterTeam` goes *through* a body on `subjectTeam` rather than
+   * stopping in it.
+   *
+   * A round passes through a teammate rather than stopping harmlessly in one, so the filter
+   * belongs in body selection and not only in `DamageSystem.apply` — a free body block is a
+   * worse bug than a wasted round. One method for both scans because it is one rule: the day
+   * FFA or the hostility table changes, a client that kept its own copy of this would stop
+   * rounds the server lets past.
+   */
+  private passesThrough(shooterTeam: Damageable['team'], subjectTeam: Damageable['team']): boolean {
+    return (
+      shooterTeam !== undefined &&
+      subjectTeam !== undefined &&
+      !isHostile(shooterTeam, subjectTeam, this.damage.freeForAll)
+    );
   }
 
   /** Where this pass ended: `t` along the current ray, `distance` from the muzzle. */
@@ -375,6 +519,7 @@ export function makeShotTrace(): ShotTrace {
     upperTorso: false,
     damage: 0,
     lethal: false,
+    hitBlocker: false,
     surfacesPenetrated: 0,
     penetrationRetain: 1,
     penetrationCost: 0,
@@ -406,9 +551,21 @@ function resetTrace(out: ShotTrace, endX: number, endY: number, endZ: number): v
   out.upperTorso = false;
   out.damage = 0;
   out.lethal = false;
+  out.hitBlocker = false;
   out.surfacesPenetrated = 0;
   out.penetrationRetain = 1;
   out.penetrationCost = 0;
+}
+
+/** The winning hit, into the record the pass reports from. Two scans, one record. */
+function adoptRigHit(best: RigHit, hit: RigHit): void {
+  best.t = hit.t;
+  best.zone = hit.zone;
+  best.boxIndex = hit.boxIndex;
+  best.upper = hit.upper;
+  best.nx = hit.nx;
+  best.ny = hit.ny;
+  best.nz = hit.nz;
 }
 
 /**

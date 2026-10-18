@@ -238,13 +238,17 @@ export class DamageSystem {
    *
    * **The damage is still resolved, and still reported.** That is the deliberate half. A
    * networked client predicts nothing about another combatant's health — it is replicated
-   * (S4.15) — and its own rounds already pass through remote bodies, because `Ballistics`
-   * selects targets from this system's list and a client has no remote player registered in it.
-   * So refusing the *deduction* changes only a number the client is told. Refusing the
-   * *computation* would have to happen in `nearestTarget`, which moves where the round stops —
-   * and the terminus is replicated in `FiredEvent`, drawn as a tracer and an impact on every
-   * other client, and is the difference between a hit marker and a spark on the wall behind.
-   * One of those is invisible to prediction and the other is not.
+   * (S4.15) — and no remote player is registered in this system on a client, so no round of
+   * its own can reach this line with one. So refusing the *deduction* changes only a number the
+   * client is told. Refusing the *computation* would have to happen in `nearestTarget`, which
+   * moves where the round stops — and the terminus is replicated in `FiredEvent`, drawn as a
+   * tracer and an impact on every other client, and is the difference between a hit marker and
+   * a spark on the wall behind. One of those is invisible to prediction and the other is not.
+   *
+   * Which is also why a client's round does *stop* on a remote body as of 2026-10-18, without
+   * being registered here: `Ballistics.blockers` is a second list of bodies with a rig and no
+   * health, so the terminus is predicted and the damage is not. The distinction this paragraph
+   * draws is the one that list is built on.
    */
   combatantsInvulnerable = false;
 

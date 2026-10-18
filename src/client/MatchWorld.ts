@@ -37,6 +37,7 @@ import type { HealthConfig } from '../shared/player/Health';
 import type { MovementConfig } from '../shared/player/MovementConfig';
 import { PlayerController } from '../shared/player/PlayerController';
 import type { ViewmodelLayer } from './player/Viewmodel';
+import type { RoundBlocker } from '../shared/weapons/Ballistics';
 import type { ViewmodelConfig } from '../shared/weapons/ViewmodelConfig';
 import { heldMoveScale, type WeaponDef } from '../shared/weapons/WeaponDefs';
 import { Btn, type InputCommand } from '../shared/core/InputCommand';
@@ -366,6 +367,9 @@ export class MatchWorld {
       // same sanitiser the join uses, so the two paths agree on what an empty name becomes.
       localName: server?.displayName ?? resolveDisplayName(null, deps.profile.settings.callsign),
       actors: this.net === null ? undefined : () => netSessionActors(this.net),
+      // The same bodies again, for the shot path rather than the renderer: a networked
+      // client's predicted round stops on them without resolving a hit. See `RoundBlocker`.
+      roundBlockers: this.net === null ? undefined : () => netRoundBlockers(this.net),
       /**
        * Spend a streak by asking the server (Gate B, §8.22).
        *
@@ -777,7 +781,13 @@ function netSessionActors(net: NetSession | null): Iterable<RenderableActor> {
   return net === null ? EMPTY_ACTORS : net.renderables();
 }
 
+/** The same narrowing for the shot path's supplier. See `Ballistics.blockers`. */
+function netRoundBlockers(net: NetSession | null): readonly RoundBlocker[] {
+  return net === null ? EMPTY_BLOCKERS : net.roundBlockers();
+}
+
 const EMPTY_ACTORS: readonly RenderableActor[] = [];
+const EMPTY_BLOCKERS: readonly RoundBlocker[] = [];
 
 /**
  * A streak id as its index in `STREAK_DEFS` (Gate B, §8.22).

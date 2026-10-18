@@ -106,6 +106,7 @@ import type { CollisionWorld } from '../shared/world/CollisionWorld';
 import { makeRayHit, type RayHit } from '../shared/world/Geometry';
 import type { ObjectiveKind } from '../shared/world/maps/types';
 import { ViewmodelAnim, makeViewmodelDrive, type ViewmodelDrive } from './weapons/ViewmodelAnim';
+import type { RoundBlocker } from '../shared/weapons/Ballistics';
 import type { ViewmodelConfig } from '../shared/weapons/ViewmodelConfig';
 import { WeaponAudio } from './weapons/WeaponAudio';
 import { Melee } from '../shared/weapons/Melee';
@@ -298,6 +299,16 @@ export interface MatchDeps {
      * same animations, same renderer, because both satisfy `RenderableActor`.
      */
     readonly actors?: (() => Iterable<RenderableActor>) | undefined;
+    /**
+     * The bodies the player's own predicted round stops in (2026-10-18).
+     *
+     * Supplied only by a networked match, and the asymmetry with `actors` above is the whole
+     * point: single-player draws the same bodies it shoots, because a local bot is registered
+     * in this match's `DamageSystem` and a round stops in it by taking damage. A remote player
+     * is drawn and never registered — the server owns hit registration (S4.13) — so the two
+     * roles come apart, and this is the second one. See `Ballistics.blockers`.
+     */
+    readonly roundBlockers?: (() => readonly RoundBlocker[]) | undefined;
     /** M7: killstreak tuning. Live-editable from the debug panel. */
     readonly streakConfig?: StreakConfig;
 
@@ -640,6 +651,20 @@ export class Match {
         // The range is an instrument, not a fight: its guns never run out of spare magazines
         // (2026-10-03). See `Weapon.infiniteReserve`.
         this.weapons.inventory.infiniteReserve = deps.mode.id === 'RANGE';
+        /**
+         * The player's own rounds stop on the bodies they can see (2026-10-18).
+         *
+         * Set on this one `Ballistics` instance and no other. The knife, the grenades, the
+         * flamethrower's cone and both killstreaks all resolve against `DamageSystem.list`
+         * alone, which over the network holds nobody but this player — and that is correct and
+         * stays: the server resolves every one of those (S4.15), and a client that predicted
+         * them would be predicting damage. What is different about a round is that the player
+         * *watches where it ends*. The tracer, the spark, the hole and the surface click are
+         * drawn on this machine from the trace's terminus, so a terminus behind the enemy is a
+         * picture of a miss over a hit that is already on its way. See `Ballistics.blockers`
+         * for why these bodies carry no health.
+         */
+        if (deps.roundBlockers !== undefined) this.weapons.ballistics.blockers = deps.roundBlockers;
 
         this.melee = new Melee({
             world: deps.world,

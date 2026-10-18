@@ -17,6 +17,7 @@ import type { EquipmentId } from '../../shared/equipment/EquipmentDefs';
 import type { ThrowPhase } from '../../shared/equipment/ThrowController';
 import { skinIdAt, type SkinId } from '../../shared/meta/Skins';
 import type { StanceId } from '../../shared/player/Stance';
+import type { RoundBlocker } from '../../shared/weapons/Ballistics';
 import { WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
 
 /**
@@ -38,11 +39,12 @@ import { WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
  * ## The rig follows the drawn pose
  *
  * A `HitboxRig` is kept in step with what is on screen, and it is used for **nothing
- * authoritative** — the server owns hit registration. It exists so the client can run its own
- * predicted trace for an immediate hitmarker (S6.4) against the same body the player can see,
- * and so the rewind debug panel has something to draw a box around.
+ * authoritative** — the server owns hit registration. It exists so the client's own predicted
+ * trace stops where the player can see a body (`RoundBlocker`, which this satisfies), and so
+ * the rewind debug panel has something to draw a box around. The hitmarker is not its work: it
+ * comes from the server's `damage.dealt` like every other thing a hit announces.
  */
-export class RemoteActor implements RenderableActor {
+export class RemoteActor implements RenderableActor, RoundBlocker {
   readonly rig = new HitboxRig(HUMANOID_RIG);
   readonly visual: BotVisualState = makeBotVisualState();
 
@@ -116,6 +118,19 @@ export class RemoteActor implements RenderableActor {
    */
   get dormant(): boolean {
     return (this.flags & EFlag.Dormant) !== 0;
+  }
+
+  /**
+   * Whether this body stops the local player's predicted round. See `RoundBlocker.stopsRounds`.
+   *
+   * Alive and placed, which is the pair the two getters above already are: `participating` is
+   * this body's life, which is public even while the body is not, and `dormant` is the server
+   * declining to say where it is. A corpse is excluded to match the authority — a round goes
+   * through one there, and `Fx.decalVeto` is what keeps the hole out of it — and a dormant body
+   * is excluded because it is frozen where it was last seen and is not on screen to be hit.
+   */
+  get stopsRounds(): boolean {
+    return this.participating && !this.dormant;
   }
 
   get healthFraction(): number {

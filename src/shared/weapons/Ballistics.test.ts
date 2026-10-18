@@ -7,7 +7,7 @@ import { DEFAULT_HEALTH_CONFIG, Health } from '../player/Health';
 import { ColliderSet } from '../world/ColliderSet';
 import { CollisionWorld } from '../world/CollisionWorld';
 import { materialIndex } from '../world/maps/types';
-import { Ballistics, makeShotTrace } from './Ballistics';
+import { Ballistics, makeShotTrace, type RoundBlocker } from './Ballistics';
 import { AR_DEFAULT, requireWeapon } from './WeaponDefs';
 
 /**
@@ -25,6 +25,11 @@ import { AR_DEFAULT, requireWeapon } from './WeaponDefs';
  *    the side of the target the round arrived on, and a shield between the two is in its way.
  *
  * None of those is visible from the outside without geometry, so these build it.
+ *
+ * A fourth is about *what* a round touches rather than what it does next: **a body can stop a
+ * round without taking damage** (`RoundBlocker`, 2026-10-18). That one is a networked client
+ * predicting a terminus for somebody else's hit to be announced against, and the way it looks
+ * right in a wrong version is by dealing the damage as well.
  */
 
 let fakeNow = 0;
@@ -66,6 +71,24 @@ function dummy(entityId: number, x: number, z: number, team?: 'A' | 'B', decals 
   };
 }
 
+/**
+ * A drawn body with a rig and no health: what a networked client's remote players are.
+ *
+ * The same rig and the same side as a `dummy` above, and nothing else — which is the whole
+ * claim being tested, that a round can be stopped by something this runtime cannot hurt.
+ */
+function blocker(
+  entityId: number,
+  x: number,
+  z: number,
+  team?: 'A' | 'B',
+  stopsRounds = true,
+): RoundBlocker {
+  const rig = new HitboxRig();
+  rig.setTransform(x, 0, z, 0);
+  return { entityId, team, rig, stopsRounds };
+}
+
 function harness(w: CollisionWorld) {
   const bus = createGameBus();
   const impacts: string[] = [];
@@ -100,6 +123,7 @@ describe('a fresh shot trace', () => {
       upperTorso: false,
       damage: 0,
       lethal: false,
+      hitBlocker: false,
       surfacesPenetrated: 0,
       penetrationRetain: 1,
       penetrationCost: 0,
@@ -234,6 +258,90 @@ describe('choosing a target', () => {
   });
 });
 
+describe('a body that stops a round without taking damage', () => {
+  /** A wall six metres past the bodies below, so "did the round carry on" has an answer. */
+  function wall(): CollisionWorld {
+    return world((set) => set.add({ x: 11, y: 1.5, z: 0 }, { x: 1, y: 3, z: 20 }, 0, 0, 0, 'concrete'));
+  }
+
+  it('ends the round where the body is, and announces nothing at all', () => {
+    const h = harness(wall());
+    h.damage.register(dummy(1, 0, 0, 'A'));
+    h.ballistics.blockers = () => [blocker(4, 5, 0, 'B')];
+    h.fireEast();
+
+    // The terminus is the body, five metres out, which is where the tracer now ends.
+    expect(h.trace.hitBlocker).toBe(true);
+    expect(h.trace.distance).toBe(4.935);
+    expect(h.trace.endX).toBe(4.935);
+    // Nothing was decided: no hit, no target, no damage. The hitmarker is the server's.
+    expect(h.trace.hitTarget).toBe(false);
+    expect(h.trace.targetId).toBe(-1);
+    expect(h.trace.damage).toBe(0);
+    expect(h.trace.lethal).toBe(false);
+    expect(h.damage.lastHit.valid).toBe(false);
+    expect(h.damage.blockedByInvulnerable).toBe(0);
+    // And the bug, in one line: the wall behind the enemy no longer gets the spark, the hole
+    // and the click that belonged to the body in front of it.
+    expect(h.trace.hitWorld).toBe(false);
+    expect(h.impacts).toEqual([]);
+  });
+
+  it('is passed through when the simulation would pass through it', () => {
+    // A teammate, a dead or dormant body, and the shooter's own: every rule target selection
+    // applies, applied here, because a client that stopped a round the server lets past has
+    // shown the player a hit that is not coming.
+    for (const body of [blocker(4, 5, 0, 'A'), blocker(4, 5, 0, 'B', false), blocker(1, 5, 0, 'B')]) {
+      const h = harness(wall());
+      h.damage.register(dummy(1, 0, 0, 'A'));
+      h.ballistics.blockers = () => [body];
+      h.fireEast();
+      expect(h.trace.hitBlocker).toBe(false);
+      expect(h.trace.hitWorld).toBe(true);
+      expect(h.impacts).toEqual([`${CONCRETE}/-`]);
+    }
+  });
+
+  it('loses to a damageable body in front of it and wins from in front of one', () => {
+    // Both scans share one hit record, so which of the two is nearer has to decide — in both
+    // directions, and with the record holding the hit that actually stopped the round.
+    const near = harness(wall());
+    near.damage.register(dummy(1, 0, 0, 'A'));
+    near.damage.register(dummy(7, 4, 0, 'B'));
+    near.ballistics.blockers = () => [blocker(4, 8, 0, 'B')];
+    near.fireEast();
+    expect(near.trace.hitTarget).toBe(true);
+    expect(near.trace.targetId).toBe(7);
+    expect(near.trace.hitBlocker).toBe(false);
+    expect(near.trace.damage).toBeGreaterThan(0);
+    expect(near.trace.distance).toBe(3.935);
+
+    const far = harness(wall());
+    far.damage.register(dummy(1, 0, 0, 'A'));
+    const behind = dummy(7, 8, 0, 'B');
+    far.damage.register(behind);
+    far.ballistics.blockers = () => [blocker(4, 4, 0, 'B')];
+    far.fireEast();
+    expect(far.trace.hitBlocker).toBe(true);
+    expect(far.trace.hitTarget).toBe(false);
+    expect(far.trace.distance).toBe(3.935);
+    // The body behind the blocker was tested and then spared, which is the half that matters:
+    // the round stopped short of it.
+    expect(behind.health.current).toBe(DEFAULT_HEALTH_CONFIG.max);
+  });
+
+  it('is nobody unless somebody is set, so every other runtime is untouched', () => {
+    // The server, both killstreaks and single-player never set the list. The default is the
+    // only thing keeping this change out of their shot path.
+    const h = harness(wall());
+    h.damage.register(dummy(1, 0, 0, 'A'));
+    h.fireEast();
+    expect(h.trace.hitBlocker).toBe(false);
+    expect(h.trace.hitWorld).toBe(true);
+    expect(h.ballistics.lastRigTests).toBe(0);
+  });
+});
+
 describe('a target board', () => {
   it('takes a bullet hole, as metal, because that is what the range boards are', () => {
     const h = harness(world());
@@ -271,6 +379,7 @@ describe('the trace record', () => {
     expect(h.trace.damage).toBe(0);
     expect(h.trace.lethal).toBe(false);
     expect(h.trace.hitWorld).toBe(false);
+    expect(h.trace.hitBlocker).toBe(false);
     expect(h.trace.surfacesPenetrated).toBe(0);
     expect(h.trace.penetrationRetain).toBe(1);
     expect(h.trace.penetrationCost).toBe(0);

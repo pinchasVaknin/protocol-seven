@@ -63,6 +63,28 @@ export class Fx {
   /** Added to the world scene. */
   readonly group = new THREE.Group();
 
+  /**
+   * Asked before every hole: true means do not place one (2026-10-18).
+   *
+   * Installed by the match — the same shape `EventCollector.silentFootsteps` has, and for the
+   * same reason: the fact being asked about is the match's (where the bodies are), and the
+   * rule has to be applied where the hole is actually placed or it is a rule the next impact
+   * path forgets. There are three of those already and only one of them comes from a trace.
+   *
+   * A decal is the only thing this file writes into the world and never takes back: the field
+   * is a ring of world-space quads with no lifetime, so a hole stamped where a body stood
+   * hangs in the air the moment that body walks on or is killed. Null leaves the behaviour
+   * this had before the gate existed, which is what the menu's background skirmish wants —
+   * its rounds are resolved against registered bodies, so `Ballistics` has already refused
+   * every hole a person should not have.
+   *
+   * Only the hole is vetoed. The sparks, the dust and the surface click stay, because the
+   * veto cannot tell a round that stopped *in* a body from one that went through the gap
+   * under its arm and marked the wall behind — and a near miss that sounded like a hit would
+   * be a worse lie than a missing smudge on concrete.
+   */
+  decalVeto: ((x: number, y: number, z: number) => boolean) | null = null;
+
   private readonly rng = new Rng(0x7f4a_11c3);
 
   private readonly tracers: Tracer[] = [];
@@ -265,6 +287,7 @@ export class Fx {
       this.setInstanceColor(this.dustMesh, at, surface.impactColor);
     }
 
+    if (this.decalVeto !== null && this.decalVeto(x, y, z)) return;
     this.decalField.place(x, y, z, nx, ny, nz, surface.decalRadius, surface.decalStrength * strength, this.rng);
   }
 

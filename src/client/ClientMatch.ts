@@ -14,6 +14,7 @@ import { DamageSystem, makeDamageRequest, type DamageRequest } from '../shared/c
 import { LocalIdentity } from '../shared/combat/LocalIdentity';
 import { ScoreSystem } from '../shared/combat/ScoreSystem';
 import { Rng } from '../shared/core/Rng';
+import { insideDrawnBody } from './combat/BodyVolume';
 import { TargetRange } from './combat/TargetRange';
 import { EV, type GameBus } from '../shared/core/Events';
 import type { Input } from './input/Input';
@@ -767,6 +768,15 @@ export class Match {
         this.bots.pushAggressionScale = deps.mode.pushAggressionScale ?? 1;
 
         this.fx = new Fx(deps.anisotropy);
+        /**
+         * No bullet hole inside a body, whichever impact path asked for it (2026-10-18).
+         *
+         * Installed here because this is the object that holds both halves: the field that
+         * places the holes and the roster that knows where the bodies are drawn. `Fx` dies with
+         * this match — it is built and disposed here — so the closure needs no teardown of its
+         * own. See `Fx.decalVeto` for what is vetoed and `combat/BodyVolume` for the shape.
+         */
+        this.fx.decalVeto = (x, y, z) => this.insideBody(x, y, z);
         deps.scene.add(this.fx.group);
         this.flame = new FlameFx();
         deps.scene.add(this.flame.group);
@@ -1372,6 +1382,35 @@ export class Match {
             }
         }
         return null;
+    }
+
+    /**
+     * Whether a point in the world is inside a body that is drawn right now (2026-10-18).
+     *
+     * The veto `Fx` asks before it stamps a bullet hole; `combat/BodyVolume` holds the shape,
+     * and `Fx.decalVeto` the impact paths that need asking. It lives here for the same reason
+     * `bodyAt` does: the roster holds `Bot`s in single-player and `RemoteActor`s over the
+     * network, and a caller that wants to know whether a point is in somebody should not have
+     * to know which kind of match it is in.
+     *
+     * A dead body is in the list on purpose. A hole punched into a corpse is the same picture
+     * as one punched into a standing operator, a metre lower, and it is the one the human
+     * reported: `Ballistics.nearestTarget` skips a rig that is not alive, so a round fired at
+     * a body on the floor goes through it and marks whatever is behind.
+     *
+     * The body at this keyboard is not in the list, and does not need to be: first person
+     * never looks at it, and a cylinder around your own feet would eat the marks you put on
+     * the floor in front of you.
+     *
+     * Linear over the roster and asked once per impact — per *pellet*, for a shotgun — which
+     * is the same structure and the same order of magnitude as the rig scan `Ballistics` runs
+     * for the shot that produced the impact in the first place. Nothing here is per frame.
+     */
+    private insideBody(x: number, y: number, z: number): boolean {
+        for (const actor of this.actorsForRender()) {
+            if (insideDrawnBody(actor, x, y, z)) return true;
+        }
+        return false;
     }
 
     /**

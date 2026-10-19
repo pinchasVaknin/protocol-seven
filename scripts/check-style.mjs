@@ -341,6 +341,10 @@ const FINISHED = {
     'src/server/net/SnapshotEncoder.ts',
     'src/server/net/VisibilityAudit.ts',
   ],
+  B3: [
+    'src/server/net/Session.ts',
+    'src/server/net/WsServer.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,26 @@
+/**
+ * One client's protocol state (M10, S6.1).
+ *
+ * The lifecycle S6.1 asks for, in order: handshake, **protocol version check**, entity
+ * assignment, initial full snapshot, then deltas — plus a clean disconnect and a timeout for
+ * the unclean kind.
+ *
+ * ## Every path out of here is a close, never a throw
+ *
+ * S4.16 makes this a hard requirement rather than a style preference: *"Malformed input must
+ * never crash the server. A crash is now a denial-of-service vector rather than a friend's
+ * bug."* So this class has exactly one way to react to anything it does not like — count it,
+ * and close the link with a short reason. There is no path from a decoded byte to an
+ * exception, because `ByteReader` does not throw and `decodeHeader` returns `bad` rather
+ * than raising.
+ *
+ * The client is told *that* it was refused and never *why* in any detail: a `RejectCode` and
+ * a handful of words. Never a stack trace, never a field name, never a version number beyond
+ * the one it already needs to know.
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { nowMs } from '../../shared/core/Clock';
 import type { ReplicatedScoreRow } from '../../shared/combat/ScoreSystem';
 import type { MutableInputCommand } from '../../shared/core/InputCommand';
@@ -47,6 +70,7 @@ import {
   MAX_SERVER_FRAME_BYTES,
   PROTOCOL_VERSION,
   RejectCode,
+  type RejectCodeId,
 } from '../../shared/net/Protocol';
 import { ByteReader, ByteWriter } from '../../shared/net/Wire';
 import type { INetLink } from '../../shared/net/Transport';
@@ -61,30 +85,10 @@ import {
   type BudgetedMessage,
   type RejectReason,
 } from './Validation';
+//#endregion
 
-const log = logger('session');
-
-/**
- * One client's protocol state (M10, S6.1).
- *
- * The lifecycle S6.1 asks for, in order: handshake, **protocol version check**, entity
- * assignment, initial full snapshot, then deltas — plus a clean disconnect and a timeout for
- * the unclean kind.
- *
- * ## Every path out of here is a close, never a throw
- *
- * S4.16 makes this a hard requirement rather than a style preference: *"Malformed input must
- * never crash the server. A crash is now a denial-of-service vector rather than a friend's
- * bug."* So this class has exactly one way to react to anything it does not like — count it,
- * and close the link with a short reason. There is no path from a decoded byte to an
- * exception, because `ByteReader` does not throw and `decodeHeader` returns `bad` rather
- * than raising.
- *
- * The client is told *that* it was refused and never *why* in any detail: a `RejectCode` and
- * a handful of words. Never a stack trace, never a field name, never a version number beyond
- * the one it already needs to know.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * `'live'` rather than `'playing'` (M11, handover Tier 2 §C).
  *
@@ -181,12 +185,6 @@ export interface SessionOptions {
   readonly idleKickMs?: number | undefined;
 }
 
-/** A view turned by less than this between commands, radians, is a held view. */
-const VIEW_STILL_RAD = 1e-3;
-
-/** Snapshot ids kept per client so a late ack can still be used as a delta baseline. */
-export const BASELINE_HISTORY = 32;
-
 /**
  * A connection's identity, stable across migrations (M11).
  *
@@ -195,11 +193,28 @@ export const BASELINE_HISTORY = 32;
  * deliberately **not** an entity id — see `Session.playerId`.
  */
 export type PlayerId = number;
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('session');
+
+/** A view turned by less than this between commands, radians, is a held view. */
+const VIEW_STILL_RAD = 1e-3;
+
+/** Snapshot ids kept per client so a late ack can still be used as a delta baseline. */
+export const BASELINE_HISTORY = 32;
 
 let nextPlayerId: PlayerId = 1;
+//#endregion
 
+// ======================================= CLASS Session ======================================== \\
+//#region Class Session
 export class Session {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly link: INetLink;
+
   readonly rejects = new RejectCounters();
 
   state: SessionState = 'handshaking';
@@ -303,19 +318,19 @@ export class Session {
 
   /** Round-trip estimate, ms. Smoothed; drives the rewind amount and the client's lead. */
   rttMs = 0;
+
   /** Jitter estimate: mean absolute deviation of the RTT samples, ms. */
   jitterMs = 0;
 
   /** Last snapshot id this client acknowledged. 0 means "nothing yet, send a full one". */
   ackedSnapshot = 0;
+
   /** Newest snapshot id sent. Written through `noteSnapshotSent`. */
   lastSnapshotId = 0;
 
-  /** Set by the client's `Hello` name suffix. Opts into the S7 rewind panel feed. */
-  wantsRewindDebug = false;
-
   /** Commands dropped by validation, for the S7 metrics. */
   commandsRejected = 0;
+
   commandsAccepted = 0;
 
   /** Messages over their kind's budget — dropped, or held for later (security audit S3). */
@@ -345,15 +360,21 @@ export class Session {
    * newer one replaces it, so a flood costs one stored message, not a queue.
    */
   private heldLoadout: NetLoadout | null = null;
+
   private heldVote: { readonly phase: number; readonly option: number } | null = null;
 
   private readonly warnBudget = new TokenBucket(WARN_BUDGET.burst, WARN_BUDGET.perSecond);
+
   private warningsSuppressed = 0;
 
   private readonly openedMs: number;
+
   private readonly cmd: MutableInputCommand = blankCommand();
+
   private readonly reader = new ByteReader(new Uint8Array(0));
+
   private readonly out = new ByteWriter(MAX_SERVER_FRAME_BYTES);
+
   private rttSamples = 0;
 
   /**
@@ -364,7 +385,9 @@ export class Session {
    * Id 0 is never issued, so it doubles as "empty".
    */
   private readonly sentIds = new Int32Array(BASELINE_HISTORY);
+
   private readonly sentAtMs = new Float64Array(BASELINE_HISTORY);
+
   private sentHead = 0;
 
   /**
@@ -377,12 +400,19 @@ export class Session {
    * do not.
    */
   private lastActivityMs: number;
+
   private idleWarned = false;
+
   /** The view angles of the last command seen, to tell a turned view from a held one. */
   private lastYaw = Number.NaN;
-  private lastPitch = Number.NaN;
-  private readonly idleKickMs: number;
 
+  private lastPitch = Number.NaN;
+
+  private readonly idleKickMs: number;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     link: INetLink,
     private readonly events: SessionEvents,
@@ -395,7 +425,10 @@ export class Session {
     this.idleKickMs = options.idleKickMs ?? 0;
     this.playerId = nextPlayerId++;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get closed(): boolean {
     return this.state === 'closed' || this.link.state === 'closed';
   }
@@ -427,27 +460,6 @@ export class Session {
     if (this.state === 'closed') return;
     this.link.poll((bytes) => this.handleFrame(bytes));
     this.releaseHeld();
-  }
-
-  /**
-   * Apply a held class or vote once its budget has refilled (S3).
-   *
-   * After the drain, so a held message is never applied ahead of a newer one that arrived in
-   * the same tick — that one replaced it on the way in.
-   */
-  private releaseHeld(): void {
-    if (this.state !== 'live') return;
-    const now = nowMs();
-    const loadout = this.heldLoadout;
-    if (loadout !== null && this.budgets.loadout.take(now)) {
-      this.heldLoadout = null;
-      this.events.onLoadout(this, loadout);
-    }
-    const vote = this.heldVote;
-    if (vote !== null && this.budgets.vote.take(now)) {
-      this.heldVote = null;
-      this.events.onVote(this, vote.phase, vote.option);
-    }
   }
 
   /**
@@ -492,6 +504,228 @@ export class Session {
     this.checkIdle(now);
   }
 
+  /** Send a pre-encoded frame. Snapshots and event batches come through here. */
+  send(bytes: Uint8Array): void {
+    if (this.closed) return;
+    this.link.send(bytes);
+  }
+
+  close(reason: string, cause: LeaveCause = 'lost'): void {
+    if (this.state === 'closed') return;
+    this.state = 'closed';
+    if (this.link.state === 'open') {
+      this.link.send(writeBye(this.out, true, reason));
+      this.link.close(reason);
+    }
+    this.events.onLeave(this, reason, cause);
+  }
+
+  /**
+   * The seat assignment: a `Welcome` on a join, a `Migrate` on a move (M11, §4.18).
+   *
+   * One method for both, because a client that is told about its seat differently depending on
+   * how it got there is a client with two code paths where one of them is exercised rarely.
+   * The `migrated` flag on the payload picks the message id.
+   */
+  sendSeat(info: WelcomeInfo): void {
+    this.send(writeWelcome(this.out, info, this.reconnectToken));
+  }
+
+  /**
+   * A class arrived in a shape the editor cannot produce, and was corrected (security audit
+   * 2026-10-04, S1).
+   *
+   * Logged, never answered and never a disconnect: the corrected class is a working one, and
+   * the player sees it in their hands. The line is for the operator — the client's own
+   * sanitiser runs the same rules before it sends, so no shipped client reaches this, and a
+   * line here names the connection that was modified.
+   */
+  noteCorrectedClass(corrected: readonly string[]): void {
+    this.warn(
+      `${this.displayName} (${this.link.remoteAddress}) sent a class no shipped client produces; ` +
+        `corrected: ${corrected.join(' · ')}`,
+    );
+  }
+
+  /**
+   * A warning about something this connection did, within its budget (security audit S3).
+   *
+   * For every warning a client can provoke *without being disconnected* — a refused vote, a
+   * streak it does not hold, a code on a server with cheats off. A line that closes the
+   * connection is written once by construction and does not need this.
+   *
+   * Suppressed lines are counted and the count rides on the next line that is written, so the
+   * log says how much it is not showing.
+   */
+  warn(text: string): void {
+    if (!this.warnBudget.take(nowMs())) {
+      this.warningsSuppressed++;
+      return;
+    }
+    const suppressed = this.warningsSuppressed;
+    this.warningsSuppressed = 0;
+    log.warn(suppressed === 0 ? text : `${text} (+${suppressed} earlier warning(s) from this connection suppressed)`);
+  }
+
+  /** A short line for the player. Allocation failed, migration failed, the arena was rebuilt. */
+  notice(text: string): void {
+    this.send(writeNotice(this.out, text));
+  }
+
+  /**
+   * The answer to a cheat code: what happened, and the whole mask afterwards (round 4, F14).
+   *
+   * Sent for a refusal exactly as for a grant. A cheat that is silent when refused is a bug that
+   * gets reported twice — once as "the code does nothing" and again, later, as "cheats are
+   * broken on the server" — and neither report says the true thing, which is that this operator
+   * has them switched off.
+   */
+  sendCheats(outcome: number, mask: number): void {
+    this.send(writeCheats(this.out, outcome, mask));
+  }
+
+  /**
+   * The M11 server-to-client messages, each encoded with **this session's** writer.
+   *
+   * ## Why these live here rather than on the caller
+   *
+   * `ByteWriter.bytes()` returns a *view* into the writer's buffer, not a copy. A caller that
+   * held one shared writer and encoded into it for every session would hand out several views
+   * of the same memory, and the last encode would win — every earlier frame would go out
+   * carrying the last one's bytes.
+   *
+   * It is not hypothetical. `Server` did exactly that, and the symptom was that the `Prepare`
+   * starting each client's background build was overwritten by the 4 Hz vote broadcast that
+   * followed it on the next tick. No client ever began building, every readiness handshake hit
+   * its eight-second timeout, and the transition that the whole milestone exists to make
+   * seamless fell back to a synchronous build with a visible hitch — with nothing in either
+   * log saying why.
+   *
+   * One writer per session, owned by the session, makes that unrepresentable.
+   */
+  sendPrepare(matchId: number, mapId: string, modeId: string): void {
+    this.send(writePrepare(this.out, matchId, mapId, modeId));
+  }
+
+  sendVoteState(info: VoteInfo): void {
+    this.send(writeVoteState(this.out, info));
+  }
+
+  sendSummary(info: SummaryInfo): void {
+    this.send(writeSummary(this.out, info));
+  }
+
+  sendObjectives(states: readonly ObjectiveState[]): void {
+    this.send(writeObjectives(this.out, states));
+  }
+
+  sendTags(tags: readonly TagInfo[]): void {
+    this.send(writeTags(this.out, tags));
+  }
+
+  sendBomb(info: BombInfo): void {
+    this.send(writeBomb(this.out, info));
+  }
+
+  sendStreaks(view: StreakView): void {
+    this.send(writeStreaks(this.out, view));
+  }
+
+  /** The board, whole (M13 Phase B). See `MatchInstance.sendScoreboard` for when. */
+  sendScoreboard(serial: number, rows: readonly ReplicatedScoreRow[]): void {
+    this.send(writeScoreboard(this.out, serial, rows));
+  }
+
+  sendProjectiles(projectiles: readonly ProjectileState[], smoke: readonly SmokeState[]): void {
+    this.send(writeProjectiles(this.out, projectiles, smoke));
+  }
+
+  sendStateHash(tick: number, hash: number, sections: readonly number[]): void {
+    this.send(writeStateHash(this.out, tick, hash, sections));
+  }
+
+  /**
+   * This client's snapshot stream starts over: a new encoder, with no baseline (migration).
+   *
+   * The acks and the send times are reset together because they answer for the same ids. An
+   * ack left over from the instance this player just left would ask the new encoder to delta
+   * against a frame it never sent, and a send time left over would be matched by id and timed
+   * against a snapshot from another match.
+   */
+  restartSnapshotStream(): void {
+    this.ackedSnapshot = 0;
+    this.lastSnapshotId = 0;
+    this.sentIds.fill(0);
+  }
+
+  /**
+   * A snapshot just went out. Remember when, so its ack can be timed (2026-10-18).
+   *
+   * The ids come from this client's own encoder and only ever move forward — the 16-bit wrap
+   * included, which `isNewerSnapshot` reads as forward. An id that is *not* newer therefore
+   * means a different encoder is writing them: a migration between instances hands this
+   * session to a new one, whose ids start at 1 again. The entries from the old instance would
+   * otherwise sit in the ring waiting to be matched by id and timed against a send that
+   * happened in another match, so they go.
+   */
+  noteSnapshotSent(id: number): void {
+    if (!isNewerSnapshot(id, this.lastSnapshotId)) this.sentIds.fill(0);
+    this.lastSnapshotId = id;
+    this.sentIds[this.sentHead] = id;
+    this.sentAtMs[this.sentHead] = nowMs();
+    this.sentHead = (this.sentHead + 1) % BASELINE_HISTORY;
+  }
+
+  /**
+   * Fold one round-trip sample into the estimate.
+   *
+   * Exponential smoothing on the RTT and on the mean absolute deviation. The deviation is
+   * what the client's jitter buffer is sized from and what the rewind uses as its margin, so
+   * it is tracked rather than inferred — a link with 100 ms flat and one with 100 ms +/- 40 ms
+   * need materially different amounts of buffer and would otherwise look identical.
+   */
+  noteRtt(sampleMs: number): void {
+    if (!Number.isFinite(sampleMs) || sampleMs < 0 || sampleMs > 10_000) return;
+    if (this.rttSamples === 0) {
+      this.rttMs = sampleMs;
+      this.jitterMs = 0;
+    } else {
+      const deviation = Math.abs(sampleMs - this.rttMs);
+      this.jitterMs = this.jitterMs * 0.9 + deviation * 0.1;
+      this.rttMs = this.rttMs * 0.9 + sampleMs * 0.1;
+    }
+    this.rttSamples++;
+  }
+
+  /** How far in the past this client is looking, in ticks. Drives the rewind (S4.13). */
+  viewLagTicks(interpolationDelayMs: number): number {
+    return Math.round((this.rttMs * 0.5 + interpolationDelayMs) / (DT * 1000));
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Apply a held class or vote once its budget has refilled (S3).
+   *
+   * After the drain, so a held message is never applied ahead of a newer one that arrived in
+   * the same tick — that one replaced it on the way in.
+   */
+  private releaseHeld(): void {
+    if (this.state !== 'live') return;
+    const now = nowMs();
+    const loadout = this.heldLoadout;
+    if (loadout !== null && this.budgets.loadout.take(now)) {
+      this.heldLoadout = null;
+      this.events.onLoadout(this, loadout);
+    }
+    const vote = this.heldVote;
+    if (vote !== null && this.budgets.vote.take(now)) {
+      this.heldVote = null;
+      this.events.onVote(this, vote.phase, vote.option);
+    }
+  }
+
   /**
    * Free the seat of a player who has stopped playing (security audit 2026-10-04, S6).
    *
@@ -530,22 +764,6 @@ export class Session {
     return turned || cmd.moveX !== 0 || cmd.moveZ !== 0 || cmd.buttons !== 0;
   }
 
-  /** Send a pre-encoded frame. Snapshots and event batches come through here. */
-  send(bytes: Uint8Array): void {
-    if (this.closed) return;
-    this.link.send(bytes);
-  }
-
-  close(reason: string, cause: LeaveCause = 'lost'): void {
-    if (this.state === 'closed') return;
-    this.state = 'closed';
-    if (this.link.state === 'open') {
-      this.link.send(writeBye(this.out, true, reason));
-      this.link.close(reason);
-    }
-    this.events.onLeave(this, reason, cause);
-  }
-
   // -- internals -------------------------------------------------------------
 
   private handleFrame(bytes: Uint8Array): void {
@@ -567,81 +785,19 @@ export class Session {
         this.close('client left', 'left');
         return;
       case 'loadout':
-        // Seated clients only. A class arriving before a seat has nowhere to be applied, and
-        // accepting it would mean holding attacker-controlled state for an unauthenticated
-        // connection — small, but it is state, and the handshake timeout is five seconds.
-        if (this.state !== 'live') {
-          this.refuse(Reject.OutOfOrder, 'loadout before hello');
-          return;
-        }
-        this.noteActivity();
-        if (!this.budgets.loadout.take(nowMs())) {
-          // The newest replaces anything already held — see `heldLoadout`.
-          this.heldLoadout = msg.loadout;
-          this.overBudget('loadout');
-          return;
-        }
-        this.heldLoadout = null;
-        this.events.onLoadout(this, msg.loadout);
+        this.onLoadoutFrame(msg.loadout);
         return;
       case 'vote':
-        if (this.state !== 'live') {
-          this.refuse(Reject.OutOfOrder, 'vote before hello');
-          return;
-        }
-        this.noteActivity();
-        if (!this.budgets.vote.take(nowMs())) {
-          this.heldVote = { phase: msg.phase, option: msg.option };
-          this.overBudget('vote');
-          return;
-        }
-        this.heldVote = null;
-        this.events.onVote(this, msg.phase, msg.option);
+        this.onVoteFrame(msg.phase, msg.option);
         return;
       case 'ready':
-        if (this.state !== 'live') {
-          this.refuse(Reject.OutOfOrder, 'ready before hello');
-          return;
-        }
-        if (!this.budgets.ready.take(nowMs())) {
-          this.overBudget('ready');
-          return;
-        }
-        this.events.onReady(this, msg.matchId);
+        this.onReadyFrame(msg.matchId);
         return;
       case 'streakRequest':
-        if (this.state !== 'live') {
-          this.refuse(Reject.OutOfOrder, 'streak before hello');
-          return;
-        }
-        this.noteActivity();
-        // A request, not state: one over budget is dropped, and the player presses again.
-        if (!this.budgets.streak.take(nowMs())) {
-          this.overBudget('streak');
-          return;
-        }
-        // Not validated here beyond the ordering. Whether this player has actually earned the
-        // streak is a question about the simulation, and the instance is the only thing that
-        // can answer it — see `Server.onStreakRequest`. §4.16's boundary validation is about
-        // *shape*, and the decoder above has already done that.
-        this.events.onStreakRequest(this, msg.streakKind, msg.x, msg.z);
+        this.onStreakFrame(msg.streakKind, msg.x, msg.z);
         return;
       case 'cheatRequest':
-        if (this.state !== 'live') {
-          this.refuse(Reject.OutOfOrder, 'cheat before hello');
-          return;
-        }
-        // Whether the code exists, whether this server honours it and whether there is a seat
-        // to apply it to are all questions about the server's own state, so none of them is
-        // answered here. §4.16's boundary validation is about *shape*, and the decoder has
-        // already bounded the only thing with a shape. The cheat budget is what stops somebody
-        // typing codes at it in a loop — every answer is a frame back, and a refusal a log line.
-        this.noteActivity();
-        if (!this.budgets.cheat.take(nowMs())) {
-          this.overBudget('cheat');
-          return;
-        }
-        this.events.onCheatRequest(this, msg.code);
+        this.onCheatFrame(msg.code);
         return;
       case 'bad':
         this.refuse(Reject.Malformed, 'malformed frame');
@@ -651,6 +807,100 @@ export class Session {
         // somebody poking the port; both are the same to us.
         this.refuse(Reject.OutOfOrder, 'unexpected message');
     }
+  }
+
+  /**
+   * The question every seated message asks first, and the refusal if the answer is no.
+   *
+   * Seated clients only. A message arriving before a seat has nowhere to be applied, and
+   * accepting it would mean holding attacker-controlled state for an unauthenticated
+   * connection — small, but it is state, and the handshake timeout is five seconds.
+   *
+   * `label` builds the reason only on the refusing branch, and a refusal closes the connection,
+   * so the string is built at most once per connection rather than per frame.
+   */
+  private seated(label: string): boolean {
+    if (this.state === 'live') return true;
+    this.refuse(Reject.OutOfOrder, `${label} before hello`);
+    return false;
+  }
+
+  /** A class: state, so one over budget is **held** and applied when the budget refills. */
+  private onLoadoutFrame(loadout: NetLoadout): void {
+    if (!this.seated('loadout')) return;
+    this.noteActivity();
+    if (!this.budgets.loadout.take(nowMs())) {
+      // The newest replaces anything already held — see `heldLoadout`.
+      this.heldLoadout = loadout;
+      this.overBudget('loadout');
+      return;
+    }
+    this.heldLoadout = null;
+    this.events.onLoadout(this, loadout);
+  }
+
+  /** A vote: state as well, and held for the same reason — the last one is the one meant. */
+  private onVoteFrame(phase: number, option: number): void {
+    if (!this.seated('vote')) return;
+    this.noteActivity();
+    if (!this.budgets.vote.take(nowMs())) {
+      this.heldVote = { phase, option };
+      this.overBudget('vote');
+      return;
+    }
+    this.heldVote = null;
+    this.events.onVote(this, phase, option);
+  }
+
+  /**
+   * A readiness report. Not counted as activity on purpose: the client sends it on its own
+   * schedule, so it says nothing about whether anybody is at the keyboard (S6).
+   */
+  private onReadyFrame(matchId: number): void {
+    if (!this.seated('ready')) return;
+    if (!this.budgets.ready.take(nowMs())) {
+      this.overBudget('ready');
+      return;
+    }
+    this.events.onReady(this, matchId);
+  }
+
+  /**
+   * A streak request: a request rather than state, so one over budget is dropped and the player
+   * presses again.
+   *
+   * Not validated here beyond the ordering. Whether this player has actually earned the streak
+   * is a question about the simulation, and the instance is the only thing that can answer it —
+   * see `Server.onStreakRequest`. §4.16's boundary validation is about *shape*, and the decoder
+   * has already done that.
+   */
+  private onStreakFrame(kind: number, x: number, z: number): void {
+    if (!this.seated('streak')) return;
+    this.noteActivity();
+    if (!this.budgets.streak.take(nowMs())) {
+      this.overBudget('streak');
+      return;
+    }
+    this.events.onStreakRequest(this, kind, x, z);
+  }
+
+  /**
+   * A typed cheat code.
+   *
+   * Whether the code exists, whether this server honours it and whether there is a seat to apply
+   * it to are all questions about the server's own state, so none of them is answered here.
+   * §4.16's boundary validation is about *shape*, and the decoder has already bounded the only
+   * thing with a shape. The cheat budget is what stops somebody typing codes at it in a loop —
+   * every answer is a frame back, and a refusal a log line.
+   */
+  private onCheatFrame(code: string): void {
+    if (!this.seated('cheat')) return;
+    this.noteActivity();
+    if (!this.budgets.cheat.take(nowMs())) {
+      this.overBudget('cheat');
+      return;
+    }
+    this.events.onCheatRequest(this, code);
   }
 
   private handleHello(
@@ -672,10 +922,7 @@ export class Session {
       log.warn(
         `refusing ${this.link.remoteAddress}: protocol ${version}, server speaks ${PROTOCOL_VERSION}`,
       );
-      this.link.send(writeReject(this.out, RejectCode.BadVersion));
-      this.state = 'closed';
-      this.link.close('version mismatch');
-      this.events.onLeave(this, 'version mismatch', 'left');
+      this.rejectAtDoor(RejectCode.BadVersion, 'version mismatch');
       return;
     }
 
@@ -689,7 +936,6 @@ export class Session {
      * is the same module the client appends from (round 5, B9).
      */
     const incoming = readIncomingName(name, 'OPERATOR');
-    this.wantsRewindDebug = incoming.wantsRewindDebug;
     this.displayName = incoming.name;
 
     /**
@@ -710,10 +956,7 @@ export class Session {
 
     const joined = this.events.onJoin(this, this.displayName, claim);
     if (joined === null) {
-      this.link.send(writeReject(this.out, RejectCode.ServerFull));
-      this.state = 'closed';
-      this.link.close('server full');
-      this.events.onLeave(this, 'server full', 'left');
+      this.rejectAtDoor(RejectCode.ServerFull, 'server full');
       return;
     }
 
@@ -734,6 +977,21 @@ export class Session {
      * guarantee the server makes on every path rather than an assumption the client hopes for.
      */
     joined.afterIdentity?.();
+  }
+
+  /**
+   * Refused at the handshake: a `Reject` with a code, then gone.
+   *
+   * Not `close()`, which sends a `Bye` — a client that has not been welcomed is owed the reason
+   * it was turned away in the one frame it knows how to read, and `RejectCode` is that frame.
+   * Both callers are in `handleHello` and both are `'left'`: the server refused this connection,
+   * so there is no seat to hold for it (see `LeaveCause`).
+   */
+  private rejectAtDoor(code: RejectCodeId, reason: string): void {
+    this.link.send(writeReject(this.out, code));
+    this.state = 'closed';
+    this.link.close(reason);
+    this.events.onLeave(this, reason, 'left');
   }
 
   private handleCommands(count: number, snapshotAck: number): void {
@@ -819,196 +1077,18 @@ export class Session {
     this.close(text, 'left');
   }
 
-  /**
-   * The seat assignment: a `Welcome` on a join, a `Migrate` on a move (M11, §4.18).
-   *
-   * One method for both, because a client that is told about its seat differently depending on
-   * how it got there is a client with two code paths where one of them is exercised rarely.
-   * The `migrated` flag on the payload picks the message id.
-   */
-  sendSeat(info: WelcomeInfo): void {
-    this.send(writeWelcome(this.out, info, this.reconnectToken));
-  }
-
-  /**
-   * A class arrived in a shape the editor cannot produce, and was corrected (security audit
-   * 2026-10-04, S1).
-   *
-   * Logged, never answered and never a disconnect: the corrected class is a working one, and
-   * the player sees it in their hands. The line is for the operator — the client's own
-   * sanitiser runs the same rules before it sends, so no shipped client reaches this, and a
-   * line here names the connection that was modified.
-   */
-  noteCorrectedClass(corrected: readonly string[]): void {
-    this.warn(
-      `${this.displayName} (${this.link.remoteAddress}) sent a class no shipped client produces; ` +
-        `corrected: ${corrected.join(' · ')}`,
-    );
-  }
-
-  /**
-   * A warning about something this connection did, within its budget (security audit S3).
-   *
-   * For every warning a client can provoke *without being disconnected* — a refused vote, a
-   * streak it does not hold, a code on a server with cheats off. A line that closes the
-   * connection is written once by construction and does not need this.
-   *
-   * Suppressed lines are counted and the count rides on the next line that is written, so the
-   * log says how much it is not showing.
-   */
-  warn(text: string): void {
-    if (!this.warnBudget.take(nowMs())) {
-      this.warningsSuppressed++;
-      return;
-    }
-    const suppressed = this.warningsSuppressed;
-    this.warningsSuppressed = 0;
-    log.warn(suppressed === 0 ? text : `${text} (+${suppressed} earlier warning(s) from this connection suppressed)`);
-  }
-
   /** A message over its kind's budget: counted, and a warning within the warning budget. */
   private overBudget(kind: BudgetedMessage): void {
     this.rejects.note(Reject.RateLimit);
     this.messagesThrottled++;
     this.warn(`${this.displayName} (${this.link.remoteAddress}) is over the ${kind} message budget.`);
   }
-
-  /** A short line for the player. Allocation failed, migration failed, the arena was rebuilt. */
-  notice(text: string): void {
-    this.send(writeNotice(this.out, text));
-  }
-
-  /**
-   * The answer to a cheat code: what happened, and the whole mask afterwards (round 4, F14).
-   *
-   * Sent for a refusal exactly as for a grant. A cheat that is silent when refused is a bug that
-   * gets reported twice — once as "the code does nothing" and again, later, as "cheats are
-   * broken on the server" — and neither report says the true thing, which is that this operator
-   * has them switched off.
-   */
-  sendCheats(outcome: number, mask: number): void {
-    this.send(writeCheats(this.out, outcome, mask));
-  }
-
-  /**
-   * The M11 server-to-client messages, each encoded with **this session's** writer.
-   *
-   * ## Why these live here rather than on the caller
-   *
-   * `ByteWriter.bytes()` returns a *view* into the writer's buffer, not a copy. A caller that
-   * held one shared writer and encoded into it for every session would hand out several views
-   * of the same memory, and the last encode would win — every earlier frame would go out
-   * carrying the last one's bytes.
-   *
-   * It is not hypothetical. `Server` did exactly that, and the symptom was that the `Prepare`
-   * starting each client's background build was overwritten by the 4 Hz vote broadcast that
-   * followed it on the next tick. No client ever began building, every readiness handshake hit
-   * its eight-second timeout, and the transition that the whole milestone exists to make
-   * seamless fell back to a synchronous build with a visible hitch — with nothing in either
-   * log saying why.
-   *
-   * One writer per session, owned by the session, makes that unrepresentable.
-   */
-  sendPrepare(matchId: number, mapId: string, modeId: string): void {
-    this.send(writePrepare(this.out, matchId, mapId, modeId));
-  }
-
-  sendVoteState(info: VoteInfo): void {
-    this.send(writeVoteState(this.out, info));
-  }
-
-  sendSummary(info: SummaryInfo): void {
-    this.send(writeSummary(this.out, info));
-  }
-
-  sendObjectives(states: readonly ObjectiveState[]): void {
-    this.send(writeObjectives(this.out, states));
-  }
-
-  sendTags(tags: readonly TagInfo[]): void {
-    this.send(writeTags(this.out, tags));
-  }
-
-  sendBomb(info: BombInfo): void {
-    this.send(writeBomb(this.out, info));
-  }
-
-  sendStreaks(view: StreakView): void {
-    this.send(writeStreaks(this.out, view));
-  }
-
-  /** The board, whole (M13 Phase B). See `MatchInstance.sendScoreboard` for when. */
-  sendScoreboard(serial: number, rows: readonly ReplicatedScoreRow[]): void {
-    this.send(writeScoreboard(this.out, serial, rows));
-  }
-
-  sendProjectiles(projectiles: readonly ProjectileState[], smoke: readonly SmokeState[]): void {
-    this.send(writeProjectiles(this.out, projectiles, smoke));
-  }
-
-  sendStateHash(tick: number, hash: number, sections: readonly number[]): void {
-    this.send(writeStateHash(this.out, tick, hash, sections));
-  }
-
-  /**
-   * A snapshot just went out. Remember when, so its ack can be timed (2026-10-18).
-   *
-   * The ids come from this client's own encoder and only ever move forward — the 16-bit wrap
-   * included, which `isNewerSnapshot` reads as forward. An id that is *not* newer therefore
-   * means a different encoder is writing them: a migration between instances hands this
-   * session to a new one, whose ids start at 1 again. The entries from the old instance would
-   * otherwise sit in the ring waiting to be matched by id and timed against a send that
-   * happened in another match, so they go.
-   */
-  /**
-   * This client's snapshot stream starts over: a new encoder, with no baseline (migration).
-   *
-   * The acks and the send times are reset together because they answer for the same ids. An
-   * ack left over from the instance this player just left would ask the new encoder to delta
-   * against a frame it never sent, and a send time left over would be matched by id and timed
-   * against a snapshot from another match.
-   */
-  restartSnapshotStream(): void {
-    this.ackedSnapshot = 0;
-    this.lastSnapshotId = 0;
-    this.sentIds.fill(0);
-  }
-
-  noteSnapshotSent(id: number): void {
-    if (!isNewerSnapshot(id, this.lastSnapshotId)) this.sentIds.fill(0);
-    this.lastSnapshotId = id;
-    this.sentIds[this.sentHead] = id;
-    this.sentAtMs[this.sentHead] = nowMs();
-    this.sentHead = (this.sentHead + 1) % BASELINE_HISTORY;
-  }
-
-  /**
-   * Fold one round-trip sample into the estimate.
-   *
-   * Exponential smoothing on the RTT and on the mean absolute deviation. The deviation is
-   * what the client's jitter buffer is sized from and what the rewind uses as its margin, so
-   * it is tracked rather than inferred — a link with 100 ms flat and one with 100 ms +/- 40 ms
-   * need materially different amounts of buffer and would otherwise look identical.
-   */
-  noteRtt(sampleMs: number): void {
-    if (!Number.isFinite(sampleMs) || sampleMs < 0 || sampleMs > 10_000) return;
-    if (this.rttSamples === 0) {
-      this.rttMs = sampleMs;
-      this.jitterMs = 0;
-    } else {
-      const deviation = Math.abs(sampleMs - this.rttMs);
-      this.jitterMs = this.jitterMs * 0.9 + deviation * 0.1;
-      this.rttMs = this.rttMs * 0.9 + sampleMs * 0.1;
-    }
-    this.rttSamples++;
-  }
-
-  /** How far in the past this client is looking, in ticks. Drives the rewind (S4.13). */
-  viewLagTicks(interpolationDelayMs: number): number {
-    return Math.round((this.rttMs * 0.5 + interpolationDelayMs) / (DT * 1000));
-  }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function bucket(budget: { readonly burst: number; readonly perSecond: number }): TokenBucket {
   return new TokenBucket(budget.burst, budget.perSecond);
 }
@@ -1018,16 +1098,10 @@ function blankCommand(): MutableInputCommand {
 }
 
 /**
- * A display name, made safe for a scoreboard.
- *
- * Control characters stripped and length capped. This string is rendered into the DOM on
- * every other player's client, so it is attacker-controlled text crossing a trust boundary —
- * the HUD sets it through `textContent`, never `innerHTML`, and this is the second layer.
- */
-/**
  * Snapshot ids wrap at 16 bits, so "newer" is a distance question rather than a comparison.
  * Half the space forward is newer; the rest is older.
  */
 function isNewerSnapshot(a: number, b: number): boolean {
   return ((a - b) & 0xffff) < 0x8000 && a !== b;
 }
+//#endregion

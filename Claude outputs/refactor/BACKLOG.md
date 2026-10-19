@@ -10,9 +10,9 @@ usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects h
 measurement nobody has taken yet.
 
 **38 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B2b opened #44–#46** on 2026-10-19, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Nine numbers are gone and
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Ten numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
-A13 and **#25** by A15, both on 2026-10-12, and **#40**, **#44** and **#47** on 2026-10-19, with **#39**, **#41** and **#46** closed together the same day — the leaked snapshot, the write-only field and the guard that cannot fire, all three in files B1 and B2 had already finished and no later unit could touch.
+A13 and **#25** by A15, both on 2026-10-12, and **#40**, **#44** and **#47** on 2026-10-19, with **#39**, **#41** and **#46** closed together the same day — the leaked snapshot, the write-only field and the guard that cannot fire, all three in files B1 and B2 had already finished and no later unit could touch — and **#31** by B3, in the one file it owned.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -41,7 +41,6 @@ and belong in its Step 2 plan.
 | ~~A21~~ | `shared/net/Messages.ts` + the seven files it was split into | **declined with a reason** — `Messages.ts` calls neither angle helper, so #1 has no edit to make here. A21 opened none |
 | ~~A22~~ | `shared/net/NetClient.ts` + `CommandPipeline.ts` | **closed** — nothing was bound to it; A22 opened #32 |
 | ~~A23~~ | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | **closed** — A23 absorbed #1's shared half under an approved fence exception: `shortestAngle` is gone and both call sites moved. What is left of #1 is the three local copies, which are not the same function |
-| B3 | `server/net/` Session, WsServer | #31 (`wantsRewindDebug`, written and never read — B3 is the only unit allowed to touch it) |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | B5 | `server/instance/MatchInstance.ts` | #30's call site (`equipmentIndexOf`, per player per snapshot) — the edit itself is A20's file, so fold in what can be done here and leave the rest |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
@@ -1005,29 +1004,25 @@ commit at all.
 **Verify** `npm run check` + SIM snapshot/compare → `PASS`, plus `Snapshot.test.ts`'s
 *"names every piece of equipment and nothing else"*, which already pins every index both ways.
 
-### #31 — `Session.wantsRewindDebug` is written and never read · `bound to B3` *(opened 2026-10-14 by A20)*
+### #48 — Two comments name a field that no longer exists · `open` *(opened 2026-10-19 by B3)*
+**Files** `src/client/debug/NetPanel.ts` (~line 34) and `src/shared/net/UrlFlags.ts` (~line 138).
+**Origin** B3.
 
-**Files** `src/server/net/Session.ts` (B3), reading `src/shared/net/UrlFlags.ts` and
-`src/shared/net/NetClient.ts`. **Origin** A20.
+B3 deleted `Session.wantsRewindDebug` (#31), which nothing read. Two comments still explain the
+`?rewinddebug=1` chain by naming it as the place the flag lands:
 
-The `?rewinddebug=1` chain is complete in every link but the last: the client appends `#rw` to its
-name (`withRewindSuffix`), the server strips it and records the request (`readIncomingName` →
-`Session.wantsRewindDebug`), and **nothing ever reads that field** — no message on the wire carries
-a per-shot rewind feed, and `NetPanel` computes all three of its Rewind fields from the client's own
-RTT. `UNDOCUMENTED_URL_KEYS` already says so in prose, which is how A20 found it; this entry is so
-that the prose has a task behind it.
+- `NetPanel.ts:34` — *"... and `Session.wantsRewindDebug` — which the whole `?rewinddebug=1` chain
+  exists ..."*
+- `UrlFlags.ts:138` — *"... and `Session.wantsRewindDebug` — the flag the whole chain exists to ..."*
 
-**Decide** one of three: build the feed the plumbing was laid for, delete the field and leave the
-name convention (the `#rw` suffix is harmless and `UrlFlags` is tested), or leave it and keep the
-note. A20 recommends the third until something wants the feed — the scaffolding is what it will be
-built on, and the comment in `UrlFlags.ts` already carries the reason.
+Both are still right about the chain and wrong about its end: the suffix is read, the name is
+stripped and the opt-in is **dropped** at the server's door. The sentence each one needs is that
+the server has nowhere to put it until a per-shot rewind feed exists on the wire.
 
-**Why A20 could not do it.** The field is in `server/net/Session.ts`, which belongs to **B3** and is
-outside A20's fence (R3). A20 owns only the shared half of the convention, and that half is correct:
-the suffix is stripped before the cap, which is the fix round 5 made.
-
-**Verify** `npm run check` + SIM + NET. `UrlFlags.test.ts` (A20) pins both halves of the suffix
-convention, including the eighteen-character callsign that the old ordering silently ignored.
+**Why B3 could not do it.** `NetPanel.ts` is **C13**'s file and `UrlFlags.ts` is **A20**'s, both
+outside B3's fence (R3). Exactly the shape of #32, and worth doing with it — that one is three
+comments naming `NetClient.neutralise` in `src/server/debug/`, which §10 keeps out of every
+unit's scope for good.
 
 ### #32 — Three comments still name `NetClient.neutralise` · `open` *(opened 2026-10-14 by A22)*
 

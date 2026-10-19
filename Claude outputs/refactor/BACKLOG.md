@@ -729,7 +729,7 @@ reach — in which case the text should say so instead of naming a remedy that i
 `REFACTOR-PROMPT.md` keeps out of scope for the whole programme. §6 now warns the reader to
 expect that one line and ignore it.
 
-### #42 — Three clients disagree with the server's final scoreboard, one run in five · `needs a decision from the user` *(opened 2026-10-19)*
+### #42 — Three clients disagree with the server's final scoreboard, one run in five · `open` · *known-flaky by decision, 2026-10-19* *(opened 2026-10-19)*
 **Files** unknown — the divergence is between `ScoreSystem`'s final rows on the server and the
 replica the clients hold; the candidates are the scoreboard broadcast in `src/server/net/` (B2's
 `SeatEvents`/`EventCollector` or B3's `Session`) and the client's replica in
@@ -757,12 +757,13 @@ last received board against rows copied at a later instant. Deciding which is th
 instrument files and `BACKLOG.md`; this is either in `src/` — a behaviour defect, not a refactor —
 or in `src/server/skirmishHarness.ts`, which §10 keeps out of scope for the whole programme.
 
-**The decision this needs**, and why it cannot wait long: it governs whether the NET oracle can
-gate a unit. §6 now tells a unit that hits this red line to re-run once and, if it reproduces, to
-stop and report — which is the right default but is still a one-in-five chance of a wasted
-4.5-minute run for every remaining SIM + NET unit (B2–B8, two snapshots each). **Decide**: treat
-the 4.3 line as a known-flaky warning until it is fixed, or fix it first and keep the oracle
-strictly green.
+**Decided on 2026-10-19: a known-flaky warning for now.** The question was whether this line may
+gate a unit, since it is a one-in-five chance of a wasted 4.5-minute run for every remaining
+SIM + NET unit (B2–B8, two snapshots each). The user's answer is that a unit meeting it re-runs
+the NET snapshot and carries on, exactly as §6 now says — so **this entry does not block B2**, and
+it is not `needs a decision from the user` any more. What it still needs is somebody to find out
+which of the two it is. Until then every unit that re-runs for it should say so in its report,
+because that count is the evidence for how often it really happens: one in five is five runs.
 
 ### #41 — `RigHistory.newest` is written and never read · `open` *(opened 2026-10-19 by B1)*
 **Files** `src/server/net/RigHistory.ts`. **Origin** B1.

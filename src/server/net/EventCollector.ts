@@ -71,10 +71,12 @@ export const MAX_TICK_EVENTS = 255;
  * `weapon.fired` that owns it, and threading a field through two unrelated bus subscriptions
  * to carry one byte between them would be worse than saying so here.
  *
- * It is never cleared, so a shot that stops in nothing carries whatever this process saw last —
- * across ticks, and across matches. Pinned by `EventCollector.test.ts` and recorded as a
- * suspected bug in `BACKLOG.md` (#44) rather than changed, because what the client draws for
- * that shot is behaviour.
+ * Cleared by `begin`, so it means what this comment says: *this tick's* last impact, and
+ * nothing from an earlier tick, an earlier match or another instance sharing the process
+ * (BACKLOG #44). A shot that stopped in nothing therefore reports 0 — which is `concrete`
+ * in `MATERIAL_KEYS`, not a "nothing" the wire can say, and the same 0 `ShotTrace.material`
+ * already holds for a round that has not hit anything. `FiredEvent` has no bit for "stopped
+ * in nothing", so the exact answer is a protocol change; this is the deterministic one.
  */
 let lastImpactMaterial = 0;
 
@@ -193,6 +195,8 @@ export class EventCollector {
     this.count = 0;
     this.open = true;
     this.overflowNoted = false;
+    // The tick's impacts are this tick's. See `lastImpactMaterial` (BACKLOG #44).
+    lastImpactMaterial = 0;
   }
 
   /**

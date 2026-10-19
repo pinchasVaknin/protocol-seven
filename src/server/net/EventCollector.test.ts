@@ -328,8 +328,7 @@ describe('the frame one seat is cut', () => {
   it('keeps each event in the form that seat may have it', () => {
     const events = tickOf((bus) => {
       step(bus, 2, 0, 0);
-      // Its own impact, so the material is this tick's and not whatever the process saw last —
-      // see the pin below.
+      // Its own impact, so the material is this tick's rather than 0 — see the two cases below.
       bus.emit(EV.BulletImpact, { x: 1, y: 1, z: 20, nx: 0, ny: 0, nz: -1, material: 2, penetrated: false });
       shot(bus, 3, false);
       bus.emit(EV.EntityKilled, { targetId: 4, sourceId: 3, weaponId: 'ar_carbine', zone: 'torso', killerHealth: 55 });
@@ -339,17 +338,42 @@ describe('the frame one seat is cut', () => {
     expect(cutTo(events, [1, 1, 1])).toEqual(['step:2:3', 'fired:3:quiet:2', 'killed:4<3:55']);
   });
 
-  // Pins current behaviour; suspected bug: `lastImpactMaterial` outlives the tick, the frame and
-  // the match (BACKLOG #44).
-  it('gives a shot with no impact of its own the last material this process saw', () => {
-    // One tick, one impact in concrete (9), and a collector that is then thrown away.
+  /**
+   * The material is *this tick's*, which is what BACKLOG #44 fixed (2026-10-19).
+   *
+   * `lastImpactMaterial` is module-level by design — `Ballistics` emits the impact immediately
+   * before the shot that owns it — but nothing used to clear it, so a shot that stopped in
+   * nothing went out carrying whatever surface the *process* last saw: an earlier tick, an
+   * earlier match, or another instance, since one Node process runs many matches. `begin`
+   * clears it, and these two cases are the ones that would catch that coming back.
+   */
+  it('does not carry an earlier tick\'s material into a shot with no impact of its own', () => {
+    // One tick, one impact in grate (9), and a collector that is then thrown away.
     tickOf((bus) => {
       bus.emit(EV.BulletImpact, { x: 0, y: 0, z: 1, nx: 0, ny: 0, nz: -1, material: 9, penetrated: false });
       shot(bus, 1, true);
     });
 
-    // A different collector, a different bus, a shot that hits nothing: it still reports 9.
+    // A different collector, a different bus, a shot that hits nothing: 0, not the 9 above.
     const later = tickOf((bus) => shot(bus, 5, true));
-    expect(cutTo(later, [1])).toEqual(['fired:5:ping:9']);
+    expect(cutTo(later, [1])).toEqual(['fired:5:ping:0']);
+  });
+
+  it('does not carry an earlier tick of the same collector either', () => {
+    const bus = createGameBus();
+    const events = new EventCollector();
+    events.subscribe(bus);
+
+    // Tick one hits rubber (6); tick two, on the same collector and the same bus, hits nothing.
+    events.begin();
+    bus.emit(EV.BulletImpact, { x: 0, y: 0, z: 1, nx: 0, ny: 0, nz: -1, material: 6, penetrated: false });
+    shot(bus, 1, true);
+    events.finish();
+    expect(cutTo(events, [1])).toEqual(['fired:1:ping:6']);
+
+    events.begin();
+    shot(bus, 1, true);
+    events.finish();
+    expect(cutTo(events, [1])).toEqual(['fired:1:ping:0']);
   });
 });

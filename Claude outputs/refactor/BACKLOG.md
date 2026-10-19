@@ -9,10 +9,10 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**42 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B2b opened #44–#46** on 2026-10-19. Four numbers are gone and
+**41 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B2b opened #44–#46** on 2026-10-19, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick. Five numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
-A13 and **#25** by A15, both on 2026-10-12, and **#40** on 2026-10-19.
+A13 and **#25** by A15, both on 2026-10-12, and **#40** and **#44** on 2026-10-19.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -569,28 +569,6 @@ minimum of 0.4. Touching either slider in the F1 debug panel snaps the value to 
 weapon's authored figure cannot be restored through the UI. **Decide**: widen the bounds in
 `WEAPON_TUNABLES` to contain the authored values, or change the weapon's base values. The second is
 a balance change.
-
-### #44 — A shot with no impact of its own carries the last material the *process* saw · `open` *(opened 2026-10-19 by B2b)*
-**Files** `src/server/net/EventCollector.ts` (`lastImpactMaterial`, `onFired`, `begin`).
-**Origin** B2b.
-
-`Ballistics` emits `bullet.impact` immediately before the `weapon.fired` that owns it, so the
-collector keeps the material in a module-level `lastImpactMaterial` and reads it when it encodes
-the shot — the file comment explains why it is module-level and that reasoning is sound. What
-nothing does is **clear it**: not `begin`, not `finish`, not a new collector. So a shot that
-stopped in nothing — a miss into the sky, a round that left the map — goes out carrying whatever
-surface this *process* last saw a bullet hit, which may be from an earlier tick, an earlier
-match, or another instance entirely: one Node process runs many matches.
-
-What it costs is the spark colour and the impact click the client draws for that shot, so it is
-cosmetic — but it is also state crossing a match boundary, which is the shape §8.13's leak run
-exists to catch, and the fix is one line in `begin`.
-
-Pinned by `EventCollector.test.ts`, *"gives a shot with no impact of its own the last material
-this process saw"*, which carries the `// Pins current behaviour; suspected bug:` comment — so
-**fixing the code means rewriting that case in the same commit, with the reason**. The honest
-question first: is the right default 0 (“nothing”) or the last impact of *this tick*? `begin`
-clearing it gives the second, which is what the comment already claims happens.
 
 ### #45 — One roster lookup, written twice in one unit · `open` *(opened 2026-10-19 by B2b)*
 **Files** `src/server/net/SeatEvents.ts` (`find`) and `src/server/net/VisibilityAudit.ts`

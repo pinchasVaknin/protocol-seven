@@ -760,41 +760,62 @@ reach — in which case the text should say so instead of naming a remedy that i
 `REFACTOR-PROMPT.md` keeps out of scope for the whole programme. §6 now warns the reader to
 expect that one line and ignore it.
 
-### #42 — Three clients disagree with the server's final scoreboard, one run in five · `open` · *known-flaky by decision, 2026-10-19* *(opened 2026-10-19)*
-**Files** unknown — the divergence is between `ScoreSystem`'s final rows on the server and the
-replica the clients hold; the candidates are the scoreboard broadcast in `src/server/net/` (B2's
-`SeatEvents`/`EventCollector` or B3's `Session`) and the client's replica in
-`src/client/net/NetSession.ts` / `src/client/ui/Scoreboard.ts`. **Origin** the session that closed
-#40, on 2026-10-19.
+### #42 — Three clients disagree with the server's final scoreboard, one run in five · `open` · *a fix is in place; the cause is still unconfirmed* *(opened 2026-10-19)*
+**Files** `src/server/instance/MatchInstance.ts` (`sendScoreboard`) — B5's file; the check is
+`src/server/skirmishHarness.ts`'s 4.3 comparison. **Origin** the session that closed #40.
 
-Closing #40 made the NET oracle sample the final board for the first time. It now reports, on an
-**untouched tree**, one run in five:
+The NET oracle reports, on an untouched tree, one run in five:
 
 ```
 scoreboard: server ended with 10 row(s); 30 row(s) compared across 3 client(s), 6 mismatch(es)
-            (must be 0); boards received 532/544/544; OP1 10 row(s) over 532 board(s), 2 off;
-            OP2 10 row(s) over 544 board(s), 2 off; OP3 10 row(s) over 544 board(s), 2 off
+            (must be 0); OP1 ... 2 off; OP2 ... 2 off; OP3 ... 2 off
 ERR FLOW CHECK FAILED: 6 of 30 scoreboard row(s) on clients disagree with the server's final
                        rows (4.3)
 ```
 
-Five runs on the same tree: four with `0 mismatch(es)`, one with six. **Two rows off on each of
-the three clients, the same count on all three**, which points at the server's rows changing after
-its last broadcast rather than at anything per-client — either a real end-of-match ordering defect
-(the harness's check calls it 4.3, M13 Phase B) or an unsound check that compares the client's
-last received board against rows copied at a later instant. Deciding which is the work.
+**Two rows off on each of three clients, the same count on all three.** Four other runs clean.
 
-**Why the session that found it did not do it.** Its task was §6's recipe, scoped to the two
-instrument files and `BACKLOG.md`; this is either in `src/` — a behaviour defect, not a refactor —
-or in `src/server/skirmishHarness.ts`, which §10 keeps out of scope for the whole programme.
+## The mechanism, and what has been done about it
 
-**Decided on 2026-10-19: a known-flaky warning for now.** The question was whether this line may
-gate a unit, since it is a one-in-five chance of a wasted 4.5-minute run for every remaining
-SIM + NET unit (B2–B8, two snapshots each). The user's answer is that a unit meeting it re-runs
-the NET snapshot and carries on, exactly as §6 now says — so **this entry does not block B2**, and
-it is not `needs a decision from the user` any more. What it still needs is somebody to find out
-which of the two it is. Until then every unit that re-runs for it should say so in its report,
-because that count is the evidence for how often it really happens: one in five is five runs.
+`sendScoreboard` sends a seat's board when `ScoreSystem.serial` moved, **rate-limited** to no
+sooner than `SCOREBOARD_MIN_TICKS` (15 ticks, 250 ms) and resent anyway every
+`SCOREBOARD_KEEPALIVE_TICKS` (120). There is exactly **one** forced pass at the end of a match —
+`step`'s `ending = state === RUNNING && match.isOver` — and `LiveMatch` is careful to order its
+move to `ENDED` after it, *"so this must move to `ENDED` only **after** `super.step` has had its
+chance to send"*. The rate limit overruled that forced pass: a seat whose last board was under
+250 ms old was skipped, and from that tick the instance is `ENDED`, so no later pass exists. The
+client then holds a board missing the last change for the whole summary hold — and the last
+change is the kill that *ended* the match, which is two rows: the killer's kills and the victim's
+deaths. That is the reported signature exactly.
+
+**`ending` now waives the rate limit** (not `changed`: a seat already holding the final serial is
+sent nothing). That is right on its own terms whatever causes #42 — a deliberately forced pass
+that a rate limit can silently overrule is a bug in intent — and it is committed.
+
+## Why this entry is still open
+
+**The fix has not been shown to remove #42.** Three NET runs after it are clean, which at a
+one-in-five base rate is weak (0.8³ ≈ 51% of seeing nothing even unfixed), and the experiment
+meant to settle it **failed to reproduce the defect at all**: with `SCOREBOARD_MIN_TICKS` widened
+to 600 ticks and the fix's clause removed, the run still reported `0 mismatch(es)`.
+
+The reason that experiment could not work is itself the next clue. Every harness match ends on
+**TIME** — `MATCH_ROUND_SECONDS=150` guarantees it — and a timed ending usually has no kill in
+its final seconds, so `changed` is already false at the forced pass and there is nothing for the
+rate limit to skip. #42's trigger needs a match that ends **on a kill**, with that kill inside
+the window. No environment knob sets a score limit (`Config.ts` has `MATCH_ROUND_SECONDS` and no
+score cap), so reaching it needs a code-level change to the mode's limit — which is why this was
+not settled here.
+
+**To settle it**: run the flow check against a mode whose score limit a kill can reach inside the
+run, and compare the 4.3 line with the fix and without it. If the defect reproduces and the fix
+clears it, delete this entry. If it reproduces *with* the fix, the cause is elsewhere and the
+first place to look is whether `ScoreSystem.serial` moves after the forced pass at all — the
+other candidate is the harness comparing the client's last board against rows copied at a later
+instant, which would make the check unsound rather than the server wrong.
+
+Until then the decision of 2026-10-19 stands: a unit that meets this red line re-runs the NET
+snapshot once, says so in its report, and carries on.
 
 ### #41 — `RigHistory.newest` is written and never read · `open` *(opened 2026-10-19 by B1)*
 **Files** `src/server/net/RigHistory.ts`. **Origin** B1.

@@ -449,7 +449,7 @@ export abstract class MatchInstance {
             this.sendBomb();
             this.sendStreaks();
             this.sendProjectiles();
-            this.sendScoreboard(absoluteTick);
+            this.sendScoreboard(absoluteTick, ending);
             /**
              * Last, deliberately (§7).
              *
@@ -662,8 +662,22 @@ export abstract class MatchInstance {
      *
      * The rows are built once per send from the live rows and shared by every seat; the
      * per-seat part is only the decision.
+     *
+     * ## The rate limit does not apply to the last board of a match (BACKLOG #42)
+     *
+     * `ending` is the forced pass `step` makes on the tick the win condition fires — the one
+     * `LiveMatch` is careful to order its move to `ENDED` *after*, so this channel gets its
+     * chance. The rate limit used to overrule it: a seat whose previous board was less than
+     * `SCOREBOARD_MIN_TICKS` (250 ms) old was skipped, and since the instance is `ENDED` from
+     * that tick on there is no later pass to catch it. The client then held a board missing the
+     * last kill for the whole summary hold.
+     *
+     * And the last kill is exactly the common case, because in a close match **it is the kill
+     * that ends it**: the audit caught it as one run in five with two rows off on every client —
+     * the killer's kills and the victim's deaths. So `ending` waives the rate limit. It does not
+     * waive *changed*: a seat already holding the final serial is sent nothing.
      */
-    private sendScoreboard(tickIndex: number): void {
+    private sendScoreboard(tickIndex: number, ending: boolean): void {
         const score = this.match.score;
         let built = false;
         for (const seat of this.seats.values()) {
@@ -674,7 +688,7 @@ export abstract class MatchInstance {
             const changed = sent.serial !== score.serial;
             const since = tickIndex - sent.tick;
             const due = sent.tick < 0 || since >= SCOREBOARD_KEEPALIVE_TICKS;
-            if (!due && !(changed && since >= SCOREBOARD_MIN_TICKS)) continue;
+            if (!due && !(changed && (ending || since >= SCOREBOARD_MIN_TICKS))) continue;
             if (!built) {
                 this.boardScratch.length = 0;
                 for (const row of score.rows) this.boardScratch.push(row);

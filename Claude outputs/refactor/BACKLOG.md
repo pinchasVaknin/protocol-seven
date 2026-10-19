@@ -9,11 +9,14 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**37 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**36 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
-nothing bound to its own four files; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Twelve numbers are gone and
+nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
-A13 and **#25** by A15, both on 2026-10-12, and **#40**, **#44** and **#47** on 2026-10-19, with **#39**, **#41** and **#46** closed together the same day — the leaked snapshot, the write-only field and the guard that cannot fire, all three in files B1 and B2 had already finished and no later unit could touch — and **#31** by B3, in the one file it owned. **#32** and **#48** went together on 2026-10-19 — five comments naming two things that had moved or gone, in files §10 and R3 keep out of every unit's reach; #32's own count was one short, and the fourth was in `skirmishHarness.ts`.
+A13 and **#25** by A15, both on 2026-10-12, and **#40**, **#44** and **#47** on 2026-10-19, with **#39**, **#41** and **#46** closed together the same day — the leaked snapshot, the write-only field and the guard that cannot fire, all three in files B1 and B2 had already finished and no later unit could touch — and **#31** by B3, in the one file it owned. **#32** and **#48** went together on 2026-10-19 — five comments naming two things that had moved or gone, in files §10 and R3 keep out of every unit's reach; #32's own count was one short, and the fourth was in `skirmishHarness.ts`. **#49** followed on
+the same day: the arena's boot log and the README promised an `instant respawn` that playtest
+round 4 had removed, and the fix needed a session outside the unit rules because R1 makes a log
+line observable output.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -42,7 +45,7 @@ and belong in its Step 2 plan.
 | ~~A21~~ | `shared/net/Messages.ts` + the seven files it was split into | **declined with a reason** — `Messages.ts` calls neither angle helper, so #1 has no edit to make here. A21 opened none |
 | ~~A22~~ | `shared/net/NetClient.ts` + `CommandPipeline.ts` | **closed** — nothing was bound to it; A22 opened #32 |
 | ~~A23~~ | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | **closed** — A23 absorbed #1's shared half under an approved fence exception: `shortestAngle` is gone and both call sites moved. What is left of #1 is the three local copies, which are not the same function |
-| ~~B4~~ | `server/instance/` InstanceClock, LiveMatch, VoteCycle, WarmupMatch | **closed** — nothing was bound to its four files: #13 is B5/B6's and its edit is in `shared/combat`, #42's and #30's file is `MatchInstance.ts` which is B5's. B4 opened #49 |
+| ~~B4~~ | `server/instance/` InstanceClock, LiveMatch, VoteCycle, WarmupMatch | **closed** — nothing was bound to its four files: #13 is B5/B6's and its edit is in `shared/combat`, #42's and #30's file is `MatchInstance.ts` which is B5's. B4 opened #49, which was closed the same day |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | B5 | `server/instance/MatchInstance.ts` | #30's call site (`equipmentIndexOf`, per player per snapshot) — the edit itself is A20's file, so fold in what can be done here and leave the rest |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
@@ -713,38 +716,6 @@ primitive.
 ---
 
 ## 6. Documentation and housekeeping
-
-### #49 — The warmup arena's boot log and the README both still promise `instant respawn` · `open` *(opened 2026-10-19 by B4)*
-**Files** `src/server/instance/WarmupMatch.ts` (the `log.info` in the constructor),
-`README.md` (~line 208, the "permanent warmup arena" bullet). **Origin** B4.
-
-The arena announces itself at boot as
-
-```
-warmup arena up on <map> — 3 bots, FFA rules, instant respawn.
-```
-
-and there is no respawn in it. Playtest round 4's F7 took the dying out of the waiting area, and
-the class comment forty lines above that line says so at length: *"There is no instant respawn
-any more because there is nothing to respawn from."* `DamageSystem.combatantsInvulnerable` is the
-flag that made it true, and B4's tests now pin it. So the one line a reader meets **first** —
-in the server's own boot output — is the only place in the file that still states the pre-F7
-rule, and `README.md` repeats it in the bullet describing the same room.
-
-**Why B4 could not do it.** R1 makes every log line observable output: *"Every observable output
-stays the same ... log lines the harnesses read."* A refactor unit may not change one, and the
-oracles are there to catch it if it tries. `README.md` is out of scope for the whole programme
-under §10. Both halves of the fix are therefore outside what a unit is allowed to touch, which
-is what makes this a side task rather than a line B4 should have corrected in passing.
-
-**Scope** `grep -rn "instant respawn" src/ README.md` — there are five hits and only two are
-wrong. The three in comments (`WarmupMatch.ts`, `DamageSystem.ts`, `FreeForAll.ts`) are all
-*quoting §6.3's original wording in order to say it changed*, and must stay. The two to fix are
-the log line and the README bullet.
-
-**Verify** `npm run check` + SIM snapshot/compare. The SIM set does not read this line, so the
-expected result is `PASS` with the log text changed — which is also the proof that no harness
-parses it.
 
 ### #43 — The harness's "background build" warning tells you to set a variable that is already set · `open` *(opened 2026-10-19)*
 **Files** `src/server/skirmishHarness.ts` (~line 1451, the `background build` warning). **Origin**

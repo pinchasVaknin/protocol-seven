@@ -205,9 +205,9 @@ from that env file. Nothing is hardcoded.
 
 One process holds **two worlds**. There is no lobby, no queue and no ready-up.
 
-- A **permanent warmup arena** — the greybox room, free-for-all, damage live, instant respawn,
-  three bots and the target dummies. It exists from boot to shutdown and is where every player
-  lands. Clicking *Play Multiplayer* puts you in it within one round trip.
+- A **permanent warmup arena** — the greybox room, free-for-all, damage live but nobody
+  killable, three bots and the target dummies. It exists from boot to shutdown and is where
+  every player lands. Clicking *Play Multiplayer* puts you in it within one round trip.
 - At most one **live match**, allocated when a vote resolves and destroyed completely when it
   ends.
 

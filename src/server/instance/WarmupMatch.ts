@@ -99,7 +99,8 @@ export class WarmupMatch extends MatchInstance {
     this.setState(InstanceState.RUNNING, 'arena is always live');
     log.info(
       `warmup arena up on ${this.match.mapEntry.name} — ` +
-        `${this.match.bots.bots.length} bots, FFA rules, instant respawn.`,
+        `${this.match.bots.bots.length} bots, FFA rules, damage live but nobody killable, ` +
+        'nothing scored.',
     );
   }
   //#endregion

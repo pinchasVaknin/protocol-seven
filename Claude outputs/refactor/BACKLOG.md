@@ -9,8 +9,8 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**29 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. Three numbers are gone and
+**32 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. Three numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12.
 
@@ -43,6 +43,10 @@ and belong in its Step 2 plan.
 | ~~A23~~ | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | **closed** — A23 absorbed #1's shared half under an approved fence exception: `shortestAngle` is gone and both call sites moved. What is left of #1 is the three local copies, which are not the same function |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
+| C2 | `client/engine/` CameraRig, FrameLoop | #34 — reproduce the local camera jitter *before* refactoring these files |
+| C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
+| C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
+| C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
 Everything else below lands in a **completed** unit's files and therefore needs a session of its
@@ -583,6 +587,86 @@ shortens the range, so A14 pinned it instead. Pinned by `Range.test.ts`, "ignore
 override, unlike every other mode", which carries the `// Pins current behaviour; suspected bug:`
 comment — **fixing the code means rewriting that case in the same commit, with the reason.** Check
 first whether any harness depends on the range being un-shortenable.
+
+---
+
+## 5b. Field reports from play — the same kind of bug, with no test holding it
+
+Reported by the user on 2026-10-19, from **playing the game** rather than from writing a
+characterization test. That is the difference from §5: none of these is pinned, so no test records
+what happens today and no oracle will notice when it changes. All three are client-side and all
+three land in division C files, so each is bound to the unit that owns them (§1) and is done under
+that unit's approval, not here.
+
+### #33 — A killed target dummy leaves its bullet holes hanging in the air · `bound to C11`
+**Files** `src/client/combat/TargetDummy.ts`; `src/client/engine/Decals.ts` / `Fx.ts` (C4) only if
+the clear needs an API they do not have. **Origin** reported from play, 2026-10-19.
+
+Shoot a dummy until it dies and the holes stay where they were with nothing behind them.
+`TargetDummy.decals` reasoned about exactly this once, and only half way: it allows holes on
+`static` and `infinite` dummies as "the two that never move", and refuses them on `strafe`, `popup`
+and `faller` because `DecalField` places a mark in **world** space, so a hole punched in a moving
+target slides off it and reads as a miss hanging in mid-air. What the getter did not consider is
+that a dummy which never moves while *alive* still moves — or vanishes — when it **dies**:
+`updateVisual` sets `body.visible = false` on the frame health reaches zero, so a `static` dummy's
+mesh is gone and its world-space holes are not. `infinite` never dies, which leaves `static` as the
+one that reproduces; a `faller` tipping flat is the same picture for whoever re-enables its holes
+later.
+
+Note what this is **not**: the decal veto (`combat/BodyVolume` through `ClientMatch.insideBody`) is
+the veto for *drawn bodies* — players and bots — and dummies were never in it. `Ballistics` gates
+a dummy's impact on `Damageable.decals` instead, in one line (`Ballistics.ts:446`), and that gate
+does what it says. The defect is that nothing clears the marks afterwards.
+
+The fix is to drop a dummy's own decals when it dies, and again when it respawns — which needs
+`Decals`/`Fx` to be able to forget the marks placed on *one* target rather than all of them, an API
+they do not have today. **Decide inside C11** whether a per-target owner on a decal is worth it, or
+whether the cheap answer is to take `static` out of `TargetDummy.decals` and lose the holes on the
+range altogether.
+
+### #34 — The camera trembles while walking the arena · `bound to C2` · `needs reproduction`
+**Files** most likely `src/client/engine/CameraRig.ts` and `FrameLoop.ts` (C2); `CameraConfig.ts`
+and `CameraShake.ts` (C1, already completed) are the other candidates. **Origin** reported from
+play, 2026-10-19.
+
+Walking freely around the arena the view shakes slightly — small, continuous, and **local**: it is
+there with no server in the picture, so it is none of the remote-pose work f5d1e72 and df7d87b
+closed. Nothing is diagnosed and nothing is measured yet. Three candidates are worth separating
+first, because each wants a different fix:
+
+1. **The render-pass alpha.** A camera that reads the *simulation* pose on a frame that is not a
+   tick boundary gets a sawtooth at the beat between the frame rate and `DT` — the same class of
+   defect `MapRender.ts:429` records for props that "jitter and shake as you approach them".
+2. **A curve on the wrong clock.** Sway or landing shake advanced per *frame* instead of per `DT`
+   trembles at exactly the rate the frame time varies.
+3. **Float precision.** `Renderer.ts:125` already discusses this for ordinary combat range and says
+   twenty-four bits is two orders short; a camera far from the origin is where that shows.
+
+**C2 reproduces it with the frame stats up before it changes anything.** A trembling camera is the
+one defect a refactor can silently "fix" by reordering two assignments, after which nobody knows
+which of the three it was.
+
+### #35 — The arsenal's viewmodels are fetched on demand, so a grey primitive stands in · `bound to C23` · `needs a decision from the user`
+**Files** `src/client/Game.ts` — `warmWeaponAssets` and `warmWorldAssets`. The service itself,
+`src/client/weapons/WeaponAssetService.ts` (C9), already has every loader this needs. **Origin**
+reported from play, 2026-10-19.
+
+Land on a weapon in the Create Class editor, or carry a class edited between spawns into a match,
+and the grey primitive fallback stands in for as long as the file takes to arrive.
+`Game.warmWeaponAssets` warms **only the two equipped weapons'** full templates — its own doc
+comment says so and gives the reason — while `warmWorldAssets` warms the whole arsenal at *LOD*
+detail, the quarter-sized file a body carries, about nine megabytes for the fifteen. Nothing warms
+the arsenal's **viewmodels**, so the editor and the preview ask per weapon as the player reaches it
+(`LoadoutEditor.ts:999`, `WeaponPreview.ts:245`), and that request is what the grey is waiting on.
+
+The request is a global asynchronous preload at boot, so the weapons are already in memory. The
+mechanism exists — `warmWorldAssets` is that loop for the LODs — so the edit is a few lines, and
+the cost is the whole question: a full template is roughly four times an LOD, so warming the
+arsenal is tens of megabytes fetched on a connection that may not want them, against cache headers
+that keep them for a version. **Decide**: warm the whole arsenal at boot; warm it behind the menu
+once the equipped class is ready, which is the middle answer and costs nothing at the moment the
+player presses Play; or leave it on demand and spend the fix on a placeholder better than a grey
+primitive.
 
 ---
 

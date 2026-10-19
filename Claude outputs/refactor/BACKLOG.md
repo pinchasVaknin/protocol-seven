@@ -9,10 +9,10 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**38 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Ten numbers are gone and
+**36 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Twelve numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
-A13 and **#25** by A15, both on 2026-10-12, and **#40**, **#44** and **#47** on 2026-10-19, with **#39**, **#41** and **#46** closed together the same day — the leaked snapshot, the write-only field and the guard that cannot fire, all three in files B1 and B2 had already finished and no later unit could touch — and **#31** by B3, in the one file it owned.
+A13 and **#25** by A15, both on 2026-10-12, and **#40**, **#44** and **#47** on 2026-10-19, with **#39**, **#41** and **#46** closed together the same day — the leaked snapshot, the write-only field and the guard that cannot fire, all three in files B1 and B2 had already finished and no later unit could touch — and **#31** by B3, in the one file it owned. **#32** and **#48** went together on 2026-10-19 — five comments naming two things that had moved or gone, in files §10 and R3 keep out of every unit's reach; #32's own count was one short, and the fourth was in `skirmishHarness.ts`.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -1003,47 +1003,6 @@ commit at all.
 
 **Verify** `npm run check` + SIM snapshot/compare → `PASS`, plus `Snapshot.test.ts`'s
 *"names every piece of equipment and nothing else"*, which already pins every index both ways.
-
-### #48 — Two comments name a field that no longer exists · `open` *(opened 2026-10-19 by B3)*
-**Files** `src/client/debug/NetPanel.ts` (~line 34) and `src/shared/net/UrlFlags.ts` (~line 138).
-**Origin** B3.
-
-B3 deleted `Session.wantsRewindDebug` (#31), which nothing read. Two comments still explain the
-`?rewinddebug=1` chain by naming it as the place the flag lands:
-
-- `NetPanel.ts:34` — *"... and `Session.wantsRewindDebug` — which the whole `?rewinddebug=1` chain
-  exists ..."*
-- `UrlFlags.ts:138` — *"... and `Session.wantsRewindDebug` — the flag the whole chain exists to ..."*
-
-Both are still right about the chain and wrong about its end: the suffix is read, the name is
-stripped and the opt-in is **dropped** at the server's door. The sentence each one needs is that
-the server has nowhere to put it until a per-shot rewind feed exists on the wire.
-
-**Why B3 could not do it.** `NetPanel.ts` is **C13**'s file and `UrlFlags.ts` is **A20**'s, both
-outside B3's fence (R3). Exactly the shape of #32, and worth doing with it — that one is three
-comments naming `NetClient.neutralise` in `src/server/debug/`, which §10 keeps out of every
-unit's scope for good.
-
-### #32 — Three comments still name `NetClient.neutralise` · `open` *(opened 2026-10-14 by A22)*
-
-**Files** `src/server/debug/HeadlessClient.ts`, lines 345, 913 and 2091. **Origin** A22.
-
-A22 moved `neutralise` out of `NetClient` and into the new `CommandPipeline`, where the rest of
-the command-shaping lives. Three comments in `HeadlessClient.ts` refer to it by its old home —
-*"the bit as it survived `NetClient.neutralise`"*, *"`neutralise` zeroing `Btn.Scoreboard`"*, and
-*"`NetClient.neutralise` — so holding it changes no prediction, no hit and no score"*. They
-describe the rule correctly; only the owner's name has moved.
-
-Nothing is broken: these are prose, not calls, and the B6 behaviour they document is pinned by
-`NetClient.test.ts` (*"strips movement and actions while input is frozen, and keeps the view"*)
-and by `CommandPipeline.neutralise`'s own JSDoc, which keeps the whole B6 paragraph.
-
-**Why A22 could not do it.** `src/server/debug/` is out of scope for the whole refactor
-programme (REFACTOR-PROMPT.md §10: the debug folders and the harnesses are the instruments), so
-the unit that caused the drift is the one unit not allowed to fix it.
-
-**The work**: change `NetClient.neutralise` to `CommandPipeline.neutralise` in those three
-comments. No behaviour, no test, no oracle — `npm run check` is enough.
 
 ### The missing item
 The chat list was counted as 24 and this file received 22 of them. Neither #19 (folded into #2) nor

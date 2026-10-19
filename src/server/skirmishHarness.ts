@@ -1650,7 +1650,7 @@ function reportFlow(input: FlowReportInput): number {
    * - **B13** — the quick class selector up while alive and outside the pre-match freeze is
    *   the panel outliving the respawn it belongs to. Blocking, because a panel that stays up
    *   eats the digit keys for the rest of the match, which is round three's other half.
-   * - **B6** — Tab surviving `NetClient.neutralise` while dead. Asserted as a *presence*
+   * - **B6** — Tab surviving `CommandPipeline.neutralise` while dead. Asserted as a *presence*
    *   rather than an absence: it was zero before this session, and the death screen is exactly
    *   when the board is wanted.
    */

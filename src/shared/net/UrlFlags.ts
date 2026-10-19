@@ -134,15 +134,17 @@ export const UNDOCUMENTED_URL_KEYS: ReadonlyMap<string, string> = new Map([
    * Out of the README's table as of round 5, and the reason is the third flag B9 turned up.
    *
    * The README said it *"asks the server for the per-shot rewind feed"*. There is no such feed:
-   * no message on the wire carries one, `NetPanel` computes all three of its Rewind fields from
-   * the client's own RTT, and `Session.wantsRewindDebug` — the flag the whole chain exists to
-   * set — is **written and never read**, on the server or anywhere else. The plumbing is real
-   * and the destination is not, so the honest place for the key is here rather than in a table
-   * of things the game does.
+   * no message on the wire carries one, and `NetPanel` computes all three of its Rewind fields
+   * from the client's own RTT. The server used to hold the request in a `wantsRewindDebug` flag
+   * on the session that **nothing ever read**, and B3 deleted that flag (`BACKLOG` #31,
+   * 2026-10-19): `readIncomingName` below strips the suffix, and the server understands the
+   * opt-in and drops it. The plumbing is real and the destination is not, so the honest place
+   * for the key is here rather than in a table of things the game does.
    *
-   * The scaffolding is kept rather than ripped out: `HandshakeOptions`, `NetClient` and
-   * `HeadlessClient` all carry the request, and it is what the feed will be built on. Put the
-   * row back in the README on the day something reads it.
+   * The scaffolding on the asking side is kept rather than ripped out: `withRewindSuffix`,
+   * `HandshakeOptions`, `NetClient` and `HeadlessClient` all carry the request, and it is what
+   * the feed will be built on. What is gone is only the server's dead end. Put the row back in
+   * the README on the day something reads it.
    */
   ['rewinddebug', 'shared/net/NetClient — asks for a per-shot rewind feed that does not exist yet; see PLAN.md, round 5 B9'],
   ['harness', 'client/debug/BotHarness — the in-browser bot-match harness, a developer instrument'],

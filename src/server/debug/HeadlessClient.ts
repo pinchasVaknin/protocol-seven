@@ -353,7 +353,7 @@ export interface HeadlessClientReport {
   readonly quickLoadoutAlive: number;
   readonly quickLoadoutWindows: number;
   /**
-   * B6. `scoreboardHeldTicks` is the bit as it survived `NetClient.neutralise` and reached the
+   * B6. `scoreboardHeldTicks` is the bit as it survived `CommandPipeline.neutralise` and reached the
    * sim; `...WhileDead` is the same count restricted to the ticks the server says we are dead,
    * which is the number that was zero before this session and is the whole of the report.
    */
@@ -924,9 +924,9 @@ export class HeadlessClient {
        *
        * `applyNonReplayed` is where `MatchWorld` hands the command to `ClientMatch`, and the
        * command it receives is the **neutralised** one — which is the entire point. B6 was
-       * `neutralise` zeroing `Btn.Scoreboard` along with everything else while dead, so the
-       * only place that can see the bug is the far side of that call. Run once per real tick
-       * and never on a replay, which is also what makes the tick counts honest.
+       * `CommandPipeline.neutralise` zeroing `Btn.Scoreboard` along with everything else while
+       * dead, so the only place that can see the bug is the far side of that call. Run once per
+       * real tick and never on a replay, which is also what makes the tick counts honest.
        */
       applyNonReplayed: (cmd) => this.observeSurfaces(cmd),
       /**
@@ -2139,7 +2139,7 @@ export class HeadlessClient {
      * of a 4.5 s death rather than sampling one level.
      *
      * It perturbs nothing. `Btn.Scoreboard` drives no simulation on either side — see
-     * `NetClient.neutralise` — so holding it changes no prediction, no hit and no score.
+     * `CommandPipeline.neutralise` — so holding it changes no prediction, no hit and no score.
      */
     if (tick % 240 < 120) buttons |= Btn.Scoreboard;
 

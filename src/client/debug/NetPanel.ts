@@ -31,11 +31,13 @@ import { setField, type DebugOverlay } from './DebugOverlay';
  *
  * This comment used to end *"plus the per-shot record the server sends back to a client that
  * asked for it with `?rewinddebug=1`"*. **There is no such record.** No message on the wire
- * carries one, and `Session.wantsRewindDebug` — which the whole `?rewinddebug=1` chain exists
- * to set — is written and never read, on the server or anywhere else. The flag is out of the
- * README's table until something reads it; see `shared/net/UrlFlags`. A comment describing a
- * feed the code cannot receive is the thing that let this look finished for a milestone, which
- * is the same finding B7 made about `ModeStateHash`.
+ * carries one, and the server no longer keeps anywhere to put the request: it held a
+ * `wantsRewindDebug` flag on the session that nothing ever read, and B3 deleted it (`BACKLOG`
+ * #31, 2026-10-19). `readIncomingName` still strips the `#rw` suffix off the callsign, so the
+ * opt-in is understood and then dropped at the door. The flag is out of the README's table
+ * until something reads it; see `shared/net/UrlFlags`. A comment describing a feed the code
+ * cannot receive is the thing that let this look finished for a milestone, which is the same
+ * finding B7 made about `ModeStateHash`.
  *
  * Everything updates on the overlay's 15 Hz text hook rather than per frame. S7's panels
  * must not show up in the frame times they exist to report.

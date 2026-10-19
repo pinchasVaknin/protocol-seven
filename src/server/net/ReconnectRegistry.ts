@@ -1,13 +1,3 @@
-import { randomBytes } from 'node:crypto';
-import { nowMs } from '../../shared/core/Clock';
-import { logger } from '../../shared/core/Log';
-import type { LoadoutSlot } from '../../shared/meta/Loadouts';
-import type { MatchId } from '../../shared/net/Skirmish';
-import { RECONNECT_GRACE_MS, RECONNECT_TOKEN_BYTES } from '../../shared/net/Protocol';
-import type { PlayerId } from './Session';
-
-const log = logger('reconnect');
-
 /**
  * Seats held open for players who have dropped (M11 Gate B, playtest round 4, F8).
  *
@@ -61,6 +51,20 @@ const log = logger('reconnect');
  * and the second is an ordinary join with nothing to say. A sweeping timer would delete the
  * evidence that the distinction rests on, and would need a second structure to remember it.
  */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { randomBytes } from 'node:crypto';
+import { nowMs } from '../../shared/core/Clock';
+import { logger } from '../../shared/core/Log';
+import type { LoadoutSlot } from '../../shared/meta/Loadouts';
+import type { MatchId } from '../../shared/net/Skirmish';
+import { RECONNECT_GRACE_MS, RECONNECT_TOKEN_BYTES } from '../../shared/net/Protocol';
+import type { PlayerId } from './Session';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface Reservation {
   /** The connection that left. Kept for the log, so a return can be tied to a departure. */
   readonly playerId: PlayerId;
@@ -107,8 +111,18 @@ type ClaimFailure = 'unknown' | 'expired';
 export type ClaimResult =
   | { readonly ok: true; readonly reservation: Reservation }
   | { readonly ok: false; readonly why: ClaimFailure };
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('reconnect');
+//#endregion
+
+// ================================== CLASS ReconnectRegistry =================================== \\
+//#region Class ReconnectRegistry
 export class ReconnectRegistry {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly byToken = new Map<string, Reservation>();
 
   /** Reservations made, claimed, and refused for each reason. The §7 numbers. */
@@ -116,7 +130,10 @@ export class ReconnectRegistry {
   claimed = 0;
   expiredClaims = 0;
   unknownClaims = 0;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** How many seats are being held right now, expired ones included. Watched by the leak run. */
   get size(): number {
     return this.byToken.size;
@@ -155,7 +172,7 @@ export class ReconnectRegistry {
   /**
    * Hold this seat for whoever holds this token, until the grace expires.
    *
-   * Called from `onLeave`, and only for a seat in a running live match — see the class comment
+   * Called from `onLeave`, and only for a seat in a running live match — see the file comment
    * for why an arena seat reserves nothing.
    */
   reserve(token: Uint8Array, seat: Omit<Reservation, 'expiresAtMs'>): void {
@@ -224,8 +241,12 @@ export class ReconnectRegistry {
   clear(): void {
     this.byToken.clear();
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /**
  * A token as a map key, or null if it is not one.
  *
@@ -239,3 +260,4 @@ function keyOf(token: Uint8Array | null | undefined): string | null {
   for (const b of token) out += b.toString(16).padStart(2, '0');
   return out;
 }
+//#endregion

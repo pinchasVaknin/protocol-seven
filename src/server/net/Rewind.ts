@@ -1,14 +1,3 @@
-import type { HitboxRig } from '../../shared/combat/HitboxRig';
-import { DT } from '../../shared/core/Loop';
-import { MAX_REWIND_MS } from '../../shared/net/Protocol';
-import {
-  makeRigSnapshot,
-  restoreRig,
-  saveRig,
-  RigHistory,
-  type RigSnapshot,
-} from './RigHistory';
-
 /**
  * Server-side rewind: lag compensation for hitscan (M10, S4.13).
  *
@@ -49,6 +38,22 @@ import {
  * defender sees them, bounded by the cap and the interpolation delay.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { HitboxRig } from '../../shared/combat/HitboxRig';
+import { DT } from '../../shared/core/Loop';
+import { MAX_REWIND_MS } from '../../shared/net/Protocol';
+import {
+  makeRigSnapshot,
+  restoreRig,
+  saveRig,
+  RigHistory,
+  type RigSnapshot,
+} from './RigHistory';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * One entity's rewindable state.
  *
@@ -80,21 +85,13 @@ export interface RewindRecord {
   viewTick: number;
   serverTick: number;
 }
+//#endregion
 
-function makeRewindRecord(): RewindRecord {
-  return {
-    requestedMs: 0,
-    appliedMs: 0,
-    appliedTicks: 0,
-    clamped: false,
-    moved: 0,
-    missed: 0,
-    viewTick: 0,
-    serverTick: 0,
-  };
-}
-
+// ======================================== CLASS Rewind ======================================== \\
+//#region Class Rewind
 export class Rewind {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Shots whose rewind hit the cap, since process start. Reported by the metrics (S7). */
   clampedShots = 0;
   /** Shots for which any rewind at all was applied. */
@@ -110,7 +107,10 @@ export class Rewind {
   private readonly saved = new Map<number, RigSnapshot>();
   private readonly pool: RigSnapshot[] = [];
   private active = false;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Mean rewind applied across every shot that was rewound, ms. */
   get meanAppliedMs(): number {
     return this.rewoundShots === 0 ? 0 : this.appliedMsTotal / this.rewoundShots;
@@ -167,15 +167,7 @@ export class Rewind {
    */
   begin(shooterId: number, serverTick: number, viewLagMs: number): RewindRecord {
     const rec = this.last;
-    rec.serverTick = serverTick;
-    rec.requestedMs = viewLagMs;
-    rec.clamped = viewLagMs > MAX_REWIND_MS;
-    const appliedMs = rec.clamped ? MAX_REWIND_MS : Math.max(0, viewLagMs);
-    rec.appliedMs = appliedMs;
-    rec.appliedTicks = Math.round(appliedMs / (DT * 1000));
-    rec.viewTick = serverTick - rec.appliedTicks;
-    rec.moved = 0;
-    rec.missed = 0;
+    this.plan(rec, serverTick, viewLagMs);
 
     if (rec.clamped) this.clampedShots++;
 
@@ -189,17 +181,9 @@ export class Rewind {
 
     this.active = true;
     this.rewoundShots++;
-    this.appliedMsTotal += appliedMs;
+    this.appliedMsTotal += rec.appliedMs;
 
-    for (const e of this.entities) {
-      if (e.entityId === shooterId) continue;
-      const slot = this.take();
-      saveRig(e.rig, slot);
-      this.saved.set(e.entityId, slot);
-      const history = this.histories.get(e.entityId);
-      if (history !== undefined && history.applyAt(e.rig, rec.viewTick)) rec.moved++;
-      else rec.missed++;
-    }
+    this.moveOthersTo(shooterId, rec);
     return rec;
   }
 
@@ -220,8 +204,66 @@ export class Rewind {
   presentOf(entityId: number): RigSnapshot | undefined {
     return this.saved.get(entityId);
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * How far back this shot goes, written into the record the caller already holds.
+   *
+   * The cap is applied here and nowhere else, so `requestedMs` and `appliedMs` are both in the
+   * record and the difference between them is the thing the S7 panel reports.
+   */
+  private plan(rec: RewindRecord, serverTick: number, viewLagMs: number): void {
+    rec.serverTick = serverTick;
+    rec.requestedMs = viewLagMs;
+    rec.clamped = viewLagMs > MAX_REWIND_MS;
+    const appliedMs = rec.clamped ? MAX_REWIND_MS : Math.max(0, viewLagMs);
+    rec.appliedMs = appliedMs;
+    rec.appliedTicks = Math.round(appliedMs / (DT * 1000));
+    rec.viewTick = serverTick - rec.appliedTicks;
+    rec.moved = 0;
+    rec.missed = 0;
+  }
+
+  /**
+   * Move every rig but the shooter's to the view tick, keeping the present aside.
+   *
+   * An entity whose history does not hold the tick is counted and left where it is: that is
+   * `RigHistory.applyAt`'s degradation, and no compensation is better than compensation to a
+   * pose that was never real.
+   */
+  private moveOthersTo(shooterId: number, rec: RewindRecord): void {
+    for (const e of this.entities) {
+      if (e.entityId === shooterId) continue;
+      const slot = this.take();
+      saveRig(e.rig, slot);
+      this.saved.set(e.entityId, slot);
+      const history = this.histories.get(e.entityId);
+      if (history !== undefined && history.applyAt(e.rig, rec.viewTick)) rec.moved++;
+      else rec.missed++;
+    }
+  }
 
   private take(): RigSnapshot {
     return this.pool.pop() ?? makeRigSnapshot();
   }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function makeRewindRecord(): RewindRecord {
+  return {
+    requestedMs: 0,
+    appliedMs: 0,
+    appliedTicks: 0,
+    clamped: false,
+    moved: 0,
+    missed: 0,
+    viewTick: 0,
+    serverTick: 0,
+  };
+}
+//#endregion

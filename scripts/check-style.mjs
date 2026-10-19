@@ -323,6 +323,14 @@ const FINISHED = {
   A24: [
     'src/shared/cinematic/IntroPlan.ts',
   ],
+  B1: [
+    'src/server/net/ClientAddress.ts',
+    'src/server/net/InputBuffer.ts',
+    'src/server/net/ReconnectRegistry.ts',
+    'src/server/net/Rewind.ts',
+    'src/server/net/RigHistory.ts',
+    'src/server/net/Validation.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

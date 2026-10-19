@@ -1,5 +1,3 @@
-import { BlockList, isIP, isIPv4 } from 'node:net';
-
 /**
  * Who is on the other end of a connection, and whether their page may open one (security audit
  * 2026-10-04, part 3: findings S2 and S7).
@@ -29,20 +27,13 @@ import { BlockList, isIP, isIPv4 } from 'node:net';
  * a number that is Render's to change. A header the edge sets whole is the stable answer.
  */
 
-/**
- * Where the platform's proxies live: loopback, the three RFC 1918 blocks, carrier-grade NAT
- * (some platforms' internal range), and IPv6 loopback, unique-local and link-local.
- */
-const INTERNAL = new BlockList();
-INTERNAL.addSubnet('127.0.0.0', 8, 'ipv4');
-INTERNAL.addSubnet('10.0.0.0', 8, 'ipv4');
-INTERNAL.addSubnet('172.16.0.0', 12, 'ipv4');
-INTERNAL.addSubnet('192.168.0.0', 16, 'ipv4');
-INTERNAL.addSubnet('100.64.0.0', 10, 'ipv4');
-INTERNAL.addAddress('::1', 'ipv6');
-INTERNAL.addSubnet('fc00::', 7, 'ipv6');
-INTERNAL.addSubnet('fe80::', 10, 'ipv6');
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { BlockList, isIP, isIPv4 } from 'node:net';
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * IPv4-mapped IPv6 (`::ffff:1.2.3.4`) collapsed to the v4 form, and an IPv6 zone dropped.
  *
@@ -98,17 +89,6 @@ export function addressKey(ip: string): string {
   return groups === null ? ip : `${groups.slice(0, 4).join(':')}::/64`;
 }
 
-function expandIpv6(ip: string): string[] | null {
-  const halves = ip.split('::');
-  if (halves.length > 2) return null;
-  const head = halves[0] === '' || halves[0] === undefined ? [] : halves[0].split(':');
-  const tail = halves.length === 2 && halves[1] !== '' && halves[1] !== undefined ? halves[1].split(':') : [];
-  const missing = 8 - head.length - tail.length;
-  if (missing < 0 || (halves.length === 1 && missing !== 0)) return null;
-  const all = [...head, ...new Array<string>(missing).fill('0'), ...tail];
-  return all.map((g) => (g === '' ? '0' : g.replace(/^0+(?=.)/, '')));
-}
-
 /**
  * Whether a page at `origin` may open a socket here (S7).
  *
@@ -148,6 +128,20 @@ export function originAllowed(
   if (isLoopbackHostname(url.hostname)) return true;
   return allowed.includes(url.origin);
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function expandIpv6(ip: string): string[] | null {
+  const halves = ip.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] === '' || halves[0] === undefined ? [] : halves[0].split(':');
+  const tail = halves.length === 2 && halves[1] !== '' && halves[1] !== undefined ? halves[1].split(':') : [];
+  const missing = 8 - head.length - tail.length;
+  if (missing < 0 || (halves.length === 1 && missing !== 0)) return null;
+  const all = [...head, ...new Array<string>(missing).fill('0'), ...tail];
+  return all.map((g) => (g === '' ? '0' : g.replace(/^0+(?=.)/, '')));
+}
 
 function isLoopbackHostname(hostname: string): boolean {
   if (hostname === 'localhost' || hostname.endsWith('.localhost')) return true;
@@ -155,3 +149,25 @@ function isLoopbackHostname(hostname: string): boolean {
   if (bare === '::1') return true;
   return isIPv4(bare) && bare.startsWith('127.');
 }
+//#endregion
+
+// =================================== MODULE INITIALISATION ==================================== \\
+//#region Module Initialisation
+/**
+ * Where the platform's proxies live: loopback, the three RFC 1918 blocks, carrier-grade NAT
+ * (some platforms' internal range), and IPv6 loopback, unique-local and link-local.
+ *
+ * Declared here with the calls that fill it, because a `BlockList` is built by eight statements
+ * with side effects and splitting the declaration from them would leave a reader holding half
+ * of it (section 3.2).
+ */
+const INTERNAL = new BlockList();
+INTERNAL.addSubnet('127.0.0.0', 8, 'ipv4');
+INTERNAL.addSubnet('10.0.0.0', 8, 'ipv4');
+INTERNAL.addSubnet('172.16.0.0', 12, 'ipv4');
+INTERNAL.addSubnet('192.168.0.0', 16, 'ipv4');
+INTERNAL.addSubnet('100.64.0.0', 10, 'ipv4');
+INTERNAL.addAddress('::1', 'ipv6');
+INTERNAL.addSubnet('fc00::', 7, 'ipv6');
+INTERNAL.addSubnet('fe80::', 10, 'ipv6');
+//#endregion

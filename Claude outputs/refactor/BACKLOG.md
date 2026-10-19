@@ -9,8 +9,8 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**32 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. Three numbers are gone and
+**38 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B. Three numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12.
 
@@ -43,6 +43,7 @@ and belong in its Step 2 plan.
 | ~~A23~~ | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | **closed** — A23 absorbed #1's shared half under an approved fence exception: `shortestAngle` is gone and both call sites moved. What is left of #1 is the three local copies, which are not the same function |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
+| B2, B3, B4, B5, B6, B7, B8 | — (the NET oracle, not a file) | #40 — **read before taking the NET baseline**: §6's command never reaches F8 |
 | C2 | `client/engine/` CameraRig, FrameLoop | #34 — reproduce the local camera jitter *before* refactoring these files |
 | C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
 | C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
@@ -570,6 +571,47 @@ weapon's authored figure cannot be restored through the UI. **Decide**: widen th
 `WEAPON_TUNABLES` to contain the authored values, or change the weapon's base values. The second is
 a balance change.
 
+### #38 — The input ring's accept window is one tick wider than the ring, and narrower than the skew limit · `open` *(opened 2026-10-19 by B1)*
+**Files** `src/server/net/InputBuffer.ts`. **Origin** B1.
+
+Two defects in one window, both pinned by `InputBuffer.test.ts` and both about the same two
+numbers: `RING = 128` and `MAX_TICK_SKEW = 120`.
+
+1. **The two ends of the window share a slot.** `accept` takes any tick in
+   `[currentTick - 64, currentTick + 64]`, which is **129 ticks over 128 slots**, and
+   `(c - 64) % 128 === (c + 64) % 128`. A command for a tick 64 ahead silently overwrites one
+   for a tick 64 behind; the earlier tick then starves and repeats instead. Pinned by *"loses a
+   command 64 ticks behind when one 64 ticks ahead claims its slot"*.
+2. **The validator is wider than the buffer.** `validateCommand` accepts a skew of up to 120
+   ticks, so a command 65–120 ticks from the present passes the boundary and is then counted
+   here as `outOfWindow`. The file's own comment claimed the opposite — *"comfortably past
+   `MAX_TICK_SKEW` in both directions"* — and **B1 corrected that comment**, which is text, not
+   behaviour. Pinned by *"drops a command the validator accepted, because the skew limit is
+   wider than the ring"*.
+
+**Why B1 could not fix it.** Either fix changes which command survives, which is behaviour
+(R1): narrowing the window to `RING / 2 - 1` drops a tick that is accepted today, and widening
+the ring or narrowing `MAX_TICK_SKEW` changes what the wire admits — and `MAX_TICK_SKEW` lives
+in `src/shared/net/Protocol.ts`, which is **A20's** file and outside B1's fence (R3). The two
+pinning tests carry `// Pins current behaviour; suspected bug:`, so fixing either means
+rewriting its case in the same commit, with the reason.
+
+### #39 — `Rewind.end()` scans the roster instead of what it saved · `open` *(opened 2026-10-19 by B1)* · *not pinned: unreachable today*
+**Files** `src/server/net/Rewind.ts`. **Origin** B1.
+
+`begin` saves a snapshot per rewound entity into `this.saved` and `end` iterates
+`this.entities` to put them back. An entity unregistered between the two would keep its
+snapshot: it is never restored (harmless — the entity is gone) and never returned to `pool`,
+which `saved.clear()` then drops, so the pool loses one object per occurrence. Iterating
+`this.saved` would be both correct and cheaper, since it is exactly the set that was moved.
+
+**Why B1 did not change it, and why no test pins it.** `begin` and `end` bracket one
+synchronous `Ballistics` trace, so nothing can unregister in between and the defect is
+unreachable from any caller that exists — a characterization test would have to call
+`unregister` between them, which would pin a sequence the server never performs. Recorded here
+instead, so the next reader of `end` does not have to re-derive that it is safe only by
+accident of the call site.
+
 ### #24 — `Range` ignores the harness clock override · `open` *(opened 2026-10-12 by A14)*
 **Files** `src/shared/modes/Range.ts`. **Origin** A14.
 
@@ -672,6 +714,52 @@ primitive.
 
 ## 6. Documentation and housekeeping
 
+### #40 — §6's NET oracle command never reaches the reconnect flow · `open` *(opened 2026-10-19 by B1)*
+**Files** `REFACTOR-PROMPT.md` §6, and `Claude outputs/refactor/oracles.mjs` (line 129, the
+`spawnSync` of the harness). **Origin** B1, Step 0.
+
+§6 defines the NET oracle as `skirmishHarness --cycles 1 --drop-return 1` and requires
+`FLOW CHECK PASSED.` **On a clean tree that command fails**, and B1 hit it before touching any
+code: the arena cycle takes 60 s, the live match then runs past the end of the harness's run,
+and because `--drop-return` needs a live match that has *ended* for its return to close, no
+cycle completes —
+
+```
+ERR 201.079s skirmish  FLOW CHECK FAILED: --drop-return 1 was set and no drop/return cycle
+                       completed — either no live match ran long enough or nobody came back (F8)
+```
+
+The harness itself prints the remedy three times (*"Shorten MATCH_ROUND_SECONDS to reach it"*),
+and with `MATCH_ROUND_SECONDS=150` the same command passes and reports the real figures:
+*"reconnect: 1 cycle(s), 1 kept the seat, 1 kept the score, 1 resynced ... registry 1 reserved /
+1 claimed / 0 expired / 0 unknown, 0 still held"*. So §6's recipe silently runs **three checks
+fewer** than it claims — the reconnect cycle, the post-match hold and the final scoreboard are
+all reported `NOT EXERCISED` / `NOT SAMPLED`.
+
+B1 took its NET baseline with `MATCH_ROUND_SECONDS=150`, before and after, with the user's
+approval and recorded in its report. **Every remaining SIM + NET unit (B2–B8) should do the
+same** until §6 is corrected, which is the work here: put the environment variable in §6's
+table, or in `oracles.mjs` so the snapshot carries it.
+
+**Why B1 could not do it.** `REFACTOR-PROMPT.md` and `oracles.mjs` are the programme's
+instruments, not a unit's files (R3, and §10 keeps the harnesses out of scope), so the unit
+that found it is not allowed to change either.
+
+### #41 — `RigHistory.newest` is written and never read · `open` *(opened 2026-10-19 by B1)*
+**Files** `src/server/net/RigHistory.ts`. **Origin** B1.
+
+`push` maintains it (`if (tick > this.newest) this.newest = tick;`) and `fill` sets it, and
+**nothing anywhere reads it** — not the class, not `Rewind`, not the panels; `has` and `applyAt`
+both work off the per-slot tick tag instead, which is what makes a stale slot detectable. The
+same shape as #31, one file over: two assignments on the per-entity per-tick path keeping a
+number for a reader that does not exist.
+
+**Why B1 did not delete it.** It is a private field, so removing it is neither an API change
+(R2) nor a behaviour change (R1) — but it was not in the unit's approved Step 2 plan, and
+deleting a field on a hot path is exactly the kind of edit this programme does under an
+approval rather than in passing. One line of deletion, one line out of `push` and one out of
+`fill`, and the oracles should not move.
+
 ### #4 — Fix the false comment about the ammo stations in the `props.ts` generator · `open`
 **Files** the script that generates `src/shared/world/maps/props.ts` (find it under `scripts/`).
 **Origin** A3b. A comment in the generator states something untrue about the ammo stations, which
@@ -711,6 +799,34 @@ immune, because its figures go through `toFixed(3)`/`toFixed(4)`.
 ---
 
 ## 6b. Duplication that spans units — opened by A16
+
+### #36 — One ring index, written twice in one unit · `open` *(opened 2026-10-19 by B1)*
+**Files** `src/server/net/InputBuffer.ts` (`slotIndex`) and `src/server/net/RigHistory.ts`
+(`index`). **Origin** B1.
+
+The same wrap-safe expression, `((tick % SIZE) + SIZE) % SIZE`, with a different constant: 128
+ticks of commands and 60 ticks of rig history. B1 removed the *within-file* duplication —
+`InputBuffer` had it inline twice — so what is left is two one-line functions that differ only
+in their modulus, and a shared `ringIndex(tick, size)` would be the honest form.
+
+**Why B1 could not do it.** There is no home for it inside the fence. A new file needs a
+**design** unit (R3) and B1 is not one; exporting one file's helper for the other to import adds
+a public export (R2) and points `RigHistory` at `InputBuffer` or the reverse, which is a
+dependency between two modules that share nothing else. The natural home is a shared ring helper
+in `src/shared/core/`, which is **A1**'s territory. Worth doing with #37, which has the same
+shape and the same destination.
+
+### #37 — `InputBuffer.blank()` is a second `makeCommand()` · `open` *(opened 2026-10-19 by B1)*
+**Files** `src/server/net/InputBuffer.ts` (`blank`) and `src/shared/core/InputCommand.ts`
+(`makeCommand`, not exported). **Origin** B1.
+
+Both build the same eight-field zero command, and `InputCommand.ts` already has one for
+`CommandRing`'s backing store. A field added to `MutableInputCommand` has to be remembered in
+two places, in two partitions.
+
+**Why B1 could not do it.** `makeCommand` is private to `InputCommand.ts` and exporting it is an
+API change in **A1**'s file, outside B1's fence (R2, R3). The edit is one export and one import,
+but it belongs to whoever owns that file.
 
 ### #26 — Unify the downward ground probe · `open` *(opened 2026-10-12 by A16)*
 

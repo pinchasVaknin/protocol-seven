@@ -1,6 +1,3 @@
-import { LIVE_BUTTONS, type MutableInputCommand } from '../../shared/core/InputCommand';
-import { MAX_TICK_SKEW } from '../../shared/net/Protocol';
-
 /**
  * Boundary validation on everything a client sends (M10, S4.16).
  *
@@ -32,6 +29,21 @@ import { MAX_TICK_SKEW } from '../../shared/net/Protocol';
  * is bandwidth and CPU rather than gameplay, and that is `rateLimit` below.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { LIVE_BUTTONS, type MutableInputCommand } from '../../shared/core/InputCommand';
+import { MAX_TICK_SKEW } from '../../shared/net/Protocol';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type RejectReason = (typeof Reject)[keyof typeof Reject];
+
+export type BudgetedMessage = keyof typeof MESSAGE_BUDGETS;
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * ## On "reject impossible yaw deltas"
  *
@@ -74,23 +86,197 @@ export const Reject = {
   OutOfOrder: 8,
 } as const;
 
-export type RejectReason = (typeof Reject)[keyof typeof Reject];
-
-const REJECT_NAMES: Readonly<Record<number, string>> = {
-  [Reject.None]: 'none',
-  [Reject.TickSkew]: 'tick-skew',
-  [Reject.NotFinite]: 'not-finite',
-  [Reject.OutOfRange]: 'out-of-range',
-  [Reject.YawRate]: 'yaw-rate',
-  [Reject.RateLimit]: 'rate-limit',
-  [Reject.Oversize]: 'oversize',
-  [Reject.Malformed]: 'malformed',
-  [Reject.OutOfOrder]: 'out-of-order',
-};
+/**
+ * The name the metrics print for each reason, derived from the reason itself.
+ *
+ * It was a second table beside `Reject`, nine strings written by hand — so a reason added to
+ * one of them could be, and `YawRate` already shows what the pair looks like under change:
+ * the code is retired and both halves still carry it. The names were exactly the kebab-case
+ * of the keys, so they are computed from the keys and there is one table again.
+ *
+ * Pinned by `Validation.test.ts`, which asserts all eight reportable strings: this is the
+ * server's S7 output, so the names are an interface even though the table is private.
+ */
+const REJECT_NAMES: Readonly<Record<number, string>> = buildRejectNames();
 
 /** Pitch is clamped to +/-89 deg at the sampler (S4.2); anything past this is not a client. */
 const PITCH_LIMIT = (89.5 * Math.PI) / 180;
 
+/**
+ * The per-kind budgets (S3). Each is generous to a person and small to a loop.
+ *
+ * - **Class**: the quick selector is one key per class, so three at once is a burst a hand
+ *   makes; one a second after that. Excess is *held*, not dropped — see `Session` — so the class
+ *   the player ends on is always the one the server simulates.
+ * - **Vote**: a click per option, changeable inside the window. Held the same way.
+ * - **Streak**: a key per streak. The headless client asks twice a second; a person less.
+ * - **Ready** is once per match, and **cheat** is typed by hand.
+ */
+export const MESSAGE_BUDGETS = {
+  loadout: { burst: 3, perSecond: 1 },
+  vote: { burst: 4, perSecond: 2 },
+  streak: { burst: 6, perSecond: 3 },
+  ready: { burst: 3, perSecond: 1 },
+  cheat: { burst: 3, perSecond: 1 },
+} as const;
+
+/**
+ * Warning lines per connection: ten at once, then one every five seconds.
+ *
+ * A warning that a client can provoke without being disconnected is a line per message, and a
+ * client can send 240 messages a second — into a log the operator pays to keep and has to read.
+ * What is suppressed is counted and reported on the next line that is written, so the log still
+ * says how much was missed.
+ */
+export const WARN_BUDGET = { burst: 10, perSecond: 0.2 } as const;
+//#endregion
+
+// ===================================== CLASS RateLimiter ====================================== \\
+//#region Class RateLimiter
+/**
+ * A sliding-window message rate limit.
+ *
+ * Counts within one-second buckets rather than keeping timestamps: a flooding client is
+ * exactly the case where an array of arrival times would be the attack. Two buckets are kept
+ * so the limit is not resettable by timing a burst across a boundary.
+ */
+export class RateLimiter {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
+  private currentSecond = -1;
+  private current = 0;
+  private previous = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  constructor(private readonly perSecond: number) {}
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  /** True if this message is within the limit. Counts it either way. */
+  allow(nowMs: number): boolean {
+    const second = Math.floor(nowMs / 1000);
+    if (second !== this.currentSecond) {
+      // A gap of more than one second means the previous bucket is stale, not adjacent.
+      this.previous = second === this.currentSecond + 1 ? this.current : 0;
+      this.current = 0;
+      this.currentSecond = second;
+    }
+    this.current++;
+    // Weight the previous bucket by how much of it is still inside the trailing second.
+    const fraction = 1 - ((nowMs % 1000) / 1000);
+    const windowed = this.current + this.previous * fraction;
+    return windowed <= this.perSecond;
+  }
+
+  reset(): void {
+    this.currentSecond = -1;
+    this.current = 0;
+    this.previous = 0;
+  }
+  //#endregion
+}
+//#endregion
+
+// ===================================== CLASS TokenBucket ====================================== \\
+//#region Class TokenBucket
+/**
+ * A budget for one kind of message: a burst, then a steady rate (security audit 2026-10-04, S3).
+ *
+ * `RateLimiter` above bounds *how many frames* arrive, and that is bandwidth. It does not bound
+ * what a frame costs once it is in, and the messages differ by orders of magnitude: a command is
+ * a slot write, a class is a validation, a `resolveLoadout` and a log line, and a vote was a
+ * broadcast to every seat. 240 of any of them a second is within the link's limit, so each
+ * kind that does work gets a budget of its own.
+ *
+ * A token bucket rather than a window because the two numbers mean different things here: the
+ * burst is what a human does in a moment (pressing 1, 2, 3 on the class selector), the rate is
+ * what a human sustains, and a window has only one of them.
+ */
+export class TokenBucket {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
+  private tokens: number;
+  private lastMs = Number.NaN;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  constructor(
+    private readonly burst: number,
+    private readonly perSecond: number,
+  ) {
+    this.tokens = burst;
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  /** Spend one token if there is one. False means over budget; nothing is spent. */
+  take(nowMs: number): boolean {
+    this.refill(nowMs);
+    if (this.tokens < 1) return false;
+    this.tokens -= 1;
+    return true;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private refill(nowMs: number): void {
+    if (Number.isFinite(this.lastMs)) {
+      // Clamped at zero: a clock that steps backwards earns nothing rather than draining.
+      const elapsedMs = Math.max(0, nowMs - this.lastMs);
+      this.tokens = Math.min(this.burst, this.tokens + (elapsedMs * this.perSecond) / 1000);
+    }
+    this.lastMs = nowMs;
+  }
+  //#endregion
+}
+//#endregion
+
+// ==================================== CLASS RejectCounters ==================================== \\
+//#region Class RejectCounters
+/** Running tally of rejections by reason, for the server metrics (S7). */
+export class RejectCounters {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
+  private readonly counts = new Int32Array(16);
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  note(reason: RejectReason): void {
+    if (reason > 0 && reason < this.counts.length) this.counts[reason] = (this.counts[reason] ?? 0) + 1;
+  }
+
+  get total(): number {
+    let n = 0;
+    for (let i = 1; i < this.counts.length; i++) n += this.counts[i] ?? 0;
+    return n;
+  }
+
+  /** Non-zero reasons only, keyed by name. Empty when nothing has been refused. */
+  report(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (let i = 1; i < this.counts.length; i++) {
+      const n = this.counts[i] ?? 0;
+      if (n > 0) out[REJECT_NAMES[i] ?? String(i)] = n;
+    }
+    return out;
+  }
+
+  reset(): void {
+    this.counts.fill(0);
+  }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Validate and clamp one decoded command **in place**.
  *
@@ -136,141 +322,16 @@ export function validateCommand(cmd: MutableInputCommand, currentTick: number): 
 
   return Reject.None;
 }
+//#endregion
 
-/**
- * A sliding-window message rate limit.
- *
- * Counts within one-second buckets rather than keeping timestamps: a flooding client is
- * exactly the case where an array of arrival times would be the attack. Two buckets are kept
- * so the limit is not resettable by timing a burst across a boundary.
- */
-export class RateLimiter {
-  private currentSecond = -1;
-  private current = 0;
-  private previous = 0;
-
-  constructor(private readonly perSecond: number) {}
-
-  /** True if this message is within the limit. Counts it either way. */
-  allow(nowMs: number): boolean {
-    const second = Math.floor(nowMs / 1000);
-    if (second !== this.currentSecond) {
-      // A gap of more than one second means the previous bucket is stale, not adjacent.
-      this.previous = second === this.currentSecond + 1 ? this.current : 0;
-      this.current = 0;
-      this.currentSecond = second;
-    }
-    this.current++;
-    // Weight the previous bucket by how much of it is still inside the trailing second.
-    const fraction = 1 - ((nowMs % 1000) / 1000);
-    const windowed = this.current + this.previous * fraction;
-    return windowed <= this.perSecond;
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** `TickSkew` -> `tick-skew`, for every reason there is, once at load time. */
+function buildRejectNames(): Record<number, string> {
+  const names: Record<number, string> = {};
+  for (const [name, code] of Object.entries(Reject)) {
+    names[code] = name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
   }
-
-  reset(): void {
-    this.currentSecond = -1;
-    this.current = 0;
-    this.previous = 0;
-  }
+  return names;
 }
-
-/**
- * A budget for one kind of message: a burst, then a steady rate (security audit 2026-10-04, S3).
- *
- * `RateLimiter` above bounds *how many frames* arrive, and that is bandwidth. It does not bound
- * what a frame costs once it is in, and the messages differ by orders of magnitude: a command is
- * a slot write, a class is a validation, a `resolveLoadout` and a log line, and a vote was a
- * broadcast to every seat. 240 of any of them a second is within the link's limit, so each
- * kind that does work gets a budget of its own.
- *
- * A token bucket rather than a window because the two numbers mean different things here: the
- * burst is what a human does in a moment (pressing 1, 2, 3 on the class selector), the rate is
- * what a human sustains, and a window has only one of them.
- */
-export class TokenBucket {
-  private tokens: number;
-  private lastMs = Number.NaN;
-
-  constructor(
-    private readonly burst: number,
-    private readonly perSecond: number,
-  ) {
-    this.tokens = burst;
-  }
-
-  /** Spend one token if there is one. False means over budget; nothing is spent. */
-  take(nowMs: number): boolean {
-    this.refill(nowMs);
-    if (this.tokens < 1) return false;
-    this.tokens -= 1;
-    return true;
-  }
-
-  private refill(nowMs: number): void {
-    if (Number.isFinite(this.lastMs)) {
-      // Clamped at zero: a clock that steps backwards earns nothing rather than draining.
-      const elapsedMs = Math.max(0, nowMs - this.lastMs);
-      this.tokens = Math.min(this.burst, this.tokens + (elapsedMs * this.perSecond) / 1000);
-    }
-    this.lastMs = nowMs;
-  }
-}
-
-/**
- * The per-kind budgets (S3). Each is generous to a person and small to a loop.
- *
- * - **Class**: the quick selector is one key per class, so three at once is a burst a hand
- *   makes; one a second after that. Excess is *held*, not dropped — see `Session` — so the class
- *   the player ends on is always the one the server simulates.
- * - **Vote**: a click per option, changeable inside the window. Held the same way.
- * - **Streak**: a key per streak. The headless client asks twice a second; a person less.
- * - **Ready** is once per match, and **cheat** is typed by hand.
- */
-export const MESSAGE_BUDGETS = {
-  loadout: { burst: 3, perSecond: 1 },
-  vote: { burst: 4, perSecond: 2 },
-  streak: { burst: 6, perSecond: 3 },
-  ready: { burst: 3, perSecond: 1 },
-  cheat: { burst: 3, perSecond: 1 },
-} as const;
-
-export type BudgetedMessage = keyof typeof MESSAGE_BUDGETS;
-
-/**
- * Warning lines per connection: ten at once, then one every five seconds.
- *
- * A warning that a client can provoke without being disconnected is a line per message, and a
- * client can send 240 messages a second — into a log the operator pays to keep and has to read.
- * What is suppressed is counted and reported on the next line that is written, so the log still
- * says how much was missed.
- */
-export const WARN_BUDGET = { burst: 10, perSecond: 0.2 } as const;
-
-/** Running tally of rejections by reason, for the server metrics (S7). */
-export class RejectCounters {
-  private readonly counts = new Int32Array(16);
-
-  note(reason: RejectReason): void {
-    if (reason > 0 && reason < this.counts.length) this.counts[reason] = (this.counts[reason] ?? 0) + 1;
-  }
-
-  get total(): number {
-    let n = 0;
-    for (let i = 1; i < this.counts.length; i++) n += this.counts[i] ?? 0;
-    return n;
-  }
-
-  /** Non-zero reasons only, keyed by name. Empty when nothing has been refused. */
-  report(): Record<string, number> {
-    const out: Record<string, number> = {};
-    for (let i = 1; i < this.counts.length; i++) {
-      const n = this.counts[i] ?? 0;
-      if (n > 0) out[REJECT_NAMES[i] ?? String(i)] = n;
-    }
-    return out;
-  }
-
-  reset(): void {
-    this.counts.fill(0);
-  }
-}
+//#endregion

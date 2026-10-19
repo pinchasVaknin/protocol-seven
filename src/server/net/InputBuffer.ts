@@ -1,10 +1,3 @@
-import {
-  copyCommand,
-  NULL_COMMAND,
-  type InputCommand,
-  type MutableInputCommand,
-} from '../../shared/core/InputCommand';
-
 /**
  * Commands from one client, ordered and made continuous (M10, S6.2).
  *
@@ -33,14 +26,18 @@ import {
  * filled with identical bytes.
  */
 
-/**
- * Ticks of command history held.
- *
- * 128 ticks is 2.1 s at 60 Hz, comfortably past `MAX_TICK_SKEW` in both directions, so a
- * client running a jitter buffer ahead of the server always lands inside the window.
- */
-const RING = 128;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import {
+  copyCommand,
+  NULL_COMMAND,
+  type InputCommand,
+  type MutableInputCommand,
+} from '../../shared/core/InputCommand';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface InputBufferStats {
   /** Commands accepted into the ring. */
   readonly accepted: number;
@@ -53,8 +50,28 @@ export interface InputBufferStats {
   /** Ticks simulated with the null command because nothing had ever arrived. */
   readonly starved: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * Ticks of command history held.
+ *
+ * 128 ticks is 2.1 s at 60 Hz. The accept window is half of it either side of the current
+ * tick, which is **narrower than `MAX_TICK_SKEW`**: a command 65 to 120 ticks from the
+ * present passes `validateCommand` and is then counted here as out of window, and the two
+ * ends of that window share a slot. Both are pinned by `InputBuffer.test.ts` and recorded as
+ * suspected bugs in `BACKLOG.md` (#38) rather than changed, because which command survives is
+ * behaviour.
+ */
+const RING = 128;
+//#endregion
+
+// ===================================== CLASS InputBuffer ====================================== \\
+//#region Class InputBuffer
 export class InputBuffer {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Highest `seq` ever accepted. Echoed back to the client as the ack (S4.11). */
   lastSeq = -1;
   /** The tick `lastSeq` was applied on. */
@@ -85,11 +102,17 @@ export class InputBuffer {
    * second or so afterwards, which stops the lead oscillating between too tight and too wide.
    */
   private starvation = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor() {
     for (let i = 0; i < RING; i++) this.slots.push(blank());
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   stats(): InputBufferStats {
     return {
       accepted: this.accepted,
@@ -117,7 +140,7 @@ export class InputBuffer {
       return false;
     }
 
-    const index = ((tick % RING) + RING) % RING;
+    const index = slotIndex(tick);
     const slot = this.slots[index];
     if (slot === undefined) return false;
 
@@ -143,7 +166,7 @@ export class InputBuffer {
    * client's tick count from the server's.
    */
   take(tick: number): InputCommand {
-    const index = ((tick % RING) + RING) % RING;
+    const index = slotIndex(tick);
     const slot = this.slots[index];
 
     if (slot !== undefined && this.slotTick[index] === tick) {
@@ -200,8 +223,18 @@ export class InputBuffer {
     this.lastAppliedTick = -1;
     this.starvation = 0;
   }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** The slot a tick parks in. Wrap-safe for a negative tick, which `index` in `RigHistory` is too. */
+function slotIndex(tick: number): number {
+  return ((tick % RING) + RING) % RING;
 }
 
 function blank(): MutableInputCommand {
   return { seq: 0, tickIndex: 0, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, sampledAtMs: 0 };
 }
+//#endregion

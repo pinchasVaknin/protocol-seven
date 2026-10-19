@@ -1,5 +1,3 @@
-import { HUMANOID_RIG, type HitboxRig, type RigLayout } from '../../shared/combat/HitboxRig';
-
 /**
  * One second of a `HitboxRig`'s transforms (M10, S4.13).
  *
@@ -24,10 +22,34 @@ import { HUMANOID_RIG, type HitboxRig, type RigLayout } from '../../shared/comba
  * braces, and the braces are two bytes.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { HUMANOID_RIG, type HitboxRig, type RigLayout } from '../../shared/combat/HitboxRig';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+/** A rig transform held aside while a rewind is in effect. */
+export interface RigSnapshot {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  layout: RigLayout;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Ticks retained. 60 at 60 Hz is the 1.0 s S4.13 asks for. */
 const HISTORY_TICKS = 60;
+//#endregion
 
+// ====================================== CLASS RigHistory ====================================== \\
+//#region Class RigHistory
 export class RigHistory {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly x = new Float32Array(HISTORY_TICKS);
   private readonly y = new Float32Array(HISTORY_TICKS);
   private readonly z = new Float32Array(HISTORY_TICKS);
@@ -37,16 +59,13 @@ export class RigHistory {
 
   /** Most recent tick written, or -1. */
   private newest = -1;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Record the rig's current transform for `tick`. Called once per tick per entity. */
   push(rig: HitboxRig, tick: number): void {
-    const i = index(tick);
-    this.x[i] = rig.x;
-    this.y[i] = rig.y;
-    this.z[i] = rig.z;
-    this.yaw[i] = rig.yaw;
-    this.layout[i] = rig.layout;
-    this.tick[i] = tick;
+    this.write(index(tick), rig, tick);
     if (tick > this.newest) this.newest = tick;
   }
 
@@ -58,14 +77,7 @@ export class RigHistory {
    * — which at best misses and at worst hits a corpse's last position across the map.
    */
   fill(rig: HitboxRig, tick: number): void {
-    for (let i = 0; i < HISTORY_TICKS; i++) {
-      this.x[i] = rig.x;
-      this.y[i] = rig.y;
-      this.z[i] = rig.z;
-      this.yaw[i] = rig.yaw;
-      this.layout[i] = rig.layout;
-      this.tick[i] = tick;
-    }
+    for (let i = 0; i < HISTORY_TICKS; i++) this.write(i, rig, tick);
     this.newest = tick;
   }
 
@@ -87,21 +99,30 @@ export class RigHistory {
     rig.setTransform(this.x[i] ?? 0, this.y[i] ?? 0, this.z[i] ?? 0, this.yaw[i] ?? 0);
     return true;
   }
-}
+  //#endregion
 
-function index(tick: number): number {
-  return ((tick % HISTORY_TICKS) + HISTORY_TICKS) % HISTORY_TICKS;
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * One slot, stamped with the tick that wrote it.
+   *
+   * The stamp is what `fill` is really for: overwriting it is what makes the previous life's
+   * slots unmatchable, whatever is in the four arrays beside it.
+   */
+  private write(i: number, rig: HitboxRig, tick: number): void {
+    this.x[i] = rig.x;
+    this.y[i] = rig.y;
+    this.z[i] = rig.z;
+    this.yaw[i] = rig.yaw;
+    this.layout[i] = rig.layout;
+    this.tick[i] = tick;
+  }
+  //#endregion
 }
+//#endregion
 
-/** A rig transform held aside while a rewind is in effect. */
-export interface RigSnapshot {
-  x: number;
-  y: number;
-  z: number;
-  yaw: number;
-  layout: RigLayout;
-}
-
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function makeRigSnapshot(): RigSnapshot {
   return { x: 0, y: 0, z: 0, yaw: 0, layout: HUMANOID_RIG };
 }
@@ -118,3 +139,11 @@ export function restoreRig(src: RigSnapshot, rig: HitboxRig): void {
   rig.setLayout(src.layout);
   rig.setTransform(src.x, src.y, src.z, src.yaw);
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function index(tick: number): number {
+  return ((tick % HISTORY_TICKS) + HISTORY_TICKS) % HISTORY_TICKS;
+}
+//#endregion

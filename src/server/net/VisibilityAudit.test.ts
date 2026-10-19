@@ -136,6 +136,36 @@ describe('SeatAudit', () => {
     expect(stats.hurtFromDormant).toBe(0);
   });
 
+  /**
+   * The three figures a late wake is tuned from (B2b).
+   *
+   * `lateByPoint` is why the feet are among the displaced rays at all — 34 of 40 late wakes on
+   * FOUNDRY were a body coming into view feet-first — and `lateAcrossLevels` and `lateFast` are
+   * what say whether a late wake was a geometry problem or a speed one. All three were written
+   * and none was read by a test.
+   */
+  it('counts a late wake by the point first seen, across a level and at speed', () => {
+    const view = new SeatView();
+    const audit = new SeatAudit();
+    const stats = emptyAuditStats();
+    const viewer = body(1, 0, 0, 'A');
+    // On a catwalk two metres up, behind the wall, moving faster than sprint.
+    const enemy = body(2, 20, 6, 'B');
+    enemy.y = 2;
+    enemy.vx = 9;
+    run(view, audit, stats, 0, 500, [viewer, enemy]);
+    expect(stats.appearances).toBe(0);
+
+    enemy.z = 0;
+    run(view, audit, stats, 550, 1000, [viewer, enemy]);
+
+    expect(stats.lateWakes).toBe(1);
+    // One of the five now-to-now points, and exactly one of them.
+    expect(stats.lateByPoint.reduce((a, b) => a + b, 0)).toBe(1);
+    expect(stats.lateAcrossLevels).toBe(1);
+    expect(stats.lateFast).toBe(1);
+  });
+
   describe('the bomb', () => {
     const bomb = (x: number, z: number, carrierId = 2): BombInfo => ({
       state: 'CARRIED',

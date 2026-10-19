@@ -336,6 +336,11 @@ const FINISHED = {
     'src/server/net/SeatEvents.ts',
     'src/server/net/SeatView.ts',
   ],
+  B2b: [
+    'src/server/net/EventCollector.ts',
+    'src/server/net/SnapshotEncoder.ts',
+    'src/server/net/VisibilityAudit.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

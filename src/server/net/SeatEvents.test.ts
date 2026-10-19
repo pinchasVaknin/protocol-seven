@@ -352,6 +352,38 @@ describe('the shot, hit and kill audit', () => {
     // the killer's health.
     expect(stats).toMatchObject({ eventLeaks: 3, eventsMissing: 1 });
   });
+
+  /**
+   * The bare impacts, counted rather than matched (B2b).
+   *
+   * An `Ev.Impact` carries nothing to identify it by — that is the point of it — so the audit can
+   * only hold the number that arrived against the number that were due. Both directions are a
+   * verdict, and neither had a case.
+   */
+  it('counts a bare impact that was due and never arrived', () => {
+    const events = tick(fill);
+    const cut = new SeatEvents();
+    cut.select(events, context());
+    // Drop the suppressed shot from the frame entirely: its impact is now owed and absent.
+    const keep = Uint8Array.from(cut.keep);
+    keep[1] = 0;
+    const stats = audit(events.frameFor(keep, cut.writer), events);
+
+    expect(stats).toMatchObject({ shotsAsImpact: 1, eventsMissing: 1, eventLeaks: 0 });
+  });
+
+  it('counts a bare impact nobody was owed', () => {
+    // Two suppressed shots, and this seat has shooter 2 awake — so that one is owed whole and
+    // only shooter 4's is owed as an impact.
+    const events = tick((bus) => {
+      shot(bus, 2, 3, 0, false);
+      shot(bus, 4, 30, 0, false);
+    });
+    // A cut that sent both as impacts: one impact too many, and a whole shot missing.
+    const stats = audit(events.frameFor(Uint8Array.from([2, 2]), new SeatEvents().writer), events);
+
+    expect(stats).toMatchObject({ shotsAsImpact: 1, eventsMissing: 1, eventLeaks: 1 });
+  });
 });
 
 /**

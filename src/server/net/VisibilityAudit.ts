@@ -1,13 +1,3 @@
-import type { BombInfo } from '../../shared/modes/GameMode';
-import { decodeHeader, readEvents, Ev, type EventSink } from '../../shared/net/Messages';
-import { EFlag, type EntitySnapshot } from '../../shared/net/Snapshot';
-import { ByteReader } from '../../shared/net/Wire';
-import { makeRayHit } from '../../shared/world/Geometry';
-import type { EventCollector } from './EventCollector';
-import { clearLine, isAlive, NEAR_RADIUS_M, teamOf, type RelevanceContext } from './Relevance';
-import { HEARING_RADIUS_M, isSound, type SeatContext } from './SeatEvents';
-import type { SeatView } from './SeatView';
-
 /**
  * Proof that culling never costs a player a body they should have seen (anti-wallhack phase 1,
  * part 3; docs/VISIBILITY.md, "Proving it").
@@ -42,17 +32,21 @@ import type { SeatView } from './SeatView';
  * nothing in a match reads it.
  */
 
-let enabled = false;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { BombInfo } from '../../shared/modes/GameMode';
+import { decodeHeader, readEvents, Ev, type EventSink } from '../../shared/net/Messages';
+import { EFlag, type EntitySnapshot } from '../../shared/net/Snapshot';
+import { ByteReader } from '../../shared/net/Wire';
+import { makeRayHit } from '../../shared/world/Geometry';
+import type { EventCollector } from './EventCollector';
+import { clearLine, isAlive, NEAR_RADIUS_M, teamOf, type RelevanceContext } from './Relevance';
+import { HEARING_RADIUS_M, isSound, type SeatContext } from './SeatEvents';
+import type { SeatView } from './SeatView';
+//#endregion
 
-/** Turn the audit on for every instance this process builds. Harnesses only. */
-export function enableVisibilityAudit(): void {
-  enabled = true;
-}
-
-export function visibilityAuditEnabled(): boolean {
-  return enabled;
-}
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface VisibilityAuditStats {
   /** (seat, enemy) observations beyond R2, alive. */
   pairs: number;
@@ -112,53 +106,30 @@ export interface VisibilityAuditStats {
   eventBytesSent: number;
 }
 
-export function emptyAuditStats(): VisibilityAuditStats {
-  return {
-    pairs: 0,
-    visible: 0,
-    appearances: 0,
-    hardMisses: 0,
-    lateWakes: 0,
-    worstShortfallMs: 0,
-    seatSnapshots: 0,
-    relevanceMs: 0,
-    enemyRecords: 0,
-    dormantRecords: 0,
-    lateByPoint: [0, 0, 0, 0, 0],
-    lateAcrossLevels: 0,
-    lateFast: 0,
-    hurtTotal: 0,
-    hurtFromDormant: 0,
-    hurtStillDormant: 0,
-    enemySounds: 0,
-    enemySoundsSent: 0,
-    soundsMissing: 0,
-    soundLeaks: 0,
-    shots: 0,
-    shotsSuppressed: 0,
-    shotsAsImpact: 0,
-    hits: 0,
-    hitsSent: 0,
-    eventsMissing: 0,
-    eventLeaks: 0,
-    bombCarried: 0,
-    bombCarrierUnseen: 0,
-    bombLeaks: 0,
-    eventSeatTicks: 0,
-    eventCutMs: 0,
-    eventBytesWhole: 0,
-    eventBytesSent: 0,
-  };
+/** One event decoded out of the frame a seat was actually sent, and whether it has been matched. */
+interface SentEvent {
+  kind: number;
+  id: number;
+  other: number;
+  x: number;
+  z: number;
+  hp: number;
+  used: boolean;
 }
+//#endregion
 
-/**
- * Every instance's observations, together. Process-wide because the instance a harness most wants
- * graded — the live match — is destroyed when it ends, before anybody reads it.
- */
-export const visibilityAuditTotals: VisibilityAuditStats = emptyAuditStats();
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Whether any instance grades itself. Off unless a harness turns it on; see the file comment. */
+let enabled = false;
+//#endregion
 
+// ====================================== CLASS SeatAudit ======================================= \\
+//#region Class SeatAudit
 /** One seat's audit memory: when each body last became relevant, and when it last respawned. */
 export class SeatAudit {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly relevantSince = new Map<number, number>();
   private readonly spawnSerial = new Map<number, number>();
   private readonly spawnedAt = new Map<number, number>();
@@ -168,7 +139,7 @@ export class SeatAudit {
   private readonly hit = makeRayHit();
   private startedMs = -1;
   /** The events in the last frame this seat was sent, decoded. */
-  private readonly got: Array<{ kind: number; id: number; other: number; x: number; z: number; hp: number; used: boolean }> = [];
+  private readonly got: SentEvent[] = [];
   private readonly reader = new ByteReader(new Uint8Array(0));
   private readonly ears: EntitySnapshot[] = [];
   private readonly sink: EventSink = {
@@ -180,13 +151,22 @@ export class SeatAudit {
     onDamage: (e) => this.got.push({ kind: Ev.Damage, id: e.targetId, other: e.sourceId, x: e.x, z: e.z, hp: 0, used: false }),
     onKilled: (e) => this.got.push({ kind: Ev.Killed, id: e.targetId, other: e.sourceId, x: 0, z: 0, hp: e.killerHealth, used: false }),
   };
+  /** The bodies this seat's last snapshot sent live, and which ids it sent dormant. */
+  private readonly awake = new Set<number>();
+  private readonly sentDormant = new Map<number, boolean>();
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * One tick's events against what this seat was actually sent (`sent`, null for nothing), decoded.
    *
    * The rules are applied here again rather than asked of `SeatEvents`, and "awake" is read off the
    * records the seat's last snapshot carried rather than off `SeatView.awake` — so a cut that drifted
-   * from the rule, or from what the client has been told, shows up as a count:
+   * from the rule, or from what the client has been told, shows up as a count. **That duplication is
+   * the instrument**: the four `audit*` methods below deliberately restate the rules rather than
+   * calling the code that made the decision, because an instrument that asks the thing it is
+   * grading grades nothing.
    *
    * - an enemy **sound** the seat could hear (within `HEARING_RADIUS_M` of where it listens, not
    *   muted) must arrive, and one it could not must not;
@@ -203,41 +183,12 @@ export class SeatAudit {
     seat: SeatContext,
     out: VisibilityAuditStats,
   ): void {
-    this.got.length = 0;
-    if (sent !== null) {
-      this.reader.reuse(sent);
-      const msg = decodeHeader(this.reader);
-      if (msg.kind === 'events') readEvents(this.reader, msg.count, this.sink);
-    }
+    this.decodeSent(sent);
 
-    const { viewerId, entities, entityCount, freeForAll, seesAll, spectating, hidden } = seat;
-    const byId = (id: number): EntitySnapshot | null => {
-      for (let i = 0; i < entityCount; i++) if (entities[i]?.entityId === id) return entities[i] ?? null;
-      return null;
-    };
-    const viewer = byId(viewerId);
+    const viewer = bodyById(seat.entities, seat.entityCount, seat.viewerId);
     if (viewer === null) return;
-    const awake = new Set<number>();
-    for (let i = 0; i < view.count; i++) {
-      const rec = view.list[i];
-      if (rec !== undefined && (rec.flags & EFlag.Dormant) === 0) awake.add(rec.entityId);
-    }
-    this.ears.length = 0;
-    for (let i = 0; i < entityCount; i++) {
-      const e = entities[i];
-      if (e === undefined) continue;
-      const listens = spectating
-        ? e.entityId !== viewerId && isAlive(e) && !freeForAll && teamOf(e) === teamOf(viewer)
-        : e.entityId === viewerId;
-      if (listens) this.ears.push(e);
-    }
-    const take = (kind: number, id: number, x: number, z: number, other = -2): (typeof this.got)[number] | undefined => {
-      const g = this.got.find(
-        (h) => !h.used && h.kind === kind && h.id === id && (other === -2 || h.other === other) && Math.abs(h.x - x) < 0.1 && Math.abs(h.z - z) < 0.1,
-      );
-      if (g !== undefined) g.used = true;
-      return g;
-    };
+    this.fillAwake(view);
+    this.fillEars(seat, viewer);
 
     let impactsDue = 0;
     for (let i = 0; i < events.pending; i++) {
@@ -248,53 +199,17 @@ export class SeatAudit {
       const z = events.zs[i] ?? 0;
 
       if (isSound(kind)) {
-        if (subject === viewerId) continue;
-        const body = byId(subject);
-        if (body !== null && !freeForAll && teamOf(body) === teamOf(viewer)) continue;
-        out.enemySounds++;
-        const audible =
-          seesAll ||
-          (!hidden(subject) &&
-            events.muted[i] !== 1 &&
-            this.ears.some((ear) => Math.hypot(ear.x - x, ear.z - z) <= HEARING_RADIUS_M));
-        const match = take(kind, subject, x, z);
-        if (match !== undefined) out.enemySoundsSent++;
-        if (audible && match === undefined) out.soundsMissing++;
-        if (!audible && match !== undefined) out.soundLeaks++;
-        continue;
-      }
-
-      if (kind === Ev.Fired) {
-        if (subject === viewerId) continue;
-        out.shots++;
-        if (events.loud[i] !== 1) out.shotsSuppressed++;
-        const whole = seesAll || (!hidden(subject) && (awake.has(subject) || events.loud[i] === 1));
-        const match = take(Ev.Fired, subject, x, z);
-        if (whole && match === undefined) out.eventsMissing++;
-        if (!whole) {
-          if (match !== undefined) out.eventLeaks++;
-          out.shotsAsImpact++;
-          impactsDue++;
-        }
+        this.auditSound(events, i, subject, x, z, viewer, seat, out);
+      } else if (kind === Ev.Fired) {
+        if (this.auditShot(events, i, subject, x, z, seat, out)) impactsDue++;
       } else if (kind === Ev.Damage) {
-        if (subject === viewerId || object === viewerId) continue;
-        out.hits++;
-        const due = seesAll || awake.has(subject);
-        const match = take(Ev.Damage, subject, x, z, object);
-        if (match !== undefined) out.hitsSent++;
-        if (due && match === undefined) out.eventsMissing++;
-        if (!due && match !== undefined) out.eventLeaks++;
+        this.auditHit(subject, object, x, z, seat, out);
       } else if (kind === Ev.Killed) {
-        const match = take(Ev.Killed, subject, 0, 0, object);
-        if (match === undefined) out.eventsMissing++;
-        else if (subject !== viewerId && !seesAll && match.hp !== 0) out.eventLeaks++;
+        this.auditKill(subject, object, seat, out);
       }
     }
-    // A bare impact carries nothing to match it by but its place, so they are counted: as many as
-    // were due, no more and no fewer.
-    const impacts = this.got.filter((g) => g.kind === Ev.Impact).length;
-    if (impacts < impactsDue) out.eventsMissing += impactsDue - impacts;
-    if (impacts > impactsDue) out.eventLeaks += impacts - impactsDue;
+
+    this.reconcileImpacts(impactsDue, out);
   }
 
   /**
@@ -338,6 +253,171 @@ export class SeatAudit {
     drawDelayMs: number,
     out: VisibilityAuditStats,
   ): void {
+    const viewer = this.trackRespawns(nowMs, entities, entityCount, viewerId);
+
+    // R9's check comes before the viewer's own life: the hit that hurt it may have killed it, and
+    // the death report wants the killer's place as much as the chevron does.
+    this.noteStillDormant(view, out);
+
+    if (viewer === null || !isAlive(viewer)) return;
+    // A seat that has just appeared — a join, a migration — has everything in view "new" at once.
+    // That is arriving, not culling; the first draw delay of a seat's life is not graded.
+    if (this.startedMs < 0) this.startedMs = nowMs;
+    const settling = nowMs - this.startedMs < drawDelayMs;
+
+    this.fillSentDormant(view);
+
+    for (let i = 0; i < entityCount; i++) {
+      const e = entities[i];
+      if (e === undefined || e.entityId === viewerId) continue;
+      this.gradePair(nowMs, e, viewer, viewerId, ctx, drawDelayMs, settling, out);
+    }
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** Decode the frame this seat was sent into `got`, or empty it when it was sent nothing. */
+  private decodeSent(sent: Uint8Array | null): void {
+    this.got.length = 0;
+    if (sent === null) return;
+    this.reader.reuse(sent);
+    const msg = decodeHeader(this.reader);
+    if (msg.kind === 'events') readEvents(this.reader, msg.count, this.sink);
+  }
+
+  /**
+   * Which bodies the seat's last snapshot sent live.
+   *
+   * Read off the records that went out rather than off `SeatView.awake`, on purpose: the question
+   * is what the *client* was told, not what the view meant to tell it.
+   */
+  private fillAwake(view: SeatView): void {
+    this.awake.clear();
+    for (let i = 0; i < view.count; i++) {
+      const rec = view.list[i];
+      if (rec !== undefined && (rec.flags & EFlag.Dormant) === 0) this.awake.add(rec.entityId);
+    }
+  }
+
+  /** Where the seat listens from: its own body, or every living teammate while spectating (R7). */
+  private fillEars(seat: SeatContext, viewer: EntitySnapshot): void {
+    this.ears.length = 0;
+    for (let i = 0; i < seat.entityCount; i++) {
+      const e = seat.entities[i];
+      if (e === undefined) continue;
+      const listens = seat.spectating
+        ? e.entityId !== seat.viewerId && isAlive(e) && !seat.freeForAll && teamOf(e) === teamOf(viewer)
+        : e.entityId === seat.viewerId;
+      if (listens) this.ears.push(e);
+    }
+  }
+
+  /**
+   * The first unmatched event in `got` that answers to this one, marked as used.
+   *
+   * `other` defaults to -2, which means "do not compare it"; a position has to agree to within
+   * 10 cm, because the wire quantises it.
+   */
+  private takeSent(kind: number, id: number, x: number, z: number, other = -2): SentEvent | undefined {
+    const g = this.got.find(
+      (h) => !h.used && h.kind === kind && h.id === id && (other === -2 || h.other === other) && Math.abs(h.x - x) < 0.1 && Math.abs(h.z - z) < 0.1,
+    );
+    if (g !== undefined) g.used = true;
+    return g;
+  }
+
+  /** E2 and D4 restated: an enemy sound within the radius must arrive, and a muted one must not. */
+  private auditSound(
+    events: EventCollector,
+    i: number,
+    subject: number,
+    x: number,
+    z: number,
+    viewer: EntitySnapshot,
+    seat: SeatContext,
+    out: VisibilityAuditStats,
+  ): void {
+    if (subject === seat.viewerId) return;
+    const body = bodyById(seat.entities, seat.entityCount, subject);
+    if (body !== null && !seat.freeForAll && teamOf(body) === teamOf(viewer)) return;
+    out.enemySounds++;
+    const audible =
+      seat.seesAll ||
+      (!seat.hidden(subject) &&
+        events.muted[i] !== 1 &&
+        this.ears.some((ear) => Math.hypot(ear.x - x, ear.z - z) <= HEARING_RADIUS_M));
+    const match = this.takeSent(events.kinds[i] ?? 0, subject, x, z);
+    if (match !== undefined) out.enemySoundsSent++;
+    if (audible && match === undefined) out.soundsMissing++;
+    if (!audible && match !== undefined) out.soundLeaks++;
+  }
+
+  /** D2 restated. Returns true when a bare impact is owed for this shot instead of the whole one. */
+  private auditShot(
+    events: EventCollector,
+    i: number,
+    subject: number,
+    x: number,
+    z: number,
+    seat: SeatContext,
+    out: VisibilityAuditStats,
+  ): boolean {
+    if (subject === seat.viewerId) return false;
+    out.shots++;
+    if (events.loud[i] !== 1) out.shotsSuppressed++;
+    const whole = seat.seesAll || (!seat.hidden(subject) && (this.awake.has(subject) || events.loud[i] === 1));
+    const match = this.takeSent(Ev.Fired, subject, x, z);
+    if (whole && match === undefined) out.eventsMissing++;
+    if (whole) return false;
+    if (match !== undefined) out.eventLeaks++;
+    out.shotsAsImpact++;
+    return true;
+  }
+
+  /** A hit is placed on its target, so the target is the body that decides who may have it. */
+  private auditHit(
+    subject: number,
+    object: number,
+    x: number,
+    z: number,
+    seat: SeatContext,
+    out: VisibilityAuditStats,
+  ): void {
+    if (subject === seat.viewerId || object === seat.viewerId) return;
+    out.hits++;
+    const due = seat.seesAll || this.awake.has(subject);
+    const match = this.takeSent(Ev.Damage, subject, x, z, object);
+    if (match !== undefined) out.hitsSent++;
+    if (due && match === undefined) out.eventsMissing++;
+    if (!due && match !== undefined) out.eventLeaks++;
+  }
+
+  /** E3 restated: the feed is public, the killer's remaining health is the victim's alone. */
+  private auditKill(subject: number, object: number, seat: SeatContext, out: VisibilityAuditStats): void {
+    const match = this.takeSent(Ev.Killed, subject, 0, 0, object);
+    if (match === undefined) out.eventsMissing++;
+    else if (subject !== seat.viewerId && !seat.seesAll && match.hp !== 0) out.eventLeaks++;
+  }
+
+  /**
+   * A bare impact carries nothing to match it by but its place, so they are counted: as many as
+   * were due, no more and no fewer.
+   */
+  private reconcileImpacts(impactsDue: number, out: VisibilityAuditStats): void {
+    let impacts = 0;
+    for (const g of this.got) if (g.kind === Ev.Impact) impacts++;
+    if (impacts < impactsDue) out.eventsMissing += impactsDue - impacts;
+    if (impacts > impactsDue) out.eventLeaks += impacts - impactsDue;
+  }
+
+  /** Note every body's respawn serial — the late-wake exemption — and pick the viewer out. */
+  private trackRespawns(
+    nowMs: number,
+    entities: readonly EntitySnapshot[],
+    entityCount: number,
+    viewerId: number,
+  ): EntitySnapshot | null {
     let viewer: EntitySnapshot | null = null;
     for (let i = 0; i < entityCount; i++) {
       const e = entities[i];
@@ -348,69 +428,175 @@ export class SeatAudit {
       if (last !== undefined && last !== e.spawnSerial) this.spawnedAt.set(e.entityId, nowMs);
       this.spawnSerial.set(e.entityId, e.spawnSerial);
     }
+    return viewer;
+  }
 
-    // R9's check comes before the viewer's own life: the hit that hurt it may have killed it, and
-    // the death report wants the killer's place as much as the chevron does.
-    if (this.hurtBy.size > 0) {
-      for (let i = 0; i < view.count; i++) {
-        const rec = view.list[i];
-        if (rec !== undefined && this.hurtBy.has(rec.entityId) && (rec.flags & EFlag.Dormant) !== 0) out.hurtStillDormant++;
-      }
-      this.hurtBy.clear();
-    }
-
-    if (viewer === null || !isAlive(viewer)) return;
-    // A seat that has just appeared — a join, a migration — has everything in view "new" at once.
-    // That is arriving, not culling; the first draw delay of a seat's life is not graded.
-    if (this.startedMs < 0) this.startedMs = nowMs;
-    const settling = nowMs - this.startedMs < drawDelayMs;
-
-    // What this seat was sent, by id: dormant or not.
-    const sentDormant = new Map<number, boolean>();
+  /** R9's verdict: a shooter that hurt this seat and is dormant again in the next snapshot. */
+  private noteStillDormant(view: SeatView, out: VisibilityAuditStats): void {
+    if (this.hurtBy.size === 0) return;
     for (let i = 0; i < view.count; i++) {
       const rec = view.list[i];
-      if (rec !== undefined) sentDormant.set(rec.entityId, (rec.flags & EFlag.Dormant) !== 0);
+      if (rec !== undefined && this.hurtBy.has(rec.entityId) && (rec.flags & EFlag.Dormant) !== 0) out.hurtStillDormant++;
     }
+    this.hurtBy.clear();
+  }
 
-    for (let i = 0; i < entityCount; i++) {
-      const e = entities[i];
-      if (e === undefined || e.entityId === viewerId) continue;
-      const dormant = sentDormant.get(e.entityId) ?? true;
-      if (dormant) this.relevantSince.delete(e.entityId);
-      else if (!this.relevantSince.has(e.entityId)) this.relevantSince.set(e.entityId, nowMs);
-
-      const counted =
-        isAlive(e) &&
-        (ctx.freeForAll || teamOf(e) !== teamOf(viewer)) &&
-        Math.hypot(e.x - viewer.x, e.y - viewer.y, e.z - viewer.z) > NEAR_RADIUS_M;
-      if (!counted) {
-        this.wasVisible.delete(e.entityId);
-        continue;
-      }
-      out.pairs++;
-      const ray = clearLine(ctx.world, viewer, e, 0, -1, this.hit);
-      if (ray < 0) {
-        this.wasVisible.delete(e.entityId);
-        continue;
-      }
-      out.visible++;
-      if (dormant) out.hardMisses++;
-      const appearing = !this.wasVisible.has(e.entityId);
-      this.wasVisible.add(e.entityId);
-      if (!appearing || settling) continue;
-      out.appearances++;
-      if (dormant) continue;
-      const since = this.relevantSince.get(e.entityId) ?? nowMs;
-      const shown = nowMs - since;
-      if (shown >= drawDelayMs) continue;
-      const spawned = Math.max(this.spawnedAt.get(e.entityId) ?? -Infinity, this.spawnedAt.get(viewerId) ?? -Infinity);
-      if (nowMs - spawned < drawDelayMs) continue;
-      out.lateWakes++;
-      out.worstShortfallMs = Math.max(out.worstShortfallMs, drawDelayMs - shown);
-      // With no look-ahead only the five now-to-now rays are live, so the index is the point.
-      if (ray < out.lateByPoint.length) out.lateByPoint[ray] = (out.lateByPoint[ray] ?? 0) + 1;
-      if (Math.abs(e.y - viewer.y) > 1.5) out.lateAcrossLevels++;
-      if (Math.hypot(e.vx, e.vz) > 7 || Math.hypot(viewer.vx, viewer.vz) > 7) out.lateFast++;
+  /** What this seat was sent, by id: dormant or not. */
+  private fillSentDormant(view: SeatView): void {
+    this.sentDormant.clear();
+    for (let i = 0; i < view.count; i++) {
+      const rec = view.list[i];
+      if (rec !== undefined) this.sentDormant.set(rec.entityId, (rec.flags & EFlag.Dormant) !== 0);
     }
   }
+
+  /** Grade one (seat, body) pair this snapshot: visible, a hard miss, an appearance, a late wake. */
+  private gradePair(
+    nowMs: number,
+    e: EntitySnapshot,
+    viewer: EntitySnapshot,
+    viewerId: number,
+    ctx: RelevanceContext,
+    drawDelayMs: number,
+    settling: boolean,
+    out: VisibilityAuditStats,
+  ): void {
+    const dormant = this.sentDormant.get(e.entityId) ?? true;
+    if (dormant) this.relevantSince.delete(e.entityId);
+    else if (!this.relevantSince.has(e.entityId)) this.relevantSince.set(e.entityId, nowMs);
+
+    const counted =
+      isAlive(e) &&
+      (ctx.freeForAll || teamOf(e) !== teamOf(viewer)) &&
+      Math.hypot(e.x - viewer.x, e.y - viewer.y, e.z - viewer.z) > NEAR_RADIUS_M;
+    if (!counted) {
+      this.wasVisible.delete(e.entityId);
+      return;
+    }
+    out.pairs++;
+    const ray = clearLine(ctx.world, viewer, e, 0, -1, this.hit);
+    if (ray < 0) {
+      this.wasVisible.delete(e.entityId);
+      return;
+    }
+    out.visible++;
+    if (dormant) out.hardMisses++;
+    const appearing = !this.wasVisible.has(e.entityId);
+    this.wasVisible.add(e.entityId);
+    if (!appearing || settling) return;
+    out.appearances++;
+    if (dormant) return;
+    this.gradeAppearance(nowMs, e, viewer, viewerId, ray, drawDelayMs, out);
+  }
+
+  /**
+   * One appearance of a body that was already awake: was the client told in time, and if not,
+   * what kind of late wake was it?
+   *
+   * Exempt when either body respawned inside the draw delay — a body that spawns in view appears
+   * however it is sent, and grading that would count the spawn rather than the culling.
+   */
+  private gradeAppearance(
+    nowMs: number,
+    e: EntitySnapshot,
+    viewer: EntitySnapshot,
+    viewerId: number,
+    ray: number,
+    drawDelayMs: number,
+    out: VisibilityAuditStats,
+  ): void {
+    const since = this.relevantSince.get(e.entityId) ?? nowMs;
+    const shown = nowMs - since;
+    if (shown >= drawDelayMs) return;
+    const spawned = Math.max(this.spawnedAt.get(e.entityId) ?? -Infinity, this.spawnedAt.get(viewerId) ?? -Infinity);
+    if (nowMs - spawned < drawDelayMs) return;
+    out.lateWakes++;
+    out.worstShortfallMs = Math.max(out.worstShortfallMs, drawDelayMs - shown);
+    // With no look-ahead only the five now-to-now rays are live, so the index is the point.
+    if (ray < out.lateByPoint.length) out.lateByPoint[ray] = (out.lateByPoint[ray] ?? 0) + 1;
+    if (Math.abs(e.y - viewer.y) > 1.5) out.lateAcrossLevels++;
+    if (Math.hypot(e.vx, e.vz) > 7 || Math.hypot(viewer.vx, viewer.vz) > 7) out.lateFast++;
+  }
+  //#endregion
 }
+//#endregion
+
+// ===================================== DERIVED CONSTANTS ====================================== \\
+//#region Derived Constants
+/**
+ * Every instance's observations, together. Process-wide because the instance a harness most wants
+ * graded — the live match — is destroyed when it ends, before anybody reads it.
+ *
+ * Here rather than in CONSTANTS because it reads `emptyAuditStats` at load time, which is
+ * declared below it (section 3.2).
+ */
+export const visibilityAuditTotals: VisibilityAuditStats = emptyAuditStats();
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** Turn the audit on for every instance this process builds. Harnesses only. */
+export function enableVisibilityAudit(): void {
+  enabled = true;
+}
+
+export function visibilityAuditEnabled(): boolean {
+  return enabled;
+}
+
+export function emptyAuditStats(): VisibilityAuditStats {
+  return {
+    pairs: 0,
+    visible: 0,
+    appearances: 0,
+    hardMisses: 0,
+    lateWakes: 0,
+    worstShortfallMs: 0,
+    seatSnapshots: 0,
+    relevanceMs: 0,
+    enemyRecords: 0,
+    dormantRecords: 0,
+    lateByPoint: [0, 0, 0, 0, 0],
+    lateAcrossLevels: 0,
+    lateFast: 0,
+    hurtTotal: 0,
+    hurtFromDormant: 0,
+    hurtStillDormant: 0,
+    enemySounds: 0,
+    enemySoundsSent: 0,
+    soundsMissing: 0,
+    soundLeaks: 0,
+    shots: 0,
+    shotsSuppressed: 0,
+    shotsAsImpact: 0,
+    hits: 0,
+    hitsSent: 0,
+    eventsMissing: 0,
+    eventLeaks: 0,
+    bombCarried: 0,
+    bombCarrierUnseen: 0,
+    bombLeaks: 0,
+    eventSeatTicks: 0,
+    eventCutMs: 0,
+    eventBytesWhole: 0,
+    eventBytesSent: 0,
+  };
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * The body with this id in a roster, or null.
+ *
+ * `SeatEvents.find` is the same lookup over the same array. Unifying them needs a home neither
+ * file can give it — see `BACKLOG.md` #45.
+ */
+function bodyById(entities: readonly EntitySnapshot[], count: number, id: number): EntitySnapshot | null {
+  for (let i = 0; i < count; i++) {
+    const e = entities[i];
+    if (e !== undefined && e.entityId === id) return e;
+  }
+  return null;
+}
+//#endregion

@@ -1,19 +1,3 @@
-import {
-  copyEntitySnapshot,
-  makeEntitySnapshot,
-  type EntitySnapshot,
-} from '../../shared/net/Snapshot';
-import type { PlayerSimState } from '../../shared/player/PlayerState';
-import { MAX_SERVER_FRAME_BYTES } from '../../shared/net/Protocol';
-import {
-  writeSnapshotEntities,
-  writeSnapshotHeader,
-  writeSnapshotOwner,
-  type SnapshotHeader,
-} from '../../shared/net/Messages';
-import { ByteWriter } from '../../shared/net/Wire';
-import { BASELINE_HISTORY } from './Session';
-
 /**
  * Builds one client's snapshot, delta-compressed against what that client last acked
  * (M10, S4.12).
@@ -33,6 +17,27 @@ import { BASELINE_HISTORY } from './Session';
  * perhaps 400 bytes and costs nothing occasionally; a *wrong* delta costs correctness.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import {
+  copyEntitySnapshot,
+  makeEntitySnapshot,
+  type EntitySnapshot,
+} from '../../shared/net/Snapshot';
+import type { PlayerSimState } from '../../shared/player/PlayerState';
+import { MAX_SERVER_FRAME_BYTES } from '../../shared/net/Protocol';
+import {
+  writeSnapshotEntities,
+  writeSnapshotHeader,
+  writeSnapshotOwner,
+  type SnapshotHeader,
+} from '../../shared/net/Messages';
+import { ByteWriter } from '../../shared/net/Wire';
+import { BASELINE_HISTORY } from './Session';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 interface Frame {
   id: number;
   /** Entity id -> the state that was sent for it in this frame. */
@@ -49,8 +54,18 @@ export interface EncodeStats {
   /** Snapshots sent in full because no usable baseline was available. */
   fullSnapshots: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const EMPTY = new Uint8Array(0);
+//#endregion
+
+// =================================== CLASS SnapshotEncoder ==================================== \\
+//#region Class SnapshotEncoder
 export class SnapshotEncoder {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly stats: EncodeStats = { lastBytes: 0, count: 0, totalBytes: 0, fullSnapshots: 0 };
 
   private readonly frames: Frame[] = [];
@@ -66,13 +81,19 @@ export class SnapshotEncoder {
 
   /** Ids present in the frame currently being built, to detect removals. */
   private readonly present = new Set<number>();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor() {
     for (let i = 0; i < BASELINE_HISTORY; i++) {
       this.frames.push({ id: 0, entities: new Map() });
     }
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get meanBytes(): number {
     return this.stats.count === 0 ? 0 : this.stats.totalBytes / this.stats.count;
   }
@@ -150,7 +171,10 @@ export class SnapshotEncoder {
     this.stats.count++;
     return bytes;
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private findFrame(id: number): Frame | null {
     for (const f of this.frames) if (f.id === id) return f;
     return null;
@@ -188,6 +212,6 @@ export class SnapshotEncoder {
       slot.entities.set(e.entityId, rec);
     }
   }
+  //#endregion
 }
-
-const EMPTY = new Uint8Array(0);
+//#endregion

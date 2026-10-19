@@ -1,26 +1,3 @@
-import { hitsFrom } from '../../shared/combat/ShotAccounting';
-import { EV, type GameBus } from '../../shared/core/Events';
-import {
-  beginEvents,
-  finishEvents,
-  writeDamage,
-  writeFired,
-  writeFootstep,
-  writeImpact,
-  writeKilled,
-  writePose,
-  Ev,
-  type DamageEvent,
-  type FiredEvent,
-  type FootstepEvent,
-  type ImpactEvent,
-  type KilledEvent,
-  type PoseEvent,
-} from '../../shared/net/Messages';
-import { MAX_SERVER_FRAME_BYTES } from '../../shared/net/Protocol';
-import { weaponIndexOf } from '../../shared/net/Snapshot';
-import { ByteWriter } from '../../shared/net/Wire';
-
 /**
  * Turns the authoritative `EventBus` into the replicated event stream (M10, S4.15).
  *
@@ -56,11 +33,96 @@ import { ByteWriter } from '../../shared/net/Wire';
  * `SeatEvents`'s decision (anti-wallhack phase 2, docs/VISIBILITY.md).
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { hitsFrom } from '../../shared/combat/ShotAccounting';
+import { EV, type GameBus, type GameEvents } from '../../shared/core/Events';
+import {
+  beginEvents,
+  finishEvents,
+  writeDamage,
+  writeFired,
+  writeFootstep,
+  writeImpact,
+  writeKilled,
+  writePose,
+  Ev,
+  type DamageEvent,
+  type FiredEvent,
+  type FootstepEvent,
+  type ImpactEvent,
+  type KilledEvent,
+  type PoseEvent,
+} from '../../shared/net/Messages';
+import { MAX_SERVER_FRAME_BYTES } from '../../shared/net/Protocol';
+import { weaponIndexOf } from '../../shared/net/Snapshot';
+import { ByteWriter } from '../../shared/net/Wire';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Events one tick can hold: the frame's count is a byte. */
 export const MAX_TICK_EVENTS = 255;
 
+/**
+ * Material of the most recent bullet impact this tick.
+ *
+ * Module-level because `Ballistics` emits `bullet.impact` immediately before the
+ * `weapon.fired` that owns it, and threading a field through two unrelated bus subscriptions
+ * to carry one byte between them would be worse than saying so here.
+ *
+ * It is never cleared, so a shot that stops in nothing carries whatever this process saw last —
+ * across ticks, and across matches. Pinned by `EventCollector.test.ts` and recorded as a
+ * suspected bug in `BACKLOG.md` (#44) rather than changed, because what the client draws for
+ * that shot is behaviour.
+ */
+let lastImpactMaterial = 0;
+
+const fired: FiredEvent = {
+  sourceId: 0,
+  weaponIndex: 0,
+  x: 0,
+  y: 0,
+  z: 0,
+  endX: 0,
+  endY: 0,
+  endZ: 0,
+  material: 0,
+  tracer: false,
+  pelletsHit: 0,
+  minimapPing: true,
+};
+const damage: DamageEvent = {
+  sourceId: 0,
+  targetId: 0,
+  amount: 0,
+  zone: 'torso',
+  lethal: false,
+  autonomous: false,
+  x: 0,
+  y: 0,
+  z: 0,
+};
+const killed: KilledEvent = { targetId: 0, sourceId: 0, weaponIndex: 0, zone: 'torso', killerHealth: 0 };
+const impact: ImpactEvent = { x: 0, y: 0, z: 0, material: 0 };
+const footstep: FootstepEvent = {
+  entityId: 0,
+  x: 0,
+  y: 0,
+  z: 0,
+  material: 0,
+  heavy: false,
+  quiet: false,
+};
+const pose: PoseEvent = { entityId: 0, x: 0, y: 0, z: 0, speed: 0, material: 0 };
+//#endregion
+
+// ==================================== CLASS EventCollector ==================================== \\
+//#region Class EventCollector
 /** One tick's worth of events, encoded once and cut per seat. */
 export class EventCollector {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly writer = new ByteWriter(MAX_SERVER_FRAME_BYTES);
   /** The variants' bytes. Never sent as a frame: `frameFor` copies ranges out of it. */
   private readonly variants = new ByteWriter(MAX_SERVER_FRAME_BYTES);
@@ -97,7 +159,10 @@ export class EventCollector {
    * so a step the bots cannot hear is a step no enemy is sent (D4).
    */
   silentFootsteps: ((entityId: number) => boolean) | null = null;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Events written this tick. Zero means there is nothing to send. */
   get pending(): number {
     return this.count;
@@ -111,120 +176,13 @@ export class EventCollector {
    */
   subscribe(bus: GameBus): Array<() => void> {
     const off: Array<() => void> = [];
-
-    off.push(
-      bus.on(EV.WeaponFired, (p) => {
-        fired.sourceId = p.sourceId;
-        fired.weaponIndex = weaponIndexOf(p.weaponId);
-        fired.x = p.x;
-        fired.y = p.y;
-        fired.z = p.z;
-        fired.endX = p.endX;
-        fired.endY = p.endY;
-        fired.endZ = p.endZ;
-        // The material the round stopped in is carried by the impact, not the shot, so it is
-        // resolved from the last impact this tick — see `noteImpactMaterial`.
-        fired.material = lastImpactMaterial;
-        fired.tracer = p.tracer;
-        // The count, not the bit (protocol v14, round 5 B5). A client's accuracy column is
-        // built from this event and nothing else, so it has to carry what actually connected.
-        fired.pelletsHit = hitsFrom(p);
-        // The resolved weapon's answer, suppressor and all (v27). The receiving client cannot know
-        // what is on the shooter's gun; see `FiredEvent.minimapPing`.
-        fired.minimapPing = p.minimapPing;
-        if (!this.write(Ev.Fired, p.sourceId, -1, p.x, p.z, false, () => writeFired(this.writer, fired))) return;
-        this.loud[this.count - 1] = p.minimapPing ? 1 : 0;
-        // D2: a suppressed shot, for whoever is not told about the shooter, is where it landed.
-        if (!p.minimapPing) {
-          impact.x = p.endX;
-          impact.y = p.endY;
-          impact.z = p.endZ;
-          impact.material = fired.material;
-          this.writeVariant(() => writeImpact(this.variants, impact));
-        }
-      }),
-    );
-
-    off.push(
-      bus.on(EV.BulletImpact, (p) => {
-        // Not replicated on its own. It is captured so the *next* `weapon.fired` in this
-        // tick can carry the surface it hit, which is what the client needs for the spark
-        // colour and the impact click. Ballistics emits the impact before the fired event.
-        lastImpactMaterial = p.material;
-      }),
-    );
-
-    off.push(
-      bus.on(EV.DamageDealt, (p) => {
-        damage.sourceId = p.sourceId;
-        damage.targetId = p.targetId;
-        damage.amount = p.amount;
-        damage.zone = p.zone;
-        damage.lethal = p.lethal;
-        damage.autonomous = p.autonomous;
-        damage.x = p.x;
-        damage.y = p.y;
-        damage.z = p.z;
-        this.write(Ev.Damage, p.targetId, p.sourceId, p.x, p.z, false, () => writeDamage(this.writer, damage));
-      }),
-    );
-
-    off.push(
-      bus.on(EV.EntityKilled, (p) => {
-        killed.targetId = p.targetId;
-        killed.sourceId = p.sourceId;
-        killed.weaponIndex = weaponIndexOf(p.weaponId);
-        killed.zone = p.zone;
-        // Stamped by `DamageSystem` at the kill, not read off a body afterwards (round 5, F9).
-        killed.killerHealth = p.killerHealth;
-        if (!this.write(Ev.Killed, p.targetId, p.sourceId, 0, 0, false, () => writeKilled(this.writer, killed))) return;
-        // E3: the killer's health is the victim's to know — the death report's HP LEFT — and
-        // nobody else's. Everybody else gets the same line of the feed with it zeroed.
-        killed.killerHealth = 0;
-        this.writeVariant(() => writeKilled(this.variants, killed));
-      }),
-    );
-
-    off.push(
-      bus.on(EV.PlayerFootstep, (p) => {
-        footstep.entityId = p.entityId;
-        footstep.x = p.x;
-        footstep.y = p.y;
-        footstep.z = p.z;
-        footstep.material = p.material;
-        footstep.heavy = p.heavy;
-        footstep.quiet = p.quiet;
-        // Crouch-walking and sliding are silent by design (S6.3), and Dead Silence is the perk that
-        // says so for every step — both already cut from the bots' hearing in `BotDirector`.
-        const muted = p.quiet || this.silentFootsteps?.(p.entityId) === true;
-        this.write(Ev.Footstep, p.entityId, -1, p.x, p.z, muted, () => writeFootstep(this.writer, footstep));
-      }),
-    );
-
-    off.push(
-      bus.on(EV.PlayerJumped, (p) => {
-        pose.entityId = p.entityId;
-        pose.x = p.x;
-        pose.y = p.y;
-        pose.z = p.z;
-        pose.speed = p.horizontalSpeed;
-        pose.material = 0;
-        this.write(Ev.Jump, p.entityId, -1, p.x, p.z, false, () => writePose(this.writer, Ev.Jump, pose));
-      }),
-    );
-
-    off.push(
-      bus.on(EV.PlayerLanded, (p) => {
-        pose.entityId = p.entityId;
-        pose.x = p.x;
-        pose.y = p.y;
-        pose.z = p.z;
-        pose.speed = p.impactSpeed;
-        pose.material = p.material;
-        this.write(Ev.Land, p.entityId, -1, p.x, p.z, false, () => writePose(this.writer, Ev.Land, pose));
-      }),
-    );
-
+    off.push(bus.on(EV.WeaponFired, (p) => this.onFired(p)));
+    off.push(bus.on(EV.BulletImpact, (p) => this.onImpact(p)));
+    off.push(bus.on(EV.DamageDealt, (p) => this.onDamage(p)));
+    off.push(bus.on(EV.EntityKilled, (p) => this.onKilled(p)));
+    off.push(bus.on(EV.PlayerFootstep, (p) => this.onFootstep(p)));
+    off.push(bus.on(EV.PlayerJumped, (p) => this.onJumped(p)));
+    off.push(bus.on(EV.PlayerLanded, (p) => this.onLanded(p)));
     return off;
   }
 
@@ -270,6 +228,110 @@ export class EventCollector {
     }
     return finishEvents(out, n);
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private onFired(p: GameEvents[typeof EV.WeaponFired]): void {
+    fired.sourceId = p.sourceId;
+    fired.weaponIndex = weaponIndexOf(p.weaponId);
+    fired.x = p.x;
+    fired.y = p.y;
+    fired.z = p.z;
+    fired.endX = p.endX;
+    fired.endY = p.endY;
+    fired.endZ = p.endZ;
+    // The material the round stopped in is carried by the impact, not the shot, so it is
+    // resolved from the last impact this tick — see `onImpact`.
+    fired.material = lastImpactMaterial;
+    fired.tracer = p.tracer;
+    // The count, not the bit (protocol v14, round 5 B5). A client's accuracy column is
+    // built from this event and nothing else, so it has to carry what actually connected.
+    fired.pelletsHit = hitsFrom(p);
+    // The resolved weapon's answer, suppressor and all (v27). The receiving client cannot know
+    // what is on the shooter's gun; see `FiredEvent.minimapPing`.
+    fired.minimapPing = p.minimapPing;
+    if (!this.write(Ev.Fired, p.sourceId, -1, p.x, p.z, false, () => writeFired(this.writer, fired))) return;
+    this.loud[this.count - 1] = p.minimapPing ? 1 : 0;
+    // D2: a suppressed shot, for whoever is not told about the shooter, is where it landed.
+    if (!p.minimapPing) {
+      impact.x = p.endX;
+      impact.y = p.endY;
+      impact.z = p.endZ;
+      impact.material = fired.material;
+      this.writeVariant(() => writeImpact(this.variants, impact));
+    }
+  }
+
+  /**
+   * Not replicated on its own. It is captured so the *next* `weapon.fired` in this tick can
+   * carry the surface it hit, which is what the client needs for the spark colour and the
+   * impact click. Ballistics emits the impact before the fired event.
+   */
+  private onImpact(p: GameEvents[typeof EV.BulletImpact]): void {
+    lastImpactMaterial = p.material;
+  }
+
+  private onDamage(p: GameEvents[typeof EV.DamageDealt]): void {
+    damage.sourceId = p.sourceId;
+    damage.targetId = p.targetId;
+    damage.amount = p.amount;
+    damage.zone = p.zone;
+    damage.lethal = p.lethal;
+    damage.autonomous = p.autonomous;
+    damage.x = p.x;
+    damage.y = p.y;
+    damage.z = p.z;
+    this.write(Ev.Damage, p.targetId, p.sourceId, p.x, p.z, false, () => writeDamage(this.writer, damage));
+  }
+
+  private onKilled(p: GameEvents[typeof EV.EntityKilled]): void {
+    killed.targetId = p.targetId;
+    killed.sourceId = p.sourceId;
+    killed.weaponIndex = weaponIndexOf(p.weaponId);
+    killed.zone = p.zone;
+    // Stamped by `DamageSystem` at the kill, not read off a body afterwards (round 5, F9).
+    killed.killerHealth = p.killerHealth;
+    if (!this.write(Ev.Killed, p.targetId, p.sourceId, 0, 0, false, () => writeKilled(this.writer, killed))) return;
+    // E3: the killer's health is the victim's to know — the death report's HP LEFT — and
+    // nobody else's. Everybody else gets the same line of the feed with it zeroed.
+    killed.killerHealth = 0;
+    this.writeVariant(() => writeKilled(this.variants, killed));
+  }
+
+  private onFootstep(p: GameEvents[typeof EV.PlayerFootstep]): void {
+    footstep.entityId = p.entityId;
+    footstep.x = p.x;
+    footstep.y = p.y;
+    footstep.z = p.z;
+    footstep.material = p.material;
+    footstep.heavy = p.heavy;
+    footstep.quiet = p.quiet;
+    // Crouch-walking and sliding are silent by design (S6.3), and Dead Silence is the perk that
+    // says so for every step — both already cut from the bots' hearing in `BotDirector`.
+    const muted = p.quiet || this.silentFootsteps?.(p.entityId) === true;
+    this.write(Ev.Footstep, p.entityId, -1, p.x, p.z, muted, () => writeFootstep(this.writer, footstep));
+  }
+
+  private onJumped(p: GameEvents[typeof EV.PlayerJumped]): void {
+    pose.entityId = p.entityId;
+    pose.x = p.x;
+    pose.y = p.y;
+    pose.z = p.z;
+    pose.speed = p.horizontalSpeed;
+    pose.material = 0;
+    this.write(Ev.Jump, p.entityId, -1, p.x, p.z, false, () => writePose(this.writer, Ev.Jump, pose));
+  }
+
+  private onLanded(p: GameEvents[typeof EV.PlayerLanded]): void {
+    pose.entityId = p.entityId;
+    pose.x = p.x;
+    pose.y = p.y;
+    pose.z = p.z;
+    pose.speed = p.impactSpeed;
+    pose.material = p.material;
+    this.write(Ev.Land, p.entityId, -1, p.x, p.z, false, () => writePose(this.writer, Ev.Land, pose));
+  }
 
   /** Encode the variant of the event just written. One that does not fit is simply not there. */
   private writeVariant(fn: () => void): void {
@@ -311,51 +373,6 @@ export class EventCollector {
     this.count++;
     return true;
   }
+  //#endregion
 }
-
-/**
- * Material of the most recent bullet impact this tick.
- *
- * Module-level because `Ballistics` emits `bullet.impact` immediately before the
- * `weapon.fired` that owns it, and threading a field through two unrelated bus subscriptions
- * to carry one byte between them would be worse than saying so here.
- */
-let lastImpactMaterial = 0;
-
-const fired: FiredEvent = {
-  sourceId: 0,
-  weaponIndex: 0,
-  x: 0,
-  y: 0,
-  z: 0,
-  endX: 0,
-  endY: 0,
-  endZ: 0,
-  material: 0,
-  tracer: false,
-  pelletsHit: 0,
-  minimapPing: true,
-};
-const damage: DamageEvent = {
-  sourceId: 0,
-  targetId: 0,
-  amount: 0,
-  zone: 'torso',
-  lethal: false,
-  autonomous: false,
-  x: 0,
-  y: 0,
-  z: 0,
-};
-const killed: KilledEvent = { targetId: 0, sourceId: 0, weaponIndex: 0, zone: 'torso', killerHealth: 0 };
-const impact: ImpactEvent = { x: 0, y: 0, z: 0, material: 0 };
-const footstep: FootstepEvent = {
-  entityId: 0,
-  x: 0,
-  y: 0,
-  z: 0,
-  material: 0,
-  heavy: false,
-  quiet: false,
-};
-const pose: PoseEvent = { entityId: 0, x: 0, y: 0, z: 0, speed: 0, material: 0 };
+//#endregion

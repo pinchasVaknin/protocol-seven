@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**41 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**42 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B2b opened #44–#46** on 2026-10-19, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick. Five numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12, and **#40** and **#44** on 2026-10-19.
@@ -569,6 +569,34 @@ minimum of 0.4. Touching either slider in the F1 debug panel snaps the value to 
 weapon's authored figure cannot be restored through the UI. **Decide**: widen the bounds in
 `WEAPON_TUNABLES` to contain the authored values, or change the weapon's base values. The second is
 a balance change.
+
+### #47 — No oracle can observe a replicated event's payload · `open` *(opened 2026-10-19)* · *instrument gap*
+**Files** the oracle set itself: `Claude outputs/refactor/oracles.mjs` and §6 of
+`REFACTOR-PROMPT.md`; the evidence is in `src/server/net/EventCollector.ts`. **Origin** the
+session that closed #44, on 2026-10-19.
+
+#44 changed what every missed shot in the game puts on the wire — `FiredEvent.material`, which
+drives the spark colour and the impact click — and **not one oracle byte moved.** That was taken
+as the deliverable of that task and it turned out to be a hole: nothing in the set reads an
+event's payload.
+
+- `hashes.json` is simulation state, and no simulation state derives from a replicated event.
+- The four text oracles and the five seeded matches record match flow, scores, spawns and
+  progression.
+- `skirmish.txt` decodes events — `SeatAudit.observeEvents` does exactly that — but it holds
+  them against the *cut's rules*: which seat may have which event, in which form. It never
+  checks a payload field's value, and `compare` judges that file by `FLOW CHECK PASSED.`
+  rather than by bytes anyway.
+
+So any unit touching `EventCollector`, `MessageEvents` or the client's event sinks can change
+what a shot, a step or a kill *says* and pass every oracle. B2b and the #44 session both did
+work in that area under an R1 promise the instruments could not actually check.
+
+**The fix is a small one and it belongs to whoever owns §6**, not to a unit (§10 keeps the
+instruments out of scope — which is why this is an entry and not a commit): have the snapshot
+record one tick's decoded event frames from a seeded match, field by field, as a text oracle
+beside the other five. The seeded matches already shoot; the bytes already exist; nothing reads
+them.
 
 ### #45 — One roster lookup, written twice in one unit · `open` *(opened 2026-10-19 by B2b)*
 **Files** `src/server/net/SeatEvents.ts` (`find`) and `src/server/net/VisibilityAudit.ts`

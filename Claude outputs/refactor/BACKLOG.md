@@ -41,7 +41,9 @@ and belong in its Step 2 plan.
 | ~~A21~~ | `shared/net/Messages.ts` + the seven files it was split into | **declined with a reason** — `Messages.ts` calls neither angle helper, so #1 has no edit to make here. A21 opened none |
 | ~~A22~~ | `shared/net/NetClient.ts` + `CommandPipeline.ts` | **closed** — nothing was bound to it; A22 opened #32 |
 | ~~A23~~ | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | **closed** — A23 absorbed #1's shared half under an approved fence exception: `shortestAngle` is gone and both call sites moved. What is left of #1 is the three local copies, which are not the same function |
+| B3 | `server/net/` Session, WsServer | #31 (`wantsRewindDebug`, written and never read — B3 is the only unit allowed to touch it) |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
+| B5 | `server/instance/MatchInstance.ts` | #30's call site (`equipmentIndexOf`, per player per snapshot) — the edit itself is A20's file, so fold in what can be done here and leave the rest |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
 | C2 | `client/engine/` CameraRig, FrameLoop | #34 — reproduce the local camera jitter *before* refactoring these files |
 | C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
@@ -1029,7 +1031,7 @@ entry can be closed as a tidy-up rather than a defect.
 a hand-edited save — so the test above is the proof, and it will need its expectation inverted
 when the behaviour changes, which is the one case where changing a pinned assertion is correct.
 
-### #30 — Give `equipmentIndexOf` the table the weapons already have · `open` *(opened 2026-10-14 by A20)*
+### #30 — Give `equipmentIndexOf` the table the weapons already have · `open` · *call site bound to B5* *(opened 2026-10-14 by A20)*
 
 **Files** `src/shared/net/Snapshot.ts` (`equipmentIndexOf`), caller `src/server/instance/MatchInstance.ts:1060`.
 **Origin** A20.
@@ -1051,7 +1053,7 @@ commit at all.
 **Verify** `npm run check` + SIM snapshot/compare → `PASS`, plus `Snapshot.test.ts`'s
 *"names every piece of equipment and nothing else"*, which already pins every index both ways.
 
-### #31 — `Session.wantsRewindDebug` is written and never read · `open` *(opened 2026-10-14 by A20)*
+### #31 — `Session.wantsRewindDebug` is written and never read · `bound to B3` *(opened 2026-10-14 by A20)*
 
 **Files** `src/server/net/Session.ts` (B3), reading `src/shared/net/UrlFlags.ts` and
 `src/shared/net/NetClient.ts`. **Origin** A20.

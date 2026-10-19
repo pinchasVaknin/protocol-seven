@@ -9,10 +9,10 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**38 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B. Three numbers are gone and
+**39 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. Four numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
-A13 and **#25** by A15, both on 2026-10-12.
+A13 and **#25** by A15, both on 2026-10-12, and **#40** on 2026-10-19.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -43,7 +43,6 @@ and belong in its Step 2 plan.
 | ~~A23~~ | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | **closed** — A23 absorbed #1's shared half under an approved fence exception: `shortestAngle` is gone and both call sites moved. What is left of #1 is the three local copies, which are not the same function |
 | B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
-| B2, B3, B4, B5, B6, B7, B8 | — (the NET oracle, not a file) | #40 — **read before taking the NET baseline**: §6's command never reaches F8 |
 | C2 | `client/engine/` CameraRig, FrameLoop | #34 — reproduce the local camera jitter *before* refactoring these files |
 | C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
 | C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
@@ -714,36 +713,56 @@ primitive.
 
 ## 6. Documentation and housekeeping
 
-### #40 — §6's NET oracle command never reaches the reconnect flow · `open` *(opened 2026-10-19 by B1)*
-**Files** `REFACTOR-PROMPT.md` §6, and `Claude outputs/refactor/oracles.mjs` (line 129, the
-`spawnSync` of the harness). **Origin** B1, Step 0.
+### #43 — The harness's "background build" warning tells you to set a variable that is already set · `open` *(opened 2026-10-19)*
+**Files** `src/server/skirmishHarness.ts` (~line 1451, the `background build` warning). **Origin**
+the session that closed #40, on 2026-10-19.
 
-§6 defines the NET oracle as `skirmishHarness --cycles 1 --drop-return 1` and requires
-`FLOW CHECK PASSED.` **On a clean tree that command fails**, and B1 hit it before touching any
-code: the arena cycle takes 60 s, the live match then runs past the end of the harness's run,
-and because `--drop-return` needs a live match that has *ended* for its return to close, no
-cycle completes —
+Since #40, the NET oracle's run ends a match properly — the `post-match hold` line in the same
+report now reads *"3 client(s) held, 3 migrated back; screen said 30.0/29.9/29.9s, actual
+summary→arena 30022/30020/30022ms"*. The warning three lines above it still says *"the return to
+the arena was NOT EXERCISED — no match ended in this run ... Shorten `MATCH_ROUND_SECONDS` to
+reach it"*, which is now false twice over: a match did end, and the variable it asks for is set.
+Its condition is presumably about the *next* cycle's background build, which `--cycles 1` cannot
+reach — in which case the text should say so instead of naming a remedy that is already applied.
+
+**Why the session that found it did not fix it.** It is in the harness, which §10 of
+`REFACTOR-PROMPT.md` keeps out of scope for the whole programme. §6 now warns the reader to
+expect that one line and ignore it.
+
+### #42 — Three clients disagree with the server's final scoreboard, one run in five · `needs a decision from the user` *(opened 2026-10-19)*
+**Files** unknown — the divergence is between `ScoreSystem`'s final rows on the server and the
+replica the clients hold; the candidates are the scoreboard broadcast in `src/server/net/` (B2's
+`SeatEvents`/`EventCollector` or B3's `Session`) and the client's replica in
+`src/client/net/NetSession.ts` / `src/client/ui/Scoreboard.ts`. **Origin** the session that closed
+#40, on 2026-10-19.
+
+Closing #40 made the NET oracle sample the final board for the first time. It now reports, on an
+**untouched tree**, one run in five:
 
 ```
-ERR 201.079s skirmish  FLOW CHECK FAILED: --drop-return 1 was set and no drop/return cycle
-                       completed — either no live match ran long enough or nobody came back (F8)
+scoreboard: server ended with 10 row(s); 30 row(s) compared across 3 client(s), 6 mismatch(es)
+            (must be 0); boards received 532/544/544; OP1 10 row(s) over 532 board(s), 2 off;
+            OP2 10 row(s) over 544 board(s), 2 off; OP3 10 row(s) over 544 board(s), 2 off
+ERR FLOW CHECK FAILED: 6 of 30 scoreboard row(s) on clients disagree with the server's final
+                       rows (4.3)
 ```
 
-The harness itself prints the remedy three times (*"Shorten MATCH_ROUND_SECONDS to reach it"*),
-and with `MATCH_ROUND_SECONDS=150` the same command passes and reports the real figures:
-*"reconnect: 1 cycle(s), 1 kept the seat, 1 kept the score, 1 resynced ... registry 1 reserved /
-1 claimed / 0 expired / 0 unknown, 0 still held"*. So §6's recipe silently runs **three checks
-fewer** than it claims — the reconnect cycle, the post-match hold and the final scoreboard are
-all reported `NOT EXERCISED` / `NOT SAMPLED`.
+Five runs on the same tree: four with `0 mismatch(es)`, one with six. **Two rows off on each of
+the three clients, the same count on all three**, which points at the server's rows changing after
+its last broadcast rather than at anything per-client — either a real end-of-match ordering defect
+(the harness's check calls it 4.3, M13 Phase B) or an unsound check that compares the client's
+last received board against rows copied at a later instant. Deciding which is the work.
 
-B1 took its NET baseline with `MATCH_ROUND_SECONDS=150`, before and after, with the user's
-approval and recorded in its report. **Every remaining SIM + NET unit (B2–B8) should do the
-same** until §6 is corrected, which is the work here: put the environment variable in §6's
-table, or in `oracles.mjs` so the snapshot carries it.
+**Why the session that found it did not do it.** Its task was §6's recipe, scoped to the two
+instrument files and `BACKLOG.md`; this is either in `src/` — a behaviour defect, not a refactor —
+or in `src/server/skirmishHarness.ts`, which §10 keeps out of scope for the whole programme.
 
-**Why B1 could not do it.** `REFACTOR-PROMPT.md` and `oracles.mjs` are the programme's
-instruments, not a unit's files (R3, and §10 keeps the harnesses out of scope), so the unit
-that found it is not allowed to change either.
+**The decision this needs**, and why it cannot wait long: it governs whether the NET oracle can
+gate a unit. §6 now tells a unit that hits this red line to re-run once and, if it reproduces, to
+stop and report — which is the right default but is still a one-in-five chance of a wasted
+4.5-minute run for every remaining SIM + NET unit (B2–B8, two snapshots each). **Decide**: treat
+the 4.3 line as a known-flaky warning until it is fixed, or fix it first and keep the oracle
+strictly green.
 
 ### #41 — `RigHistory.newest` is written and never read · `open` *(opened 2026-10-19 by B1)*
 **Files** `src/server/net/RigHistory.ts`. **Origin** B1.

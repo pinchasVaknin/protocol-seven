@@ -174,3 +174,57 @@ describe('writeDormant', () => {
     expect(out).toMatchObject({ entityId: 9, displayName: 'E9', characterIndex: 2, deathSerial: 1, x: 0, z: 0, weaponIndex: 255 });
   });
 });
+
+/**
+ * What the list says *about itself* (B2a): its order, its lookups and its counters.
+ *
+ * `build` is four passes in one function and is about to become four named ones. These pin the
+ * parts a reader would otherwise have to re-derive from the loop: that the list follows the
+ * roster, that `awake` is exactly what went out live — because `SeatEvents` asks it, so an event
+ * never places a body the snapshot did not — and that the two metrics counters count enemies.
+ */
+describe('the list, its lookups and its counters', () => {
+  it('lists every body once, in the roster\'s own order', () => {
+    const view = new SeatView();
+    const entities = [body(1, -5, 0, 'A'), body(2, 5, 0, 'B'), body(3, 5, 5, 'B'), body(4, -4, 1, 'A')];
+    view.build(0, 1, entities, 4, CTX, false, false, NOBODY_HIDDEN);
+
+    expect(view.count).toBe(4);
+    expect([0, 1, 2, 3].map((i) => view.list[i]?.entityId)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('gives back the record it sent for a body, live or dormant, and nothing for one it never sent', () => {
+    const view = new SeatView();
+    view.build(0, 1, [body(1, -5, 0, 'A'), body(2, 5, 0, 'B'), body(3, 5, 5, 'B')], 3, CTX, false, false, NOBODY_HIDDEN);
+
+    expect(view.recordOf(2)).toBe(view.list[1]);
+    expect(dormant(view.recordOf(3) ?? undefined)).toBe(true);
+    expect(view.recordOf(99)).toBeNull();
+  });
+
+  it('puts every body it sent live into awake, the seat\'s own included, and no dormant one', () => {
+    const view = new SeatView();
+    view.build(0, 1, [body(1, -5, 0, 'A'), body(2, 5, 0, 'B'), body(3, 5, 5, 'B')], 3, CTX, false, false, NOBODY_HIDDEN);
+
+    expect([...view.awake].sort()).toEqual([1, 2]);
+  });
+
+  it('counts the enemy records and how many of them went out dormant', () => {
+    const view = new SeatView();
+    // One teammate, one enemy in view, two behind the wall.
+    const entities = [body(1, -5, 0, 'A'), body(2, -4, 1, 'A'), body(3, 5, 0, 'B'), body(4, 5, 5, 'B'), body(5, 5, 6, 'B')];
+    view.build(0, 1, entities, 5, CTX, false, false, NOBODY_HIDDEN);
+
+    expect(view.enemies).toBe(3);
+    expect(view.dormantSent).toBe(2);
+  });
+
+  it('counts every other body as an enemy in free-for-all', () => {
+    const view = new SeatView();
+    const ffa: RelevanceContext = { world: CTX.world, freeForAll: true, lookAheadSec: 0 };
+    view.build(0, 1, [body(1, -5, 0, 'A'), body(2, -4, 1, 'A'), body(3, 5, 5, 'B')], 3, ffa, false, false, NOBODY_HIDDEN);
+
+    expect(view.enemies).toBe(2);
+    expect(view.dormantSent).toBe(1);
+  });
+});

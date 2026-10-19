@@ -331,6 +331,11 @@ const FINISHED = {
     'src/server/net/RigHistory.ts',
     'src/server/net/Validation.ts',
   ],
+  B2a: [
+    'src/server/net/Relevance.ts',
+    'src/server/net/SeatEvents.ts',
+    'src/server/net/SeatView.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

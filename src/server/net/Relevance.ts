@@ -1,8 +1,3 @@
-import { EFlag, type EntitySnapshot } from '../../shared/net/Snapshot';
-import { DEFAULT_MOVEMENT_CONFIG } from '../../shared/player/MovementConfig';
-import { makeRayHit, type RayHit } from '../../shared/world/Geometry';
-import type { CollisionWorld } from '../../shared/world/CollisionWorld';
-
 /**
  * Who each player is told about (anti-wallhack phase 1; design: docs/VISIBILITY.md).
  *
@@ -34,6 +29,58 @@ import type { CollisionWorld } from '../../shared/world/CollisionWorld';
  * map, measured at 0.47-0.63 µs a ray on the four maps.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { EFlag, type EntitySnapshot } from '../../shared/net/Snapshot';
+import { DEFAULT_MOVEMENT_CONFIG } from '../../shared/player/MovementConfig';
+import { makeRayHit, type RayHit } from '../../shared/world/Geometry';
+import type { CollisionWorld } from '../../shared/world/CollisionWorld';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+/** What one evaluation needs to know about the world and the match. */
+export interface RelevanceContext {
+  readonly world: CollisionWorld;
+  /** No teammates: every other body is an enemy. */
+  readonly freeForAll: boolean;
+  /** R4's horizon for this viewer, seconds: RTT/2 + interpolation delay + one snapshot. */
+  readonly lookAheadSec: number;
+}
+
+/**
+ * Everything one pair's rays are cast from, derived once per `clearLine` call.
+ *
+ * A struct rather than the locals of a closure: `clearLine` used to build a `test` arrow per
+ * call, and it runs per pair per snapshot — the one place in this file R7 actually bites. One
+ * module-level instance is filled and read inside a single call, which is sound because nothing
+ * reached from here calls back into relevance; `Relevance.test.ts` pins that two pairs tested one
+ * after another, or interleaved, cannot see each other's values.
+ */
+interface RayProbe {
+  /** Both bodies' velocity carried over the look-ahead, metres. */
+  vdx: number;
+  vdz: number;
+  tdx: number;
+  tdz: number;
+  /** Whether the velocity look-ahead and the sideways reach are live at all. */
+  moving: boolean;
+  reaching: boolean;
+  /** How far each end may reach across the line of sight, metres. */
+  viewerReach: number;
+  targetReach: number;
+  /** The viewer's eye height, the target's own height, and its head point. */
+  ey: number;
+  h: number;
+  headY: number;
+  /** The unit perpendicular to the line of sight, on the ground plane. */
+  px: number;
+  pz: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** R2. No corner hides a body this close for long, and melee lives inside it. */
 export const NEAR_RADIUS_M = 6;
 
@@ -102,123 +149,29 @@ const RAYS: ReadonlyArray<readonly [number, number, number, boolean]> = (() => {
 /** Rays one pair can cost at most. */
 export const MAX_RAYS_PER_PAIR = RAYS.length;
 
-function bodyHeight(e: EntitySnapshot): number {
-  return DEFAULT_MOVEMENT_CONFIG.standHeight * (e.heightScale > 0 ? e.heightScale : 1);
-}
-
-/** The height a body could have by the time the client draws it: its own, or standing. */
-function reachableHeight(e: EntitySnapshot): number {
-  return Math.max(bodyHeight(e), DEFAULT_MOVEMENT_CONFIG.standHeight);
-}
-
-/** Where a body's eye is, from its record — the same derivation for a player and a bot. */
-export function eyeY(e: EntitySnapshot): number {
-  return e.y + reachableHeight(e) - EYE_BELOW_TOP_M;
-}
-
-export function teamOf(e: EntitySnapshot): 'A' | 'B' {
-  return (e.flags & EFlag.TeamB) !== 0 ? 'B' : 'A';
-}
-
-export function isAlive(e: EntitySnapshot): boolean {
-  return (e.flags & EFlag.Alive) !== 0;
-}
-
-/**
- * R3 and R4: the index of the first clear ray from `viewer`'s eye to a point on `target`, or -1.
- *
- * `hint` is the index that was clear last time for this pair, tried first — a body that was
- * visible a snapshot ago almost always still is along the same line, so a visible pair usually
- * costs one ray. The order otherwise runs from now-to-now outward, cheapest truth first.
- */
-export function clearLine(
-  world: CollisionWorld,
-  viewer: EntitySnapshot,
-  target: EntitySnapshot,
-  lookAheadSec: number,
-  hint: number,
-  hit: RayHit = makeRayHit(),
-): number {
-  const t = Math.min(Math.max(lookAheadSec, 0), MAX_LOOK_AHEAD_S);
-  const vdx = viewer.vx * t;
-  const vdz = viewer.vz * t;
-  const tdx = target.vx * t;
-  const tdz = target.vz * t;
-  const moving = Math.hypot(vdx, vdz) > STILL_M || Math.hypot(tdx, tdz) > STILL_M;
-  const viewerReach = Math.max(Math.hypot(viewer.vx, viewer.vz), REACH_SPEED) * t;
-  const targetReach = Math.max(Math.hypot(target.vx, target.vz), REACH_SPEED) * t;
-  const reaching = viewerReach > STILL_M || targetReach > STILL_M;
-
-  const ey = eyeY(viewer);
-  const h = bodyHeight(target);
-  const headY = target.y + reachableHeight(target) * (POINT_HEIGHTS[HEAD] ?? 0.92);
-  // Shoulders and reach both lie across the line of sight, along its perpendicular.
-  let px = -(target.z - viewer.z);
-  let pz = target.x - viewer.x;
-  const plen = Math.hypot(px, pz);
-  if (plen > 1e-6) {
-    px /= plen;
-    pz /= plen;
-  } else {
-    px = 1;
-    pz = 0;
-  }
-
-  const test = (index: number): boolean => {
-    const ray = RAYS[index];
-    if (ray === undefined) return false;
-    const [eyeSide, bodySide, point, ahead] = ray;
-    if (ahead && !moving) return false;
-    if ((eyeSide !== 0 || bodySide !== 0) && !reaching) return false;
-    const ex = viewer.x + (ahead ? vdx : 0) + px * eyeSide * viewerReach;
-    const ez = viewer.z + (ahead ? vdz : 0) + pz * eyeSide * viewerReach;
-    const side = (POINT_SIDE[point] ?? 0) * SHOULDER_HALF_M + bodySide * targetReach;
-    const bx = target.x + (ahead ? tdx : 0) + px * side;
-    const bz = target.z + (ahead ? tdz : 0) + pz * side;
-    const by = point === HEAD ? headY : target.y + h * (POINT_HEIGHTS[point] ?? 0.6);
-    return world.segmentClear(ex, ey, ez, bx, by, bz, hit);
-  };
-
-  if (hint >= 0 && hint < MAX_RAYS_PER_PAIR && test(hint)) return hint;
-  for (let i = 0; i < MAX_RAYS_PER_PAIR; i++) {
-    if (i === hint) continue;
-    if (test(i)) return i;
-  }
-  return -1;
-}
-
-/** What one evaluation needs to know about the world and the match. */
-export interface RelevanceContext {
-  readonly world: CollisionWorld;
-  /** No teammates: every other body is an enemy. */
-  readonly freeForAll: boolean;
-  /** R4's horizon for this viewer, seconds: RTT/2 + interpolation delay + one snapshot. */
-  readonly lookAheadSec: number;
-}
-
-/**
- * R1, R2, R3/R4 for one pair, with no memory. The tracker below adds R6.
- */
-export function relevantNow(
-  ctx: RelevanceContext,
-  viewer: EntitySnapshot,
-  target: EntitySnapshot,
-  hint: number,
-  hit: RayHit,
-): { readonly relevant: boolean; readonly ray: number } {
-  if (viewer.entityId === target.entityId) return ALWAYS;
-  if (!ctx.freeForAll && teamOf(viewer) === teamOf(target)) return ALWAYS;
-  const dx = target.x - viewer.x;
-  const dy = target.y - viewer.y;
-  const dz = target.z - viewer.z;
-  if (dx * dx + dy * dy + dz * dz <= NEAR_RADIUS_M * NEAR_RADIUS_M) return ALWAYS;
-  const ray = clearLine(ctx.world, viewer, target, ctx.lookAheadSec, hint, hit);
-  return ray >= 0 ? { relevant: true, ray } : NEVER;
-}
-
 const ALWAYS = { relevant: true, ray: -1 } as const;
 const NEVER = { relevant: false, ray: -1 } as const;
 
+/** The one probe, filled per `clearLine` call. See `RayProbe`. */
+const PROBE: RayProbe = {
+  vdx: 0,
+  vdz: 0,
+  tdx: 0,
+  tdz: 0,
+  moving: false,
+  reaching: false,
+  viewerReach: 0,
+  targetReach: 0,
+  ey: 0,
+  h: 0,
+  headY: 0,
+  px: 1,
+  pz: 0,
+};
+//#endregion
+
+// =================================== CLASS RelevanceTracker =================================== \\
+//#region Class RelevanceTracker
 /**
  * One viewer's memory of who it was told about: R6's linger, and the last clear ray per body.
  *
@@ -226,10 +179,15 @@ const NEVER = { relevant: false, ray: -1 } as const;
  * leaves; a stale linger on a reused id would show a new player for half a second for free.
  */
 export class RelevanceTracker {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly until = new Map<number, number>();
   private readonly hints = new Map<number, number>();
   private readonly hit = makeRayHit();
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Is `target` relevant to `viewer` at `nowMs`? Updates the linger and the ray hint. */
   relevant(nowMs: number, ctx: RelevanceContext, viewer: EntitySnapshot, target: EntitySnapshot): boolean {
     const id = target.entityId;
@@ -270,7 +228,10 @@ export class RelevanceTracker {
     this.until.delete(entityId);
     this.hints.delete(entityId);
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private settle(nowMs: number, id: number, relevant: boolean, ray: number): boolean {
     if (relevant) {
       this.until.set(id, nowMs + LINGER_MS);
@@ -280,4 +241,154 @@ export class RelevanceTracker {
     this.hints.delete(id);
     return nowMs < (this.until.get(id) ?? -Infinity);
   }
+  //#endregion
 }
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** Where a body's eye is, from its record — the same derivation for a player and a bot. */
+export function eyeY(e: EntitySnapshot): number {
+  return e.y + reachableHeight(e) - EYE_BELOW_TOP_M;
+}
+
+export function teamOf(e: EntitySnapshot): 'A' | 'B' {
+  return (e.flags & EFlag.TeamB) !== 0 ? 'B' : 'A';
+}
+
+export function isAlive(e: EntitySnapshot): boolean {
+  return (e.flags & EFlag.Alive) !== 0;
+}
+
+/**
+ * The living bodies on `team` other than the viewer, **appended** to `out`.
+ *
+ * The seats a dead spectator sees through (R7, `SeatView`) and the ears it listens from
+ * (`SeatEvents`) are the same set, and were the same loop written twice. Appends rather than
+ * clears, because one of those two callers puts the viewer's own body in first; both clear `out`
+ * themselves. Writes into the caller's array: this runs per seat per snapshot.
+ */
+export function collectTeammates(
+  out: EntitySnapshot[],
+  entities: readonly EntitySnapshot[],
+  count: number,
+  viewerId: number,
+  team: 'A' | 'B',
+  freeForAll: boolean,
+): void {
+  for (let i = 0; i < count; i++) {
+    const e = entities[i];
+    if (e === undefined || e.entityId === viewerId || !isAlive(e)) continue;
+    if (!freeForAll && teamOf(e) === team) out.push(e);
+  }
+}
+
+/**
+ * R3 and R4: the index of the first clear ray from `viewer`'s eye to a point on `target`, or -1.
+ *
+ * `hint` is the index that was clear last time for this pair, tried first — a body that was
+ * visible a snapshot ago almost always still is along the same line, so a visible pair usually
+ * costs one ray. The order otherwise runs from now-to-now outward, cheapest truth first.
+ */
+export function clearLine(
+  world: CollisionWorld,
+  viewer: EntitySnapshot,
+  target: EntitySnapshot,
+  lookAheadSec: number,
+  hint: number,
+  hit: RayHit = makeRayHit(),
+): number {
+  fillProbe(viewer, target, lookAheadSec);
+
+  if (hint >= 0 && hint < MAX_RAYS_PER_PAIR && rayClear(world, viewer, target, hint, hit)) return hint;
+  for (let i = 0; i < MAX_RAYS_PER_PAIR; i++) {
+    if (i === hint) continue;
+    if (rayClear(world, viewer, target, i, hit)) return i;
+  }
+  return -1;
+}
+
+/**
+ * R1, R2, R3/R4 for one pair, with no memory. The tracker below adds R6.
+ */
+export function relevantNow(
+  ctx: RelevanceContext,
+  viewer: EntitySnapshot,
+  target: EntitySnapshot,
+  hint: number,
+  hit: RayHit,
+): { readonly relevant: boolean; readonly ray: number } {
+  if (viewer.entityId === target.entityId) return ALWAYS;
+  if (!ctx.freeForAll && teamOf(viewer) === teamOf(target)) return ALWAYS;
+  const dx = target.x - viewer.x;
+  const dy = target.y - viewer.y;
+  const dz = target.z - viewer.z;
+  if (dx * dx + dy * dy + dz * dz <= NEAR_RADIUS_M * NEAR_RADIUS_M) return ALWAYS;
+  const ray = clearLine(ctx.world, viewer, target, ctx.lookAheadSec, hint, hit);
+  return ray >= 0 ? { relevant: true, ray } : NEVER;
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function bodyHeight(e: EntitySnapshot): number {
+  return DEFAULT_MOVEMENT_CONFIG.standHeight * (e.heightScale > 0 ? e.heightScale : 1);
+}
+
+/** The height a body could have by the time the client draws it: its own, or standing. */
+function reachableHeight(e: EntitySnapshot): number {
+  return Math.max(bodyHeight(e), DEFAULT_MOVEMENT_CONFIG.standHeight);
+}
+
+/** Derive `PROBE` for one pair and one look-ahead. Called once per `clearLine`. */
+function fillProbe(viewer: EntitySnapshot, target: EntitySnapshot, lookAheadSec: number): void {
+  const t = Math.min(Math.max(lookAheadSec, 0), MAX_LOOK_AHEAD_S);
+  PROBE.vdx = viewer.vx * t;
+  PROBE.vdz = viewer.vz * t;
+  PROBE.tdx = target.vx * t;
+  PROBE.tdz = target.vz * t;
+  PROBE.moving = Math.hypot(PROBE.vdx, PROBE.vdz) > STILL_M || Math.hypot(PROBE.tdx, PROBE.tdz) > STILL_M;
+  PROBE.viewerReach = Math.max(Math.hypot(viewer.vx, viewer.vz), REACH_SPEED) * t;
+  PROBE.targetReach = Math.max(Math.hypot(target.vx, target.vz), REACH_SPEED) * t;
+  PROBE.reaching = PROBE.viewerReach > STILL_M || PROBE.targetReach > STILL_M;
+
+  PROBE.ey = eyeY(viewer);
+  PROBE.h = bodyHeight(target);
+  PROBE.headY = target.y + reachableHeight(target) * (POINT_HEIGHTS[HEAD] ?? 0.92);
+  // Shoulders and reach both lie across the line of sight, along its perpendicular.
+  let px = -(target.z - viewer.z);
+  let pz = target.x - viewer.x;
+  const plen = Math.hypot(px, pz);
+  if (plen > 1e-6) {
+    px /= plen;
+    pz /= plen;
+  } else {
+    px = 1;
+    pz = 0;
+  }
+  PROBE.px = px;
+  PROBE.pz = pz;
+}
+
+/** One ray of `RAYS` against the static map, from `PROBE`. False when it is not live at all. */
+function rayClear(
+  world: CollisionWorld,
+  viewer: EntitySnapshot,
+  target: EntitySnapshot,
+  index: number,
+  hit: RayHit,
+): boolean {
+  const ray = RAYS[index];
+  if (ray === undefined) return false;
+  const [eyeSide, bodySide, point, ahead] = ray;
+  if (ahead && !PROBE.moving) return false;
+  if ((eyeSide !== 0 || bodySide !== 0) && !PROBE.reaching) return false;
+  const ex = viewer.x + (ahead ? PROBE.vdx : 0) + PROBE.px * eyeSide * PROBE.viewerReach;
+  const ez = viewer.z + (ahead ? PROBE.vdz : 0) + PROBE.pz * eyeSide * PROBE.viewerReach;
+  const side = (POINT_SIDE[point] ?? 0) * SHOULDER_HALF_M + bodySide * PROBE.targetReach;
+  const bx = target.x + (ahead ? PROBE.tdx : 0) + PROBE.px * side;
+  const bz = target.z + (ahead ? PROBE.tdz : 0) + PROBE.pz * side;
+  const by = point === HEAD ? PROBE.headY : target.y + PROBE.h * (POINT_HEIGHTS[point] ?? 0.6);
+  return world.segmentClear(ex, PROBE.ey, ez, bx, by, bz, hit);
+}
+//#endregion

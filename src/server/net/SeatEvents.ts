@@ -1,10 +1,3 @@
-import { Ev } from '../../shared/net/Messages';
-import { MAX_SERVER_FRAME_BYTES } from '../../shared/net/Protocol';
-import type { EntitySnapshot } from '../../shared/net/Snapshot';
-import { ByteWriter } from '../../shared/net/Wire';
-import { MAX_TICK_EVENTS, type EventCollector } from './EventCollector';
-import { isAlive, teamOf } from './Relevance';
-
 /**
  * Which of a tick's events one seat is sent, and in which form (anti-wallhack phase 2, parts 2 and
  * 3; docs/VISIBILITY.md).
@@ -36,20 +29,18 @@ import { isAlive, teamOf } from './Relevance';
  * free cam (R8) is sent everything as it is.
  */
 
-/**
- * How far an enemy's step, jump or landing carries: S6.3's footstep radius, which is also the bots'
- * (`DifficultyTiers.footstepHearing`). Measured on the ground plane, as the bots measure it.
- */
-export const HEARING_RADIUS_M = 12;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { Ev } from '../../shared/net/Messages';
+import { MAX_SERVER_FRAME_BYTES } from '../../shared/net/Protocol';
+import type { EntitySnapshot } from '../../shared/net/Snapshot';
+import { ByteWriter } from '../../shared/net/Wire';
+import { MAX_TICK_EVENTS, type EventCollector } from './EventCollector';
+import { collectTeammates, teamOf } from './Relevance';
+//#endregion
 
-/** A footstep, a jump or a landing: the events hearing decides. */
-export function isSound(kind: number): boolean {
-  return kind === Ev.Footstep || kind === Ev.Jump || kind === Ev.Land;
-}
-
-/** `keep` values: not sent, sent as encoded, sent as its variant. */
-export const Form = { None: 0, Whole: 1, Variant: 2 } as const;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** One seat, as the cut needs it. The instance fills one per seat per tick and reuses it. */
 export interface SeatContext {
   viewerId: number;
@@ -66,9 +57,26 @@ export interface SeatContext {
   /** The bodies this seat's last snapshot sent awake (`SeatView.awake`). */
   awake: ReadonlySet<number>;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * How far an enemy's step, jump or landing carries: S6.3's footstep radius, which is also the bots'
+ * (`DifficultyTiers.footstepHearing`). Measured on the ground plane, as the bots measure it.
+ */
+export const HEARING_RADIUS_M = 12;
+
+/** `keep` values: not sent, sent as encoded, sent as its variant. */
+export const Form = { None: 0, Whole: 1, Variant: 2 } as const;
+//#endregion
+
+// ====================================== CLASS SeatEvents ====================================== \\
+//#region Class SeatEvents
 /** One seat's cut of each tick's events. */
 export class SeatEvents {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** The form each event of the tick is sent in (`Form`), after `select`. */
   readonly keep = new Uint8Array(MAX_TICK_EVENTS);
   /** This seat's own frame, when it is not sent the shared one. Never shared: see `frameFor`. */
@@ -78,22 +86,14 @@ export class SeatEvents {
   varied = 0;
   /** Where this seat listens from this tick. */
   private readonly ears: EntitySnapshot[] = [];
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Decide the form of each of `events` for this seat. */
   select(events: EventCollector, seat: SeatContext): void {
     const viewer = find(seat.entities, seat.entityCount, seat.viewerId);
-    this.ears.length = 0;
-    if (viewer !== null) {
-      if (!seat.spectating) this.ears.push(viewer);
-      else {
-        const team = teamOf(viewer);
-        for (let i = 0; i < seat.entityCount; i++) {
-          const e = seat.entities[i];
-          if (e === undefined || e.entityId === seat.viewerId || !isAlive(e)) continue;
-          if (!seat.freeForAll && teamOf(e) === team) this.ears.push(e);
-        }
-      }
-    }
+    this.fillEars(seat, viewer);
 
     this.kept = 0;
     this.varied = 0;
@@ -104,6 +104,24 @@ export class SeatEvents {
       if (form === Form.Variant) this.varied++;
     }
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Where this seat hears from: its own body, or — dead in a one-life mode (R7) — every living
+   * teammate's. `SeatView` builds the same set for what the seat *sees*; both come from
+   * `collectTeammates`.
+   */
+  private fillEars(seat: SeatContext, viewer: EntitySnapshot | null): void {
+    this.ears.length = 0;
+    if (viewer === null) return;
+    if (!seat.spectating) {
+      this.ears.push(viewer);
+      return;
+    }
+    collectTeammates(this.ears, seat.entities, seat.entityCount, seat.viewerId, teamOf(viewer), seat.freeForAll);
+  }
 
   private formOf(events: EventCollector, i: number, viewer: EntitySnapshot | null, seat: SeatContext): number {
     const kind = events.kinds[i] ?? 0;
@@ -111,42 +129,85 @@ export class SeatEvents {
     const object = events.objects[i] ?? -1;
     const variant = events.hasVariant[i] === 1 ? Form.Variant : Form.None;
 
-    if (isSound(kind)) {
-      if (subject === seat.viewerId) return Form.None;
-      if (seat.seesAll) return Form.Whole;
-      // A seat whose body is not in the roster yet has nowhere to listen from. Fail open, as
-      // `SeatView` does: it is not a state a seat stays in.
-      if (viewer === null) return Form.Whole;
-      if (seat.hidden(subject)) return Form.None;
-      const body = find(seat.entities, seat.entityCount, subject);
-      if (body !== null && !seat.freeForAll && teamOf(body) === teamOf(viewer)) return Form.Whole;
-      if (events.muted[i] === 1) return Form.None;
-      const x = events.xs[i] ?? 0;
-      const z = events.zs[i] ?? 0;
-      for (const ear of this.ears) {
-        if (Math.hypot(ear.x - x, ear.z - z) <= HEARING_RADIUS_M) return Form.Whole;
-      }
-      return Form.None;
-    }
+    if (isSound(kind)) return this.formOfSound(events, i, subject, viewer, seat);
 
     switch (kind) {
       case Ev.Fired:
-        if (subject === seat.viewerId || seat.seesAll || viewer === null) return Form.Whole;
-        if (seat.hidden(subject)) return variant;
-        if (seat.awake.has(subject) || events.loud[i] === 1) return Form.Whole;
-        return variant;
+        return this.formOfShot(events, i, subject, viewer, seat, variant);
       case Ev.Damage:
-        if (subject === seat.viewerId || object === seat.viewerId || seat.seesAll || viewer === null) return Form.Whole;
-        return seat.awake.has(subject) ? Form.Whole : Form.None;
+        return this.formOfHit(subject, object, viewer, seat);
       case Ev.Killed:
-        if (subject === seat.viewerId || seat.seesAll) return Form.Whole;
-        return variant === Form.Variant ? Form.Variant : Form.Whole;
+        return this.formOfKill(subject, seat, variant);
       default:
         return Form.Whole;
     }
   }
-}
 
+  /** E2 and D4: a step, a jump or a landing is placed by hearing, and hearing has a radius. */
+  private formOfSound(
+    events: EventCollector,
+    i: number,
+    subject: number,
+    viewer: EntitySnapshot | null,
+    seat: SeatContext,
+  ): number {
+    if (subject === seat.viewerId) return Form.None;
+    if (seat.seesAll) return Form.Whole;
+    // A seat whose body is not in the roster yet has nowhere to listen from. Fail open, as
+    // `SeatView` does: it is not a state a seat stays in.
+    if (viewer === null) return Form.Whole;
+    if (seat.hidden(subject)) return Form.None;
+    const body = find(seat.entities, seat.entityCount, subject);
+    if (body !== null && !seat.freeForAll && teamOf(body) === teamOf(viewer)) return Form.Whole;
+    if (events.muted[i] === 1) return Form.None;
+    const x = events.xs[i] ?? 0;
+    const z = events.zs[i] ?? 0;
+    for (const ear of this.ears) {
+      if (Math.hypot(ear.x - x, ear.z - z) <= HEARING_RADIUS_M) return Form.Whole;
+    }
+    return Form.None;
+  }
+
+  /** D2: whole from a body this seat has or a muzzle the minimap shows anyway; else its impact. */
+  private formOfShot(
+    events: EventCollector,
+    i: number,
+    subject: number,
+    viewer: EntitySnapshot | null,
+    seat: SeatContext,
+    variant: number,
+  ): number {
+    if (subject === seat.viewerId || seat.seesAll || viewer === null) return Form.Whole;
+    if (seat.hidden(subject)) return variant;
+    if (seat.awake.has(subject) || events.loud[i] === 1) return Form.Whole;
+    return variant;
+  }
+
+  /** A hit is placed on its target, so the target is the body it would give away. */
+  private formOfHit(subject: number, object: number, viewer: EntitySnapshot | null, seat: SeatContext): number {
+    if (subject === seat.viewerId || object === seat.viewerId || seat.seesAll || viewer === null) return Form.Whole;
+    return seat.awake.has(subject) ? Form.Whole : Form.None;
+  }
+
+  /** E3: the feed is public, but the killer's remaining health is the victim's alone. */
+  private formOfKill(subject: number, seat: SeatContext, variant: number): number {
+    if (subject === seat.viewerId || seat.seesAll) return Form.Whole;
+    return variant === Form.Variant ? Form.Variant : Form.Whole;
+  }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** A footstep, a jump or a landing: the events hearing decides. */
+export function isSound(kind: number): boolean {
+  return kind === Ev.Footstep || kind === Ev.Jump || kind === Ev.Land;
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function find(entities: readonly EntitySnapshot[], count: number, entityId: number): EntitySnapshot | null {
   for (let i = 0; i < count; i++) {
     const e = entities[i];
@@ -154,3 +215,4 @@ function find(entities: readonly EntitySnapshot[], count: number, entityId: numb
   }
   return null;
 }
+//#endregion

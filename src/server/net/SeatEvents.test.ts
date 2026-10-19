@@ -353,3 +353,71 @@ describe('the shot, hit and kill audit', () => {
     expect(stats).toMatchObject({ eventLeaks: 3, eventsMissing: 1 });
   });
 });
+
+/**
+ * The branches of `formOf` that the cases above do not reach (B2a).
+ *
+ * `formOf` is one function at complexity 44 and is about to become four, one per kind. These pin
+ * the corners the existing twenty cases leave: the fail-open path on a *shot* and a *hit* rather
+ * than on a sound, the hearing radius exactly on its boundary, a kill with no variant to send,
+ * and the two counters the instance reads off a cut.
+ */
+describe('the corners of the cut', () => {
+  it('fails open on a shot and a hit too, for a seat whose body is not in the roster', () => {
+    const events = tick((bus) => {
+      shot(bus, 4, 30, 0, false);
+      hurt(bus, 4, 3);
+    });
+    // Seat 9 is nobody in this roster: it gets everything whole rather than nothing at all.
+    expect(sentTo(events, { viewerId: 9, awake: [] })).toEqual(['fired:4', 'hit:4>3']);
+  });
+
+  it('sends a sound exactly on the hearing radius, and not one step past it', () => {
+    const events = tick((bus) => {
+      step(bus, 3, HEARING_RADIUS_M, 0);
+      step(bus, 4, HEARING_RADIUS_M + 0.01, 0);
+    });
+    expect(sentTo(events)).toEqual(['step:3']);
+  });
+
+  /**
+   * What E3 rests on: a kill with no variant recorded goes **whole**, killer's health and all.
+   *
+   * `formOf` ends `variant === Form.Variant ? Form.Variant : Form.Whole`, so the zeroing is only
+   * ever applied when the variant was written. `EventCollector.writeVariant` gives up silently
+   * when its writer overflows — "one that does not fit is simply not there" — and this is what
+   * that costs: every seat is told the killer's remaining health, which is the one fact E3 exists
+   * to keep from them. Reached here by clearing the record the collector made, which is a public
+   * field of it.
+   */
+  it('sends a kill whole, health and all, when no variant was recorded for it', () => {
+    const events = tick((bus) => {
+      bus.emit(EV.EntityKilled, { targetId: 4, sourceId: 3, weaponId: 'ar_carbine', zone: 'torso', killerHealth: 70 });
+    });
+    expect(sentTo(events)).toEqual(['killed:4:0']);
+
+    events.hasVariant[0] = 0;
+    expect(sentTo(events)).toEqual(['killed:4:70']);
+  });
+
+  it('counts what it kept and how much of it was varied', () => {
+    const events = tick((bus) => {
+      step(bus, 4, 30, 0);
+      shot(bus, 4, 30, 0, false);
+      bus.emit(EV.EntityKilled, { targetId: 4, sourceId: 3, weaponId: 'ar_carbine', zone: 'torso', killerHealth: 70 });
+    });
+    const cut = new SeatEvents();
+    cut.select(events, context());
+
+    // The far step is not sent; the suppressed shot and the kill are, both as variants.
+    expect([cut.kept, cut.varied]).toEqual([2, 2]);
+  });
+
+  it('keeps nothing at all for a tick of one far step', () => {
+    const events = tick((bus) => step(bus, 4, 30, 0));
+    const cut = new SeatEvents();
+    cut.select(events, context());
+
+    expect([cut.kept, cut.varied]).toEqual([0, 0]);
+  });
+});

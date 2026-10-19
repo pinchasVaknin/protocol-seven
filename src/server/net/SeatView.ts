@@ -1,6 +1,3 @@
-import { copyEntitySnapshot, EFlag, makeEntitySnapshot, type EntitySnapshot } from '../../shared/net/Snapshot';
-import { isAlive, RelevanceTracker, teamOf, type RelevanceContext } from './Relevance';
-
 /**
  * One seat's picture of the world: the entity list its snapshot is encoded from (anti-wallhack
  * phase 1; docs/VISIBILITY.md).
@@ -19,7 +16,26 @@ import { isAlive, RelevanceTracker, teamOf, type RelevanceContext } from './Rele
  * reloading, sprinting, throwing, melee, burning) are cleared. A body this seat has never been
  * told about has no frozen record and goes out from a blank one: at the origin, standing, empty.
  */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { copyEntitySnapshot, EFlag, makeEntitySnapshot, type EntitySnapshot } from '../../shared/net/Snapshot';
+import { collectTeammates, RelevanceTracker, teamOf, type RelevanceContext } from './Relevance';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** The flags a dormant record carries from the live body: the public ones. */
+const LIVE_FLAGS = EFlag.Alive | EFlag.TeamB | EFlag.Bot;
+
+const BLANK = makeEntitySnapshot();
+//#endregion
+
+// ======================================= CLASS SeatView ======================================= \\
+//#region Class SeatView
 export class SeatView {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly tracker = new RelevanceTracker();
   /** The list the encoder reads. Shared records for relevant bodies, this seat's for dormant ones. */
   readonly list: EntitySnapshot[] = [];
@@ -40,7 +56,10 @@ export class SeatView {
   private readonly dormant = new Map<number, EntitySnapshot>();
   private readonly teammates: EntitySnapshot[] = [];
   private readonly present = new Set<number>();
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Fill `list` for this snapshot.
    *
@@ -58,24 +77,8 @@ export class SeatView {
     spectating: boolean,
     hidden: (entityId: number) => boolean,
   ): void {
-    let viewer: EntitySnapshot | null = null;
-    this.present.clear();
-    for (let i = 0; i < entityCount; i++) {
-      const e = entities[i];
-      if (e === undefined) continue;
-      this.present.add(e.entityId);
-      if (e.entityId === viewerId) viewer = e;
-    }
-
-    this.teammates.length = 0;
-    if (spectating && viewer !== null) {
-      const team = teamOf(viewer);
-      for (let i = 0; i < entityCount; i++) {
-        const e = entities[i];
-        if (e === undefined || e.entityId === viewerId || !isAlive(e)) continue;
-        if (!ctx.freeForAll && teamOf(e) === team) this.teammates.push(e);
-      }
-    }
+    const viewer = this.fillPresent(entities, entityCount, viewerId);
+    this.fillTeammates(entities, entityCount, viewerId, ctx, viewer, spectating);
 
     this.count = 0;
     this.enemies = 0;
@@ -85,50 +88,22 @@ export class SeatView {
       const e = entities[i];
       if (e === undefined) continue;
       if (e.entityId === viewerId) {
-        this.put(e);
-        this.awake.add(e.entityId);
+        this.sendLive(e, false);
         continue;
       }
       const enemy = viewer === null || ctx.freeForAll || teamOf(e) !== teamOf(viewer);
       if (enemy) this.enemies++;
 
-      let relevant: boolean;
-      if (seesAll) relevant = true;
-      else if (hidden(e.entityId)) relevant = false;
-      // A seat whose own body is not in the list has nothing to see from. Fail open rather than
-      // blind: it is not a state a seat stays in, and a blank world is a broken game.
-      else if (viewer === null) relevant = true;
-      else if (spectating) relevant = this.tracker.relevantToAny(nowMs, ctx, this.teammates, e);
-      else relevant = this.tracker.relevant(nowMs, ctx, viewer, e);
-
-      if (relevant) {
-        this.put(e);
-        this.awake.add(e.entityId);
-        let frozen = this.frozen.get(e.entityId);
-        if (frozen === undefined) {
-          frozen = makeEntitySnapshot();
-          this.frozen.set(e.entityId, frozen);
-        }
-        copyEntitySnapshot(e, frozen);
+      if (this.isRelevant(nowMs, e, viewer, ctx, seesAll, spectating, hidden)) {
+        this.sendLive(e, true);
         continue;
       }
 
-      let rec = this.dormant.get(e.entityId);
-      if (rec === undefined) {
-        rec = makeEntitySnapshot();
-        this.dormant.set(e.entityId, rec);
-      }
-      writeDormant(rec, this.frozen.get(e.entityId) ?? null, e);
-      this.put(rec);
+      this.sendDormant(e);
       if (enemy) this.dormantSent++;
     }
 
-    // A body that has left: its id may be handed to somebody else, who must not inherit a linger,
-    // a ray hint or a frozen record from it.
-    if (this.frozen.size + this.dormant.size > 0) {
-      for (const id of this.frozen.keys()) if (!this.present.has(id)) this.forget(id);
-      for (const id of this.dormant.keys()) if (!this.present.has(id)) this.forget(id);
-    }
+    this.sweepDeparted();
   }
 
   /**
@@ -153,6 +128,95 @@ export class SeatView {
     }
     return null;
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** Note every id in this roster and pick the viewer out of it, in one pass. */
+  private fillPresent(
+    entities: readonly EntitySnapshot[],
+    entityCount: number,
+    viewerId: number,
+  ): EntitySnapshot | null {
+    let viewer: EntitySnapshot | null = null;
+    this.present.clear();
+    for (let i = 0; i < entityCount; i++) {
+      const e = entities[i];
+      if (e === undefined) continue;
+      this.present.add(e.entityId);
+      if (e.entityId === viewerId) viewer = e;
+    }
+    return viewer;
+  }
+
+  /** R7: the living teammates a dead spectator sees through. Empty for everybody else. */
+  private fillTeammates(
+    entities: readonly EntitySnapshot[],
+    entityCount: number,
+    viewerId: number,
+    ctx: RelevanceContext,
+    viewer: EntitySnapshot | null,
+    spectating: boolean,
+  ): void {
+    this.teammates.length = 0;
+    if (spectating && viewer !== null) {
+      collectTeammates(this.teammates, entities, entityCount, viewerId, teamOf(viewer), ctx.freeForAll);
+    }
+  }
+
+  /** Which rule decides this body, in the order the cheats and the degradations come first. */
+  private isRelevant(
+    nowMs: number,
+    e: EntitySnapshot,
+    viewer: EntitySnapshot | null,
+    ctx: RelevanceContext,
+    seesAll: boolean,
+    spectating: boolean,
+    hidden: (entityId: number) => boolean,
+  ): boolean {
+    if (seesAll) return true;
+    if (hidden(e.entityId)) return false;
+    // A seat whose own body is not in the list has nothing to see from. Fail open rather than
+    // blind: it is not a state a seat stays in, and a blank world is a broken game.
+    if (viewer === null) return true;
+    if (spectating) return this.tracker.relevantToAny(nowMs, ctx, this.teammates, e);
+    return this.tracker.relevant(nowMs, ctx, viewer, e);
+  }
+
+  /** The shared record, as it is, and the frozen copy this seat falls back to once it is not. */
+  private sendLive(e: EntitySnapshot, freeze: boolean): void {
+    this.put(e);
+    this.awake.add(e.entityId);
+    if (!freeze) return;
+    let frozen = this.frozen.get(e.entityId);
+    if (frozen === undefined) {
+      frozen = makeEntitySnapshot();
+      this.frozen.set(e.entityId, frozen);
+    }
+    copyEntitySnapshot(e, frozen);
+  }
+
+  /** This seat's own record for a body it may not place: where it last saw it, public facts live. */
+  private sendDormant(e: EntitySnapshot): void {
+    let rec = this.dormant.get(e.entityId);
+    if (rec === undefined) {
+      rec = makeEntitySnapshot();
+      this.dormant.set(e.entityId, rec);
+    }
+    writeDormant(rec, this.frozen.get(e.entityId) ?? null, e);
+    this.put(rec);
+  }
+
+  /**
+   * A body that has left: its id may be handed to somebody else, who must not inherit a linger,
+   * a ray hint or a frozen record from it.
+   */
+  private sweepDeparted(): void {
+    if (this.frozen.size + this.dormant.size > 0) {
+      for (const id of this.frozen.keys()) if (!this.present.has(id)) this.forget(id);
+      for (const id of this.dormant.keys()) if (!this.present.has(id)) this.forget(id);
+    }
+  }
 
   private put(e: EntitySnapshot): void {
     this.list[this.count++] = e;
@@ -163,13 +227,12 @@ export class SeatView {
     this.dormant.delete(id);
     this.tracker.forget(id);
   }
+  //#endregion
 }
+//#endregion
 
-/** The flags a dormant record carries from the live body: the public ones. */
-const LIVE_FLAGS = EFlag.Alive | EFlag.TeamB | EFlag.Bot;
-
-const BLANK = makeEntitySnapshot();
-
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * A dormant record: the frozen one (or a blank one), with the public facts brought up to date.
  * Exported for the tests, which hold the line between what freezes and what stays live.
@@ -182,3 +245,4 @@ export function writeDormant(out: EntitySnapshot, frozen: EntitySnapshot | null,
   out.deathSerial = live.deathSerial;
   out.flags = (live.flags & LIVE_FLAGS) | EFlag.Dormant;
 }
+//#endregion

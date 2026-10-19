@@ -9,6 +9,7 @@ import { loadMapCollision } from '../../shared/world/MapLoader';
 import {
   clearLine,
   LINGER_MS,
+  MAX_LOOK_AHEAD_S,
   NEAR_RADIUS_M,
   RelevanceTracker,
   relevantNow,
@@ -167,6 +168,60 @@ describe('clearLine', () => {
     const first = clearLine(ROOM, viewer, target, 0, -1);
     expect(first).toBeGreaterThanOrEqual(0);
     expect(clearLine(ROOM, viewer, target, 0, first)).toBe(first);
+  });
+
+  /**
+   * The index it returns, and the per-call state behind it (B2a).
+   *
+   * `VisibilityAudit` reads the index as *the point first seen* — "with no look-ahead only the
+   * five now-to-now rays are live, so the index is the point" — so the identity of the number is
+   * an interface, not an implementation detail. And every derived value in here (the eye, the
+   * perpendicular, the two reaches) belongs to one pair: these pin that two pairs tested one
+   * after another, or interleaved, cannot see each other's.
+   */
+  it('returns one of the five now-to-now points when nothing looks ahead', () => {
+    const ray = clearLine(ROOM, body(1, -5, 0, 'A'), body(2, 5, 0, 'B'), 0, -1);
+    expect(ray).toBeGreaterThanOrEqual(0);
+    expect(ray).toBeLessThan(5);
+  });
+
+  it('answers a pair the same whether or not another pair was tested in between', () => {
+    const viewer = body(1, -5, 0, 'A');
+    const seen = body(2, 5, 0, 'B');
+    const blocked = body(3, 5, 5, 'B');
+
+    const aloneSeen = clearLine(ROOM, viewer, seen, 0, -1);
+    const aloneBlocked = clearLine(ROOM, viewer, blocked, 0, -1);
+    expect(aloneSeen).toBeGreaterThanOrEqual(0);
+    expect(aloneBlocked).toBe(-1);
+
+    // Interleaved, with each one's hint carried as the tracker would carry it.
+    expect(clearLine(ROOM, viewer, seen, 0, -1)).toBe(aloneSeen);
+    expect(clearLine(ROOM, viewer, blocked, 0, -1)).toBe(aloneBlocked);
+    expect(clearLine(ROOM, viewer, seen, 0, aloneSeen)).toBe(aloneSeen);
+    expect(clearLine(ROOM, viewer, blocked, 0, aloneSeen)).toBe(aloneBlocked);
+    expect(clearLine(ROOM, viewer, seen, 0, -1)).toBe(aloneSeen);
+  });
+
+  it('clamps the look-ahead at MAX_LOOK_AHEAD_S and treats a negative one as none', () => {
+    const viewer = body(1, -5, 0, 'A');
+    // Behind the wall and running for the doorway: how far it is extrapolated decides the answer.
+    const target = body(2, 5, 6, 'B', 0, -12);
+
+    const atCap = clearLine(ROOM, viewer, target, MAX_LOOK_AHEAD_S, -1);
+    expect(clearLine(ROOM, viewer, target, MAX_LOOK_AHEAD_S * 10, -1)).toBe(atCap);
+    expect(clearLine(ROOM, viewer, target, 1000, -1)).toBe(atCap);
+
+    const none = clearLine(ROOM, viewer, target, 0, -1);
+    expect(clearLine(ROOM, viewer, target, -5, -1)).toBe(none);
+  });
+
+  it('ignores a hint that is not a ray', () => {
+    const viewer = body(1, -5, 0, 'A');
+    const target = body(2, 5, 0, 'B');
+    const found = clearLine(ROOM, viewer, target, 0, -1);
+    expect(clearLine(ROOM, viewer, target, 0, 999)).toBe(found);
+    expect(clearLine(ROOM, viewer, target, 0, -7)).toBe(found);
   });
 });
 

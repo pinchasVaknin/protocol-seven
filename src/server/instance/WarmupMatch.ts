@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { BotDifficulty } from '../../shared/ai/DifficultyTiers';
 import { logger } from '../../shared/core/Log';
 import { InstanceState, WARMUP_MATCH_ID } from '../../shared/net/Skirmish';
@@ -5,9 +7,37 @@ import { GREYBOX_MAP } from '../../shared/world/maps/greybox';
 import { ServerMatch } from '../Match';
 import type { MapBakery } from '../MapBakery';
 import { MatchInstance, type MatchInstanceDeps } from './MatchInstance';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+export interface WarmupOptions {
+  readonly bakery: MapBakery;
+  readonly snapshotHz: number;
+  readonly interpolationDelayMs: number;
+  readonly seed: number;
+  readonly startTick: number;
+  /** Bots in the arena. §6.3 asks for 2-3, so a lone player has something to shoot. */
+  readonly bots: number;
+  /**
+   * How hard they are (playtest round 4, F1).
+   *
+   * The same `BOT_DIFFICULTY` the live match runs at, and passed rather than defaulted here for
+   * the reason `bots` is: this instance has no opinion about the operator's configuration. It
+   * was the literal `'MIX'` before this session, which meant a server deliberately set to
+   * RECRUIT still put a Veteran in the room a new player lands in.
+   */
+  readonly difficulty: BotDifficulty;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const log = logger('warmup');
+//#endregion
 
+// ===================================== CLASS WarmupMatch ====================================== \\
+//#region Class WarmupMatch
 /**
  * The permanent skirmish arena (M11, §6.3).
  *
@@ -48,27 +78,9 @@ const log = logger('warmup');
  * take it out is its own step throwing, and §4.18 is explicit that the answer there is to
  * **rebuild it in place** rather than let the process die — see `Server.onWarmupFault`.
  */
-
-export interface WarmupOptions {
-  readonly bakery: MapBakery;
-  readonly snapshotHz: number;
-  readonly interpolationDelayMs: number;
-  readonly seed: number;
-  readonly startTick: number;
-  /** Bots in the arena. §6.3 asks for 2-3, so a lone player has something to shoot. */
-  readonly bots: number;
-  /**
-   * How hard they are (playtest round 4, F1).
-   *
-   * The same `BOT_DIFFICULTY` the live match runs at, and passed rather than defaulted here for
-   * the reason `bots` is: this instance has no opinion about the operator's configuration. It
-   * was the literal `'MIX'` before this session, which meant a server deliberately set to
-   * RECRUIT still put a Veteran in the room a new player lands in.
-   */
-  readonly difficulty: BotDifficulty;
-}
-
 export class WarmupMatch extends MatchInstance {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** This is the room. See `MatchInstance.isArena`. */
   override readonly isArena = true;
 
@@ -76,6 +88,12 @@ export class WarmupMatch extends MatchInstance {
   override readonly mapId = GREYBOX_MAP.id;
   override readonly modeId = 'FFA';
 
+  /** Latched by `step`, so the impossible-winner warning is said once rather than per tick. */
+  private warnedOver = false;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(options: WarmupOptions) {
     super(buildDeps(options));
     this.setState(InstanceState.RUNNING, 'arena is always live');
@@ -84,7 +102,10 @@ export class WarmupMatch extends MatchInstance {
         `${this.match.bots.bots.length} bots, FFA rules, instant respawn.`,
     );
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * A tripwire, not a policy.
    *
@@ -108,10 +129,12 @@ export class WarmupMatch extends MatchInstance {
       );
     }
   }
-
-  private warnedOver = false;
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function buildDeps(options: WarmupOptions): MatchInstanceDeps {
   /**
    * FFA on the greybox room, with the range's dummies still standing.
@@ -151,3 +174,4 @@ function buildDeps(options: WarmupOptions): MatchInstanceDeps {
     startTick: options.startTick,
   };
 }
+//#endregion

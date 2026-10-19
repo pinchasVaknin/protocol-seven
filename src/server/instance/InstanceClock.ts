@@ -1,5 +1,10 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { DT } from '../../shared/core/Loop';
+//#endregion
 
+// ==================================== CLASS InstanceClock ===================================== \\
+//#region Class InstanceClock
 /**
  * One instance's view of the master clock (M11, §4.19).
  *
@@ -28,6 +33,8 @@ import { DT } from '../../shared/core/Loop';
  * the instance rather than drifting with it.
  */
 export class InstanceClock {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Ticks stepped by this instance. Zero until the first `step`. */
   private local = -1;
 
@@ -36,7 +43,10 @@ export class InstanceClock {
 
   readonly snapshotEveryTicks: number;
   readonly phaseOffset: number;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     readonly startTick: number,
     snapshotHz: number,
@@ -57,7 +67,10 @@ export class InstanceClock {
      */
     this.phaseOffset = instanceIndex % this.snapshotEveryTicks;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Advance to a master tick. Called once per instance per master tick, by the loop. */
   advance(absoluteTick: number): void {
     this.absolute = absoluteTick;
@@ -89,4 +102,6 @@ export class InstanceClock {
   shouldSnapshot(): boolean {
     return (this.absolute + this.phaseOffset) % this.snapshotEveryTicks === 0;
   }
+  //#endregion
 }
+//#endregion

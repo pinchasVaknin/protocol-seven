@@ -345,6 +345,12 @@ const FINISHED = {
     'src/server/net/Session.ts',
     'src/server/net/WsServer.ts',
   ],
+  B4: [
+    'src/server/instance/InstanceClock.ts',
+    'src/server/instance/LiveMatch.ts',
+    'src/server/instance/VoteCycle.ts',
+    'src/server/instance/WarmupMatch.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

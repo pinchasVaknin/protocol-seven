@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { DT } from '../../shared/core/Loop';
 import { logger } from '../../shared/core/Log';
 import { Rng } from '../../shared/core/Rng';
@@ -11,9 +13,42 @@ import {
   type VotePhaseId,
 } from '../../shared/net/Skirmish';
 import { metric } from '../log';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type VoteResolution = {
+  readonly modeId: string;
+  readonly mapId: string;
+};
+
+export interface VoteCycleDeps {
+  /** Humans currently in the arena. Zero cancels the cycle (§4.20). */
+  readonly humanCount: () => number;
+  /** The map vote has resolved; go and allocate. Called exactly once per cycle. */
+  readonly onResolved: (resolution: VoteResolution) => void;
+  /** Seed for the tie-break RNG. Logged with every random pick so it is reconstructible. */
+  readonly seed: number;
+  readonly config?: VoteCycleConfig;
+  /**
+   * The cycle gave up before it could hand anything to the allocator.
+   *
+   * Unreachable today — both ballots are validated against the registry at module load — and
+   * wired anyway, because the alternative is a cycle that silently returns to free play and a
+   * player with no idea why the map they voted for never opened. §4.17's rule that every player
+   * is left *with a message* applies to every abort, not only to the allocator's.
+   */
+  readonly onAborted?: (reason: string) => void;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const log = logger('vote');
+//#endregion
 
+// ====================================== CLASS VoteCycle ======================================= \\
+//#region Class VoteCycle
 /**
  * The 60 s cycle, and the server owns every part of it (M11, §4.20, §6.4).
  *
@@ -42,36 +77,13 @@ const log = logger('vote');
  * — which is why one-vote-per-player is a property of the data structure rather than a check
  * somebody has to remember to write.
  */
-
-export type VoteResolution = {
-  readonly modeId: string;
-  readonly mapId: string;
-};
-
-export interface VoteCycleDeps {
-  /** Humans currently in the arena. Zero cancels the cycle (§4.20). */
-  readonly humanCount: () => number;
-  /** The map vote has resolved; go and allocate. Called exactly once per cycle. */
-  readonly onResolved: (resolution: VoteResolution) => void;
-  /** Seed for the tie-break RNG. Logged with every random pick so it is reconstructible. */
-  readonly seed: number;
-  readonly config?: VoteCycleConfig;
-  /**
-   * The cycle gave up before it could hand anything to the allocator.
-   *
-   * Unreachable today — both ballots are validated against the registry at module load — and
-   * wired anyway, because the alternative is a cycle that silently returns to free play and a
-   * player with no idea why the map they voted for never opened. §4.17's rule that every player
-   * is left *with a message* applies to every abort, not only to the allocator's.
-   */
-  readonly onAborted?: (reason: string) => void;
-}
-
 export class VoteCycle {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly config: VoteCycleConfig;
   private readonly deps: VoteCycleDeps;
 
-  private phase_: VotePhaseId = VotePhase.IDLE;
+  private currentPhase: VotePhaseId = VotePhase.IDLE;
   private phaseEndsTick = 0;
 
   /** playerId -> option index, for the phase currently open. Cleared between phases. */
@@ -93,15 +105,21 @@ export class VoteCycle {
 
   /** Cycles completed since boot. Also the vote panel's "which cycle am I watching". */
   private cycleIndex = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: VoteCycleDeps) {
     this.deps = deps;
     this.config = deps.config ?? VOTE_CYCLE_CONFIG;
     this.rng = new Rng(deps.seed);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get phase(): VotePhaseId {
-    return this.phase_;
+    return this.currentPhase;
   }
 
   get endsTick(): number {
@@ -118,7 +136,7 @@ export class VoteCycle {
 
   /** The live tally for the open phase, as counts per ballot index. */
   tally(): number[] {
-    const size = this.phase_ === VotePhase.MAP_VOTE ? MAP_BALLOT.length : MODE_BALLOT.length;
+    const size = this.currentPhase === VotePhase.MAP_VOTE ? MAP_BALLOT.length : MODE_BALLOT.length;
     const counts = new Array<number>(size).fill(0);
     for (const option of this.votes.values()) {
       const current = counts[option];
@@ -143,9 +161,9 @@ export class VoteCycle {
    * is not.
    */
   castVote(playerId: number, phase: number, option: number): boolean {
-    if (phase !== this.phase_) return false;
-    if (this.phase_ !== VotePhase.MODE_VOTE && this.phase_ !== VotePhase.MAP_VOTE) return false;
-    const ballotSize = this.phase_ === VotePhase.MODE_VOTE ? MODE_BALLOT.length : MAP_BALLOT.length;
+    if (phase !== this.currentPhase) return false;
+    if (this.currentPhase !== VotePhase.MODE_VOTE && this.currentPhase !== VotePhase.MAP_VOTE) return false;
+    const ballotSize = this.currentPhase === VotePhase.MODE_VOTE ? MODE_BALLOT.length : MAP_BALLOT.length;
     if (!Number.isInteger(option) || option < 0 || option >= ballotSize) return false;
     // Changeable inside the window (§4.20), which `set` gives for free.
     this.votes.set(playerId, option);
@@ -167,7 +185,7 @@ export class VoteCycle {
   step(absoluteTick: number): void {
     const humans = this.deps.humanCount();
 
-    if (this.phase_ === VotePhase.IDLE) {
+    if (this.currentPhase === VotePhase.IDLE) {
       // The arena is never idle *and* occupied: the first human to arrive starts a cycle.
       if (humans > 0) this.beginPlay(absoluteTick);
       return;
@@ -183,14 +201,14 @@ export class VoteCycle {
      * for nobody, holding the one live-match slot against the next player who connects.
      */
     if (humans === 0) {
-      log.info(`cycle ${this.cycleIndex} cancelled in ${votePhaseName(this.phase_)}: no humans left.`);
+      log.info(`cycle ${this.cycleIndex} cancelled in ${votePhaseName(this.currentPhase)}: no humans left.`);
       this.toIdle();
       return;
     }
 
     if (absoluteTick < this.phaseEndsTick) return;
 
-    switch (this.phase_) {
+    switch (this.currentPhase) {
       case VotePhase.PLAY:
         this.openModeVote(absoluteTick);
         return;
@@ -217,16 +235,19 @@ export class VoteCycle {
 
   /** The arena emptied, or the flow gave up. Back to idle without allocating. */
   toIdle(): void {
-    this.phase_ = VotePhase.IDLE;
+    this.currentPhase = VotePhase.IDLE;
     this.phaseEndsTick = 0;
     this.votes.clear();
     this.decidedMode = -1;
     this.decidedMap = -1;
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private beginPlay(absoluteTick: number): void {
     this.cycleIndex++;
-    this.phase_ = VotePhase.PLAY;
+    this.currentPhase = VotePhase.PLAY;
     this.phaseEndsTick = absoluteTick + secondsToTicks(this.config.playSeconds);
     this.votes.clear();
     this.decidedMode = -1;
@@ -238,14 +259,14 @@ export class VoteCycle {
   }
 
   private openModeVote(absoluteTick: number): void {
-    this.phase_ = VotePhase.MODE_VOTE;
+    this.currentPhase = VotePhase.MODE_VOTE;
     this.phaseEndsTick = absoluteTick + secondsToTicks(this.config.modeVoteSeconds);
     this.votes.clear();
     log.info(`cycle ${this.cycleIndex}: mode vote open for ${this.config.modeVoteSeconds}s.`);
   }
 
   private closeModeVote(absoluteTick: number): void {
-    this.decidedMode = this.resolve(this.tally(), 'mode');
+    this.decidedMode = this.resolveBallot(this.tally(), 'mode');
     /**
      * The mode result stays on screen through the map vote (§6.4).
      *
@@ -253,7 +274,7 @@ export class VoteCycle {
      * rather than showing both at once."* `decidedMode` is deliberately not cleared by
      * `openMapVote` — only the per-player votes are.
      */
-    this.phase_ = VotePhase.MAP_VOTE;
+    this.currentPhase = VotePhase.MAP_VOTE;
     this.phaseEndsTick = absoluteTick + secondsToTicks(this.config.mapVoteSeconds);
     this.votes.clear();
     log.info(
@@ -263,8 +284,8 @@ export class VoteCycle {
   }
 
   private closeMapVote(): void {
-    this.decidedMap = this.resolve(this.tally(), 'map');
-    this.phase_ = VotePhase.ALLOCATING;
+    this.decidedMap = this.resolveBallot(this.tally(), 'map');
+    this.currentPhase = VotePhase.ALLOCATING;
 
     const modeId = MODE_BALLOT[this.decidedMode];
     const mapId = MAP_BALLOT[this.decidedMap];
@@ -298,7 +319,7 @@ export class VoteCycle {
    * disputed outcome is reconstructible: re-seed an `Rng` with the logged seed, advance it by
    * the logged draw index, and the same option comes out.
    */
-  private resolve(counts: readonly number[], what: string): number {
+  private resolveBallot(counts: readonly number[], what: 'mode' | 'map'): number {
     let best = -1;
     for (const count of counts) if (count > best) best = count;
 
@@ -332,8 +353,13 @@ export class VoteCycle {
     });
     return pick;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function secondsToTicks(seconds: number): number {
   return Math.round(seconds / DT);
 }
+//#endregion

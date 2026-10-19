@@ -130,7 +130,6 @@ export class EventCollector {
   private readonly variants = new ByteWriter(MAX_SERVER_FRAME_BYTES);
   private count = 0;
   private open = false;
-  private overflowNoted = false;
 
   /** Event `i`'s kind (`Ev`). The records below are valid for `i < pending`, until `begin`. */
   readonly kinds = new Uint8Array(MAX_TICK_EVENTS);
@@ -194,7 +193,6 @@ export class EventCollector {
     this.variants.reset();
     this.count = 0;
     this.open = true;
-    this.overflowNoted = false;
     // The tick's impacts are this tick's. See `lastImpactMaterial` (BACKLOG #44).
     lastImpactMaterial = 0;
   }
@@ -357,9 +355,17 @@ export class EventCollector {
     const start = this.writer.length;
     fn();
     if (this.writer.overflowed) {
-      // Stop adding. The frame is sealed at whatever fitted, and the count matches, so it
-      // still decodes — it is simply short. Losing a footstep beats losing the frame.
-      if (!this.overflowNoted) this.overflowNoted = true;
+      /**
+       * Stop adding. The frame is sealed at whatever fitted, and the count matches, so it
+       * still decodes — it is simply short. Losing a footstep beats losing the frame.
+       *
+       * **This cannot fire today** and is kept as a guard rather than deleted (BACKLOG #46):
+       * the count ceiling above is 255 and the fattest event is a `Fired` at about 24 bytes, so
+       * a full tick is roughly 6 KiB against `MAX_SERVER_FRAME_BYTES` of 8,192 — the count
+       * always refuses first. Raise that budget's consumers or add a fatter event kind and this
+       * becomes live again, which is why it stays. It used to set an `overflowNoted` flag that
+       * nothing ever read; the flag is gone and the guard is not.
+       */
       this.open = false;
       return false;
     }

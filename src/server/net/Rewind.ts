@@ -187,15 +187,26 @@ export class Rewind {
     return rec;
   }
 
-  /** Put every rewound rig back where it was. Safe to call when `begin` did nothing. */
+  /**
+   * Put every rewound rig back where it was. Safe to call when `begin` did nothing.
+   *
+   * The roster is walked for the restore, because a snapshot has no rig to go back on — only the
+   * entity does. Then whatever is still held is returned to the pool: an entity unregistered
+   * between `begin` and `end` has no rig any more, but its snapshot is still the pool's, and
+   * dropping it on `clear` leaked one object per occurrence (BACKLOG #39). Unreachable from any
+   * caller that exists — the two bracket one synchronous `Ballistics` trace — so this makes
+   * `end` correct rather than correct by accident.
+   */
   end(): void {
     if (!this.active) return;
     for (const e of this.entities) {
       const slot = this.saved.get(e.entityId);
       if (slot === undefined) continue;
       restoreRig(slot, e.rig);
+      this.saved.delete(e.entityId);
       this.pool.push(slot);
     }
+    for (const slot of this.saved.values()) this.pool.push(slot);
     this.saved.clear();
     this.active = false;
   }

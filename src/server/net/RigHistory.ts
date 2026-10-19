@@ -56,9 +56,6 @@ export class RigHistory {
   private readonly yaw = new Float32Array(HISTORY_TICKS);
   private readonly layout: RigLayout[] = new Array<RigLayout>(HISTORY_TICKS).fill(HUMANOID_RIG);
   private readonly tick = new Int32Array(HISTORY_TICKS).fill(-1);
-
-  /** Most recent tick written, or -1. */
-  private newest = -1;
   //#endregion
 
   // ====================================== PUBLIC METHODS ====================================== \\
@@ -66,7 +63,6 @@ export class RigHistory {
   /** Record the rig's current transform for `tick`. Called once per tick per entity. */
   push(rig: HitboxRig, tick: number): void {
     this.write(index(tick), rig, tick);
-    if (tick > this.newest) this.newest = tick;
   }
 
   /**
@@ -78,7 +74,6 @@ export class RigHistory {
    */
   fill(rig: HitboxRig, tick: number): void {
     for (let i = 0; i < HISTORY_TICKS; i++) this.write(i, rig, tick);
-    this.newest = tick;
   }
 
   /** True if this history holds the given tick. */

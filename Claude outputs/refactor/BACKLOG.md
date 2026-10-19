@@ -9,10 +9,10 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**41 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
-and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B2b opened #44–#46** on 2026-10-19, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Six numbers are gone and
+**38 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B2b opened #44–#46** on 2026-10-19, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Nine numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
-A13 and **#25** by A15, both on 2026-10-12, and **#40**, **#44** and **#47** on 2026-10-19.
+A13 and **#25** by A15, both on 2026-10-12, and **#40**, **#44** and **#47** on 2026-10-19, with **#39**, **#41** and **#46** closed together the same day — the leaked snapshot, the write-only field and the guard that cannot fire, all three in files B1 and B2 had already finished and no later unit could touch.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -586,23 +586,6 @@ one — `collectTeammates`). `Relevance.ts` is the natural home, beside `collect
 `teamOf`/`isAlive` pair both files already import from it; that is one export and two call sites,
 and it should be done with #36, which has the same shape and the same destination.
 
-### #46 — `EventCollector`'s frame-overflow branch cannot be reached · `open` *(opened 2026-10-19 by B2b)* · *note, not a defect*
-**Files** `src/server/net/EventCollector.ts` (`write`, `overflowNoted`). **Origin** B2b.
-
-`write` has two ceilings and only one of them can bite. The count ceiling is
-`MAX_TICK_EVENTS = 255`, and the biggest event is a `Fired` at about 24 bytes (nine `i16`s and
-six bytes), so 255 of them is roughly 6 KiB against `MAX_SERVER_FRAME_BYTES = 8192`. **The frame
-cannot overflow before the count refuses**, which makes `if (this.writer.overflowed)` and the
-`open = false` it performs unreachable from the bus — and `overflowNoted`, which it is the only
-writer of, write-only dead state as well (the same shape as #31 and #41).
-
-Not a defect: it is a guard that is currently redundant, and a guard whose condition is
-impossible is cheaper to keep than to re-derive. Worth a decision rather than a deletion,
-because the two numbers are what make it redundant: raise `MAX_SERVER_FRAME_BYTES`'s consumers
-or add a fatter event kind and it becomes live again. **Decide**: keep it with a comment saying
-why it cannot fire today, or delete it and the field with it and let the count ceiling be the one
-rule. `EventCollector.test.ts` records the arithmetic beside the ceiling's own case.
-
 ### #38 — The input ring's accept window is one tick wider than the ring, and narrower than the skew limit · `open` *(opened 2026-10-19 by B1)*
 **Files** `src/server/net/InputBuffer.ts`. **Origin** B1.
 
@@ -627,22 +610,6 @@ the ring or narrowing `MAX_TICK_SKEW` changes what the wire admits — and `MAX_
 in `src/shared/net/Protocol.ts`, which is **A20's** file and outside B1's fence (R3). The two
 pinning tests carry `// Pins current behaviour; suspected bug:`, so fixing either means
 rewriting its case in the same commit, with the reason.
-
-### #39 — `Rewind.end()` scans the roster instead of what it saved · `open` *(opened 2026-10-19 by B1)* · *not pinned: unreachable today*
-**Files** `src/server/net/Rewind.ts`. **Origin** B1.
-
-`begin` saves a snapshot per rewound entity into `this.saved` and `end` iterates
-`this.entities` to put them back. An entity unregistered between the two would keep its
-snapshot: it is never restored (harmless — the entity is gone) and never returned to `pool`,
-which `saved.clear()` then drops, so the pool loses one object per occurrence. Iterating
-`this.saved` would be both correct and cheaper, since it is exactly the set that was moved.
-
-**Why B1 did not change it, and why no test pins it.** `begin` and `end` bracket one
-synchronous `Ballistics` trace, so nothing can unregister in between and the defect is
-unreachable from any caller that exists — a characterization test would have to call
-`unregister` between them, which would pin a sequence the server never performs. Recorded here
-instead, so the next reader of `end` does not have to re-derive that it is safe only by
-accident of the call site.
 
 ### #24 — `Range` ignores the harness clock override · `open` *(opened 2026-10-12 by A14)*
 **Files** `src/shared/modes/Range.ts`. **Origin** A14.
@@ -818,21 +785,6 @@ instant, which would make the check unsound rather than the server wrong.
 
 Until then the decision of 2026-10-19 stands: a unit that meets this red line re-runs the NET
 snapshot once, says so in its report, and carries on.
-
-### #41 — `RigHistory.newest` is written and never read · `open` *(opened 2026-10-19 by B1)*
-**Files** `src/server/net/RigHistory.ts`. **Origin** B1.
-
-`push` maintains it (`if (tick > this.newest) this.newest = tick;`) and `fill` sets it, and
-**nothing anywhere reads it** — not the class, not `Rewind`, not the panels; `has` and `applyAt`
-both work off the per-slot tick tag instead, which is what makes a stale slot detectable. The
-same shape as #31, one file over: two assignments on the per-entity per-tick path keeping a
-number for a reader that does not exist.
-
-**Why B1 did not delete it.** It is a private field, so removing it is neither an API change
-(R2) nor a behaviour change (R1) — but it was not in the unit's approved Step 2 plan, and
-deleting a field on a hot path is exactly the kind of edit this programme does under an
-approval rather than in passing. One line of deletion, one line out of `push` and one out of
-`fill`, and the oracles should not move.
 
 ### #4 — Fix the false comment about the ammo stations in the `props.ts` generator · `open`
 **Files** the script that generates `src/shared/world/maps/props.ts` (find it under `scripts/`).

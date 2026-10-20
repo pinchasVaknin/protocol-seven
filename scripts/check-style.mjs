@@ -351,6 +351,12 @@ const FINISHED = {
     'src/server/instance/VoteCycle.ts',
     'src/server/instance/WarmupMatch.ts',
   ],
+  B5: [
+    'src/server/instance/MatchInstance.ts',
+    'src/server/instance/SeatChannels.ts',
+    'src/server/instance/SeatRoster.ts',
+    'src/server/instance/SnapshotRecords.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

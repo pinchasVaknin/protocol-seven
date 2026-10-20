@@ -9,14 +9,17 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**36 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**37 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12, and **#40**, **#44** and **#47** on 2026-10-19, with **#39**, **#41** and **#46** closed together the same day — the leaked snapshot, the write-only field and the guard that cannot fire, all three in files B1 and B2 had already finished and no later unit could touch — and **#31** by B3, in the one file it owned. **#32** and **#48** went together on 2026-10-19 — five comments naming two things that had moved or gone, in files §10 and R3 keep out of every unit's reach; #32's own count was one short, and the fourth was in `skirmishHarness.ts`. **#49** followed on
 the same day: the arena's boot log and the README promised an `instant respawn` that playtest
 round 4 had removed, and the fix needed a session outside the unit rules because R1 makes a log
-line observable output.
+line observable output. **B5 opened #50** on 2026-10-20 — four comments naming members that its
+own split had moved — and **rewrote #30** rather than closing it: it absorbed the call site the
+entry was bound to, which left the function with no production caller and turned the question
+into whether it stays at all.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -46,8 +49,8 @@ and belong in its Step 2 plan.
 | ~~A22~~ | `shared/net/NetClient.ts` + `CommandPipeline.ts` | **closed** — nothing was bound to it; A22 opened #32 |
 | ~~A23~~ | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | **closed** — A23 absorbed #1's shared half under an approved fence exception: `shortestAngle` is gone and both call sites moved. What is left of #1 is the three local copies, which are not the same function |
 | ~~B4~~ | `server/instance/` InstanceClock, LiveMatch, VoteCycle, WarmupMatch | **closed** — nothing was bound to its four files: #13 is B5/B6's and its edit is in `shared/combat`, #42's and #30's file is `MatchInstance.ts` which is B5's. B4 opened #49, which was closed the same day |
-| B5, B6 | `server/instance/`, `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) |
-| B5 | `server/instance/MatchInstance.ts` | #30's call site (`equipmentIndexOf`, per player per snapshot) — the edit itself is A20's file, so fold in what can be done here and leave the rest |
+| ~~B5~~ | `server/instance/MatchInstance.ts` + the three files it was split into | **closed** — B5 absorbed #30's call site: `writePlayer` now reads the table this file already built, and `equipmentIndexOf` has no production caller left (see #30, rewritten). #13 was **declined with a reason**: `PLAYER_ENTITY_ID` appears nowhere in `server/instance/`, so B5 has no edit to make — the server-side importers are `Match.ts` (B6) and `Spectator.ts` (B8). #42 stays open but its four rules are now pinned by tests. B5 opened #50 |
+| B6 | `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) — `Match.ts:739` is one of the two server-side importers |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
 | C2 | `client/engine/` CameraRig, FrameLoop | #34 — reproduce the local camera jitter *before* refactoring these files |
 | C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
@@ -790,6 +793,15 @@ instant, which would make the check unsound rather than the server wrong.
 Until then the decision of 2026-10-19 stands: a unit that meets this red line re-runs the NET
 snapshot once, says so in its report, and carries on.
 
+**Since B5 (2026-10-20) the four rules are pinned by tests, and the code has moved.**
+`sendScoreboard` is now `SeatChannels.sendScoreboard` and the decision itself is
+`SeatChannels.isBoardDue`; `src/server/instance/MatchInstance.test.ts` pins changed,
+rate-limited, keepalive, *and* that `ending` waives the rate limit but not `changed` — the last
+two by running a seeded match to the tick its win condition fires and asserting that the board
+went out on that tick with the previous one younger than `SCOREBOARD_MIN_TICKS`. That is the
+fix's own behaviour held in place; it still is not evidence that the fix removes #42, which
+needs the match that ends **on a kill** described above.
+
 ### #4 — Fix the false comment about the ammo stations in the `props.ts` generator · `open`
 **Files** the script that generates `src/shared/world/maps/props.ts` (find it under `scripts/`).
 **Origin** A3b. A comment in the generator states something untrue about the ammo stations, which
@@ -987,27 +999,66 @@ entry can be closed as a tidy-up rather than a defect.
 a hand-edited save — so the test above is the proof, and it will need its expectation inverted
 when the behaviour changes, which is the one case where changing a pinned assertion is correct.
 
-### #30 — Give `equipmentIndexOf` the table the weapons already have · `open` · *call site bound to B5* *(opened 2026-10-14 by A20)*
+### #30 — `equipmentIndexOf` has no caller left · `open` · *(opened 2026-10-14 by A20, rewritten by B5 on 2026-10-20)*
 
-**Files** `src/shared/net/Snapshot.ts` (`equipmentIndexOf`), caller `src/server/instance/MatchInstance.ts:1060`.
-**Origin** A20.
+**Files** `src/shared/net/Snapshot.ts` (`equipmentIndexOf`, `equipmentIdAt`). **Origin** A20.
 
-`equipmentIndexOf(id)` resolves a grenade to its wire index with `ALL_EQUIPMENT.findIndex((def) => def.id === id)`.
-That allocates a closure per call, and the call is per player per snapshot — `MatchInstance` sets
-`e.heldEquipment` on the send path, which is the hot path R7 names. The weapon side of the same
-file already has the answer: `WIRE_WEAPON_IDS` is built once at load and `weaponIndexOf` walks it
-with an index loop and no closure. One `ReadonlyMap<EquipmentId, number>` built beside it, or the
-same index loop over an `EQUIPMENT_IDS` array, removes the allocation without touching a byte of
-the wire — the order `ALL_EQUIPMENT` defines stays the order.
+As opened, this asked for `equipmentIndexOf(id)` — `ALL_EQUIPMENT.findIndex((def) => def.id === id)`,
+a closure per call on a path that runs per player per snapshot — to be given the table the weapon
+side already has, and it bound the **call site** to B5 because that call site was
+`MatchInstance`'s `writePlayer`.
 
-**Why A20 did not do it.** R7 on this programme is *"do no harm"*, not *"make it faster"*:
-performance is a separate track, and this is an improvement rather than a repair of something the
-unit broke. A20 therefore left the body exactly as it was. The measurement nobody has taken is
-whether V8's escape analysis already elides the closure, which decides whether this is worth a
-commit at all.
+**B5 did the call site and nothing else.** `server/instance/SnapshotRecords.ts` already built
+`EQUIPMENT_INDEX` for the projectile channel, so one file held two ways to turn an equipment id
+into its wire index; §4.3 says merge that inside the unit, which it did. `writePlayer` now reads
+the map (`heldEquipmentIndex`: `null` → 255, a miss → 255, the same indices because both are
+`ALL_EQUIPMENT` in order), and the SIM and NET oracles were byte-identical across the change.
 
-**Verify** `npm run check` + SIM snapshot/compare → `PASS`, plus `Snapshot.test.ts`'s
-*"names every piece of equipment and nothing else"*, which already pins every index both ways.
+**What is left is a different question.** `equipmentIndexOf` now has **no production caller at
+all** — `grep -rn "equipmentIndexOf" src/` reaches `Snapshot.ts` itself and `Snapshot.test.ts`,
+which pins every index both ways. So the choice is no longer "give it a table":
+
+1. delete it and let `Snapshot.test.ts` assert the indices through `equipmentIdAt` alone — but
+   the test's *"names every piece of equipment and nothing else"* is the only guard that the
+   wire order of `ALL_EQUIPMENT` has not moved, and it reads it in both directions deliberately;
+2. keep it as the decode side's inverse and give it the `Map` anyway, so the two directions are
+   one table rather than a table and a scan;
+3. keep it exactly as it is and note on it that it is the test's half of the pair, so the next
+   reader does not re-measure a closure that nothing on a hot path calls.
+
+(2) is the smallest change that leaves no scan anywhere, and (3) costs nothing; either is
+defensible and all three are better than the current silence. `Snapshot.ts` is A20's file and
+in the `check:style` ratchet, so this needs a session of its own either way.
+
+**Verify** `npm run check` + SIM snapshot/compare → `PASS`, plus `Snapshot.test.ts`'s *"names
+every piece of equipment and nothing else"*.
+
+### #50 — Four references to members that moved out of `MatchInstance` · `open` *(opened 2026-10-20 by B5)*
+
+**Files** `src/server/net/Session.ts:634`, `src/server/Router.ts:15`,
+`docs/VISIBILITY.md:37` and `:323`. **Origin** B5.
+
+B5 split `MatchInstance.ts` into four files, and four comments elsewhere still name the old
+address:
+
+- `Session.ts:634` — *"See `MatchInstance.sendScoreboard` for when."* → `SeatChannels.sendScoreboard`.
+- `Router.ts:15` — *"`MatchInstance.seats` holds the *seat* (the entity, the encoder)"* → the
+  field is `roster`, a `SeatRoster`, and what it holds per seat is now one `SeatSlot` rather than
+  an entry in each of seven maps.
+- `VISIBILITY.md:37` — `MatchInstance.sendStreaks` → `SeatChannels.sendStreaks`.
+- `VISIBILITY.md:323` — `MatchInstance.sendBomb` → `SeatChannels.sendBomb`.
+
+Everything else that names a member still names one: `buildEntities`, `sendSnapshots`, `step`,
+`seat`, `unseat`, `releaseEntity` and `isArena` all stayed, and `writePlayer`, `writeBot` and
+`describeStreak` kept their names in `SnapshotRecords.ts`, so the comments in `NetPlayer.ts`,
+`Session.ts:954` and `CarriedWeapon.ts` are still correct.
+
+**Why B5 could not do it.** `Session.ts` is B3's file and in the `check:style` ratchet, `docs/`
+is out of scope for the whole programme (§10), and R3 fences a unit to its own files. The
+`Router.ts` line is **bound to B8**, which owns that file and has not run yet; the other three
+need a session of their own, as #32 and #48 did.
+
+**Verify** reading. No oracle sees a comment.
 
 ### The missing item
 The chat list was counted as 24 and this file received 22 of them. Neither #19 (folded into #2) nor

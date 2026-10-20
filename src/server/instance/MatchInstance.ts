@@ -1,8 +1,8 @@
-import type { Bot } from '../../shared/ai/Bot';
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { Cheat } from '../../shared/cheats/Cheats';
 import { nowMs } from '../../shared/core/Clock';
 import { EV } from '../../shared/core/Events';
-import { Btn, isDown } from '../../shared/core/InputCommand';
 import { logger } from '../../shared/core/Log';
 import {
   makeSnapshotHeader,
@@ -12,88 +12,26 @@ import {
 } from '../../shared/net/Messages';
 import {
   InstanceState,
-  MAX_PROJECTILES,
-  MAX_SMOKE,
-  MAX_STREAK_ENTITIES,
-  MAX_STREAK_OFFERS,
-  MAX_UAV_CONTACTS,
-  PEFlag,
-  ownerCode,
-  SEFlag,
   type InstanceStateId,
   type MatchId,
-  type ObjectiveState,
-  type ProjectileState,
-  type SmokeState,
-  type StreakEntityState,
-  type StreakOfferState,
-  type UavContactState,
 } from '../../shared/net/Skirmish';
-import { ALL_EQUIPMENT, type EquipmentId } from '../../shared/equipment/EquipmentDefs';
-import {
-  hashModeState,
-  hashModeStateSections,
-  makeModeStateScratch,
-  modeStateFacts,
-  type ModeStateFacts,
-} from '../../shared/debug/ModeStateHash';
-import type { BombInfo, MutableBombInfo } from '../../shared/modes/GameMode';
-import { CarePackage } from '../../shared/streaks/CarePackage';
-import { ChopperGunner } from '../../shared/streaks/ChopperGunner';
-import type { Killstreak } from '../../shared/streaks/KillstreakBase';
-import { MortarStrike } from '../../shared/streaks/MortarStrike';
-import { SentryGun } from '../../shared/streaks/SentryGun';
-import { STREAK_DEFS, type StreakId } from '../../shared/streaks/StreakDefs';
-import { Uav } from '../../shared/streaks/Uav';
-import {
-  EFlag,
-  equipmentIndexOf,
-  makeEntitySnapshot,
-  THROW_PHASES,
-  weaponIndexOf,
-  type EntitySnapshot,
-} from '../../shared/net/Snapshot';
-import { NO_SKIN_INDEX } from '../../shared/meta/Skins';
-import type { ReplicatedScoreRow } from '../../shared/combat/ScoreSystem';
+import { EFlag, makeEntitySnapshot, type EntitySnapshot } from '../../shared/net/Snapshot';
 import type { LoadoutSlot } from '../../shared/meta/Loadouts';
 import type { ReclaimedSeat, ServerMatch } from '../Match';
 import type { NetPlayer } from '../NetPlayer';
+import type { EventCollector } from '../net/EventCollector';
+import type { RelevanceContext } from '../net/Relevance';
+import type { SeatContext, SeatEvents } from '../net/SeatEvents';
 import type { Session } from '../net/Session';
-import { SeatEvents, type SeatContext } from '../net/SeatEvents';
-import { SeatView } from '../net/SeatView';
-import { SeatAudit, visibilityAuditEnabled, visibilityAuditTotals } from '../net/VisibilityAudit';
-import { SnapshotEncoder } from '../net/SnapshotEncoder';
+import { visibilityAuditEnabled, visibilityAuditTotals } from '../net/VisibilityAudit';
 import { InstanceClock } from './InstanceClock';
+import { SeatChannels } from './SeatChannels';
+import { SeatRoster, type SeatSlot } from './SeatRoster';
+import { writeBot, writePlayer } from './SnapshotRecords';
+//#endregion
 
-const log = logger('instance');
-
-/**
- * One running world, and everything the process needs to talk to it (M11, §4.18).
- *
- * M10's `GameServer` was a match, a loop, a socket listener and a rotation policy in one
- * class. This is the match half, lifted out so that two of them can exist: the permanent
- * warmup arena and, when a vote resolves, one live match.
- *
- * ## What an instance owns, and what it does not
- *
- * **Owns**: a `ServerMatch` (the authoritative simulation), a per-client `SnapshotEncoder`, a
- * clock, its own lifecycle state, and the set of sessions seated in it. All of this is
- * per-instance and none of it is shared — §4.19: *"A single shared mutable object between two
- * matches is a correctness failure that will present as an unreproducible desync."*
- *
- * **Does not own**: the loop, the sockets, the routing decision, or the map bake. It is
- * stepped by the master loop, it is handed sessions by `Migration`, and its world geometry is
- * baked once at boot and shared read-only.
- *
- * ## The step is wrapped by the caller, not here
- *
- * §4.18: *"An exception inside one instance must not take down the process."* The wrapping
- * lives in `Server.tick` rather than in `step()`, because the two subclasses need different
- * recoveries — a `LiveMatch` migrates its players out and is destroyed, a `WarmupMatch` must
- * be rebuilt in place because there is nowhere to migrate anyone *to*. A base class that
- * swallowed its own exceptions would have to guess which.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MatchInstanceDeps {
   readonly id: MatchId;
   /** Position in the snapshot stagger (§4.19). The arena is 0; a live match is 1. */
@@ -113,18 +51,69 @@ export interface MatchInstanceDeps {
  */
 export type UnseatCause = 'disconnected' | 'migrated';
 
-/** Ticks between two boards to one seat when the board keeps changing: four a second. */
-const SCOREBOARD_MIN_TICKS = 15;
-/** Ticks after which a seat is sent the board again regardless: two seconds. */
-const SCOREBOARD_KEEPALIVE_TICKS = 120;
-
 /** What the router needs to know about a seat without reaching into the simulation. */
 export interface Seat {
   readonly session: Session;
   readonly player: NetPlayer;
 }
 
+/**
+ * The relevance question's inputs, as one scratch record rather than a literal per seat.
+ *
+ * `RelevanceContext` is read-only because nothing downstream may change it, and this is the
+ * same record with the locks off so one instance can serve every seat of every tick — the
+ * pattern `Relevance.ts` already uses for its own per-pair struct, and for the same reason:
+ * this is *"the one place in this file R7 actually bites"*. Derived from the real type so the
+ * two cannot drift apart.
+ */
+type RelevanceScratch = { -readonly [K in keyof RelevanceContext]: RelevanceContext[K] };
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('instance');
+//#endregion
+
+// ==================================== CLASS MatchInstance ===================================== \\
+//#region Class MatchInstance
+/**
+ * One running world, and everything the process needs to talk to it (M11, §4.18).
+ *
+ * M10's `GameServer` was a match, a loop, a socket listener and a rotation policy in one
+ * class. This is the match half, lifted out so that two of them can exist: the permanent
+ * warmup arena and, when a vote resolves, one live match.
+ *
+ * ## What an instance owns, and what it does not
+ *
+ * **Owns**: a `ServerMatch` (the authoritative simulation), a `SeatRoster` of who is seated
+ * here and the per-seat state that goes with them, a `SeatChannels` for the mode state they are
+ * told about, a clock, and its own lifecycle state. All of this is per-instance and none of it
+ * is shared — §4.19: *"A single shared mutable object between two matches is a correctness
+ * failure that will present as an unreproducible desync."*
+ *
+ * **Does not own**: the loop, the sockets, the routing decision, or the map bake. It is
+ * stepped by the master loop, it is handed sessions by `Migration`, and its world geometry is
+ * baked once at boot and shared read-only.
+ *
+ * ## What is left here, after B5
+ *
+ * The three subjects that are genuinely this class's: **seating** a connection and taking it
+ * out again, **stepping** the world in the order the channels depend on, and **the snapshot**
+ * — the entity list, each seat's cut of it and the event stream that goes with it. The roster's
+ * bookkeeping is `SeatRoster`, the seven state channels are `SeatChannels`, and turning a body
+ * into wire records is `SnapshotRecords`.
+ *
+ * ## The step is wrapped by the caller, not here
+ *
+ * §4.18: *"An exception inside one instance must not take down the process."* The wrapping
+ * lives in `Server.tick` rather than in `step()`, because the two subclasses need different
+ * recoveries — a `LiveMatch` migrates its players out and is destroyed, a `WarmupMatch` must
+ * be rebuilt in place because there is nowhere to migrate anyone *to*. A base class that
+ * swallowed its own exceptions would have to guess which.
+ */
 export abstract class MatchInstance {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly id: MatchId;
   readonly match: ServerMatch;
   readonly clock: InstanceClock;
@@ -157,41 +146,23 @@ export abstract class MatchInstance {
 
   protected state_: InstanceStateId = InstanceState.BOOTING;
 
-  /** Sessions seated in this instance, keyed by the stable connection id. */
-  protected readonly seats = new Map<number, Seat>();
-  /** Same seats keyed by simulation entityId for O(1) lookup in visibility and lag hot paths. */
-  private readonly seatsByEntity = new Map<number, Seat>();
-  private readonly encoders = new Map<number, SnapshotEncoder>();
-  /** Each seat's own entity list — who it is told about (anti-wallhack phase 1). Keyed like `encoders`. */
-  private readonly views = new Map<number, SeatView>();
+  /** Who is seated here, and the encoder, view, event cut, audit and board state of each. */
+  protected readonly roster = new SeatRoster();
+
+  /** The mode state these seats are told about on a snapshot tick. */
+  private readonly channels: SeatChannels;
+
   /** ms spent deciding relevance since the metrics last read it, and the enemy records it produced. */
   relevanceMs = 0;
   relevanceEnemies = 0;
   relevanceDormant = 0;
   /** ms spent cutting the event stream per seat since the metrics last read it (phase 2). */
   eventCutMs = 0;
-  /** Phase 1's own proof, when a harness turns it on (`enableVisibilityAudit`). */
-  private readonly audits = new Map<number, SeatAudit>();
   /** The R9 subscription on the match's bus. */
   private readonly offHurt: () => void;
-  /** Each seat's cut of the event stream (anti-wallhack phase 2). Keyed like `encoders`. */
-  private readonly seatEvents = new Map<number, SeatEvents>();
   /** `Unseen`: a body relevant to, and heard by, nobody but itself. */
   private readonly unseen = (entityId: number): boolean =>
     this.seatByEntity(entityId)?.session.cheats.has(Cheat.Unseen) === true;
-  /** A carried bomb as a seat that does not see its carrier is sent it. See `sendBomb`. */
-  private readonly bombScratch: MutableBombInfo = {
-    state: 'CARRIED',
-    carrierId: -1,
-    attackers: 'A',
-    x: 0,
-    y: 0,
-    z: 0,
-    secondsLeft: 0,
-    interactFraction: 0,
-    interactEntity: -1,
-    plantedSiteIndex: -1,
-  };
   /** Reused per seat per tick by `sendEvents`. Nothing on the send path allocates (S4.7). */
   private readonly seatContext: SeatContext = {
     viewerId: -1,
@@ -203,27 +174,11 @@ export abstract class MatchInstance {
     hidden: () => false,
     awake: new Set<number>(),
   };
+  /** Reused per seat per tick by `sendSnapshots`. See `RelevanceScratch`. */
+  private readonly relevanceCtx: RelevanceScratch;
 
   private readonly header: SnapshotHeader = makeSnapshotHeader();
   private readonly entities: EntitySnapshot[] = [];
-  /** Reused per tick. Nothing in the per-tick send path allocates (S4.7). */
-  private readonly objectiveScratch: ObjectiveState[] = [];
-  private readonly streakScratch: StreakEntityState[] = [];
-  private readonly contactScratch: UavContactState[] = [];
-  private readonly offerScratch: StreakOfferState[] = [];
-  private readonly projectileScratch: ProjectileState[] = [];
-  private readonly smokeScratch: SmokeState[] = [];
-  /** Whether the last projectile frame was empty. See `sendProjectiles`. */
-  private projectilesWereEmpty = false;
-  /** Whether the last dog-tags frame was empty. See `sendTags`. */
-  private tagsWereEmpty = false;
-  /** Per seat: the board serial last sent and the tick it went out. See `sendScoreboard`. */
-  private readonly boardSent = new Map<number, { serial: number; tick: number }>();
-  /** Reused per send. Nothing in the per-tick send path allocates (S4.7). */
-  private readonly boardScratch: ReplicatedScoreRow[] = [];
-  /** Scratch for the §7 hash. Nothing on the per-tick send path allocates (S4.7). */
-  private readonly hashScratch = makeModeStateScratch();
-  private readonly hashSections: number[] = [0, 0, 0, 0];
   private entityCount = 0;
 
   /** Milliseconds the last step took. Per-instance half of the §7 instance panel. */
@@ -232,12 +187,17 @@ export abstract class MatchInstance {
   private stepSamples = 0;
 
   protected readonly deps: MatchInstanceDeps;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MatchInstanceDeps) {
     this.deps = deps;
     this.id = deps.id;
     this.match = deps.match;
     this.clock = new InstanceClock(deps.startTick, deps.snapshotHz, deps.instanceIndex);
+    this.channels = new SeatChannels(deps.match, this.roster);
+    this.relevanceCtx = { world: deps.match.world, freeForAll: false, lookAheadSec: 0 };
 
     // Pooled per instance, per S4.7's "pool everything recurring". Sized for the largest
     // roster any mode fields plus headroom for backfill.
@@ -257,13 +217,16 @@ export abstract class MatchInstance {
     // then the owner, who may be anywhere, and revealing them would be a leak pointing the wrong way.
     this.offHurt = this.match.bus.on(EV.DamageDealt, (p) => {
       if (p.autonomous || p.sourceId === p.targetId) return;
-      const view = this.views.get(p.targetId);
-      if (view === undefined) return;
-      this.audits.get(p.targetId)?.noteHurt(view, p.sourceId, visibilityAuditTotals);
-      view.reveal(p.sourceId, nowMs());
+      const seat = this.seatByEntity(p.targetId);
+      if (seat === null) return;
+      seat.audit?.noteHurt(seat.view, p.sourceId, visibilityAuditTotals);
+      seat.view.reveal(p.sourceId, nowMs());
     });
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get state(): InstanceStateId {
     return this.state_;
   }
@@ -274,7 +237,7 @@ export abstract class MatchInstance {
   }
 
   get playerCount(): number {
-    return this.seats.size;
+    return this.roster.size;
   }
 
   get botCount(): number {
@@ -283,22 +246,16 @@ export abstract class MatchInstance {
 
   /** Every seated session. Iterated by the vote cycle and by broadcast paths. */
   get sessions(): Iterable<Seat> {
-    return this.seats.values();
+    return this.roster.all();
   }
 
   hasPlayer(playerId: number): boolean {
-    return this.seats.has(playerId);
+    return this.roster.has(playerId);
   }
 
   seatOf(playerId: number): Seat | null {
-    return this.seats.get(playerId) ?? null;
+    return this.roster.slotOf(playerId);
   }
-
-  private seatByEntity(entityId: number): Seat | null {
-    return this.seatsByEntity.get(entityId) ?? null;
-  }
-
-  // -- seating ---------------------------------------------------------------
 
   /**
    * Put a connection in this world.
@@ -335,23 +292,12 @@ export abstract class MatchInstance {
       reclaim,
     );
     if (player === null) return null;
-    const seatObj: Seat = { session, player };
-    this.seats.set(session.playerId, seatObj);
-    this.seatsByEntity.set(player.entityId, seatObj);
-    this.encoders.set(player.entityId, new SnapshotEncoder());
-    // A new view has no memory, so this seat starts out told about nobody it cannot see.
-    this.views.set(player.entityId, new SeatView());
-    this.seatEvents.set(player.entityId, new SeatEvents());
-    if (visibilityAuditEnabled()) this.audits.set(player.entityId, new SeatAudit());
+    this.roster.add(session, player);
     // A new encoder has no baseline, so the next snapshot to this client is a full one. Reset
     // the acks with it, or the encoder would be asked to delta against a snapshot id that
     // belonged to the instance this player just left.
     session.restartSnapshotStream();
-    // The board too: a fresh seat has seen none of it, so the next send is the whole set,
-    // whatever the serial (M13 Phase B).
-    this.boardSent.set(session.playerId, { serial: -1, tick: -1 });
-    this.projectilesWereEmpty = false;
-    this.tagsWereEmpty = false;
+    this.channels.onSeated();
     return player;
   }
 
@@ -364,14 +310,9 @@ export abstract class MatchInstance {
    * Only the caller can tell the two apart, so only the caller says which.
    */
   unseat(playerId: number, cause: UnseatCause = 'disconnected'): void {
-    const seat = this.seats.get(playerId);
-    if (seat === undefined) return;
+    const seat = this.roster.remove(playerId);
+    if (seat === null) return;
     this.releaseEntity(seat.player.entityId, cause);
-    this.seatsByEntity.delete(seat.player.entityId);
-    this.encoders.delete(seat.player.entityId);
-    this.views.delete(seat.player.entityId);
-    this.seatEvents.delete(seat.player.entityId);
-    this.audits.delete(seat.player.entityId);
     /**
      * The cheat entitlements go with the seat, and F14 got this wrong (round 4, and the fix).
      *
@@ -388,22 +329,7 @@ export abstract class MatchInstance {
      * that has no reason to distinguish them.
      */
     seat.session.cheats.clear();
-    this.seats.delete(playerId);
-    this.boardSent.delete(playerId);
   }
-
-  /**
-   * Drop the simulation entity behind a seat. Overridden by `LiveMatch` to leave a bot behind.
-   *
-   * Split out so the subclass can substitute the removal without having to repeat the encoder
-   * and seat-map bookkeeping around it — which is the half that, if forgotten, keeps a
-   * destroyed instance alive through a `Seat` holding a `NetPlayer`.
-   */
-  protected releaseEntity(entityId: number, _cause: UnseatCause): void {
-    this.match.removePlayer(entityId);
-  }
-
-  // -- the tick --------------------------------------------------------------
 
   /**
    * One authoritative step, plus this instance's share of the outbound traffic.
@@ -444,12 +370,12 @@ export abstract class MatchInstance {
       // Objective state rides the snapshot cadence: it is world state, not an event, and a
       // client that had entities from tick N and flags from tick N-3 would draw a capture ring
       // around a body that is no longer standing in it.
-      this.sendObjectives();
-      this.sendTags();
-      this.sendBomb();
-      this.sendStreaks();
-      this.sendProjectiles();
-      this.sendScoreboard(absoluteTick, ending);
+      this.channels.sendObjectives();
+      this.channels.sendTags();
+      this.channels.sendBomb();
+      this.channels.sendStreaks();
+      this.channels.sendProjectiles();
+      this.channels.sendScoreboard(absoluteTick, ending);
       /**
        * Last, deliberately (§7).
        *
@@ -458,7 +384,7 @@ export abstract class MatchInstance {
        * it would be compared against a client still holding tick N-1 and would report a
        * mismatch on every single sample.
        */
-      this.sendStateHash(absoluteTick);
+      this.channels.sendStateHash(absoluteTick);
     }
     this.sendEvents();
 
@@ -468,37 +394,6 @@ export abstract class MatchInstance {
     // instance costs *now*, and an average over an hour of uptime cannot show a regression.
     this.meanStepMs =
       this.stepSamples === 1 ? this.lastStepMs : this.meanStepMs * 0.98 + this.lastStepMs * 0.02;
-  }
-
-  /**
-   * Flatten the roster into replicable records.
-   *
-   * Built once per snapshot tick and shared by every client in this instance. The content is
-   * the same for everyone; only the delta baseline differs. Per-recipient filtering — Ghost —
-   * is applied in `sendSnapshots` against this list rather than by building it N times, so an
-   * instance where nobody runs Ghost pays nothing for the feature.
-   */
-  private buildEntities(): void {
-    let n = 0;
-    // Whether a body is alight is the burn system's, and it is the same answer for a human and
-    // for a bot — so it is asked here, once per entity, rather than threaded into two writers
-    // that have no reason to know what a flamethrower is.
-    const burning = (entityId: number): boolean => this.match.burn.isBurning(entityId);
-    for (const player of this.match.players) {
-      const e = this.entities[n];
-      if (e === undefined) break;
-      writePlayer(e, player);
-      if (burning(player.entityId)) e.flags |= EFlag.Burning;
-      n++;
-    }
-    for (const bot of this.match.bots.bots) {
-      const e = this.entities[n];
-      if (e === undefined) break;
-      writeBot(e, bot);
-      if (burning(bot.entityId)) e.flags |= EFlag.Burning;
-      n++;
-    }
-    this.entityCount = n;
   }
 
   /**
@@ -518,87 +413,131 @@ export abstract class MatchInstance {
     return out;
   }
 
+  /** Send one pre-encoded frame to everybody seated here. */
+  broadcast(frame: Uint8Array): void {
+    for (const seat of this.roster.all()) {
+      if (!seat.session.closed) seat.session.send(frame);
+    }
+  }
+
+  /**
+   * Release everything (§4.18).
+   *
+   * *"A `LiveMatch` is now created and destroyed on every cycle, so any per-match leak
+   * accumulates continuously in a long-lived process."* The list §4.18 gives is: every
+   * `EventBus` subscription, every timer and pending promise, object pools, snapshot buffers,
+   * hitbox history ring buffers, bot brains, path caches, and every reference held by the
+   * router, the session layer and the allocator.
+   *
+   * Most of that is reached through `ServerMatch.dispose`, which unsubscribes the match's own
+   * bus handlers and disposes the flow, the score system and the bot director. What is added
+   * here is the network half: the roster — each seat holds an encoder with a full baseline
+   * snapshot, and the seat map is how the *session layer* would otherwise keep a destroyed
+   * instance alive through a `Seat` holding a `NetPlayer` — and the entity pool.
+   *
+   * Subclasses override to add their own, and must call `super.dispose()`.
+   */
+  dispose(): void {
+    this.match.viewLagMsFor = null;
+    this.offHurt();
+    this.match.dispose();
+    this.roster.clear();
+    // The pool is per instance and would otherwise be 64 live objects per destroyed match.
+    this.entities.length = 0;
+    this.entityCount = 0;
+    this.state_ = InstanceState.DESTROYED;
+  }
+  //#endregion
+
+  // ==================================== PROTECTED METHODS ===================================== \\
+  //#region Protected Methods
+  /**
+   * Drop the simulation entity behind a seat. Overridden by `LiveMatch` to leave a bot behind.
+   *
+   * Split out so the subclass can substitute the removal without having to repeat the encoder
+   * and seat-map bookkeeping around it — which is the half that, if forgotten, keeps a
+   * destroyed instance alive through a `Seat` holding a `NetPlayer`.
+   */
+  protected releaseEntity(entityId: number, _cause: UnseatCause): void {
+    this.match.removePlayer(entityId);
+  }
+
+  protected setState(next: InstanceStateId, why: string): void {
+    if (this.state_ === next) return;
+    log.info(`instance ${this.id}: ${stateName(this.state_)} -> ${stateName(next)} (${why})`);
+    this.state_ = next;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private seatByEntity(entityId: number): SeatSlot | null {
+    return this.roster.slotByEntity(entityId);
+  }
+
+  /**
+   * Flatten the roster into replicable records.
+   *
+   * Built once per snapshot tick and shared by every client in this instance. The content is
+   * the same for everyone; only the delta baseline differs. Per-recipient filtering — Ghost —
+   * is applied in `sendSnapshots` against this list rather than by building it N times, so an
+   * instance where nobody runs Ghost pays nothing for the feature.
+   */
+  private buildEntities(): void {
+    let n = 0;
+    for (const player of this.match.players) {
+      const e = this.entities[n];
+      if (e === undefined) break;
+      writePlayer(e, player);
+      // Whether a body is alight is the burn system's, and it is the same answer for a human and
+      // for a bot — so it is asked here, once per entity, rather than threaded into two writers
+      // that have no reason to know what a flamethrower is.
+      if (this.match.burn.isBurning(player.entityId)) e.flags |= EFlag.Burning;
+      n++;
+    }
+    for (const bot of this.match.bots.bots) {
+      const e = this.entities[n];
+      if (e === undefined) break;
+      writeBot(e, bot);
+      if (this.match.burn.isBurning(bot.entityId)) e.flags |= EFlag.Burning;
+      n++;
+    }
+    this.entityCount = n;
+  }
+
+  /** This tick's world, encoded per seat against that seat's own baseline. */
   private sendSnapshots(tickIndex: number): void {
-    const flow = this.match.flow;
-    const mode = this.match.mode;
     const now = nowMs();
-    const freeForAll = this.match.modeEntry.freeForAll === true;
     // P1: only a one-life mode has a spectator, and only a spectator needs its team's eyes.
     const oneLife = this.match.modeEntry.usesRoundReset === true;
     const snapshotMs = 1000 / this.deps.snapshotHz;
+    const ctx = this.relevanceCtx;
+    ctx.world = this.match.world;
+    ctx.freeForAll = this.match.modeEntry.freeForAll === true;
 
-    for (const seat of this.seats.values()) {
+    for (const seat of this.roster.all()) {
       const { session, player } = seat;
       if (session.closed) continue;
-      const encoder = this.encoders.get(player.entityId);
-      if (encoder === undefined) continue;
-      const view = this.views.get(player.entityId);
-      if (view === undefined) continue;
 
       /**
-       * Who this seat is told about (anti-wallhack phase 1, docs/VISIBILITY.md).
-       *
-       * The look-ahead is how far behind the truth this client draws the world — half its round
-       * trip, the interpolation delay and one snapshot interval — so a body that will round a
-       * corner inside that window is sent before it does.
+       * How far behind the truth this client draws the world — half its round trip, the
+       * interpolation delay and one snapshot interval — so a body that will round a corner
+       * inside that window is sent before it does (anti-wallhack phase 1, docs/VISIBILITY.md).
        */
       const drawDelayMs = session.rttMs * 0.5 + this.deps.interpolationDelayMs;
-      const ctx = { world: this.match.world, freeForAll, lookAheadSec: (drawDelayMs + snapshotMs) / 1000 };
-      const t0 = nowMs();
-      view.build(
-        now,
-        player.entityId,
-        this.entities,
-        this.entityCount,
-        ctx,
-        session.cheats.has(Cheat.NoClip),
-        oneLife && !player.alive,
-        this.unseen,
-      );
-      const spent = nowMs() - t0;
-      this.relevanceMs += spent;
-      this.relevanceEnemies += view.enemies;
-      this.relevanceDormant += view.dormantSent;
-      if (visibilityAuditEnabled()) {
-        visibilityAuditTotals.seatSnapshots++;
-        visibilityAuditTotals.relevanceMs += spent;
-        visibilityAuditTotals.enemyRecords += view.enemies;
-        visibilityAuditTotals.dormantRecords += view.dormantSent;
-      }
-      this.audits.get(player.entityId)?.observe(
-        now,
-        view,
-        player.entityId,
-        this.entities,
-        this.entityCount,
-        ctx,
-        drawDelayMs,
-        visibilityAuditTotals,
-      );
+      ctx.lookAheadSec = (drawDelayMs + snapshotMs) / 1000;
+      this.buildSeatView(seat, now, drawDelayMs, oneLife);
+      this.fillSnapshotHeader(tickIndex, player);
 
-      const h = this.header;
-      h.serverTick = tickIndex;
-      h.ackSeq = player.ackSeq;
-      h.ackTick = player.ackTick;
-      h.scoreA = mode.teamScore('A');
-      h.scoreB = mode.teamScore('B');
-      h.timeLeft = Math.round(flow.secondsRemaining);
-      h.flags =
-        (this.match.inputFrozen ? SFlag.InputFrozen : 0) | (flow.isOver ? SFlag.MatchOver : 0);
-      h.starvation = player.input.takeStarvation();
-      h.phase = phaseIndex(flow.currentPhase);
-      h.phaseSeconds = flow.phaseSecondsRemaining;
-      h.round = flow.round;
-
-      const frame = encoder.encode(
-        h,
+      const frame = seat.encoder.encode(
+        this.header,
         session.ackedSnapshot,
         // This client's own authoritative sim state, at full precision. It is compared
         // against a prediction rather than drawn, and quantisation error in a comparison is
         // indistinguishable from a misprediction.
         player.simState,
-        view.list,
-        view.count,
+        seat.view.list,
+        seat.view.count,
         // F14: replicated as state, once per snapshot, so no dropped frame can leave the two
         // sides disagreeing about whether a wall stops this player. See `writeSnapshotOwner`.
         session.cheats.mask,
@@ -606,349 +545,70 @@ export abstract class MatchInstance {
       if (frame.length === 0) continue;
       // Through the session rather than onto the field: it stamps the id with the time,
       // which is what turns this client's next ack into a round-trip measurement.
-      session.noteSnapshotSent(h.snapshotId);
+      session.noteSnapshotSent(this.header.snapshotId);
       session.send(frame);
     }
   }
 
   /**
-   * Replicate the mode's objective zones (M11 Gate B, §6.8).
+   * Who this seat is told about, and what deciding that cost (anti-wallhack phase 1).
    *
-   * §6.8: *"The instance owns every piece of mode state; clients render what they are told and
-   * hold no authoritative timers."* Domination is the case that made this necessary: the server
-   * captured flags correctly all along, and the client drew its own copy — permanently neutral,
-   * because a networked client's `Domination` has an empty roster and counts nobody standing on
-   * anything. The flags worked and were invisible.
-   *
-   * Skipped entirely for a mode with no objectives, which is TDM, FFA and the arena — three of
-   * the five, and the ones that would otherwise pay a frame for a message of length zero.
+   * The cost is measured around `build` alone rather than around the whole seat, because the
+   * number the §7 panel reports is the price of *relevance* and the encode beside it is not
+   * part of that question.
    */
-  private sendObjectives(): void {
-    const zones = this.match.mode.objectiveZones;
-    if (zones.length === 0) return;
-
-    this.objectiveScratch.length = 0;
-    for (const zone of zones) {
-      this.objectiveScratch.push({
-        owner: ownerCode(zone.owner),
-        capturing: ownerCode(zone.capturingTeam),
-        // 0..1 to a byte. A flag takes several seconds to capture, so 1/255 is far finer than
-        // the eye or the capture ring can show.
-        progress: Math.max(0, Math.min(255, Math.round(zone.progress * 255))),
-        countA: zone.countA,
-        countB: zone.countB,
-      });
+  private buildSeatView(seat: SeatSlot, now: number, drawDelayMs: number, oneLife: boolean): void {
+    const { session, player, view } = seat;
+    const ctx = this.relevanceCtx;
+    const t0 = nowMs();
+    view.build(
+      now,
+      player.entityId,
+      this.entities,
+      this.entityCount,
+      ctx,
+      session.cheats.has(Cheat.NoClip),
+      oneLife && !player.alive,
+      this.unseen,
+    );
+    const spent = nowMs() - t0;
+    this.relevanceMs += spent;
+    this.relevanceEnemies += view.enemies;
+    this.relevanceDormant += view.dormantSent;
+    if (visibilityAuditEnabled()) {
+      visibilityAuditTotals.seatSnapshots++;
+      visibilityAuditTotals.relevanceMs += spent;
+      visibilityAuditTotals.enemyRecords += view.enemies;
+      visibilityAuditTotals.dormantRecords += view.dormantSent;
     }
-
-    for (const seat of this.seats.values()) {
-      if (!seat.session.closed) seat.session.sendObjectives(this.objectiveScratch);
-    }
+    seat.audit?.observe(
+      now,
+      view,
+      player.entityId,
+      this.entities,
+      this.entityCount,
+      ctx,
+      drawDelayMs,
+      visibilityAuditTotals,
+    );
   }
 
-  /**
-   * The scoreboard, as state (M13 Phase B, bug 4.3). See `MsgS.Scoreboard`.
-   *
-   * Per seat, three rules and nothing else:
-   *
-   *  - **Changed.** Sent when `ScoreSystem.serial` differs from the one this seat last received.
-   *    A fresh seat starts at -1, so its first snapshot tick carries the whole board — which is
-   *    the other half of 4.3, a returning client reading zeros for everybody.
-   *  - **Rate-limited.** No sooner than `SCOREBOARD_MIN_TICKS` after the last send to that
-   *    seat. Every trigger pull moves the serial, and a firefight would otherwise send a
-   *    ~300-byte board twenty times a second.
-   *  - **Resent anyway** every `SCOREBOARD_KEEPALIVE_TICKS`, changed or not. There is no ack on
-   *    this channel; a frame lost under `--net bad` is corrected within two seconds instead of
-   *    at the next change, which between fights may be a long way off.
-   *
-   * The rows are built once per send from the live rows and shared by every seat; the
-   * per-seat part is only the decision.
-   *
-   * ## The rate limit does not apply to the last board of a match (BACKLOG #42)
-   *
-   * `ending` is the forced pass `step` makes on the tick the win condition fires — the one
-   * `LiveMatch` is careful to order its move to `ENDED` *after*, so this channel gets its
-   * chance. The rate limit used to overrule it: a seat whose previous board was less than
-   * `SCOREBOARD_MIN_TICKS` (250 ms) old was skipped, and since the instance is `ENDED` from
-   * that tick on there is no later pass to catch it. The client then held a board missing the
-   * last kill for the whole summary hold.
-   *
-   * And the last kill is exactly the common case, because in a close match **it is the kill
-   * that ends it**: the audit caught it as one run in five with two rows off on every client —
-   * the killer's kills and the victim's deaths. So `ending` waives the rate limit. It does not
-   * waive *changed*: a seat already holding the final serial is sent nothing.
-   */
-  private sendScoreboard(tickIndex: number, ending: boolean): void {
-    const score = this.match.score;
-    let built = false;
-    for (const seat of this.seats.values()) {
-      const { session } = seat;
-      if (session.closed) continue;
-      const sent = this.boardSent.get(session.playerId);
-      if (sent === undefined) continue;
-      const changed = sent.serial !== score.serial;
-      const since = tickIndex - sent.tick;
-      const due = sent.tick < 0 || since >= SCOREBOARD_KEEPALIVE_TICKS;
-      if (!due && !(changed && (ending || since >= SCOREBOARD_MIN_TICKS))) continue;
-      if (!built) {
-        this.boardScratch.length = 0;
-        for (const row of score.rows) this.boardScratch.push(row);
-        built = true;
-      }
-      session.sendScoreboard(score.serial, this.boardScratch);
-      sent.serial = score.serial;
-      sent.tick = tickIndex;
-    }
-  }
-
-  /**
-   * Replicate Kill Confirmed's dog tags (M11 Gate B, §6.8).
-   *
-   * Sent **including when the list is empty**, which is why the seam returns `null` for a mode
-   * with no tags rather than an empty array: the transition from one tag to none is exactly as
-   * much news as the transition from none to one, and a channel that only reported non-empty
-   * lists would leave the last tag of every firefight lying on the client's floor for ever.
-   *
-   * Authoritative pickup is already the server's, and §6.8's *"two players reaching a tag on the
-   * same tick resolves once, deterministically"* is a property of `KillConfirmed.onTick`: it
-   * walks the roster in a fixed order, takes the first collector it finds and splices the tag
-   * out in the same pass, so a second collector on the same tick finds nothing to collect. What
-   * this adds is that the *client* no longer has an opinion — it runs no pickup test at all.
-   */
-  private sendTags(): void {
-    const tags = this.match.mode.dogTags;
-    if (tags === null) return;
-    const empty = tags.length === 0;
-    if (empty && this.tagsWereEmpty) return;
-    this.tagsWereEmpty = empty;
-    for (const seat of this.seats.values()) {
-      if (!seat.session.closed) seat.session.sendTags(tags);
-    }
-  }
-
-  /**
-   * Replicate Search & Destroy's bomb (M11 Gate B, §6.8).
-   *
-   * The fuse is the reason this is not optional. §6.8: *"a client-side timer will drift and will
-   * decide a round wrongly."* On a networked client it does not drift — `onTick` never runs, so
-   * it does not move at all.
-   */
-  /**
-   * S&D's bomb, per seat (anti-wallhack phase 2, part 4).
-   *
-   * Carried, the bomb's place is its carrier's place, and it used to go to every seat every
-   * snapshot — the attackers' bomb carrier on every defender's wire, through any wall. The client
-   * draws no arrow to a carried bomb for exactly that reason (`MatchObjectives`), but the
-   * coordinates arrived regardless. Now a seat that does not have the carrier awake is sent the
-   * bomb where its own snapshot says the carrier is — the dormant record, frozen where it was last
-   * seen, or the origin if it never was — and the client hides a bomb whose carrier it does not
-   * see. On the floor or planted, the bomb is a public object and goes as it is.
-   */
-  private sendBomb(): void {
-    const info = this.match.mode.bombInfo;
-    if (info === null) return;
-    const carried = info.state === 'CARRIED' && info.carrierId >= 0;
-    for (const seat of this.seats.values()) {
-      const { session, player } = seat;
-      if (session.closed) continue;
-      const view = this.views.get(player.entityId);
-      let out: BombInfo = info;
-      if (carried && view !== undefined && !view.awake.has(info.carrierId) && !session.cheats.has(Cheat.NoClip)) {
-        const known = view.recordOf(info.carrierId);
-        const hidden = this.bombScratch;
-        Object.assign(hidden, info);
-        hidden.x = known?.x ?? 0;
-        hidden.y = known?.y ?? 0;
-        hidden.z = known?.z ?? 0;
-        out = hidden;
-      }
-      session.sendBomb(out);
-      if (view !== undefined) this.audits.get(player.entityId)?.observeBomb(out, info, view, visibilityAuditTotals);
-    }
-  }
-
-  /**
-   * Killstreaks, per recipient (M11 Gate B, §6.8, §8.22).
-   *
-   * The only message in the protocol built per seat rather than broadcast, because three of its
-   * four parts are private and one of them is the whole value of a killstreak.
-   *
-   * ## The two filters, and why they are different
-   *
-   * **Bodies are common.** A sentry and a care package are physical objects that both teams can
-   * see, walk into and shoot. The entity list is built once and every seat gets the same one.
-   *
-   * **Intel is not.** A UAV's contacts go only to the team whose UAV recorded them. Broadcasting
-   * them and trusting the client to ignore the other team's would put a UAV's entire value in
-   * the untrusted half of the system (§4.16) — and "trust the client to not look" is precisely
-   * the shape of bug a wallhack is.
-   *
-   * **Ghost is inside the intel filter, not beside it.** `Uav.onTick` already declines to record
-   * a contact for anyone whose `visibleToUav` is false, so a Ghost player never enters this list
-   * in the first place. Note what is *not* happening: their entity stays in `buildEntities` and
-   * their body is drawn normally. Ghost hides you from UAV intel; it does not make you invisible,
-   * and an entity filter — the obvious reading of §8.22's *"absent from the snapshot"* — would
-   * ship a different perk from the one M6 designed.
-   */
-  private sendStreaks(): void {
-    const streaks = this.match.streaks;
-
-    // The common half, built once. Nothing here is per recipient.
-    this.streakScratch.length = 0;
-    for (const streak of streaks.active) {
-      if (this.streakScratch.length >= MAX_STREAK_ENTITIES) break;
-      this.streakScratch.push(describeStreak(streak));
-    }
-
-    for (const seat of this.seats.values()) {
-      const { session, player } = seat;
-      if (session.closed) continue;
-
-      /**
-       * The price list, not an inventory (round 4, B9 + B10 and the pivot).
-       *
-       * Built from `pricesFor`, which is the same accessor the ledger's own audit uses, so the
-       * number on the player's HUD and the number they are charged cannot come apart. The
-       * lockout is read per offer rather than sent as a second list, because a price and its
-       * availability are one fact about one key and splitting them is how the two get out of
-       * step — and it is the *server's* seconds, off the sim tick, because the client is not
-       * running the clock they are measured on.
-       */
-      this.offerScratch.length = 0;
-      for (const priced of streaks.pricesFor(player.entityId)) {
-        if (this.offerScratch.length >= MAX_STREAK_OFFERS) break;
-        this.offerScratch.push({
-          kind: streakKindIndex(priced.id),
-          price: priced.price,
-          lockoutCs: Math.round(streaks.lockoutSecondsFor(player.entityId, priced.id) * 100),
-        });
-      }
-
-      const next = streaks.nextFor(player.entityId);
-      const uav = streaks.uavFor(player.team);
-
-      // Only this player's team's UAV, and only the contacts it actually recorded.
-      this.contactScratch.length = 0;
-      if (uav !== null) {
-        for (const c of uav.contacts) {
-          if (!c.active) continue;
-          if (this.contactScratch.length >= MAX_UAV_CONTACTS) break;
-          this.contactScratch.push({
-            entityId: c.entityId,
-            x: c.x,
-            z: c.z,
-            ageCs: Math.round(c.age * 100),
-          });
-        }
-      }
-
-      session.sendStreaks({
-        offers: this.offerScratch,
-        balance: streaks.balanceOf(player.entityId),
-        nextKind: next === null ? -1 : streakKindIndex(next.def.id),
-        nextPrice: next?.price ?? 0,
-        scrambled: streaks.minimapScrambledFor(player.team),
-        sweepAngle: uav === null ? -1 : uav.sweepAngle,
-        contacts: this.contactScratch,
-        entities: this.streakScratch,
-      });
-    }
-  }
-
-  /**
-   * Grenades in flight and smoke on the ground (M11 Gate B, §6.8, §8.24).
-   *
-   * Broadcast, unlike the streak view: a grenade is a physical object with no secrets, so there
-   * is one payload and everybody gets it. What differs per client is how it is *used* — your own
-   * grenade is a correction to something you predicted, everybody else's is the only copy you
-   * have — and that is a decision the client makes with the entity id it already knows is its
-   * own.
-   *
-   * Skipped entirely when nothing is in the air and no smoke is burning, which is most ticks of
-   * most matches. The alternative is a two-byte frame at 20 Hz per client forever, for a message
-   * whose whole content is "still nothing".
-   */
-  private sendProjectiles(): void {
-    const pool = this.match.equipment.projectiles;
-    const field = this.match.equipment.smoke;
-
-    this.projectileScratch.length = 0;
-    for (const p of pool.items) {
-      if (!p.active) continue;
-      if (this.projectileScratch.length >= MAX_PROJECTILES) break;
-      this.projectileScratch.push({
-        serial: p.serial,
-        kind: equipmentKindIndex(p.def.id),
-        ownerId: p.ownerId,
-        x: p.x,
-        y: p.y,
-        z: p.z,
-        yaw: p.yaw,
-        flags:
-          (p.resting ? PEFlag.Resting : 0) |
-          (p.phase === 'ARMED' ? PEFlag.Armed : 0) |
-          (p.stuckTo >= 0 ? PEFlag.Stuck : 0),
-      });
-    }
-
-    this.smokeScratch.length = 0;
-    for (const v of field.volumes) {
-      if (!v.active) continue;
-      if (this.smokeScratch.length >= MAX_SMOKE) break;
-      this.smokeScratch.push({
-        x: v.x,
-        y: v.y,
-        z: v.z,
-        radius: v.radius,
-        remainingDs: Math.round(v.remaining * 10),
-      });
-    }
-
-    /**
-     * The empty case is a real state and is sent **once**, not never.
-     *
-     * A client told only about non-empty frames would keep drawing the last grenade of every
-     * firefight for ever — the same trap the dog tags set, and avoided the same way. So the
-     * frame is skipped only while the previous one was *also* empty.
-     */
-    const empty = this.projectileScratch.length === 0 && this.smokeScratch.length === 0;
-    if (empty && this.projectilesWereEmpty) return;
-    this.projectilesWereEmpty = empty;
-
-    for (const seat of this.seats.values()) {
-      if (!seat.session.closed) {
-        seat.session.sendProjectiles(this.projectileScratch, this.smokeScratch);
-      }
-    }
-  }
-
-  /**
-   * Hash this tick's mode state and send it (§7, §8.21).
-   *
-   * Built from the **same quantisation the wire uses**, not from the raw simulation values: the
-   * server holds a capture progress of 0.4372 and the client holds 111/255, and hashing the raw
-   * number would report a divergence on every objective in the game. That is a units bug
-   * dressed as a finding, and it is the first thing a comparator like this gets wrong.
-   */
-  private sendStateHash(tick: number): void {
-    if (this.seats.size === 0) return;
-    const facts = this.modeStateFacts();
-    const hash = hashModeState(facts);
-    // The parts too, so a client that disagrees can say in which channel (part 5).
-    const sections = hashModeStateSections(facts, this.hashSections);
-    for (const seat of this.seats.values()) {
-      if (!seat.session.closed) seat.session.sendStateHash(tick, hash, sections);
-    }
-  }
-
-  /**
-   * The authoritative mode state, flattened exactly as the channels above send it.
-   *
-   * The builder is `shared/debug/ModeStateHash` since round 5's B7, so the instance and the
-   * browser cannot disagree about what "the state" is — two hand-kept transcriptions of one
-   * quantisation rule are two rules that drift, and the browser had no copy at all.
-   */
-  private modeStateFacts(): ModeStateFacts {
-    return modeStateFacts(this.match.mode, this.match.flow, this.hashScratch);
+  /** The match clock, the scores and this seat's acks, into the one header every frame carries. */
+  private fillSnapshotHeader(tickIndex: number, player: NetPlayer): void {
+    const flow = this.match.flow;
+    const h = this.header;
+    h.serverTick = tickIndex;
+    h.ackSeq = player.ackSeq;
+    h.ackTick = player.ackTick;
+    h.scoreA = this.match.mode.teamScore('A');
+    h.scoreB = this.match.mode.teamScore('B');
+    h.timeLeft = Math.round(flow.secondsRemaining);
+    h.flags =
+      (this.match.inputFrozen ? SFlag.InputFrozen : 0) | (flow.isOver ? SFlag.MatchOver : 0);
+    h.starvation = player.input.takeStarvation();
+    h.phase = phaseIndex(flow.currentPhase);
+    h.phaseSeconds = flow.phaseSecondsRemaining;
+    h.round = flow.round;
   }
 
   /**
@@ -965,24 +625,16 @@ export abstract class MatchInstance {
     ctx.entityCount = this.entityCount;
     ctx.freeForAll = this.match.modeEntry.freeForAll === true;
     ctx.hidden = this.unseen;
-    for (const seat of this.seats.values()) {
-      const { session, player } = seat;
+    for (const seat of this.roster.all()) {
+      const { session, player, events: cut, view } = seat;
       if (session.closed) continue;
-      const cut = this.seatEvents.get(player.entityId);
-      const view = this.views.get(player.entityId);
-      if (cut === undefined || view === undefined) continue;
       ctx.viewerId = player.entityId;
       ctx.seesAll = session.cheats.has(Cheat.NoClip);
       ctx.spectating = oneLife && !player.alive;
       ctx.awake = view.awake;
       const t0 = nowMs();
       cut.select(events, ctx);
-      const sent =
-        cut.kept === events.pending && cut.varied === 0
-          ? frame
-          : cut.kept === 0
-            ? null
-            : events.frameFor(cut.keep, cut.writer);
+      const sent = frameForSeat(cut, events, frame);
       const spent = nowMs() - t0;
       this.eventCutMs += spent;
       if (sent !== null) session.send(sent);
@@ -992,55 +644,26 @@ export abstract class MatchInstance {
         visibilityAuditTotals.eventBytesWhole += frame.length;
         visibilityAuditTotals.eventBytesSent += sent?.length ?? 0;
       }
-      this.audits.get(player.entityId)?.observeEvents(sent, events, view, ctx, visibilityAuditTotals);
+      seat.audit?.observeEvents(sent, events, view, ctx, visibilityAuditTotals);
     }
   }
+  //#endregion
+}
+//#endregion
 
-  /** Send one pre-encoded frame to everybody seated here. */
-  broadcast(frame: Uint8Array): void {
-    for (const seat of this.seats.values()) {
-      if (!seat.session.closed) seat.session.send(frame);
-    }
-  }
-
-  // -- teardown --------------------------------------------------------------
-
-  /**
-   * Release everything (§4.18).
-   *
-   * *"A `LiveMatch` is now created and destroyed on every cycle, so any per-match leak
-   * accumulates continuously in a long-lived process."* The list §4.18 gives is: every
-   * `EventBus` subscription, every timer and pending promise, object pools, snapshot buffers,
-   * hitbox history ring buffers, bot brains, path caches, and every reference held by the
-   * router, the session layer and the allocator.
-   *
-   * Most of that is reached through `ServerMatch.dispose`, which unsubscribes the match's own
-   * bus handlers and disposes the flow, the score system and the bot director. What is added
-   * here is the network half: the encoders (each holds a full baseline snapshot), the entity
-   * pool, and the seat map — the last of which is how the *session layer* would otherwise keep
-   * a destroyed instance alive through a `Seat` holding a `NetPlayer`.
-   *
-   * Subclasses override to add their own, and must call `super.dispose()`.
-   */
-  dispose(): void {
-    this.match.viewLagMsFor = null;
-    this.offHurt();
-    this.match.dispose();
-    this.encoders.clear();
-    this.seatEvents.clear();
-    this.seats.clear();
-    this.seatsByEntity.clear();
-    // The pool is per instance and would otherwise be 64 live objects per destroyed match.
-    this.entities.length = 0;
-    this.entityCount = 0;
-    this.state_ = InstanceState.DESTROYED;
-  }
-
-  protected setState(next: InstanceStateId, why: string): void {
-    if (this.state_ === next) return;
-    log.info(`instance ${this.id}: ${stateName(this.state_)} -> ${stateName(next)} (${why})`);
-    this.state_ = next;
-  }
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * One seat's event frame: the shared one, its own, or none at all.
+ *
+ * The shared frame is handed back **by reference** when this seat keeps everything the tick
+ * produced and varies nothing, which is the common case and the whole reason the cut exists: a
+ * seat that may have all of it costs no encoding at all.
+ */
+function frameForSeat(cut: SeatEvents, events: EventCollector, whole: Uint8Array): Uint8Array | null {
+  if (cut.kept === events.pending && cut.varied === 0) return whole;
+  if (cut.kept === 0) return null;
+  return events.frameFor(cut.keep, cut.writer);
 }
 
 function stateName(state: InstanceStateId): string {
@@ -1049,208 +672,4 @@ function stateName(state: InstanceStateId): string {
   }
   return String(state);
 }
-
-// -- entity flattening --------------------------------------------------------
-//
-// Lifted verbatim from M10's `GameServer`. The only change is where it lives: an entity list
-// is a property of a world, and there are two worlds now.
-
-function writePlayer(e: EntitySnapshot, p: NetPlayer): void {
-  const sim = p.controller.sim;
-  const weapon = p.weapons.weapon;
-  e.entityId = p.entityId;
-  e.displayName = p.displayName;
-  e.x = sim.x;
-  e.y = sim.y;
-  e.z = sim.z;
-  e.yaw = sim.yaw;
-  e.pitch = sim.pitch;
-  e.vx = sim.vx;
-  e.vz = sim.vz;
-  e.stance = sim.stance;
-  e.heightScale = p.capsuleScale;
-  e.health = clampByte(p.health.current);
-  e.weaponIndex = weaponIndexOf(p.weapons.definition.id);
-  e.characterIndex = p.characterIndex;
-  e.flags =
-    (p.alive ? EFlag.Alive : 0) |
-    (isDown(p.lastButtons, Btn.Fire) && !p.handBusy ? EFlag.Firing : 0) |
-    (weapon.reloading ? EFlag.Reloading : 0) |
-    (weapon.adsFraction > 0.5 ? EFlag.Ads : 0) |
-    (sim.sprintActive || sim.tacSprintActive ? EFlag.Sprinting : 0) |
-    (sim.grounded ? EFlag.Grounded : 0) |
-    (p.handBusy ? EFlag.Throwing : 0) |
-    (p.meleeSeconds > 0 ? EFlag.Melee : 0) |
-    (p.team === 'B' ? EFlag.TeamB : 0);
-  e.heldEquipment = equipmentIndexOf(p.heldEquipment);
-  e.throwPhase = THROW_PHASES.indexOf(p.throwPhase);
-  copyVisual(e, p.visual);
-}
-
-function writeBot(e: EntitySnapshot, b: Bot): void {
-  const sim = b.controller.sim;
-  const weapon = b.weapons.weapon;
-  e.entityId = b.entityId;
-  e.displayName = b.displayName;
-  e.x = sim.x;
-  e.y = sim.y;
-  e.z = sim.z;
-  e.yaw = sim.yaw;
-  e.pitch = sim.pitch;
-  e.vx = sim.vx;
-  e.vz = sim.vz;
-  e.stance = sim.stance;
-  e.heightScale = b.capsuleScale;
-  e.health = clampByte(b.health.current);
-  e.weaponIndex = weaponIndexOf(b.weapons.definition.id);
-  // The server has no opinion about a bot's body (M16 decision 4): every client deals one.
-  e.characterIndex = NO_SKIN_INDEX;
-  e.flags =
-    (b.health.alive ? EFlag.Alive : 0) |
-    (isDown(b.lastCommand.buttons, Btn.Fire) ? EFlag.Firing : 0) |
-    (weapon.reloading ? EFlag.Reloading : 0) |
-    (weapon.adsFraction > 0.5 ? EFlag.Ads : 0) |
-    (sim.sprintActive || sim.tacSprintActive ? EFlag.Sprinting : 0) |
-    (sim.grounded ? EFlag.Grounded : 0) |
-    EFlag.Bot |
-    (b.team === 'B' ? EFlag.TeamB : 0);
-  // A bot's throw has no arm (`BotThrower`), and the record is pooled: a slot a player's cook
-  // left behind must not put a grenade in the next bot's hand.
-  e.heldEquipment = 255;
-  e.throwPhase = 0;
-  copyVisual(e, b.visual);
-}
-
-/**
- * The M3 visual serials, verbatim.
- *
- * Directions become a single angle on the wire: a fall or a flinch only ever uses the
- * horizontal direction, so two components carrying a normalised vector is two bytes spent
- * saying what one angle says exactly.
- */
-function copyVisual(
-  e: EntitySnapshot,
-  v: {
-    deathSerial: number;
-    deathDirX: number;
-    deathDirZ: number;
-    spawnSerial: number;
-    flinchSerial: number;
-    flinchDirX: number;
-    flinchDirZ: number;
-  },
-): void {
-  e.deathSerial = v.deathSerial;
-  e.deathAngle = Math.atan2(v.deathDirX, v.deathDirZ);
-  e.spawnSerial = v.spawnSerial;
-  e.flinchSerial = v.flinchSerial;
-  e.flinchAngle = Math.atan2(v.flinchDirX, v.flinchDirZ);
-}
-
-function clampByte(v: number): number {
-  const i = Math.round(v);
-  return i < 0 ? 0 : i > 255 ? 255 : i;
-}
-
-// -- streak flattening (M11 Gate B, §8.22) ------------------------------------
-
-/**
- * One live streak, as the wire sees it.
- *
- * `instanceof` here rather than a virtual method on `Killstreak`, deliberately and against the
- * usual instinct. `streaks/` is shared code that knows nothing about a wire format, and putting
- * a `toNetState()` on the base class would push a networking concern into six gameplay classes
- * to save one switch in the one place that has the concern. The same reasoning that keeps
- * `EntitySnapshot` flattening in this file rather than on `NetPlayer`.
- *
- * The kinds that are pure intel or pure effect — UAV, Counter-UAV, Mortar — still send a record.
- * A UAV has no mesh, but the *fact that one is up* is what the HUD's "UAV ONLINE" banner and the
- * minimap sweep are drawn from, and an absent record cannot say that.
- */
-function describeStreak(streak: Killstreak): StreakEntityState {
-  const base = {
-    instanceId: streak.instanceId,
-    kind: streakKindIndex(streak.def.id),
-    ownerId: streak.ownerId,
-    team: ownerCode(streak.ownerTeam),
-    yaw: 0,
-    pitch: 0,
-    // 255 is "cannot be shot down", which is every kind except the sentry.
-    health: 255,
-    fraction: 0,
-    flags: SEFlag.Alive,
-  };
-
-  if (streak instanceof SentryGun) {
-    return {
-      ...base,
-      x: streak.x,
-      y: streak.y,
-      z: streak.z,
-      yaw: streak.turretYaw,
-      pitch: streak.turretPitch,
-      /**
-       * A share of full, not hit points (2026-09-28). It was `clampByte(current)`, which nothing
-       * read until the health bar did — and a 260 HP sentry in a byte is "full" until it has taken
-       * five, and "full" again for every sentry anybody tunes above 255. The bar wants the one
-       * number that survives both: how much of it is left.
-       */
-      health: clampByte(streak.health.fraction * 255),
-      // The owner's dismantle, which a networked owner's prompt fills its ring from.
-      fraction: clampByte(streak.dismantleFraction * 255),
-      flags: streak.health.alive ? SEFlag.Alive | SEFlag.Landed : 0,
-    };
-  }
-
-  if (streak instanceof CarePackage) {
-    return {
-      ...base,
-      x: streak.x,
-      y: streak.y,
-      z: streak.z,
-      fraction: clampByte(streak.claimFraction * 255),
-      flags:
-        SEFlag.Alive |
-        (streak.landed ? SEFlag.Landed : 0) |
-        (streak.claimantId >= 0 ? SEFlag.Claiming : 0),
-    };
-  }
-
-  if (streak instanceof ChopperGunner) {
-    return { ...base, x: streak.x, y: streak.y, z: streak.z, yaw: streak.yaw, pitch: streak.pitch };
-  }
-
-  if (streak instanceof Uav) {
-    // No body. The sweep bearing rides the per-recipient half of the message, where it can be
-    // withheld from the other team; this record only says a UAV is up and whose it is.
-    return { ...base, x: 0, y: 0, z: 0 };
-  }
-
-  if (streak instanceof MortarStrike) {
-    return { ...base, x: streak.markX, y: 0, z: streak.markZ };
-  }
-
-  // Counter-UAV, and anything added later: presence, owner and team, which is all a streak with
-  // no body in the world can meaningfully say.
-  return { ...base, x: 0, y: 0, z: 0 };
-}
-
-/**
- * A streak id as an index into `STREAK_DEFS`.
- *
- * An index rather than the string, for the same reason the objective channel uses one: both
- * runtimes build their table from the same module in the same order, so the index *is* the
- * identity and costs one byte where `'chopper_gunner'` costs fifteen.
- */
-/** An equipment id as its index in `ALL_EQUIPMENT`. Index is identity, as everywhere else. */
-const EQUIPMENT_INDEX = new Map<EquipmentId, number>(ALL_EQUIPMENT.map((d, i) => [d.id, i]));
-const STREAK_INDEX = new Map<StreakId, number>(STREAK_DEFS.map((d, i) => [d.id, i]));
-
-/** An equipment id as its index in `ALL_EQUIPMENT`. Index is identity, as everywhere else. */
-function equipmentKindIndex(id: EquipmentId): number {
-  return EQUIPMENT_INDEX.get(id) ?? 0;
-}
-
-function streakKindIndex(id: StreakId): number {
-  return STREAK_INDEX.get(id) ?? 0;
-}
+//#endregion

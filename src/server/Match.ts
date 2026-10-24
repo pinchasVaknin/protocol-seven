@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { DEFAULT_SCHEDULER, type SchedulerConfig } from '../shared/ai/AiScheduler';
 import { BOT_ID_BASE, BotDirector, RESPAWN_SECONDS } from '../shared/ai/BotDirector';
 import type { BotTeam, Combatant } from '../shared/ai/Combatant';
@@ -11,26 +13,21 @@ import { Btn, isDown } from '../shared/core/InputCommand';
 import { StreakSystem } from '../shared/streaks/StreakSystem';
 import { SILENT_PRESENTATION } from '../shared/streaks/StreakPresentation';
 import type { StreakEconomyReport } from '../shared/streaks/StreakLedger';
-import {
-  ALL_STREAK_IDS,
-  DEFAULT_STREAK_CONFIG,
-  type StreakId,
-} from '../shared/streaks/StreakDefs';
+import { DEFAULT_STREAK_CONFIG } from '../shared/streaks/StreakDefs';
 import { Rng } from '../shared/core/Rng';
-import { EquipmentSystem, makeEquipmentInventory, type EquipmentInventory } from '../shared/equipment/EquipmentSystem';
+import { EquipmentSystem } from '../shared/equipment/EquipmentSystem';
 import { SupplySystem } from '../shared/world/SupplySystem';
 import { BurnSystem } from '../shared/combat/BurnSystem';
 import { burnWeapon } from '../shared/streaks/StreakWeapons';
-import { equipmentDef } from '../shared/equipment/EquipmentDefs';
-import { LifeStockAudit, type LifeStockReport } from '../shared/equipment/LifeStockAudit';
-import { BotThrower, type MutableThrowIntent } from '../shared/equipment/BotThrower';
-import { ThrowController } from '../shared/equipment/ThrowController';
+import type { LifeStockReport } from '../shared/equipment/LifeStockAudit';
 import { MELEE_SWING_SECONDS } from '../shared/weapons/Melee';
 import { DEFAULT_EQUIPMENT_CONFIG, type EquipmentConfig } from '../shared/equipment/EquipmentConfig';
 import { AR_DEFAULT, PISTOL_DEFAULT } from '../shared/weapons/WeaponDefs';
 import { EventCollector } from './net/EventCollector';
 import { Rewind } from './net/Rewind';
 import { NetPlayer } from './NetPlayer';
+import { MatchThrows } from './MatchThrows';
+import { PlayerClasses } from './PlayerClasses';
 import {
   cloneTierTable,
   DEFAULT_PERCEPTION,
@@ -73,47 +70,10 @@ import { loadMapCollision, type LoadedCollision } from '../shared/world/MapLoade
 import type { NavGrid } from '../shared/world/Navmesh';
 import { Spectator } from './Spectator';
 import { Disposable } from '../shared/core/Disposable';
+//#endregion
 
-const log = logger('Match');
-
-/**
- * A match, running with no renderer (brief S6.4).
- *
- * This is the milestone's gate made into a class: a `MapDef` in, colliders and a navmesh
- * baked, ten bots spawned, a `GameMode` ticking on the shared simulation, and a result out.
- * **No transport.** M9 explicitly builds no networking, so this runs alone; M10 wraps it.
- *
- * ## What it is not
- *
- * It is not `client/ClientMatch.ts` with the drawing removed. That file is the *client's*
- * composition root — it owns a viewmodel, a HUD, an audio graph, a camera rig and a local
- * player, and it is right that it does. This owns the authoritative half and nothing else,
- * which is why it is about a tenth of the size. The shared systems underneath are literally
- * the same modules; only the wiring differs.
- *
- * ## What is deliberately absent
- *
- * - **No local player.** S4.9: every player is a client. The roster's player seat is a
- *   `Spectator` that never participates — the same mechanism the M3 AFK harness used.
- * - **No weapons for a human, no viewmodel, no melee.** Bots draw their own weapons
- *   (`ai/BotArsenal`), and the rest of that list is a local-player presentation system.
- * - **Killstreaks run here and cross the wire as of M11 Gate B** (§8.22). Earned from the
- *   authoritative score, spent through `MsgC.Streak`, replicated per recipient — bodies to
- *   everyone, earn state to their owner, UAV contacts to their team.
- * - **Equipment runs here as of M11 Gate B, and only half of it is replicated** (§8.24). The
- *   authoritative half is complete: bots throw, humans throw from the command their body just
- *   consumed, blasts resolve through the one damage door, and smoke occludes bot LOS — §6.8's
- *   requirement, and one that could only ever have been met here, because the bots whose sight
- *   is blocked live in this process.
- *
- *   What is **not** done is the projectile channel. A client predicts and draws its *own*
- *   grenade correctly — same command, same tick, same trajectory on both sides — but a grenade
- *   thrown by a bot or another player exists on the server, damages people, and is invisible.
- *   Named here rather than left to be found: this is §8.24's first half.
- * - **No progression.** `MatchProgression` needs a `ProgressionStore`, and S4.16 says there is
- *   no server database. XP is awarded server-side from M10 and persisted client-side.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface ServerMatchOptions {
   /** Map id from the registry, e.g. `mp_foundry`. */
   readonly mapId: string;
@@ -196,25 +156,103 @@ export interface ServerMatchResult {
   readonly simSeconds: number;
   readonly ticks: number;
 }
+//#endregion
 
-/** One player's grenade hand: what they are holding, and how far the cook has burned. */
-interface PlayerHand {
-  readonly thrower: ThrowController;
-  readonly inventory: EquipmentInventory;
-}
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('Match');
 
+/**
+ * The side the empty player seat nominally belongs to.
+ *
+ * It has no gameplay consequence — the spectator never participates — but the roster wants a
+ * team and `MatchFlow` wants a local one.
+ */
+const PLAYER_TEAM: BotTeam = 'A';
+
+/**
+ * Entity ids for connected humans.
+ *
+ * The id space was fixed by M3 and this fits inside it rather than changing it: 0 is the
+ * local-player seat (here, the spectator), M2's range dummies sit in the low numbers, and
+ * `BOT_ID_BASE` is 100. Humans take 1..99, which is ten times the seat count and leaves the
+ * bot range untouched.
+ */
+const HUMAN_ID_BASE = 1;
+
+/** First id belonging to a bot. A human id must never reach it. */
+const BOT_ID_FLOOR = BOT_ID_BASE;
+//#endregion
+
+// ===================================== CLASS ServerMatch ====================================== \\
+//#region Class ServerMatch
+/**
+ * A match, running with no renderer (brief S6.4).
+ *
+ * This is the milestone's gate made into a class: a `MapDef` in, colliders and a navmesh
+ * baked, ten bots spawned, a `GameMode` ticking on the shared simulation, and a result out.
+ * **No transport.** M9 explicitly builds no networking, so this runs alone; M10 wraps it.
+ *
+ * ## What it is not
+ *
+ * It is not `client/ClientMatch.ts` with the drawing removed. That file is the *client's*
+ * composition root — it owns a viewmodel, a HUD, an audio graph, a camera rig and a local
+ * player, and it is right that it does. This owns the authoritative half and nothing else,
+ * which is why it is about a tenth of the size. The shared systems underneath are literally
+ * the same modules; only the wiring differs.
+ *
+ * ## What is deliberately absent
+ *
+ * - **No local player.** S4.9: every player is a client. The roster's player seat is a
+ *   `Spectator` that never participates — the same mechanism the M3 AFK harness used.
+ * - **No weapons for a human, no viewmodel, no melee.** Bots draw their own weapons
+ *   (`ai/BotArsenal`), and the rest of that list is a local-player presentation system.
+ * - **Killstreaks run here and cross the wire as of M11 Gate B** (§8.22). Earned from the
+ *   authoritative score, spent through `MsgC.Streak`, replicated per recipient — bodies to
+ *   everyone, earn state to their owner, UAV contacts to their team.
+ * - **Equipment runs here as of M11 Gate B, and only half of it is replicated** (§8.24). The
+ *   authoritative half is complete: bots throw, humans throw from the command their body just
+ *   consumed, blasts resolve through the one damage door, and smoke occludes bot LOS — §6.8's
+ *   requirement, and one that could only ever have been met here, because the bots whose sight
+ *   is blocked live in this process.
+ *
+ *   What is **not** done is the projectile channel. A client predicts and draws its *own*
+ *   grenade correctly — same command, same tick, same trajectory on both sides — but a grenade
+ *   thrown by a bot or another player exists on the server, damages people, and is invisible.
+ *   Named here rather than left to be found: this is §8.24's first half.
+ * - **No progression.** `MatchProgression` needs a `ProgressionStore`, and S4.16 says there is
+ *   no server database. XP is awarded server-side from M10 and persisted client-side.
+ *
+ * ## What it hands to a collaborator (B6)
+ *
+ * Two subjects that are not this class's: `MatchThrows` holds the grenade hands, the bot
+ * thrower and the per-life stock audit, and `PlayerClasses` holds what each seated human is
+ * carrying and what they have asked to carry next. Both are owned here, built in the
+ * constructor and driven from `step` and the seating path; neither is reachable from outside.
+ */
 export class ServerMatch extends Disposable {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly bus: GameBus = createGameBus();
+
   readonly world: CollisionWorld;
+
   readonly damage: DamageSystem;
+
   readonly score: ScoreSystem;
+
   readonly mode: GameMode;
+
   readonly flow: MatchFlow;
+
   readonly bots: BotDirector;
+
   /** The six killstreaks as instance-owned entities (M11 Gate B, §6.8). */
   readonly streaks: StreakSystem;
+
   /** Grenades and equipment, authoritative (M11 Gate B, §6.8, §8.24). */
   readonly equipment: EquipmentSystem;
+
   /**
    * The map's resupply stations (this session).
    *
@@ -226,27 +264,45 @@ export class ServerMatch extends Disposable {
    * the two copies of the magazine stop agreeing.
    */
   readonly supply: SupplySystem;
+
   /** Bodies still alight after the jet moved on (2026-09-26). See `BurnSystem`. */
   readonly burn: BurnSystem;
-  private readonly botThrower: BotThrower;
-  private readonly equipmentRng: Rng;
-  /** One cursor into the bot list, so one bot is considered per tick. See `stepBotThrows`. */
-  private throwCursor = 0;
-  /** One grenade hand per connected human. See `handOf`. */
-  private readonly hands = new Map<number, PlayerHand>();
-  /** What every life started holding (round 4, B3). See `sampleLifeStarts`. */
-  private readonly lifeStock = new LifeStockAudit();
-  /** Entities spawned this tick, sampled at the end of it. See `sampleLifeStarts`. */
-  private readonly pendingLifeStarts: number[] = [];
-  private readonly throwIntent: MutableThrowIntent = {
-    hasTarget: false,
-    targetX: 0,
-    targetY: 0,
-    targetZ: 0,
-    sinceSeen: 0,
-  };
+
+  /** Who is holding a pin, and what every life started with (§8.24). */
+  private readonly throws: MatchThrows;
+
+  /** What each seated human is carrying, and what they will carry next spawn (§6.6). */
+  private readonly classes = new PlayerClasses();
+
+  /**
+   * Free-for-All, from the registry, read once. See `applyRosterRules`.
+   *
+   * Five systems need it and each used to ask the registry for itself. One fact, one read, and
+   * a `readonly` so the five cannot drift during a match.
+   */
+  private readonly freeForAll: boolean;
+
+  /**
+   * This match is the permanent warmup arena (§6.3, playtest round 4, F7).
+   *
+   * The variant is the right source rather than the mode id: `FFA` is also a mode a ballot can
+   * elect, and a live Free-for-All must kill and score exactly as it always has.
+   */
+  private readonly arena: boolean;
+
+  /**
+   * Search & Destroy, narrowed once (B6).
+   *
+   * The only `instanceof` on a concrete mode in this file. The bomb's interaction protocol is
+   * ten members no other mode has — `bomb`, `plantedSite`, `attackers`, `isCarrier`,
+   * `beginInteract` and the rest — so there is nothing to put behind `GameMode` that would not
+   * be an interface with one implementation (§4.4's last line). What there *was* is the same
+   * test written twice, in the constructor and once per tick in `stepBombInteractions`.
+   */
+  private readonly bombMode: SearchAndDestroy | null;
 
   readonly mapEntry: MapEntry;
+
   readonly modeEntry: ModeEntry;
 
   /**
@@ -262,11 +318,17 @@ export class ServerMatch extends Disposable {
 
   /** Config objects. Cloned, so a future tuning message cannot mutate the shipped defaults. */
   readonly movementConfig: MovementConfig = cloneMovementConfig(DEFAULT_MOVEMENT_CONFIG);
+
   readonly healthConfig: HealthConfig = { ...DEFAULT_HEALTH_CONFIG };
+
   readonly viewmodelConfig: ViewmodelConfig = cloneViewmodelConfig(DEFAULT_VIEWMODEL_CONFIG);
+
   readonly tiers: TierTable = cloneTierTable(DEFAULT_TIERS);
+
   readonly perceptionConfig: PerceptionConfig = { ...DEFAULT_PERCEPTION };
+
   readonly schedulerConfig: SchedulerConfig = { ...DEFAULT_SCHEDULER };
+
   readonly equipmentConfig: EquipmentConfig = { ...DEFAULT_EQUIPMENT_CONFIG };
 
   /**
@@ -285,26 +347,10 @@ export class ServerMatch extends Disposable {
   /** Events produced this tick, for replication to every client (S4.15). */
   readonly outgoing = new EventCollector();
 
-  /**
-   * Each seated human's resolved class, by entity id.
-   *
-   * Kept alongside the player rather than on it because the consumers take a *predicate over an
-   * entity id* — and those are asked about bots too, which have no loadout.
-   */
-  private readonly loadouts = new Map<number, ResolvedLoadout | null>();
-
-  /**
-   * Class changes waiting for their owner's next spawn (M11, §6.6).
-   *
-   * Separate from `loadouts`, which is what each player is *currently carrying*. Merging them
-   * would mean `perksOf` started answering with a class that has not been applied yet — and
-   * `perksOf` is what the Dead Silence hook and the streak system read, so they would act on a
-   * loadout the player is not yet using.
-   */
-  private readonly pendingLoadouts = new Map<number, ResolvedLoadout>();
-
   private readonly spectator: Spectator;
+
   private result: MatchResult | null = null;
+
   private ticks = 0;
 
   /**
@@ -316,229 +362,69 @@ export class ServerMatch extends Disposable {
    * makes them disagree permanently, and `Rewind` is indexed by the absolute one.
    */
   private currentTick = 0;
+
   private readonly spawnChoice: SpawnChoice = makeSpawnChoice();
+
   private nextPlayerId = HUMAN_ID_BASE;
 
+  /**
+   * How far in the past a given player was looking, in ms. Installed by the server.
+   *
+   * A hook rather than a direct dependency on `Session`, because the match is the *simulation*
+   * and knows nothing about sockets. It asks a question — "how stale is this player's view" —
+   * and the networking layer answers it. Unset, every player is treated as having a perfect
+   * link, which is exactly right for the headless bot-only harness.
+   */
+  viewLagMsFor: ((entityId: number) => number) | null = null;
+
+  /** Diagnostic (S8.6): resolve every shot against the present. See `ServerConfig`. */
+  rewindDisabled = false;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly options: ServerMatchOptions) {
     super();
     this.currentTick = options.startTick ?? 0;
     this.mapEntry = findMap(options.mapId);
     this.modeEntry = findMode(asModeId(options.modeId));
     this.tierMix = tiersFor(options.tier, this.mapEntry.tierMix);
+    /**
+     * Free-for-All, read off the registry **once**.
+     *
+     * The flag has to reach the director, the damage door, the scoreboard, the streak context
+     * and the equipment field — five places, each with its own reason, and every one of them
+     * used to spell `this.modeEntry.freeForAll === true` for itself. One fact, one read.
+     */
+    this.freeForAll = this.modeEntry.freeForAll === true;
+    this.arena = this.options.variant === 'WARMUP';
 
     // ---- the world ---------------------------------------------------------
-    // Collision and nav only. `client/world/MapRender.ts` holds the half that would have
-    // needed a GPU, and this process never imports it.
-    //
-    // M11: pre-baked when the server passes one (S4.19), so `LOADING` is instantiation rather
-    // than two flood fills on the path a player is meant to experience as seamless.
-    const loaded = options.baked?.collision ?? loadMapCollision(this.mapEntry.def);
-    this.world = loaded.collision;
-    log.info(
-      `${this.mapEntry.name}: ${loaded.stats.colliders} colliders, ` +
-        `${loaded.stats.hashEntries} hash entries across ${loaded.stats.hashCells} cells` +
-        (options.baked === undefined ? ' (baked here).' : ' (pre-baked at boot).'),
-    );
+    this.world = this.loadWorld();
 
     // ---- the firefight -----------------------------------------------------
     this.damage = new DamageSystem(this.bus);
     this.spectator = new Spectator(PLAYER_TEAM, this.healthConfig);
-
-    this.bots = new BotDirector({
-      world: this.world,
-      mapDef: this.mapEntry.def,
-      bus: this.bus,
-      damage: this.damage,
-      movement: this.movementConfig,
-      healthConfig: this.healthConfig,
-      viewmodelConfig: this.viewmodelConfig,
-      tiers: this.tiers,
-      perceptionConfig: this.perceptionConfig,
-      scheduler: this.schedulerConfig,
-      player: this.spectator,
-      seed: options.seed,
-      nav: options.baked?.nav,
-      botWeaponId: options.botWeaponId,
-    });
-    /**
-     * Free-for-All, read off the registry rather than compared against the id.
-     *
-     * That is what `ClientMatch` does, and it is the difference between one fact and two.
-     * The damage door's flag (then `friendlyFire`, now `freeForAll`) went with it since M7 on
-     * the client and was never set here: FFA keeps the two-team substrate internally, so half
-     * the roster was hostile, hunted by the AI, and **immune** — `DamageSystem.apply` returned
-     * 0 for every shot at them and `Ballistics` skipped their rigs entirely, so rounds passed
-     * straight through.
-     */
-    this.bots.freeForAll = this.modeEntry.freeForAll === true;
-    this.damage.freeForAll = this.modeEntry.freeForAll === true;
-    /**
-     * The waiting room takes no health and keeps no record (§6.3, playtest round 4, F7).
-     *
-     * One fact — this match is the permanent arena — and both consequences are set from it
-     * here, beside `damage.freeForAll`, for the reason that one is set here: *"the two facts are the
-     * same fact and setting one without the other is what produced a mode where you could shoot
-     * someone but not score them"*. `ClientMatch` sets the identical pair from `warmupArena`.
-     *
-     * The variant is the right source rather than the mode id: `FFA` is also a mode a ballot
-     * can elect, and a live Free-for-All must kill and score exactly as it always has.
-     */
-    const arena = options.variant === 'WARMUP';
-    this.damage.combatantsInvulnerable = arena;
+    this.bots = this.createBots();
+    this.applyRosterRules();
 
     // ---- the match ---------------------------------------------------------
     this.score = new ScoreSystem(this.bus);
     // The other half of `freeForAll`, and it has to be set here as well as on the director:
     // one flag decides who can be *shot*, the other decides whose death **counts**. See
     // `ScoreSystem.freeForAll` for the FFA ladder that crawled without it.
-    this.score.freeForAll = this.modeEntry.freeForAll === true;
-    this.score.records = !arena;
-    this.mode = this.modeEntry.create({
-      bus: this.bus,
-      score: this.score,
-      roster: this.bots.roster,
-      mapDef: this.mapEntry.def,
-      roundSecondsOverride: options.roundSecondsOverride,
-      variant: options.variant,
-    });
-    this.flow = new MatchFlow({
-      bus: this.bus,
-      score: this.score,
-      roster: this.bots.roster,
-      mode: this.mode,
-      mapId: this.mapEntry.id,
-      mapName: this.mapEntry.name,
-      // There is no local side on a dedicated server. `localTeam` only decides whether the
-      // announcer calls a win a victory, and nothing headless listens to the announcer.
-      localTeam: PLAYER_TEAM,
-      onSidesSwapped: (swapped) => this.bots.spawns.setSideSwap(swapped),
-      // Both clocks or neither. See `ModeDeps.roundSecondsOverride`.
-      roundSecondsOverride: options.roundSecondsOverride,
-      // The freeze the clients' intro is sized to (M17, C2) — the same number they compute.
-      matchStartSeconds: matchStartSeconds(this.mapEntry.def, this.mode.id),
-    });
-    this.bots.respawnPolicy = {
-      allowed: (id) => this.flow.respawnAllowed(id),
-      noted: (id) => this.flow.noteRespawn(id),
-    };
+    this.score.freeForAll = this.freeForAll;
+    this.score.records = !this.arena;
+    this.mode = this.createMode();
+    this.bombMode = this.mode instanceof SearchAndDestroy ? this.mode : null;
+    this.flow = this.createFlow();
+    this.applyModeHooks();
 
-    /**
-     * Hand the bot director the mode's objectives (M11 Gate B, §6.8).
-     *
-     * **This was missing, and it made three of the five modes unplayable on a dedicated
-     * server.** `ClientMatch` has set it since M7; `ServerMatch` never did, so
-     * `BotDirector.objectives` was null in every networked match and `ObjectiveIntent` had
-     * nothing to ask. Server-side bots therefore pursued no flag, chased no dog tag, and never
-     * walked onto the bomb — and since a bot's entire interaction vocabulary is `onArrived`,
-     * *no Search & Destroy round played over the network could be decided by a plant*. It read
-     * as a mode that was merely quiet: rounds still ended, on elimination and the clock, so
-     * nothing crashed and nothing logged.
-     *
-     * This is the M9 authority migration's standing failure mode. The mode moved to the server
-     * and the wiring around it stayed on the client, where it kept working for single-player
-     * and proved nothing about the half that had moved.
-     */
-    this.bots.objectives = isObjectiveProvider(this.mode) ? this.mode : null;
-    /**
-     * How hard the mode wants bots to push (M7).
-     *
-     * The other half of the same omission. S&D sets it below 1 so defenders hold sites instead
-     * of hunting, and on the server every mode has been running at the default.
-     */
-    this.bots.pushAggressionScale = this.modeEntry.pushAggressionScale ?? 1;
-    /**
-     * Every human asks; every bot walks on (post-M8 playtest, generalised at M11 Gate B).
-     *
-     * `players` is the connected humans and is consulted live rather than snapshotted, because
-     * seats are created and released throughout a match — a set captured at construction would
-     * be empty, this instance having been built before anybody migrated into it.
-     */
-    if (this.mode instanceof SearchAndDestroy) {
-      this.mode.manualPickup = (entityId) => this.getPlayer(entityId) !== undefined;
-    }
-
-    // Dead Silence, server-side. The client half has existed since M6 and decided nothing over
-    // the network, because the bots that hear the footsteps live here and this hook was never set.
-    this.bots.silentFootsteps = (entityId) => !this.perksOf(entityId).audibleFootsteps;
-    // And the same answer for the humans: a step the bots cannot hear is not sent to an enemy (D4).
-    this.outgoing.silentFootsteps = this.bots.silentFootsteps;
-
-    /**
-     * The six killstreaks, server-side (M11 Gate B, §6.8, §8.22).
-     *
-     * The header of this file used to read *"No killstreaks yet — `StreakSystem` needs a
-     * `StreakPresentation`, and `SILENT_PRESENTATION` is ready for it, but streaks are earned by
-     * a player's kill streak and the bot path for that is M11's business."* This is that
-     * business. Nothing about `StreakSystem` needed changing to run here beyond the two hooks
-     * that assumed a single local player — M9 already took the scene out of `streaks/`, which is
-     * what makes a streak a thing that runs in Node at all.
-     *
-     * §4.15 puts *"killstreak earn, activation, entity state"* on the replicated side of the
-     * line, so this is the only copy that decides anything: earning folds over the authoritative
-     * score, activation is a client request the server grants, and the sentries and crates in
-     * the world are entities here that clients draw.
-     *
-     * All three M6 perk hooks are answered from `perksOf`, which is the resolved loadout the
-     * player migrated in with — the same one Tier 1 #20 is about. Ghost is the interesting one
-     * and it is answered *twice*: here, so a Ghost player is never recorded as a UAV contact,
-     * and again in `MatchInstance` as a per-recipient intel filter.
-     */
-    this.streaks = new StreakSystem({
-      bus: this.bus,
-      score: this.score,
-      roster: this.bots.roster,
-      // Every connected human, rather than one local player: each gets their own progress and
-      // it is replicated to them alone.
-      reportProgressTo: (id) => this.getPlayer(id) !== undefined,
-      commandFor: (id) => this.getPlayer(id)?.lastCommand ?? null,
-      targetable: (id) => this.perksOf(id).targetedByStreaks,
-      visibleToUav: (id) => this.perksOf(id).visibleToUav,
-      streakDiscount: (id) => this.perksOf(id).streakDiscount,
-      // A bot has no class, so it keeps the full list and earns as it always has.
-      equippedStreaks: (id) => this.equippedStreaksOf(id),
-      context: {
-        bus: this.bus,
-        world: this.world,
-        damage: this.damage,
-        bots: this.bots,
-        // The port M9 built for exactly this. Every call is correctly a no-op: a bang with
-        // nobody to hear it is the client's business, driven by the replicated event.
-        present: SILENT_PRESENTATION,
-        mapDef: this.mapEntry.def,
-        cfg: DEFAULT_STREAK_CONFIG,
-        rng: new Rng(options.seed ^ 0x5bd1_e995),
-        tiers: this.tiers,
-        roster: this.bots.roster,
-        // The same fact `bots.freeForAll` carries, from the same registry flag (M13 Phase A).
-        freeForAll: this.modeEntry.freeForAll === true,
-      },
-    });
+    this.streaks = this.createStreaks();
     // Care packages are contestable in every mode, so they ride the second provider slot rather
     // than the mode's — a crate is worth walking to whether or not there are flags.
     this.bots.streakObjectives = this.streaks;
-
-    /**
-     * Grenades and equipment, server-side (M11 Gate B, §6.8, §8.24).
-     *
-     * The header's *"no equipment thrower"* line was true and was the last of the four systems
-     * `ClientMatch` composes that this file did not. Every piece is the shared M5 code driven
-     * from a different place: one `EquipmentSystem` for the world, one `BotThrower` for the AI,
-     * and one `ThrowController` **per connected human** — the client has a single controller for
-     * its single local player, and a server needs one per hand holding a pin.
-     *
-     * §6.8's *"smoke occludes bot LOS server-side"* is the line below it, and it is the reason
-     * this cannot be a client-side feature: the bots whose sight is being blocked live here, and
-     * a smoke cloud the server does not know about blocks nothing that matters.
-     */
-    this.equipment = new EquipmentSystem({
-      bus: this.bus,
-      world: this.world,
-      damage: this.damage,
-      roster: this.bots.roster,
-      cfg: this.equipmentConfig,
-      // The same fact `bots.freeForAll` carries, from the same registry flag (M13 Phase A).
-      freeForAll: this.modeEntry.freeForAll === true,
-    });
+    this.equipment = this.createEquipment();
     this.supply = new SupplySystem(this.mapEntry.def.supply ?? []);
     this.burn = new BurnSystem(this.bus, this.damage, burnWeapon());
     /**
@@ -551,8 +437,15 @@ export class ServerMatch extends Disposable {
      * two runtimes here.
      */
     this.damage.shieldOf = (id) => this.streaks.carriedWeaponFor(id)?.shield ?? null;
-    this.botThrower = new BotThrower(this.equipment, this.world, this.equipmentConfig);
-    this.equipmentRng = new Rng(options.seed ^ 0x1b87_3593);
+    this.throws = new MatchThrows({
+      equipment: this.equipment,
+      world: this.world,
+      cfg: this.equipmentConfig,
+      tiers: this.tiers,
+      bots: this.bots,
+      rng: new Rng(options.seed ^ 0x1b87_3593),
+      classOf: (id) => this.classes.loadoutOf(id),
+    });
     /**
      * The §6.8 requirement, in one assignment.
      *
@@ -564,114 +457,17 @@ export class ServerMatch extends Disposable {
      */
     this.bots.perception.occluder = this.equipment.smoke;
 
-    this.own(
-      this.bus.on(EV.MatchEnded, () => {
-        this.result = this.flow.result;
-      }),
-    );
-
-    /**
-     * A new round puts everybody back where they started (M11 Gate B; post-M8 playtest).
-     *
-     * **The third piece of match wiring that never crossed to the server at M9**, and the one
-     * with the worst symptom. `ClientMatch` has subscribed to this since M8 and `ServerMatch`
-     * never did, so in a networked Search & Destroy the humans were never put back at a round
-     * boundary — and there is no other route home, because `maybeRespawn` gates on
-     * `flow.respawnAllowed`, which in a one-life mode is false by construction
-     * (`livesUsed < livesPerRound - 1` is `0 < 0`). A human who died in round one was dead for
-     * the rest of the match: able to look around, unable to move, while the bots played on
-     * around them. Exactly the failure `spawnPlayer`'s own comment warns about — *"a
-     * permanently dead player is not a visibly broken one"* — arriving from the other end.
-     *
-     * Bots were fine, because `BotDirector.respawnAll` is driven from the client's copy of this
-     * subscription in single-player and from the director's own round handling here. Only the
-     * human half was missing, which is why nothing in the logs said so.
-     *
-     * Guarded by `usesRoundReset` exactly as the client's is: a single-round mode fires this
-     * once, at the start, against a world that has just spawned everybody anyway.
-     */
-    this.own(
-      this.bus.on(EV.RoundStarted, () => {
-        if (this.modeEntry.usesRoundReset !== true) return;
-        this.bots.respawnAll();
-        // `NetPlayer.spawn` already clears the respawn timer, resets health and bumps the
-        // spawn serial, so this is the whole of a human's round reset.
-        for (const player of this.players) {
-          this.spawnPlayer(player);
-          this.flow.noteRespawn(player.entityId);
-        }
-      }),
-    );
-
-    /**
-     * A new life started (playtest round 4, B3).
-     *
-     * **The one door.** `PlayerController.spawn` emits this and every combatant in the game
-     * goes through it — `Bot.spawn` calls it and so does `NetPlayer.spawn` — so one
-     * subscription covers the humans and the bots, a death respawn and a Search & Destroy
-     * round start alike. It replaces a refill that sat inside `spawnPlayer`, which was the
-     * server's only new-life door *by inspection* rather than by construction: a second one
-     * would have had to remember to copy the line.
-     *
-     * `EV.BotSpawned` is deliberately not also subscribed. It is a second announcement of the
-     * same spawn carrying tier detail for the director, and listening to both counts every bot
-     * life twice — measured in round 4's streak audit at 304 life-starts against 154 real ones.
-     */
-    this.own(this.bus.on(EV.PlayerSpawned, (p) => this.beginLife(p.entityId)));
-
-    /**
-     * Death and flinch for connected humans (M10).
-     *
-     * `BotDirector` already does this for bots, keyed off its own `byId` map, and a human is
-     * deliberately not in that map — it holds `Bot`s and a `NetPlayer` is not one. So the
-     * same two events are handled here for the human half of the roster. The alternative,
-     * making `BotDirector` aware of `NetPlayer`, would put a networking type into `shared/ai`
-     * and break the partition for no gain.
-     */
-    this.own(
-      this.bus.on(EV.EntityKilled, (p) => {
-        const victim = this.getPlayer(p.targetId);
-        if (victim === undefined) return;
-        const source = this.combatantAt(p.sourceId);
-        const dx = source === undefined ? 0 : victim.px - source.px;
-        const dz = source === undefined ? 1 : victim.pz - source.pz;
-        victim.onKilled(dx, dz, RESPAWN_SECONDS);
-      }),
-    );
-
-    this.own(
-      this.bus.on(EV.DamageDealt, (p) => {
-        // The shot counters are written from `weapon.fired` alone (round 5, B5) — a damage
-        // event is not a round, and this handler sees a grenade's three victims as three.
-        if (p.lethal) return;
-        const victim = this.getPlayer(p.targetId);
-        if (victim === undefined) return;
-        const source = this.combatantAt(p.sourceId);
-        const fromX = source?.px ?? p.x;
-        const fromZ = source?.pz ?? p.z;
-        victim.onHurt(p.x - fromX, p.z - fromZ);
-      }),
-    );
-
-    this.own(
-      this.bus.on(EV.WeaponFired, (p) => {
-        const shooter = this.getPlayer(p.sourceId);
-        if (shooter === undefined) return;
-        shooter.shotsFired += shotsFrom(p);
-        shooter.shotsHit += hitsFrom(p);
-      }),
-    );
-
-    // The replicated event stream. Subscribed here so it sees the authoritative bus and
-    // nothing else — a client's own presentation bus is a different object entirely.
-    for (const off of this.outgoing.subscribe(this.bus)) this.own(off);
+    this.subscribe();
 
     this.populate();
     // The flow starts in WARMUP and does not run its clock until told. The browser does this
     // on entering the MATCH state; here there is no state machine above us.
     this.flow.start();
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** True once the mode has declared a winner. The loop's stop condition. */
   get isOver(): boolean {
     return this.flow.isOver;
@@ -734,10 +530,10 @@ export class ServerMatch extends Disposable {
      * exactly the kind of systematic offset that makes a predicted arc land beside the
      * authoritative one for ever.
      */
-    this.stepThrowers();
+    this.throws.stepThrowers(this.players);
     this.stepMelee();
     this.equipment.simulate(0, 0, 0, PLAYER_TEAM, PLAYER_ENTITY_ID, false);
-    this.stepBotThrows();
+    this.throws.stepBotThrows();
     // Streaks tick after the bots that may have just shot one down, and before the flow that
     // may declare the match over and end them all. The same order `ClientMatch` uses.
     this.streaks.simulate(tickIndex);
@@ -752,267 +548,9 @@ export class ServerMatch extends Disposable {
 
     // Last, because a life that started this tick has now been through every system that
     // could have handed it something.
-    this.sampleLifeStarts();
+    this.throws.sampleLifeStarts((entityId) => this.getPlayer(entityId) !== undefined);
 
     this.ticks++;
-  }
-
-  /**
-   * Every connected human's grenade hand (M11 Gate B, §8.24).
-   *
-   * One `ThrowController` and one `EquipmentInventory` per player, because both are per-hand
-   * state: a cook timer, which slot is in it, and how many are left. `ClientMatch` has one of
-   * each because it has one local player; a server needs one per human and the client's shape
-   * does not generalise by itself.
-   *
-   * Driven from the command the player's body just consumed, so a pin pulled on tick N is the
-   * pin the client predicted pulling on tick N — the throw is a *consequence* of the same
-   * command, not a separate message that could arrive a tick either side of it.
-   */
-  private stepThrowers(): void {
-    for (const player of this.players) {
-      const cmd = player.lastCommand;
-      if (cmd === null) continue;
-      const hand = this.handOf(player.entityId);
-      hand.thrower.step(
-        cmd,
-        player.controller.sim,
-        player.entityId,
-        hand.inventory,
-        player.team,
-        player.alive,
-      );
-      // What the snapshot needs to know: the fire button means "pull the pin" while this is
-      // true, and nobody watching should see a muzzle flash for it. See `NetPlayer.handBusy`.
-      player.handBusy = hand.thrower.busy;
-      // And what is in that hand: the grenade while it is there, nothing once it has gone.
-      const phase = hand.thrower.phase;
-      player.throwPhase = phase;
-      player.heldEquipment = phase === 'IDLE' ? null : EquipmentSystem.slotDef(hand.inventory, hand.thrower.slot).id;
-    }
-  }
-
-  /**
-   * Every connected human's knife, for the pose alone (protocol 20).
-   *
-   * The asymmetry with `stepThrowers` above is the point and is worth stating rather than
-   * hiding. A throw is simulated here: the server owns a `ThrowController` per player, the cook
-   * and the release are authoritative, and `handBusy` is read off the thing that decides. A
-   * *swing* is not simulated here at all — `weapons/Melee.ts` lives in `ClientMatch` and applies
-   * its damage there — so this cannot read a state machine, because there is none to read.
-   *
-   * What it reads instead is the input, which is authoritative: `Btn.Melee` arrived in a command
-   * this player signed, and the rising edge of it is the frame they asked to swing. The timer runs
-   * on the shared `MELEE_SWING_SECONDS`, so the pose lasts exactly as long as the swing the client
-   * is running. It reproduces the client's three gates, all of which it holds now (2026-09-28): a
-   * knife is refused while a grenade is in the hand (`handBusy`), while the gunship has the camera
-   * (`flyingChopper`) and while the mortar's map is up (`Btn.Targeting`, in the same command). It
-   * used to reproduce none, and a watcher saw a swing for every one the client had refused.
-   * Nothing else in the match can observe this field.
-   *
-   * Driven from the command the body just consumed, for the reason `stepThrowers` gives.
-   */
-  private stepMelee(): void {
-    for (const player of this.players) {
-      const cmd = player.lastCommand;
-      if (cmd === null) continue;
-      const buttons = player.alive ? cmd.buttons : 0;
-      const pressed =
-        isDown(buttons, Btn.Melee) &&
-        !isDown(player.meleePrevButtons, Btn.Melee) &&
-        !player.handBusy &&
-        !player.flyingChopper &&
-        !isDown(buttons, Btn.Targeting);
-      player.meleePrevButtons = buttons;
-      // A corpse is not swinging, and a swing that survived a respawn would be drawn on the
-      // next life — the same reason `ThrowController.step` takes `alive`.
-      if (!player.alive) {
-        player.meleeSeconds = 0;
-        continue;
-      }
-      // The edge restarts it rather than extending it: holding the key is one swing on the
-      // client too, and the cooldown there is longer than the swing.
-      if (pressed) player.meleeSeconds = MELEE_SWING_SECONDS;
-      else if (player.meleeSeconds > 0) player.meleeSeconds = Math.max(0, player.meleeSeconds - DT);
-    }
-  }
-
-  /**
-   * One bot's throw evaluation per tick, round robin (M5).
-   *
-   * Verbatim from `MatchEquipment.stepBotThrows`, including the cursor: the trajectory check
-   * runs the real integrator and is the most expensive thing in `ai/` per call, so spreading
-   * it across ticks is what keeps it inside the §4.7 budget. At one bot per tick with a
-   * 12-30 s cooldown each, a ten-bot match spends a few dozen of them a minute.
-   */
-  private stepBotThrows(): void {
-    const bots = this.bots.bots;
-    if (bots.length === 0) return;
-    this.throwCursor = (this.throwCursor + 1) % bots.length;
-    const bot = bots[this.throwCursor];
-    if (bot === undefined || !bot.participating) return;
-
-    const bb = bot.blackboard;
-    this.throwIntent.hasTarget = bb.targetId >= 0;
-    this.throwIntent.targetX = bb.lastKnownX;
-    this.throwIntent.targetY = bb.lastKnownFeetY;
-    this.throwIntent.targetZ = bb.lastKnownZ;
-    this.throwIntent.sinceSeen = bb.sinceLos;
-
-    this.botThrower.consider(
-      bot,
-      bot.tierName,
-      this.tiers[bot.tierName],
-      this.throwIntent,
-      this.bots.roster,
-      this.equipmentRng,
-      // One evaluation per bot every `bots.length` ticks.
-      DT * bots.length,
-    );
-  }
-
-  /**
-   * This player's grenade hand, created on first use.
-   *
-   * Lazily rather than in `addPlayer`, so a seat that never throws costs nothing — and so that
-   * the map cannot be left holding a controller for an entity that has been removed, which
-   * `removePlayer` guarantees by deleting it.
-   */
-  private handOf(entityId: number): PlayerHand {
-    let hand = this.hands.get(entityId);
-    if (hand === undefined) {
-      const resolved = this.loadouts.get(entityId);
-      hand = {
-        thrower: new ThrowController(this.equipment, this.equipmentConfig),
-        // The class's grenades, not the M5 defaults — the same read `ClientMatch` does when it
-        // hands the inventory its loadout.
-        inventory: makeEquipmentInventory(resolved?.lethal ?? 'frag', resolved?.tactical ?? 'flashbang'),
-      };
-      this.hands.set(entityId, hand);
-    }
-    return hand;
-  }
-
-  /**
-   * Every connected human's Use key, against the bomb (M11 Gate B, §6.8).
-   *
-   * §6.8: *"Plant and defuse are interruptible and resolve server-side."* They did not resolve
-   * server-side at all before this. The whole interaction — pick up, plant, defuse, cancel —
-   * lived in `ClientMatch.stepBombInteraction`, driven by the local player's Use key, and the
-   * dedicated server had no equivalent. Combined with the bots having no objectives (see the
-   * constructor), **nobody in a networked Search & Destroy could touch the bomb**: not a bot,
-   * because it had no target, and not a human, because the only code that reads Use for this
-   * purpose was running on a client whose mode is not authoritative.
-   *
-   * A port of the client's logic rather than a new one, and deliberately so — the rules about
-   * who may plant and where live in `SearchAndDestroy`, and this only reports that a particular
-   * body is standing in the right place with the key held. The mode is still the only thing
-   * that decides whether that means anything.
-   *
-   * Hold, not press: `beginInteract` is idempotent for the same actor, and releasing the key
-   * cancels. That is what makes an interruption free — there is no state here to unwind, and a
-   * player who dies mid-plant is handled by `onKill` inside the mode.
-   */
-  /**
-   * Every connected human kneeling at a crate, in `ClientMatch.simulate`'s order.
-   *
-   * Humans only. A bot has no `Weapon` of this kind and no `EquipmentInventory` — `BotThrower`
-   * holds its stock — so giving one a crate is a decision about bot behaviour rather than about
-   * stations, and it is not this commit's.
-   */
-  private stepSupply(): void {
-    if (!this.supply.any) return;
-    for (const player of this.players) {
-      this.supply.step(
-        player.entityId,
-        player.controller.sim,
-        player.alive,
-        player.weapons.weapon,
-        this.handOf(player.entityId).inventory,
-      );
-    }
-  }
-
-  /**
-   * Every connected human's hands, against the streaks this server owns (2026-09-26).
-   *
-   * The authoritative half of `CarriedWeaponStreak`: asked every tick, pushed by nothing, and
-   * resolved from the same table the client resolves its replicated copy from. A player whose
-   * minigun has just expired is holding their loadout again on the tick the streak leaves the
-   * list, with no event and nothing to unwind.
-   *
-   * Humans only. A bot's weapon comes from `drawBotWeapon` and nothing gives a bot a streak.
-   */
-  private stepCarriedStreakWeapons(): void {
-    for (const player of this.players) {
-      player.weapons.holdStreakWeapon(this.streaks.carriedWeaponFor(player.entityId));
-    }
-  }
-
-  private stepBombInteractions(): void {
-    const mode = this.mode;
-    if (!(mode instanceof SearchAndDestroy)) return;
-
-    for (const player of this.players) {
-      const holding = isDown(player.lastButtons, Btn.Use);
-      if (!holding || !player.alive) {
-        // Only cancel what *this* player started. Another player's plant is not theirs to stop,
-        // and neither is a bot's.
-        if (mode.interactEntity === player.entityId) mode.cancelInteract();
-        continue;
-      }
-
-      if (mode.bomb === 'PLANTED') {
-        if (player.team !== mode.defenders) continue;
-        const site = mode.plantedSite;
-        if (site === null || !site.contains(player)) continue;
-        mode.beginInteract(player, true);
-        continue;
-      }
-      if (mode.bomb !== 'CARRIED') continue;
-      if (player.team !== mode.attackers) continue;
-      // One key does both, and pickup is tested first because you cannot plant a bomb you are
-      // not carrying (post-M8 playtest).
-      if (!mode.isCarrier(player.entityId)) {
-        mode.tryPickup(player);
-        continue;
-      }
-      if (mode.siteContaining(player) === null) continue;
-      mode.beginInteract(player, false);
-    }
-  }
-
-  /**
-   * One human's tick, with lag compensation wrapped around the weapon (S4.13).
-   *
-   * The rewind brackets `NetPlayer.step` rather than the whole match tick, and only the
-   * weapon inside it actually cares — but bracketing the whole call is both simpler and
-   * safer than trying to predict whether this tick will fire. The cost is five number writes
-   * per other entity, and `Rewind.begin` returns immediately when the applied rewind is zero
-   * ticks, so the zero-latency path does no work at all and is provably identical to
-   * single-player.
-   */
-  private stepPlayer(player: NetPlayer, tickIndex: number): void {
-    /**
-     * A gunner flying a Chopper Gunner is not holding their rifle (2026-09-28).
-     *
-     * `WeaponSystem.suspended` exists because *"the chopper drains my primary ammo"*, and
-     * `ClientMatch` has set it since post-M8 — for its own copy. The server never did, so a
-     * networked gunner holding the trigger in the gunship was also firing the rifle standing on
-     * the ground, for real. Found beside the grenade leak `NetPlayer.advance` closes, and the same
-     * shape: a rule written into one runtime. Last tick's streak state, as the client reads it;
-     * `NetPlayer.advance` joins it to the command's own `Btn.Targeting` for the mortar's map.
-     */
-    player.flyingChopper = this.streaks.activeChopperFor(player.entityId) !== null;
-    const lagMs = this.viewLag(player.entityId);
-    this.rewind.begin(player.entityId, tickIndex, lagMs);
-    try {
-      player.step(tickIndex, this.inputFrozen);
-    } finally {
-      // `finally` because a restore that is skipped leaves every rig in the past permanently,
-      // and the next shot by anybody resolves against a world a fifth of a second stale.
-      this.rewind.end();
-    }
   }
 
   /**
@@ -1026,24 +564,6 @@ export class ServerMatch extends Disposable {
   get inputFrozen(): boolean {
     const phase = this.flow.currentPhase;
     return phase === 'WARMUP' || phase === 'ROUND_END';
-  }
-
-  /**
-   * How far in the past a given player was looking, in ms. Installed by the server.
-   *
-   * A hook rather than a direct dependency on `Session`, because the match is the *simulation*
-   * and knows nothing about sockets. It asks a question — "how stale is this player's view" —
-   * and the networking layer answers it. Unset, every player is treated as having a perfect
-   * link, which is exactly right for the headless bot-only harness.
-   */
-  viewLagMsFor: ((entityId: number) => number) | null = null;
-
-  /** Diagnostic (S8.6): resolve every shot against the present. See `ServerConfig`. */
-  rewindDisabled = false;
-
-  private viewLag(entityId: number): number {
-    if (this.rewindDisabled) return 0;
-    return this.viewLagMsFor === null ? 0 : this.viewLagMsFor(entityId);
   }
 
   // -- connected humans (M10) -------------------------------------------------
@@ -1072,42 +592,9 @@ export class ServerMatch extends Disposable {
   ): NetPlayer | null {
     if (this.players.length >= MAX_PLAYERS) return null;
 
-    /**
-     * A returning player takes back the seat they left, id and side (round 4, F8).
-     *
-     * Both halves are load-bearing and the second is easy to miss. The **id** is what the
-     * scoreboard row, the rewind history and the equipment hand are all keyed by, so reclaiming
-     * it reclaims the record rather than copying it. The **side** matters because the line below
-     * balances arrivals onto the smaller team: a player re-seated without it could come back on
-     * the other side, which in Search & Destroy is a spawn in the enemy half.
-     *
-     * Refused rather than forced if the id is somehow occupied. It cannot be — `nextPlayerId`
-     * only increments, so an id handed out once is never handed out again inside this instance,
-     * which is precisely what makes a held id safe to hold for thirty seconds. The check is here
-     * because two bodies on one entity is the failure it would produce, and that is worth a
-     * comparison rather than an assumption.
-     */
     const team = reclaim?.team ?? this.smallerTeam();
-    let entityId: number;
-    if (reclaim != null) {
-      if (reclaim.entityId <= 0 || reclaim.entityId >= BOT_ID_FLOOR) return null;
-      if (this.getPlayer(reclaim.entityId) !== undefined) {
-        log.warn(
-          `${displayName} tried to reclaim entity ${reclaim.entityId}, which is occupied. Refused.`,
-        );
-        return null;
-      }
-      entityId = reclaim.entityId;
-    } else {
-      entityId = this.nextPlayerId++;
-      if (entityId >= BOT_ID_FLOOR) {
-        // Entity ids 1..99 are the human range; bots start at 100. Ten seats and a fresh id per
-        // join means this is unreachable inside any real match length, but a wrapped id would
-        // collide with a bot and put two bodies on one entity.
-        this.nextPlayerId--;
-        return null;
-      }
-    }
+    const entityId = this.allocateEntityId(displayName, reclaim ?? null);
+    if (entityId < 0) return null;
 
     /**
      * The *same* shared `resolveLoadout` the loadout editor calls per keystroke, so the weapon
@@ -1132,13 +619,7 @@ export class ServerMatch extends Disposable {
       cheats,
       characterIndex,
     });
-    this.loadouts.set(entityId, resolved);
-
-    this.players.push(player);
-    this.damage.register(player);
-    this.bots.roster.push(player);
-    this.rewind.register(player);
-    this.score.register(entityId, displayName, team);
+    this.registerSeat(player, resolved);
 
     /**
      * Spawn now — unless this is a one-life round already under way (§6.7, M7).
@@ -1160,100 +641,8 @@ export class ServerMatch extends Disposable {
     } else {
       this.spawnPlayer(player);
     }
-    // The class is now a thing that can be wrong, and "what did the server think this player
-    // brought" is the first question when a duel looks wrong.
-    const perks = describePerkState(this.perksOf(entityId));
-    log.info(
-      `${displayName} seated as entity ${entityId} on team ${team} — ` +
-        `${player.weapons.definition.id}/${resolved?.secondary.id ?? PISTOL_DEFAULT.id}, perks ${perks}` +
-        (resolved === null ? ' (no loadout sent; server defaults)' : ''),
-    );
+    this.logSeat(player, resolved);
     return player;
-  }
-
-  /**
-   * The three streaks an entity may earn (M7 playtest, §6.8).
-   *
-   * Six shipped streaks against three keys means a player who reached twelve kills would hold
-   * six things and be able to spend three, so the class decides which three — exactly as it
-   * decides which three perks. A bot has no class and keeps the full list, which is what it
-   * has always had.
-   */
-  private equippedStreaksOf(entityId: number): readonly StreakId[] {
-    const resolved = this.loadouts.get(entityId);
-    if (resolved == null) return ALL_STREAK_IDS;
-    return resolved.streaks.filter((id): id is StreakId => id !== null);
-  }
-
-  /**
-   * Whether a body arriving now would be joining a one-life round in progress (§6.7).
-   *
-   * `WARMUP` is deliberately not blocked: that is the 3-2-1 before a round, nobody has been
-   * shot at yet, and it is the phase every player migrating in at match start arrives during.
-   * Blocking there would hold *the whole lobby* out of round one.
-   */
-  private joinBlockedMidRound(): boolean {
-    return this.modeEntry.usesRoundReset === true && this.flow.currentPhase === 'LIVE';
-  }
-
-  /**
-   * The perks an entity is carrying. `NO_PERKS` for bots and for anyone without a loadout.
-   *
-   * Bots deliberately get the neutral state rather than a special case: "a bot has no loadout"
-   * is already what `NO_PERKS` means.
-   */
-  perksOf(entityId: number): PerkState {
-    return this.loadouts.get(entityId)?.perkState ?? NO_PERKS;
-  }
-
-  /** The resolved class an entity brought, or null. */
-  loadoutOf(entityId: number): ResolvedLoadout | null {
-    return this.loadouts.get(entityId) ?? null;
-  }
-
-  /**
-   * Queue a class change, to take effect on this player's **next spawn** (M11, §6.6).
-   *
-   * §6.6: *"Changes take effect on the next warmup respawn, not immediately on the living
-   * player."* That is CoD behaviour, and it is also the only version of this that is safe over
-   * a wire — see `NetPlayer.applyLoadout` for why applying it to a standing body reintroduces
-   * Tier 1 #20's divergence through a different door.
-   *
-   * Stored rather than applied, so there is exactly one place a class is ever swapped and it is
-   * a place both runtimes already treat as a discontinuity.
-   */
-  setPendingLoadout(entityId: number, slot: LoadoutSlot): boolean {
-    if (this.getPlayer(entityId) === undefined) return false;
-    this.pendingLoadouts.set(entityId, resolveLoadout(slot, 0));
-    return true;
-  }
-
-  /**
-   * Cash a queued class change **now**, if this is the pre-match freeze (M11 Gate B).
-   *
-   * The quick selector's whole promise is that the class you press during the ten-second
-   * countdown is the class you start the match with. "Next spawn" does not deliver that on its
-   * own — the player is already standing, so their next spawn is after their first death, and
-   * they would spend the opening life holding the class they were migrated in with.
-   *
-   * Respawning them is what makes it immediate, and the pre-match freeze is the one window
-   * where that is free: nobody has moved, nobody has fired, and the movement axes are stripped
-   * before they reach the controller, so a `speedScale` that changes here cannot be the source
-   * of a misprediction. The spawn serial bump is the same discontinuity a death already
-   * produces, which is exactly how the client is told to adopt the new pose without charging
-   * itself for the difference (see `NetClient.respawned`).
-   *
-   * Round one only, and alive only. A round-two S&D freeze is three seconds and the player is
-   * about to be spawned by the round reset anyway, so the ordinary deferral is both correct
-   * and cheaper.
-   */
-  applyPendingLoadoutNow(entityId: number): boolean {
-    if (!this.pendingLoadouts.has(entityId)) return false;
-    if (this.flow.currentPhase !== 'WARMUP' || this.flow.round > 1) return false;
-    const player = this.getPlayer(entityId);
-    if (player === undefined || !player.alive) return false;
-    this.spawnPlayer(player);
-    return true;
   }
 
   /**
@@ -1273,8 +662,7 @@ export class ServerMatch extends Disposable {
     this.players.splice(at, 1);
     this.damage.unregister(entityId);
     this.rewind.unregister(entityId);
-    this.loadouts.delete(entityId);
-    this.pendingLoadouts.delete(entityId);
+    this.classes.forget(entityId);
     /**
      * Their chopper comes down with them (M11 Gate B, §8.23).
      *
@@ -1286,7 +674,7 @@ export class ServerMatch extends Disposable {
     this.streaks.onOwnerRemoved(entityId);
     // Their hand goes with them. A controller left in the map is a cook timer advancing for
     // an entity that no longer exists — the same shape as the orphaned chopper above.
-    this.hands.delete(entityId);
+    this.throws.forget(entityId);
     const rosterAt = this.bots.roster.indexOf(player);
     if (rosterAt >= 0) this.bots.roster.splice(rosterAt, 1);
 
@@ -1381,103 +769,63 @@ export class ServerMatch extends Disposable {
   }
 
   /**
-   * Anybody on the roster by id — bot, human or the spectator seat.
+   * The perks an entity is carrying. `NO_PERKS` for bots and for anyone without a loadout.
    *
-   * Used to find where a killing round came from, so a death or a flinch leans the right
-   * way. The roster is the union of both halves, which is exactly why bots and humans were
-   * put in one array.
+   * Bots deliberately get the neutral state rather than a special case: "a bot has no loadout"
+   * is already what `NO_PERKS` means.
    */
-  private combatantAt(entityId: number): Combatant | undefined {
-    for (const c of this.bots.roster) if (c.entityId === entityId) return c;
-    return undefined;
+  perksOf(entityId: number): PerkState {
+    return this.classes.perksOf(entityId);
+  }
+
+  /** The resolved class an entity brought, or null. */
+  loadoutOf(entityId: number): ResolvedLoadout | null {
+    return this.classes.loadoutOf(entityId);
   }
 
   /**
-   * Which side a joining human goes on: **fewer humans first**, then fewer bodies.
+   * Queue a class change, to take effect on this player's **next spawn** (M11, §6.6).
    *
-   * Bots are interchangeable; humans are the thing a player notices being on the wrong side of.
-   * Counting the whole roster and breaking ties toward A is correct arithmetic and the wrong
-   * question — a seat is granted and then a bot is removed *from the same side*, restoring the
-   * body count to what it was, so the next joiner finds the identical tie and is sent to A as
-   * well. Measured on a four-human TDM backfill: entities 1, 2, 3 and 4 all on team A.
+   * §6.6: *"Changes take effect on the next warmup respawn, not immediately on the living
+   * player."* That is CoD behaviour, and it is also the only version of this that is safe over
+   * a wire — see `NetPlayer.applyLoadout` for why applying it to a standing body reintroduces
+   * Tier 1 #20's divergence through a different door.
+   *
+   * Stored rather than applied, so there is exactly one place a class is ever swapped and it is
+   * a place both runtimes already treat as a discontinuity.
    */
-  private smallerTeam(): BotTeam {
-    let humansA = 0;
-    let humansB = 0;
-    for (const p of this.players) {
-      if (p.team === 'A') humansA++;
-      else humansB++;
-    }
-    if (humansA !== humansB) return humansA < humansB ? 'A' : 'B';
-
-    let a = 0;
-    let b = 0;
-    for (const c of this.bots.roster) {
-      if (c === this.spectator) continue;
-      if (c.team === 'A') a++;
-      else b++;
-    }
-    return a <= b ? 'A' : 'B';
+  setPendingLoadout(entityId: number, slot: LoadoutSlot): boolean {
+    if (this.getPlayer(entityId) === undefined) return false;
+    this.classes.queue(entityId, slot);
+    return true;
   }
 
-  private spawnPlayer(player: NetPlayer): void {
-    if (!this.bots.selectSpawn(player.team, player.entityId, this.spawnChoice)) {
-      /**
-       * `selectSpawn` is documented never to fail. If that ever stops being true, falling
-       * back matters more than it looks: this is the only path back to `alive`, so returning
-       * early here leaves the player dead **forever** — and a permanently dead player is not
-       * a visibly broken one, it is a player who can still look around and cannot walk. That
-       * is indistinguishable from a movement bug and would be debugged as one.
-       *
-       * So take the map's first authored spawn instead. It may be a poor spawn; it is not a
-       * lost life.
-       */
-      const fallback = this.mapEntry.def.spawns?.[0];
-      if (fallback === undefined) {
-        log.error(`no spawn available for entity ${player.entityId} and no map fallback.`);
-        return;
-      }
-      log.warn(`no scored spawn for entity ${player.entityId}; using the map's first.`);
-      this.spawnChoice.x = fallback.position.x;
-      this.spawnChoice.y = fallback.position.y;
-      this.spawnChoice.z = fallback.position.z;
-      this.spawnChoice.yaw = fallback.facingYaw;
-    }
-    /**
-     * Apply a queued class change here, before the body goes live (M11, §6.6).
-     *
-     * The spawn is the discontinuity both sides already agree on, which is what makes this the
-     * one safe moment. See `NetPlayer.applyLoadout`.
-     */
-    const pending = this.pendingLoadouts.get(player.entityId);
-    if (pending !== undefined) {
-      this.pendingLoadouts.delete(player.entityId);
-      this.loadouts.set(player.entityId, pending);
-      player.applyLoadout(pending.primary, pending.secondary, pending.perkState);
-      log.info(
-        `${player.displayName} respawned with class "${pending.name}" — ` +
-          `${pending.primary.id}/${pending.secondary.id}, perks ${describePerkState(pending.perkState)}.`,
-      );
-    }
-
-    // Equipment is per life (§6.3) and is refilled by `beginLife`, off the spawn below.
-    const c = this.spawnChoice;
-    player.spawn(c.x, c.y, c.z, c.yaw);
-    // Backfill the whole history with the spawn pose, so a shot rewound into the window
-    // before this player existed cannot resolve against a stale or origin rig. Stamped with
-    // the **absolute** tick: `Rewind.record` is called from `step` with that one, and
-    // `RigHistory` validates a slot by the tick that wrote it — so a history stamped with a
-    // match-relative index is a history whose every slot fails its own validity check, and
-    // lag compensation quietly declines to apply.
-    this.rewind.resetAt(player.entityId, this.currentTick);
-  }
-
-  /** Bring a dead player back once their timer and the mode's gate both allow it. */
-  private maybeRespawn(player: NetPlayer): void {
-    if (player.alive || player.respawnTimer > 0) return;
-    if (!this.flow.respawnAllowed(player.entityId)) return;
-    this.flow.noteRespawn(player.entityId);
+  /**
+   * Cash a queued class change **now**, if this is the pre-match freeze (M11 Gate B).
+   *
+   * The quick selector's whole promise is that the class you press during the ten-second
+   * countdown is the class you start the match with. "Next spawn" does not deliver that on its
+   * own — the player is already standing, so their next spawn is after their first death, and
+   * they would spend the opening life holding the class they were migrated in with.
+   *
+   * Respawning them is what makes it immediate, and the pre-match freeze is the one window
+   * where that is free: nobody has moved, nobody has fired, and the movement axes are stripped
+   * before they reach the controller, so a `speedScale` that changes here cannot be the source
+   * of a misprediction. The spawn serial bump is the same discontinuity a death already
+   * produces, which is exactly how the client is told to adopt the new pose without charging
+   * itself for the difference (see `NetClient.respawned`).
+   *
+   * Round one only, and alive only. A round-two S&D freeze is three seconds and the player is
+   * about to be spawned by the round reset anyway, so the ordinary deferral is both correct
+   * and cheaper.
+   */
+  applyPendingLoadoutNow(entityId: number): boolean {
+    if (!this.classes.hasPending(entityId)) return false;
+    if (this.flow.currentPhase !== 'WARMUP' || this.flow.round > 1) return false;
+    const player = this.getPlayer(entityId);
+    if (player === undefined || !player.alive) return false;
     this.spawnPlayer(player);
+    return true;
   }
 
   /**
@@ -1498,72 +846,7 @@ export class ServerMatch extends Disposable {
    * audit is a running total rather than a walk of the roster.
    */
   get equipmentAudit(): LifeStockReport {
-    return this.lifeStock.report();
-  }
-
-  /**
-   * The per-life equipment reset, for whoever just spawned.
-   *
-   * The branch is the same one `MatchEquipment.onSpawned` makes on the client — a hand for the
-   * body you own, a thrower state for everybody else — and not an `if (networked)`: it asks
-   * *which kind of combatant this is*, which is a question the server has to answer anyway
-   * because humans and bots hold their grenades in different places.
-   *
-   * `handOf` rather than a lookup: the hand is created on demand, and a life that starts before
-   * its owner has ever thrown is exactly the life a lookup would skip.
-   */
-  private beginLife(entityId: number): void {
-    this.pendingLifeStarts.push(entityId);
-
-    if (this.getPlayer(entityId) !== undefined) {
-      const hand = this.handOf(entityId);
-      hand.thrower.reset();
-      EquipmentSystem.refill(hand.inventory);
-      return;
-    }
-
-    /**
-     * A bot's grenades, which over the network nothing gave back (round 4, B3).
-     *
-     * `BotThrower.respawn` had exactly one caller in the project and it was on the client, so
-     * a bot in a dedicated-server match threw the one lethal and the one tactical it starts
-     * with and was unarmed for the rest of the match — `pickEquipment` skips a slot at zero,
-     * silently, and a bot that stops throwing looks like a bot that decided not to. The same
-     * authority migration as the entity id: the simulation moved to the server and the reset
-     * stayed behind on the client.
-     */
-    this.botThrower.respawn(entityId);
-  }
-
-  /**
-   * Sample the stock of every life that started this tick.
-   *
-   * Deferred to the end of the tick rather than read inside the spawn event, and that is the
-   * whole reason it is honest: the refill above is another subscriber to the same event, so a
-   * probe reading during the emit would be measuring subscription order. At the end of the tick
-   * the life has been through every system that could have handed it anything, which is the
-   * state the player actually wakes up in.
-   */
-  private sampleLifeStarts(): void {
-    if (this.pendingLifeStarts.length === 0) return;
-
-    for (const entityId of this.pendingLifeStarts) {
-      if (this.getPlayer(entityId) !== undefined) {
-        const inv = this.handOf(entityId).inventory;
-        this.lifeStock.note(
-          'human',
-          inv.lethalCount,
-          equipmentDef(inv.lethal).count,
-          inv.tacticalCount,
-          equipmentDef(inv.tactical).count,
-        );
-        continue;
-      }
-      const stock = this.botThrower.stockOf(entityId);
-      const full = BotThrower.fullStock;
-      this.lifeStock.note('bot', stock.lethal, full.lethal, stock.tactical, full.tactical);
-    }
-    this.pendingLifeStarts.length = 0;
+    return this.throws.report();
   }
 
   /** Equipment thrown and detonated this match. Read by the harness (§8.24). */
@@ -1652,6 +935,381 @@ export class ServerMatch extends Disposable {
     this.burn.dispose();
     this.bots.dispose();
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Collision and nav only. `client/world/MapRender.ts` holds the half that would have
+   * needed a GPU, and this process never imports it.
+   *
+   * M11: pre-baked when the server passes one (S4.19), so `LOADING` is instantiation rather
+   * than two flood fills on the path a player is meant to experience as seamless.
+   */
+  private loadWorld(): CollisionWorld {
+    const options = this.options;
+    const loaded = options.baked?.collision ?? loadMapCollision(this.mapEntry.def);
+    log.info(
+      `${this.mapEntry.name}: ${loaded.stats.colliders} colliders, ` +
+        `${loaded.stats.hashEntries} hash entries across ${loaded.stats.hashCells} cells` +
+        (options.baked === undefined ? ' (baked here).' : ' (pre-baked at boot).'),
+    );
+    return loaded.collision;
+  }
+
+  private createBots(): BotDirector {
+    const options = this.options;
+    return new BotDirector({
+      world: this.world,
+      mapDef: this.mapEntry.def,
+      bus: this.bus,
+      damage: this.damage,
+      movement: this.movementConfig,
+      healthConfig: this.healthConfig,
+      viewmodelConfig: this.viewmodelConfig,
+      tiers: this.tiers,
+      perceptionConfig: this.perceptionConfig,
+      scheduler: this.schedulerConfig,
+      player: this.spectator,
+      seed: options.seed,
+      nav: options.baked?.nav,
+      botWeaponId: options.botWeaponId,
+    });
+  }
+
+  /**
+   * The two facts about *who may be shot* that the registry decides.
+   *
+   * **Free-for-All, read off the registry rather than compared against the id.** That is what
+   * `ClientMatch` does, and it is the difference between one fact and two. The damage door's
+   * flag (then `friendlyFire`, now `freeForAll`) went with it since M7 on the client and was
+   * never set here: FFA keeps the two-team substrate internally, so half the roster was
+   * hostile, hunted by the AI, and **immune** — `DamageSystem.apply` returned 0 for every shot
+   * at them and `Ballistics` skipped their rigs entirely, so rounds passed straight through.
+   *
+   * **The waiting room takes no health and keeps no record** (§6.3, playtest round 4, F7). One
+   * fact — this match is the permanent arena — and both consequences are set from it, here and
+   * beside `score.records`, for the reason that one is set there: *"the two facts are the same
+   * fact and setting one without the other is what produced a mode where you could shoot
+   * someone but not score them"*. `ClientMatch` sets the identical pair from `warmupArena`.
+   *
+   * The variant is the right source rather than the mode id: `FFA` is also a mode a ballot
+   * can elect, and a live Free-for-All must kill and score exactly as it always has.
+   */
+  private applyRosterRules(): void {
+    this.bots.freeForAll = this.freeForAll;
+    this.damage.freeForAll = this.freeForAll;
+    this.damage.combatantsInvulnerable = this.arena;
+  }
+
+  private createMode(): GameMode {
+    const options = this.options;
+    return this.modeEntry.create({
+      bus: this.bus,
+      score: this.score,
+      roster: this.bots.roster,
+      mapDef: this.mapEntry.def,
+      roundSecondsOverride: options.roundSecondsOverride,
+      variant: options.variant,
+    });
+  }
+
+  private createFlow(): MatchFlow {
+    const options = this.options;
+    return new MatchFlow({
+      bus: this.bus,
+      score: this.score,
+      roster: this.bots.roster,
+      mode: this.mode,
+      mapId: this.mapEntry.id,
+      mapName: this.mapEntry.name,
+      // There is no local side on a dedicated server. `localTeam` only decides whether the
+      // announcer calls a win a victory, and nothing headless listens to the announcer.
+      localTeam: PLAYER_TEAM,
+      onSidesSwapped: (swapped) => this.bots.spawns.setSideSwap(swapped),
+      // Both clocks or neither. See `ModeDeps.roundSecondsOverride`.
+      roundSecondsOverride: options.roundSecondsOverride,
+      // The freeze the clients' intro is sized to (M17, C2) — the same number they compute.
+      matchStartSeconds: matchStartSeconds(this.mapEntry.def, this.mode.id),
+    });
+  }
+
+  /**
+   * The hooks the director and the mode only have answers for once both exist.
+   *
+   * Every one of them is a rule `ClientMatch` has set since M7 and `ServerMatch` did not — the
+   * M9 authority migration's standing failure mode, where the mode moved to the server and the
+   * wiring around it stayed on the client, kept working for single-player, and proved nothing
+   * about the half that had moved.
+   */
+  private applyModeHooks(): void {
+    this.bots.respawnPolicy = {
+      allowed: (id) => this.flow.respawnAllowed(id),
+      noted: (id) => this.flow.noteRespawn(id),
+    };
+
+    /**
+     * Hand the bot director the mode's objectives (M11 Gate B, §6.8).
+     *
+     * **This was missing, and it made three of the five modes unplayable on a dedicated
+     * server.** `ClientMatch` has set it since M7; `ServerMatch` never did, so
+     * `BotDirector.objectives` was null in every networked match and `ObjectiveIntent` had
+     * nothing to ask. Server-side bots therefore pursued no flag, chased no dog tag, and never
+     * walked onto the bomb — and since a bot's entire interaction vocabulary is `onArrived`,
+     * *no Search & Destroy round played over the network could be decided by a plant*. It read
+     * as a mode that was merely quiet: rounds still ended, on elimination and the clock, so
+     * nothing crashed and nothing logged.
+     *
+     * This is the M9 authority migration's standing failure mode. The mode moved to the server
+     * and the wiring around it stayed on the client, where it kept working for single-player
+     * and proved nothing about the half that had moved.
+     */
+    this.bots.objectives = isObjectiveProvider(this.mode) ? this.mode : null;
+    /**
+     * How hard the mode wants bots to push (M7).
+     *
+     * The other half of the same omission. S&D sets it below 1 so defenders hold sites instead
+     * of hunting, and on the server every mode has been running at the default.
+     */
+    this.bots.pushAggressionScale = this.modeEntry.pushAggressionScale ?? 1;
+    /**
+     * Every human asks; every bot walks on (post-M8 playtest, generalised at M11 Gate B).
+     *
+     * `players` is the connected humans and is consulted live rather than snapshotted, because
+     * seats are created and released throughout a match — a set captured at construction would
+     * be empty, this instance having been built before anybody migrated into it.
+     */
+    if (this.bombMode !== null) {
+      this.bombMode.manualPickup = (entityId) => this.getPlayer(entityId) !== undefined;
+    }
+
+    // Dead Silence, server-side. The client half has existed since M6 and decided nothing over
+    // the network, because the bots that hear the footsteps live here and this hook was never set.
+    this.bots.silentFootsteps = (entityId) => !this.perksOf(entityId).audibleFootsteps;
+    // And the same answer for the humans: a step the bots cannot hear is not sent to an enemy (D4).
+    this.outgoing.silentFootsteps = this.bots.silentFootsteps;
+  }
+
+  /**
+   * The six killstreaks, server-side (M11 Gate B, §6.8, §8.22).
+   *
+   * The header of this file used to read *"No killstreaks yet — `StreakSystem` needs a
+   * `StreakPresentation`, and `SILENT_PRESENTATION` is ready for it, but streaks are earned by
+   * a player's kill streak and the bot path for that is M11's business."* This is that
+   * business. Nothing about `StreakSystem` needed changing to run here beyond the two hooks
+   * that assumed a single local player — M9 already took the scene out of `streaks/`, which is
+   * what makes a streak a thing that runs in Node at all.
+   *
+   * §4.15 puts *"killstreak earn, activation, entity state"* on the replicated side of the
+   * line, so this is the only copy that decides anything: earning folds over the authoritative
+   * score, activation is a client request the server grants, and the sentries and crates in
+   * the world are entities here that clients draw.
+   *
+   * All three M6 perk hooks are answered from `perksOf`, which is the resolved loadout the
+   * player migrated in with — the same one Tier 1 #20 is about. Ghost is the interesting one
+   * and it is answered *twice*: here, so a Ghost player is never recorded as a UAV contact,
+   * and again in `MatchInstance` as a per-recipient intel filter.
+   */
+  private createStreaks(): StreakSystem {
+    const options = this.options;
+    return new StreakSystem({
+      bus: this.bus,
+      score: this.score,
+      roster: this.bots.roster,
+      // Every connected human, rather than one local player: each gets their own progress and
+      // it is replicated to them alone.
+      reportProgressTo: (id) => this.getPlayer(id) !== undefined,
+      commandFor: (id) => this.getPlayer(id)?.lastCommand ?? null,
+      targetable: (id) => this.perksOf(id).targetedByStreaks,
+      visibleToUav: (id) => this.perksOf(id).visibleToUav,
+      streakDiscount: (id) => this.perksOf(id).streakDiscount,
+      // A bot has no class, so it keeps the full list and earns as it always has.
+      equippedStreaks: (id) => this.classes.equippedStreaksOf(id),
+      context: {
+        bus: this.bus,
+        world: this.world,
+        damage: this.damage,
+        bots: this.bots,
+        // The port M9 built for exactly this. Every call is correctly a no-op: a bang with
+        // nobody to hear it is the client's business, driven by the replicated event.
+        present: SILENT_PRESENTATION,
+        mapDef: this.mapEntry.def,
+        cfg: DEFAULT_STREAK_CONFIG,
+        rng: new Rng(options.seed ^ 0x5bd1_e995),
+        tiers: this.tiers,
+        roster: this.bots.roster,
+        // The same fact `bots.freeForAll` carries, from the same registry flag (M13 Phase A).
+        freeForAll: this.freeForAll,
+      },
+    });
+  }
+
+  /**
+   * Grenades and equipment, server-side (M11 Gate B, §6.8, §8.24).
+   *
+   * The header's *"no equipment thrower"* line was true and was the last of the four systems
+   * `ClientMatch` composes that this file did not. Every piece is the shared M5 code driven
+   * from a different place: one `EquipmentSystem` for the world, one `BotThrower` for the AI,
+   * and one `ThrowController` **per connected human** — the client has a single controller for
+   * its single local player, and a server needs one per hand holding a pin. The last two are
+   * `MatchThrows`, which the constructor builds beside this.
+   *
+   * §6.8's *"smoke occludes bot LOS server-side"* is `bots.perception.occluder`, set in the
+   * constructor, and it is the reason this cannot be a client-side feature: the bots whose
+   * sight is being blocked live here, and a smoke cloud the server does not know about blocks
+   * nothing that matters.
+   */
+  private createEquipment(): EquipmentSystem {
+    return new EquipmentSystem({
+      bus: this.bus,
+      world: this.world,
+      damage: this.damage,
+      roster: this.bots.roster,
+      cfg: this.equipmentConfig,
+      // The same fact `bots.freeForAll` carries, from the same registry flag (M13 Phase A).
+      freeForAll: this.freeForAll,
+    });
+  }
+
+  /**
+   * Everything this match listens to on its own bus.
+   *
+   * Seven subscriptions, every one of them owned (§4.18) so a hundred created-and-destroyed
+   * matches leave `EventBus.liveSubscriptions` flat. Three of them — the round reset, the new
+   * life and the human half of death and flinch — are wiring that never crossed to the server
+   * at M9 and whose absence presented as something else entirely; each says so on itself.
+   */
+  private subscribe(): void {
+    this.subscribeMatchEnd();
+    this.subscribeRoundReset();
+    this.subscribeLifeStarts();
+    this.subscribeHumanFeedback();
+    this.subscribeShotCounters();
+    this.subscribeEventStream();
+  }
+
+  private subscribeMatchEnd(): void {
+    this.own(
+      this.bus.on(EV.MatchEnded, () => {
+        this.result = this.flow.result;
+      }),
+    );
+  }
+
+  /**
+     * A new round puts everybody back where they started (M11 Gate B; post-M8 playtest).
+     *
+     * **The third piece of match wiring that never crossed to the server at M9**, and the one
+     * with the worst symptom. `ClientMatch` has subscribed to this since M8 and `ServerMatch`
+     * never did, so in a networked Search & Destroy the humans were never put back at a round
+     * boundary — and there is no other route home, because `maybeRespawn` gates on
+     * `flow.respawnAllowed`, which in a one-life mode is false by construction
+     * (`livesUsed < livesPerRound - 1` is `0 < 0`). A human who died in round one was dead for
+     * the rest of the match: able to look around, unable to move, while the bots played on
+     * around them. Exactly the failure `spawnPlayer`'s own comment warns about — *"a
+     * permanently dead player is not a visibly broken one"* — arriving from the other end.
+     *
+     * Bots were fine, because `BotDirector.respawnAll` is driven from the client's copy of this
+     * subscription in single-player and from the director's own round handling here. Only the
+     * human half was missing, which is why nothing in the logs said so.
+     *
+   * Guarded by `usesRoundReset` exactly as the client's is: a single-round mode fires this
+   * once, at the start, against a world that has just spawned everybody anyway.
+   */
+  private subscribeRoundReset(): void {
+    this.own(
+      this.bus.on(EV.RoundStarted, () => {
+        if (this.modeEntry.usesRoundReset !== true) return;
+        this.bots.respawnAll();
+        // `NetPlayer.spawn` already clears the respawn timer, resets health and bumps the
+        // spawn serial, so this is the whole of a human's round reset.
+        for (const player of this.players) {
+          this.spawnPlayer(player);
+          this.flow.noteRespawn(player.entityId);
+        }
+      }),
+    );
+  }
+
+  /**
+     * A new life started (playtest round 4, B3).
+     *
+     * **The one door.** `PlayerController.spawn` emits this and every combatant in the game
+     * goes through it — `Bot.spawn` calls it and so does `NetPlayer.spawn` — so one
+     * subscription covers the humans and the bots, a death respawn and a Search & Destroy
+     * round start alike. It replaces a refill that sat inside `spawnPlayer`, which was the
+     * server's only new-life door *by inspection* rather than by construction: a second one
+     * would have had to remember to copy the line.
+     *
+   * `EV.BotSpawned` is deliberately not also subscribed. It is a second announcement of the
+   * same spawn carrying tier detail for the director, and listening to both counts every bot
+   * life twice — measured in round 4's streak audit at 304 life-starts against 154 real ones.
+   */
+  private subscribeLifeStarts(): void {
+    this.own(
+      this.bus.on(EV.PlayerSpawned, (p) =>
+        this.throws.beginLife(p.entityId, this.getPlayer(p.entityId) !== undefined),
+      ),
+    );
+  }
+
+  /**
+     * Death and flinch for connected humans (M10).
+     *
+     * `BotDirector` already does this for bots, keyed off its own `byId` map, and a human is
+     * deliberately not in that map — it holds `Bot`s and a `NetPlayer` is not one. So the
+     * same two events are handled here for the human half of the roster. The alternative,
+   * making `BotDirector` aware of `NetPlayer`, would put a networking type into `shared/ai`
+   * and break the partition for no gain.
+   */
+  private subscribeHumanFeedback(): void {
+    this.own(
+      this.bus.on(EV.EntityKilled, (p) => {
+        const victim = this.getPlayer(p.targetId);
+        if (victim === undefined) return;
+        const source = this.combatantAt(p.sourceId);
+        const dx = source === undefined ? 0 : victim.px - source.px;
+        const dz = source === undefined ? 1 : victim.pz - source.pz;
+        victim.onKilled(dx, dz, RESPAWN_SECONDS);
+      }),
+    );
+
+    this.own(
+      this.bus.on(EV.DamageDealt, (p) => {
+        // The shot counters are written from `weapon.fired` alone (round 5, B5) — a damage
+        // event is not a round, and this handler sees a grenade's three victims as three.
+        if (p.lethal) return;
+        const victim = this.getPlayer(p.targetId);
+        if (victim === undefined) return;
+        const source = this.combatantAt(p.sourceId);
+        const fromX = source?.px ?? p.x;
+        const fromZ = source?.pz ?? p.z;
+        victim.onHurt(p.x - fromX, p.z - fromZ);
+      }),
+    );
+  }
+
+  /** What this player's own accuracy column is counted from (round 5, B5). */
+  private subscribeShotCounters(): void {
+    this.own(
+      this.bus.on(EV.WeaponFired, (p) => {
+        const shooter = this.getPlayer(p.sourceId);
+        if (shooter === undefined) return;
+        shooter.shotsFired += shotsFrom(p);
+        shooter.shotsHit += hitsFrom(p);
+      }),
+    );
+  }
+
+  /**
+   * The replicated event stream.
+   *
+   * Subscribed here so it sees the authoritative bus and nothing else — a client's own
+   * presentation bus is a different object entirely.
+   */
+  private subscribeEventStream(): void {
+    for (const off of this.outgoing.subscribe(this.bus)) this.own(off);
+  }
 
   // -- internals ------------------------------------------------------------
 
@@ -1681,29 +1339,381 @@ export class ServerMatch extends Disposable {
         `at ${this.options.tier}, seed ${this.options.seed}.`,
     );
   }
+
+  /**
+   * One human's tick, with lag compensation wrapped around the weapon (S4.13).
+   *
+   * The rewind brackets `NetPlayer.step` rather than the whole match tick, and only the
+   * weapon inside it actually cares — but bracketing the whole call is both simpler and
+   * safer than trying to predict whether this tick will fire. The cost is five number writes
+   * per other entity, and `Rewind.begin` returns immediately when the applied rewind is zero
+   * ticks, so the zero-latency path does no work at all and is provably identical to
+   * single-player.
+   */
+  private stepPlayer(player: NetPlayer, tickIndex: number): void {
+    /**
+     * A gunner flying a Chopper Gunner is not holding their rifle (2026-09-28).
+     *
+     * `WeaponSystem.suspended` exists because *"the chopper drains my primary ammo"*, and
+     * `ClientMatch` has set it since post-M8 — for its own copy. The server never did, so a
+     * networked gunner holding the trigger in the gunship was also firing the rifle standing on
+     * the ground, for real. Found beside the grenade leak `NetPlayer.advance` closes, and the same
+     * shape: a rule written into one runtime. Last tick's streak state, as the client reads it;
+     * `NetPlayer.advance` joins it to the command's own `Btn.Targeting` for the mortar's map.
+     */
+    player.flyingChopper = this.streaks.activeChopperFor(player.entityId) !== null;
+    const lagMs = this.viewLag(player.entityId);
+    this.rewind.begin(player.entityId, tickIndex, lagMs);
+    try {
+      player.step(tickIndex, this.inputFrozen);
+    } finally {
+      // `finally` because a restore that is skipped leaves every rig in the past permanently,
+      // and the next shot by anybody resolves against a world a fifth of a second stale.
+      this.rewind.end();
+    }
+  }
+
+  private viewLag(entityId: number): number {
+    if (this.rewindDisabled) return 0;
+    return this.viewLagMsFor === null ? 0 : this.viewLagMsFor(entityId);
+  }
+
+  /**
+   * Every connected human's Use key, against the bomb (M11 Gate B, §6.8).
+   *
+   * §6.8: *"Plant and defuse are interruptible and resolve server-side."* They did not resolve
+   * server-side at all before this. The whole interaction — pick up, plant, defuse, cancel —
+   * lived in `ClientMatch.stepBombInteraction`, driven by the local player's Use key, and the
+   * dedicated server had no equivalent. Combined with the bots having no objectives (see the
+   * constructor), **nobody in a networked Search & Destroy could touch the bomb**: not a bot,
+   * because it had no target, and not a human, because the only code that reads Use for this
+   * purpose was running on a client whose mode is not authoritative.
+   *
+   * A port of the client's logic rather than a new one, and deliberately so — the rules about
+   * who may plant and where live in `SearchAndDestroy`, and this only reports that a particular
+   * body is standing in the right place with the key held. The mode is still the only thing
+   * that decides whether that means anything.
+   *
+   * Hold, not press: `beginInteract` is idempotent for the same actor, and releasing the key
+   * cancels. That is what makes an interruption free — there is no state here to unwind, and a
+   * player who dies mid-plant is handled by `onKill` inside the mode.
+   */
+  private stepBombInteractions(): void {
+    const mode = this.bombMode;
+    if (mode === null) return;
+
+    for (const player of this.players) {
+      const holding = isDown(player.lastButtons, Btn.Use);
+      if (!holding || !player.alive) {
+        this.releaseInteract(mode, player);
+        continue;
+      }
+      if (mode.bomb === 'PLANTED') this.stepDefuse(mode, player);
+      else if (mode.bomb === 'CARRIED') this.stepPlantOrPickup(mode, player);
+    }
+  }
+
+  /**
+   * Let go of whatever *this* player had started, and nothing else.
+   *
+   * Another player's plant is not theirs to stop, and neither is a bot's. That is also what
+   * makes an interruption free: there is no state here to unwind, and a player who dies
+   * mid-plant is handled by `onKill` inside the mode.
+   */
+  private releaseInteract(mode: SearchAndDestroy, player: NetPlayer): void {
+    if (mode.interactEntity === player.entityId) mode.cancelInteract();
+  }
+
+  /** A defender standing on the planted site, with the key held, is defusing. */
+  private stepDefuse(mode: SearchAndDestroy, player: NetPlayer): void {
+    if (player.team !== mode.defenders) return;
+    const site = mode.plantedSite;
+    if (site === null || !site.contains(player)) return;
+    mode.beginInteract(player, true);
+  }
+
+  /**
+   * An attacker with the key held either picks the bomb up or plants it.
+   *
+   * One key does both, and pickup is tested first because you cannot plant a bomb you are not
+   * carrying (post-M8 playtest).
+   */
+  private stepPlantOrPickup(mode: SearchAndDestroy, player: NetPlayer): void {
+    if (player.team !== mode.attackers) return;
+    if (!mode.isCarrier(player.entityId)) {
+      mode.tryPickup(player);
+      return;
+    }
+    if (mode.siteContaining(player) === null) return;
+    mode.beginInteract(player, false);
+  }
+
+  /**
+   * Every connected human kneeling at a crate, in `ClientMatch.simulate`'s order.
+   *
+   * Humans only. A bot has no `Weapon` of this kind and no `EquipmentInventory` — `BotThrower`
+   * holds its stock — so giving one a crate is a decision about bot behaviour rather than about
+   * stations, and it is not this commit's.
+   */
+  private stepSupply(): void {
+    if (!this.supply.any) return;
+    for (const player of this.players) {
+      this.supply.step(
+        player.entityId,
+        player.controller.sim,
+        player.alive,
+        player.weapons.weapon,
+        this.throws.inventoryOf(player.entityId),
+      );
+    }
+  }
+
+  /**
+   * Every connected human's hands, against the streaks this server owns (2026-09-26).
+   *
+   * The authoritative half of `CarriedWeaponStreak`: asked every tick, pushed by nothing, and
+   * resolved from the same table the client resolves its replicated copy from. A player whose
+   * minigun has just expired is holding their loadout again on the tick the streak leaves the
+   * list, with no event and nothing to unwind.
+   *
+   * Humans only. A bot's weapon comes from `drawBotWeapon` and nothing gives a bot a streak.
+   */
+  private stepCarriedStreakWeapons(): void {
+    for (const player of this.players) {
+      player.weapons.holdStreakWeapon(this.streaks.carriedWeaponFor(player.entityId));
+    }
+  }
+
+  /**
+   * Every connected human's knife, for the pose alone (protocol 20).
+   *
+   * The asymmetry with `stepThrowers` above is the point and is worth stating rather than
+   * hiding. A throw is simulated here: the server owns a `ThrowController` per player, the cook
+   * and the release are authoritative, and `handBusy` is read off the thing that decides. A
+   * *swing* is not simulated here at all — `weapons/Melee.ts` lives in `ClientMatch` and applies
+   * its damage there — so this cannot read a state machine, because there is none to read.
+   *
+   * What it reads instead is the input, which is authoritative: `Btn.Melee` arrived in a command
+   * this player signed, and the rising edge of it is the frame they asked to swing. The timer runs
+   * on the shared `MELEE_SWING_SECONDS`, so the pose lasts exactly as long as the swing the client
+   * is running. It reproduces the client's three gates, all of which it holds now (2026-09-28): a
+   * knife is refused while a grenade is in the hand (`handBusy`), while the gunship has the camera
+   * (`flyingChopper`) and while the mortar's map is up (`Btn.Targeting`, in the same command). It
+   * used to reproduce none, and a watcher saw a swing for every one the client had refused.
+   * Nothing else in the match can observe this field.
+   *
+   * Driven from the command the body just consumed, for the reason `stepThrowers` gives.
+   */
+  private stepMelee(): void {
+    for (const player of this.players) {
+      const cmd = player.lastCommand;
+      if (cmd === null) continue;
+      const buttons = player.alive ? cmd.buttons : 0;
+      const pressed =
+        isDown(buttons, Btn.Melee) &&
+        !isDown(player.meleePrevButtons, Btn.Melee) &&
+        !player.handBusy &&
+        !player.flyingChopper &&
+        !isDown(buttons, Btn.Targeting);
+      player.meleePrevButtons = buttons;
+      // A corpse is not swinging, and a swing that survived a respawn would be drawn on the
+      // next life — the same reason `ThrowController.step` takes `alive`.
+      if (!player.alive) {
+        player.meleeSeconds = 0;
+        continue;
+      }
+      // The edge restarts it rather than extending it: holding the key is one swing on the
+      // client too, and the cooldown there is longer than the swing.
+      if (pressed) player.meleeSeconds = MELEE_SWING_SECONDS;
+      else if (player.meleeSeconds > 0) player.meleeSeconds = Math.max(0, player.meleeSeconds - DT);
+    }
+  }
+
+  /** Bring a dead player back once their timer and the mode's gate both allow it. */
+  private maybeRespawn(player: NetPlayer): void {
+    if (player.alive || player.respawnTimer > 0) return;
+    if (!this.flow.respawnAllowed(player.entityId)) return;
+    this.flow.noteRespawn(player.entityId);
+    this.spawnPlayer(player);
+  }
+
+  /**
+   * The entity id this seat takes, or -1 when it cannot have one.
+   *
+   * **A returning player takes back the seat they left, id and side (round 4, F8).** Both
+   * halves are load-bearing and the second is easy to miss. The **id** is what the scoreboard
+   * row, the rewind history and the equipment hand are all keyed by, so reclaiming it reclaims
+   * the record rather than copying it. The **side** is `addPlayer`'s, because arrivals are
+   * otherwise balanced onto the smaller team: a player re-seated without it could come back on
+   * the other side, which in Search & Destroy is a spawn in the enemy half.
+   *
+   * Refused rather than forced if the id is somehow occupied. It cannot be — `nextPlayerId`
+   * only increments, so an id handed out once is never handed out again inside this instance,
+   * which is precisely what makes a held id safe to hold for thirty seconds. The check is here
+   * because two bodies on one entity is the failure it would produce, and that is worth a
+   * comparison rather than an assumption.
+   */
+  private allocateEntityId(displayName: string, reclaim: ReclaimedSeat | null): number {
+    if (reclaim !== null) {
+      if (reclaim.entityId <= 0 || reclaim.entityId >= BOT_ID_FLOOR) return -1;
+      if (this.getPlayer(reclaim.entityId) !== undefined) {
+        log.warn(
+          `${displayName} tried to reclaim entity ${reclaim.entityId}, which is occupied. Refused.`,
+        );
+        return -1;
+      }
+      return reclaim.entityId;
+    }
+
+    const entityId = this.nextPlayerId++;
+    if (entityId >= BOT_ID_FLOOR) {
+      // Entity ids 1..99 are the human range; bots start at 100. Ten seats and a fresh id per
+      // join means this is unreachable inside any real match length, but a wrapped id would
+      // collide with a bot and put two bodies on one entity.
+      this.nextPlayerId--;
+      return -1;
+    }
+    return entityId;
+  }
+
+  /**
+   * Put the new body on every list that has to hold it.
+   *
+   * Five registrations and the class, in one place, because `removePlayer` undoes exactly this
+   * list in the same order — and the half that is easy to forget is the one that leaves a
+   * phantom in the lag-compensation path rather than a visible bug.
+   */
+  private registerSeat(player: NetPlayer, resolved: ResolvedLoadout | null): void {
+    this.classes.seat(player.entityId, resolved);
+    this.players.push(player);
+    this.damage.register(player);
+    this.bots.roster.push(player);
+    this.rewind.register(player);
+    this.score.register(player.entityId, player.displayName, player.team);
+  }
+
+  /**
+   * What the server thinks this player brought.
+   *
+   * The class is now a thing that can be wrong, and this is the first question when a duel
+   * looks wrong.
+   */
+  private logSeat(player: NetPlayer, resolved: ResolvedLoadout | null): void {
+    const perks = describePerkState(this.perksOf(player.entityId));
+    log.info(
+      `${player.displayName} seated as entity ${player.entityId} on team ${player.team} — ` +
+        `${player.weapons.definition.id}/${resolved?.secondary.id ?? PISTOL_DEFAULT.id}, perks ${perks}` +
+        (resolved === null ? ' (no loadout sent; server defaults)' : ''),
+    );
+  }
+
+  /**
+   * Whether a body arriving now would be joining a one-life round in progress (§6.7).
+   *
+   * `WARMUP` is deliberately not blocked: that is the 3-2-1 before a round, nobody has been
+   * shot at yet, and it is the phase every player migrating in at match start arrives during.
+   * Blocking there would hold *the whole lobby* out of round one.
+   */
+  private joinBlockedMidRound(): boolean {
+    return this.modeEntry.usesRoundReset === true && this.flow.currentPhase === 'LIVE';
+  }
+
+  /**
+   * Which side a joining human goes on: **fewer humans first**, then fewer bodies.
+   *
+   * Bots are interchangeable; humans are the thing a player notices being on the wrong side of.
+   * Counting the whole roster and breaking ties toward A is correct arithmetic and the wrong
+   * question — a seat is granted and then a bot is removed *from the same side*, restoring the
+   * body count to what it was, so the next joiner finds the identical tie and is sent to A as
+   * well. Measured on a four-human TDM backfill: entities 1, 2, 3 and 4 all on team A.
+   */
+  private smallerTeam(): BotTeam {
+    let humansA = 0;
+    let humansB = 0;
+    for (const p of this.players) {
+      if (p.team === 'A') humansA++;
+      else humansB++;
+    }
+    if (humansA !== humansB) return humansA < humansB ? 'A' : 'B';
+
+    let a = 0;
+    let b = 0;
+    for (const c of this.bots.roster) {
+      if (c === this.spectator) continue;
+      if (c.team === 'A') a++;
+      else b++;
+    }
+    return a <= b ? 'A' : 'B';
+  }
+
+  private spawnPlayer(player: NetPlayer): void {
+    if (!this.bots.selectSpawn(player.team, player.entityId, this.spawnChoice)) {
+      /**
+       * `selectSpawn` is documented never to fail. If that ever stops being true, falling
+       * back matters more than it looks: this is the only path back to `alive`, so returning
+       * early here leaves the player dead **forever** — and a permanently dead player is not
+       * a visibly broken one, it is a player who can still look around and cannot walk. That
+       * is indistinguishable from a movement bug and would be debugged as one.
+       *
+       * So take the map's first authored spawn instead. It may be a poor spawn; it is not a
+       * lost life.
+       */
+      const fallback = this.mapEntry.def.spawns?.[0];
+      if (fallback === undefined) {
+        log.error(`no spawn available for entity ${player.entityId} and no map fallback.`);
+        return;
+      }
+      log.warn(`no scored spawn for entity ${player.entityId}; using the map's first.`);
+      this.spawnChoice.x = fallback.position.x;
+      this.spawnChoice.y = fallback.position.y;
+      this.spawnChoice.z = fallback.position.z;
+      this.spawnChoice.yaw = fallback.facingYaw;
+    }
+    /**
+     * Apply a queued class change here, before the body goes live (M11, §6.6).
+     *
+     * The spawn is the discontinuity both sides already agree on, which is what makes this the
+     * one safe moment. See `NetPlayer.applyLoadout`.
+     */
+    const pending = this.classes.takePending(player.entityId);
+    if (pending !== null) {
+      player.applyLoadout(pending.primary, pending.secondary, pending.perkState);
+      log.info(
+        `${player.displayName} respawned with class "${pending.name}" — ` +
+          `${pending.primary.id}/${pending.secondary.id}, perks ${describePerkState(pending.perkState)}.`,
+      );
+    }
+
+    // Equipment is per life (§6.3) and is refilled by `beginLife`, off the spawn below.
+    const c = this.spawnChoice;
+    player.spawn(c.x, c.y, c.z, c.yaw);
+    // Backfill the whole history with the spawn pose, so a shot rewound into the window
+    // before this player existed cannot resolve against a stale or origin rig. Stamped with
+    // the **absolute** tick: `Rewind.record` is called from `step` with that one, and
+    // `RigHistory` validates a slot by the tick that wrote it — so a history stamped with a
+    // match-relative index is a history whose every slot fails its own validity check, and
+    // lag compensation quietly declines to apply.
+    this.rewind.resetAt(player.entityId, this.currentTick);
+  }
+
+  /**
+   * Anybody on the roster by id — bot, human or the spectator seat.
+   *
+   * Used to find where a killing round came from, so a death or a flinch leans the right
+   * way. The roster is the union of both halves, which is exactly why bots and humans were
+   * put in one array.
+   */
+  private combatantAt(entityId: number): Combatant | undefined {
+    for (const c of this.bots.roster) if (c.entityId === entityId) return c;
+    return undefined;
+  }
+  //#endregion
 }
+//#endregion
 
-/**
- * The side the empty player seat nominally belongs to.
- *
- * It has no gameplay consequence — the spectator never participates — but the roster wants a
- * team and `MatchFlow` wants a local one.
- */
-const PLAYER_TEAM: BotTeam = 'A';
-
-/**
- * Entity ids for connected humans.
- *
- * The id space was fixed by M3 and this fits inside it rather than changing it: 0 is the
- * local-player seat (here, the spectator), M2's range dummies sit in the low numbers, and
- * `BOT_ID_BASE` is 100. Humans take 1..99, which is ten times the seat count and leaves the
- * bot range untouched.
- */
-const HUMAN_ID_BASE = 1;
-
-/** First id belonging to a bot. A human id must never reach it. */
-const BOT_ID_FLOOR = BOT_ID_BASE;
-
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function asModeId(id: string): Parameters<typeof findMode>[0] {
   return id as Parameters<typeof findMode>[0];
 }
+//#endregion

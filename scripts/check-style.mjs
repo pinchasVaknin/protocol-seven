@@ -357,6 +357,11 @@ const FINISHED = {
     'src/server/instance/SeatRoster.ts',
     'src/server/instance/SnapshotRecords.ts',
   ],
+  B6: [
+    'src/server/Match.ts',
+    'src/server/MatchThrows.ts',
+    'src/server/PlayerClasses.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

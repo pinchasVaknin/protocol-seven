@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**37 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**38 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -19,7 +19,8 @@ round 4 had removed, and the fix needed a session outside the unit rules because
 line observable output. **B5 opened #50** on 2026-10-20 — four comments naming members that its
 own split had moved — and **rewrote #30** rather than closing it: it absorbed the call site the
 entry was bound to, which left the function with no production caller and turned the question
-into whether it stays at all.
+into whether it stays at all. **B6 declined #13 with the same reason B5 gave** — the move is in
+a finished unit's files and reaches thirty files — and opened **#51**.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -50,7 +51,7 @@ and belong in its Step 2 plan.
 | ~~A23~~ | `shared/net/` Prediction, Interpolation, ClockSync, NetSim, Transport, Skirmish | **closed** — A23 absorbed #1's shared half under an approved fence exception: `shortestAngle` is gone and both call sites moved. What is left of #1 is the three local copies, which are not the same function |
 | ~~B4~~ | `server/instance/` InstanceClock, LiveMatch, VoteCycle, WarmupMatch | **closed** — nothing was bound to its four files: #13 is B5/B6's and its edit is in `shared/combat`, #42's and #30's file is `MatchInstance.ts` which is B5's. B4 opened #49, which was closed the same day |
 | ~~B5~~ | `server/instance/MatchInstance.ts` + the three files it was split into | **closed** — B5 absorbed #30's call site: `writePlayer` now reads the table this file already built, and `equipmentIndexOf` has no production caller left (see #30, rewritten). #13 was **declined with a reason**: `PLAYER_ENTITY_ID` appears nowhere in `server/instance/`, so B5 has no edit to make — the server-side importers are `Match.ts` (B6) and `Spectator.ts` (B8). #42 stays open but its four rules are now pinned by tests. B5 opened #50 |
-| B6 | `server/Match.ts` | #13 (`PLAYER_ENTITY_ID` importers) — `Match.ts:739` is one of the two server-side importers |
+| ~~B6~~ | `server/Match.ts` + the two files it was split into | **declined with a reason** — #13's only edit in B6's file is the one argument `equipment.simulate` passes, and the move itself is in `shared/combat/DamageSystem.ts` and `LocalIdentity.ts`: A9's files, in the `check:style` ratchet, outside R3's fence. `grep` reaches **30 files** across all three partitions, four of them `client/debug`. No unit can close it; see #13, re-scoped. B6 opened #51 |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
 | C2 | `client/engine/` CameraRig, FrameLoop | #34 — reproduce the local camera jitter *before* refactoring these files |
 | C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
@@ -375,7 +376,7 @@ moves with the engine and will go red exactly when the maths moves. That is the 
 formulas that are supposed to agree are the same shape as the second finding in A2 — one rule
 written twice, ending up not agreeing.
 
-### #13 — Move `PLAYER_ENTITY_ID` out of `DamageSystem` · `open` · also §1 for B5/B6
+### #13 — Move `PLAYER_ENTITY_ID` out of `DamageSystem` · `open` · *needs a session of its own (B5 and B6 both declined it)*
 
 **Files** `src/shared/combat/DamageSystem.ts`, `src/shared/combat/LocalIdentity.ts`, every
 importer. **Origin** A9.
@@ -394,6 +395,16 @@ location only if something outside `src/` depends on the old path.
 
 **Watch for** the constant is reachable at runtime through `window.__p7` and the verification
 scripts under `public/verify/`, so check those as well as `src/`.
+
+**Why neither B5 nor B6 could do it** (2026-10-20 and 2026-10-24). The entry was bound to
+"B5, B6" on the strength of them being importers. B5's files do not mention the constant at
+all. B6's does, in exactly one place — the `PLAYER_ENTITY_ID` argument
+`equipment.simulate(0, 0, 0, PLAYER_TEAM, PLAYER_ENTITY_ID, false)` passes — and the *move* is
+in `DamageSystem.ts` and `LocalIdentity.ts`, which belong to A9 and are in the ratchet. A
+`grep -rn "PLAYER_ENTITY_ID" src/` reaches **30 files**: `shared`, the server, four
+`client/debug` panels, `client/perks`, and the presentation files that compare against it. That
+is a tree-wide rename, which is precisely what R2 and R3 exist to keep out of a unit's commit.
+So this is an unbound task and needs its own session, as #32, #48 and #49 did.
 
 **Verify** `npm run check` + SIM snapshot/compare → `PASS`.
 
@@ -1033,10 +1044,10 @@ in the `check:style` ratchet, so this needs a session of its own either way.
 **Verify** `npm run check` + SIM snapshot/compare → `PASS`, plus `Snapshot.test.ts`'s *"names
 every piece of equipment and nothing else"*.
 
-### #50 — Four references to members that moved out of `MatchInstance` · `open` *(opened 2026-10-20 by B5)*
+### #50 — Five references to members that moved out of `MatchInstance` · `open` *(opened 2026-10-20 by B5)*
 
 **Files** `src/server/net/Session.ts:634`, `src/server/Router.ts:15`,
-`docs/VISIBILITY.md:37` and `:323`. **Origin** B5.
+`docs/VISIBILITY.md:37` and `:323`, `src/client/MatchWorld.ts:795`. **Origin** B5.
 
 B5 split `MatchInstance.ts` into four files, and four comments elsewhere still name the old
 address:
@@ -1047,6 +1058,10 @@ address:
   an entry in each of seven maps.
 - `VISIBILITY.md:37` — `MatchInstance.sendStreaks` → `SeatChannels.sendStreaks`.
 - `VISIBILITY.md:323` — `MatchInstance.sendBomb` → `SeatChannels.sendBomb`.
+- `src/client/MatchWorld.ts:795` — *"The mirror of the server's own lookup in `MatchInstance`"*,
+  on the client's streak-index table. That lookup is `SnapshotRecords.streakKindIndex` now.
+  Found by B6 on 2026-10-24 while checking its own split for the same defect; B5 missed it
+  because it grepped for `MatchInstance.<member>` and this one names the file alone.
 
 Everything else that names a member still names one: `buildEntities`, `sendSnapshots`, `step`,
 `seat`, `unseat`, `releaseEntity` and `isArena` all stayed, and `writePlayer`, `writeBot` and
@@ -1057,6 +1072,32 @@ Everything else that names a member still names one: `buildEntities`, `sendSnaps
 is out of scope for the whole programme (§10), and R3 fences a unit to its own files. The
 `Router.ts` line is **bound to B8**, which owns that file and has not run yet; the other three
 need a session of their own, as #32 and #48 did.
+
+**Verify** reading. No oracle sees a comment.
+
+### #51 — Three references to `ServerMatch.stepThrowers`, which is now `MatchThrows`' · `open` *(opened 2026-10-24 by B6)*
+
+**Files** `src/server/NetPlayer.ts:103`, `src/server/NetPlayer.test.ts:90`, `PLAN.md:1633`.
+**Origin** B6.
+
+B6 moved the grenade hands out of `Match.ts` into `server/MatchThrows.ts`, and three comments
+name the old address:
+
+- `NetPlayer.ts:103` — *"Written by `ServerMatch.stepThrowers` from the one authority on it,
+  the thrower's `busy`"*, on the `handBusy` field. Still true about *what* writes it; wrong
+  about where that lives.
+- `NetPlayer.test.ts:90` — the same sentence in the test that pins the field.
+- `PLAN.md:1633` — *"`ServerMatch.stepThrowers`, is what keeps a muzzle flash off a man holding
+  a grenade."*
+
+Everything else still names something that exists: `stepMelee`, `step`, `addPlayer`,
+`removePlayer`, `setPendingLoadout`, `applyPendingLoadoutNow`, `perksOf` and `loadoutOf` all
+stayed on `ServerMatch`, so `HeadlessClient.ts:206` and `:1534` are **correct** and are named
+here only so that the next reader does not "fix" them.
+
+**Why B6 could not do it.** `NetPlayer.ts` and its test are B8's files, and `PLAN.md` is a root
+document §10 keeps out of the whole programme. One reading session, no behaviour. The
+`NetPlayer.ts` half is **bound to B8**, which owns that file and has not run yet.
 
 **Verify** reading. No oracle sees a comment.
 

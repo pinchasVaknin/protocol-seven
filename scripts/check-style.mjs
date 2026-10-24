@@ -362,6 +362,11 @@ const FINISHED = {
     'src/server/MatchThrows.ts',
     'src/server/PlayerClasses.ts',
   ],
+  B7: [
+    'src/server/ClientRequests.ts',
+    'src/server/Server.ts',
+    'src/server/SessionDesk.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

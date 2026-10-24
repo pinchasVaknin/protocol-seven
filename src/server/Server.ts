@@ -1,8 +1,8 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { nowMs } from '../shared/core/Clock';
 import { logger } from '../shared/core/Log';
 import type { VoteInfo } from '../shared/net/Messages';
-import { uniqueDisplayName } from '../shared/net/DisplayText';
-import { MAX_NAME_LENGTH } from '../shared/net/UrlFlags';
 // Importing this module is also what runs its boot-time check that both ballots name things
 // the registry actually has — see the bottom of `Skirmish.ts`.
 import {
@@ -10,15 +10,8 @@ import {
   instanceStateName,
   MAP_BALLOT,
   MODE_BALLOT,
-  sanitiseNetLoadout,
   WARMUP_MATCH_ID,
 } from '../shared/net/Skirmish';
-import {
-  CheatOutcome,
-  describeCheatMask,
-  parseCheatCode,
-  toggleCheat,
-} from '../shared/cheats/Cheats';
 import { describeConfig, type ServerConfig } from './Config';
 import { LiveMatch } from './instance/LiveMatch';
 import type { MatchInstance } from './instance/MatchInstance';
@@ -36,14 +29,17 @@ import {
   type PlayerSlot,
 } from './MatchAllocator';
 import { Migration, seatInfo } from './Migration';
-import { STREAK_DEFS } from '../shared/streaks/StreakDefs';
 import { ReconnectRegistry, type ReconnectStats } from './net/ReconnectRegistry';
 import { Router } from './Router';
 import { Session, type JoinResult, type LeaveCause } from './net/Session';
+import type { NetPlayer } from './NetPlayer';
+import { ClientRequests } from './ClientRequests';
+import { SessionDesk } from './SessionDesk';
 import { WsServer, type WsLink } from './net/WsServer';
+//#endregion
 
-const log = logger('server');
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * What a reconnect claim came to (M11 Gate B, playtest round 4, F8).
  *
@@ -58,10 +54,21 @@ interface ReclaimOutcome {
   /** What to tell the player, sent after the identity frame. Null when there is nothing to say. */
   readonly notice: string | null;
 }
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('server');
 
 /** Not a returning player. The common case, and it says nothing to anybody. */
 const NO_RECLAIM: ReclaimOutcome = { seat: null, notice: null };
 
+/** How often the vote state goes out. See `broadcastVoteStatePeriodically`. */
+const VOTE_BROADCAST_HZ = 4;
+//#endregion
+
+// ======================================== CLASS Server ======================================== \\
+//#region Class Server
 /**
  * The process: one loop, one arena, at most one live match (M11, §4.9).
  *
@@ -93,23 +100,37 @@ const NO_RECLAIM: ReclaimOutcome = { seat: null, notice: null };
  */
 
 export class Server {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly loop: ServerLoop;
+
   private readonly wss: WsServer;
+
   private readonly bakery = new MapBakery();
+
   private readonly router = new Router();
+
   private readonly migration: Migration;
+
   private readonly allocator: IMatchAllocator;
+
   /** Non-null only when fault injection is configured. §8.14 drives this. */
   readonly faulty: FaultyMatchAllocator | null;
 
   private warmup: WarmupMatch;
+
   private readonly voteCycle: VoteCycle;
 
   private live: MatchHandle | null = null;
+
   /** True between asking the allocator and hearing back. Stops a second ask. */
   private allocating = false;
 
-  private readonly sessions: Session[] = [];
+  /** Every live connection, and the five passes a tick makes over them. */
+  private readonly desk = new SessionDesk();
+
+  /** The five things a client may ask for (§4.16). Built after the pieces they read. */
+  private readonly requests: ClientRequests;
 
   /**
    * Seats held open for players who have dropped (round 4, F8).
@@ -121,16 +142,26 @@ export class Server {
   private readonly reconnects = new ReconnectRegistry();
 
   private bootReport: BootBakeReport | null = null;
+
   private lastMetricsMs = 0;
+
   private lastVoteBroadcastTick = -1;
+
   /** A vote changed since the last broadcast. See `onVote`. */
   private voteChanged = false;
+
   private stopping = false;
 
   /** Total ms across every instance for the most recent tick. §8.28's number. */
   totalStepMs = 0;
+
   meanTotalStepMs = 0;
 
+  private leakCycle = 0;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly cfg: ServerConfig) {
     /**
      * Bake every map before anything else (§4.19).
@@ -142,83 +173,29 @@ export class Server {
     this.bootReport = this.bakery.bakeAll();
 
     this.warmup = this.buildWarmup(0);
-
-    const inProcess = new InProcessMatchAllocator({
-      bakery: this.bakery,
-      snapshotHz: cfg.snapshotHz,
-      interpolationDelayMs: cfg.interpolationDelayMs,
-      readyTimeoutMs: cfg.readyTimeoutMs,
-      summaryHoldSeconds: cfg.summaryHoldSeconds,
-      currentTick: () => this.loop.currentTick,
-      seed: cfg.seed,
-      roundSecondsOverride: cfg.matchRoundSeconds,
-    });
-
-    /**
-     * The faulty allocator is wired in only when asked for (§4.17, test-only).
-     *
-     * It wraps rather than replaces, so what runs in production is the real allocator with
-     * nothing in front of it, and what the harness exercises is the real allocator with a
-     * fault in front of it. A build flag that swapped implementations would test a second
-     * implementation instead of the first.
-     */
-    if (cfg.faultInjection) {
-      this.faulty = new FaultyMatchAllocator(inProcess);
-      this.allocator = this.faulty;
+    const inProcess = this.createInProcessAllocator();
+    this.faulty = cfg.faultInjection ? new FaultyMatchAllocator(inProcess) : null;
+    this.allocator = this.faulty ?? inProcess;
+    if (this.faulty !== null) {
       log.warn('FAULT_INJECTION=1 — the allocator can be made to stall and fail. Diagnostic only.');
-    } else {
-      this.faulty = null;
-      this.allocator = inProcess;
     }
-
-    this.migration = new Migration(this.router);
-
-    this.voteCycle = new VoteCycle({
-      /**
-       * Humans **connected to the server**, not humans standing in the arena.
-       *
-       * §4.20's rule is *"if every human leaves during a vote phase, the cycle cancels"*, and
-       * "leaves" means leaves the server. Counting arena occupancy instead made a successful
-       * migration look identical to a mass disconnect: the moment everybody moved into the
-       * live match the arena was empty, the cycle cancelled itself to `IDLE`, and no further
-       * ballot ever opened — the match played out and the players came back to a server that
-       * had quietly stopped asking them what to play next.
-       *
-       * Found by the flow harness, which observed exactly one cycle across a two-cycle run.
-       */
-      humanCount: () => this.router.playerCount,
-      onResolved: (resolution) => void this.onVoteResolved(resolution),
-      onAborted: (reason) => this.noticeAll(reason),
-      seed: cfg.seed,
-      config: cfg.voteCycle,
-    });
-
     if (cfg.rewindDisabled) {
       log.warn('REWIND_DISABLED=1 — lag compensation is OFF. Diagnostic only (S8.6).');
     }
 
+    this.migration = new Migration(this.router);
+    this.voteCycle = this.createVoteCycle();
+    this.requests = this.createClientRequests();
     this.loop = new ServerLoop({
       tick: (tickIndex) => this.tick(tickIndex),
       shouldContinue: () => !this.stopping,
     });
-
-    this.wss = new WsServer({
-      port: cfg.port,
-      host: cfg.host,
-      tlsCertPath: cfg.tlsCertPath,
-      tlsKeyPath: cfg.tlsKeyPath,
-      conditions: cfg.conditions,
-      // One origin for the page and the socket. See `WsServerOptions.staticDir`.
-      staticDir: cfg.staticDir,
-      // The door (security audit, part 3). See the fields on `ServerConfig`.
-      clientIpHeader: cfg.clientIpHeader,
-      maxConnections: cfg.maxConnections,
-      maxConnectionsPerIp: cfg.maxConnectionsPerIp,
-      allowedOrigins: cfg.allowedOrigins,
-      onConnection: (link) => this.accept(link),
-    });
+    this.wss = this.createListener();
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   async start(): Promise<void> {
     await this.wss.listen();
     log.info(`listening — ${describeConfig(this.cfg)}`);
@@ -229,8 +206,7 @@ export class Server {
   async stop(): Promise<void> {
     this.stopping = true;
     this.loop.stop();
-    for (const s of this.sessions) s.close('server shutting down');
-    this.sessions.length = 0;
+    this.desk.closeAll('server shutting down');
     if (this.live !== null) {
       await this.allocator.destroy(this.live);
       this.live = null;
@@ -274,6 +250,126 @@ export class Server {
     return this.reconnects.stats;
   }
 
+  /**
+   * Allocate a live match and destroy it again, with nobody in it (§8.13).
+   *
+   * The teardown leak harness's one operation. It deliberately bypasses the vote cycle: the
+   * question is whether `LiveMatch` construction and `dispose` balance, and routing a hundred
+   * of them through a hundred sixty-second ballots would take an hour and a half to answer it.
+   *
+   * It does **not** bypass the allocator, because the allocator holds a reference to the handle
+   * and *"every reference held by the router, the session layer and the allocator"* is on
+   * §4.18's list of things `destroy()` must release.
+   *
+   * Rotates the map and mode across calls, so a leak that only appears on one map — a bigger
+   * navmesh, a mode with objective state — is not missed by a hundred repetitions of the
+   * cheapest one.
+   */
+  async allocateAndDestroyForLeakTest(): Promise<void> {
+    if (this.live !== null) await this.destroyLive();
+    const modeId = MODE_BALLOT[this.leakCycle % MODE_BALLOT.length] ?? 'TDM';
+    const mapId = MAP_BALLOT[this.leakCycle % MAP_BALLOT.length] ?? 'mp_foundry';
+    this.leakCycle++;
+
+    const handle = await this.allocator.allocate({
+      modeId,
+      mapId,
+      players: [],
+      botFill: { count: 10, tier: this.cfg.botDifficulty },
+    });
+    this.live = handle;
+    // One step, so the instance builds its entity list and its bots take a tick — a teardown
+    // that only ever released a never-stepped instance would miss anything allocated lazily on
+    // the first step, which is most of the per-tick pools.
+    handle.instance.begin(this.loop.currentTick);
+    handle.instance.step(this.loop.currentTick);
+    await this.destroyLive();
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  // -- housekeeping -----------------------------------------------------------
+
+  private createInProcessAllocator(): InProcessMatchAllocator {
+    const cfg = this.cfg;
+    return new InProcessMatchAllocator({
+      bakery: this.bakery,
+      snapshotHz: cfg.snapshotHz,
+      interpolationDelayMs: cfg.interpolationDelayMs,
+      readyTimeoutMs: cfg.readyTimeoutMs,
+      summaryHoldSeconds: cfg.summaryHoldSeconds,
+      currentTick: () => this.loop.currentTick,
+      seed: cfg.seed,
+      roundSecondsOverride: cfg.matchRoundSeconds,
+    });
+  }
+
+  private createVoteCycle(): VoteCycle {
+    return new VoteCycle({
+      /**
+       * Humans **connected to the server**, not humans standing in the arena.
+       *
+       * §4.20's rule is *"if every human leaves during a vote phase, the cycle cancels"*, and
+       * "leaves" means leaves the server. Counting arena occupancy instead made a successful
+       * migration look identical to a mass disconnect: the moment everybody moved into the
+       * live match the arena was empty, the cycle cancelled itself to `IDLE`, and no further
+       * ballot ever opened — the match played out and the players came back to a server that
+       * had quietly stopped asking them what to play next.
+       *
+       * Found by the flow harness, which observed exactly one cycle across a two-cycle run.
+       */
+      humanCount: () => this.router.playerCount,
+      onResolved: (resolution) => void this.onVoteResolved(resolution),
+      onAborted: (reason) => this.noticeAll(reason),
+      seed: this.cfg.seed,
+      config: this.cfg.voteCycle,
+    });
+  }
+
+  private createClientRequests(): ClientRequests {
+    return new ClientRequests({
+      cfg: this.cfg,
+      router: this.router,
+      voteCycle: this.voteCycle,
+      liveHandle: () => this.live,
+      noteVoteChanged: () => {
+        this.voteChanged = true;
+      },
+    });
+  }
+
+  private createListener(): WsServer {
+    const cfg = this.cfg;
+    return new WsServer({
+      port: cfg.port,
+      host: cfg.host,
+      tlsCertPath: cfg.tlsCertPath,
+      tlsKeyPath: cfg.tlsKeyPath,
+      conditions: cfg.conditions,
+      // One origin for the page and the socket. See `WsServerOptions.staticDir`.
+      staticDir: cfg.staticDir,
+      // The door (security audit, part 3). See the fields on `ServerConfig`.
+      clientIpHeader: cfg.clientIpHeader,
+      maxConnections: cfg.maxConnections,
+      maxConnectionsPerIp: cfg.maxConnectionsPerIp,
+      allowedOrigins: cfg.allowedOrigins,
+      onConnection: (link) => this.accept(link),
+    });
+  }
+
+  private buildWarmup(startTick: number): WarmupMatch {
+    return new WarmupMatch({
+      bakery: this.bakery,
+      snapshotHz: this.cfg.snapshotHz,
+      interpolationDelayMs: this.cfg.interpolationDelayMs,
+      seed: this.cfg.seed,
+      startTick,
+      bots: this.cfg.warmupBots,
+      difficulty: this.cfg.botDifficulty,
+    });
+  }
+
   // -- connections ------------------------------------------------------------
 
   private accept(link: WsLink): void {
@@ -285,17 +381,17 @@ export class Server {
         // from the parameter, and there is one sanitised copy rather than two.
         onJoin: (s, _name, claim) => this.onJoin(s, claim),
         onLeave: (s, reason, cause) => this.onLeave(s, reason, cause),
-        onLoadout: (s, raw) => this.onLoadout(s, raw),
-        onVote: (s, phase, option) => this.onVote(s, phase, option),
-        onReady: (s, matchId) => this.onReady(s, matchId),
-        onStreakRequest: (s, kind, x, z) => this.onStreakRequest(s, kind, x, z),
-        onCheatRequest: (s, code) => this.onCheatRequest(s, code),
+        onLoadout: (s, raw) => this.requests.onLoadout(s, raw),
+        onVote: (s, phase, option) => this.requests.onVote(s, phase, option),
+        onReady: (s, matchId) => this.requests.onReady(s, matchId),
+        onStreakRequest: (s, kind, x, z) => this.requests.onStreakRequest(s, kind, x, z),
+        onCheatRequest: (s, code) => this.requests.onCheatRequest(s, code),
       },
       () => this.loop.currentTick,
       // Security audit S6: an idle seat is freed. See `Session.checkIdle`.
       { idleKickMs: this.cfg.idleKickSeconds * 1000 },
     );
-    this.sessions.push(session);
+    this.desk.add(session);
   }
 
   /**
@@ -332,7 +428,7 @@ export class Server {
    */
   private onJoin(session: Session, claim: Uint8Array | null): JoinResult | null {
     // Before anything is seated, so the seat, the scoreboard row and every log line carry it.
-    session.displayName = this.uniqueDisplayName(session);
+    session.displayName = this.desk.uniqueNameFor(session);
 
     /**
      * The token is minted here, before anything is seated.
@@ -350,37 +446,13 @@ export class Server {
     // this one handshake, and a field would be a second place holding a fact with one use.
     const rejoinNotice = returning.notice;
 
-    const live = this.live?.instance ?? null;
-    const joinInProgress = live !== null && live.state === InstanceState.RUNNING;
-    const destination: MatchInstance = joinInProgress && live !== null ? live : this.warmup;
+    const destination = this.destinationFor();
 
     // The claim goes in with the seat even though it opened nothing (M13 Phase B): past the
     // grace it is still the token the live match recorded against this player's row, and the
     // row follows them. The arena ignores it.
     const player = destination.seat(session, session.loadout, null, claim);
-    if (player === null) {
-      /**
-       * The live match refused, so fall back to the arena rather than the connection.
-       *
-       * §4.20's shape applied one stage earlier: a player who cannot be given the seat they
-       * asked for is left somewhere playable with a message, never dropped. The arena is the
-       * destination of last resort and always exists.
-       */
-      if (!joinInProgress) return null;
-      const fallback = this.warmup.seat(session, session.loadout);
-      if (fallback === null) return null;
-      this.router.admit(session, this.warmup);
-      return {
-        player: fallback,
-        afterIdentity: () => {
-          this.sendSeatTo(session, this.warmup, fallback.entityId, fallback.team, false);
-          if (rejoinNotice !== null) session.notice(rejoinNotice);
-          session.notice('The match is full — you are in the arena until the next one.');
-          this.sendVoteStateTo(session);
-          this.sendPrepareIfBuilding(session);
-        },
-      };
-    }
+    if (player === null) return this.arenaFallback(session, destination, rejoinNotice);
     this.router.admit(session, destination);
 
     /**
@@ -393,18 +465,45 @@ export class Server {
      * background build. Sent from inside `onJoin`, either would reach the client before the
      * `Welcome` that tells it who it is, and the handshake drops frames it has no context for.
      */
+    return { player, afterIdentity: this.afterIdentityFor(session, destination, player, rejoinNotice) };
+  }
+
+  /**
+   * Where a fresh connection sits: the running match if there is one, the arena otherwise.
+   *
+   * `RUNNING` only. A match in `READY_WAIT` has not started and its players are still in the
+   * arena waiting to be migrated as one; dropping a newcomer straight into it would seat them
+   * in a world nobody else is in yet, and `maybeStartLive` counts the arena's sessions to
+   * decide when to begin.
+   */
+  private destinationFor(): MatchInstance {
+    const live = this.liveMatch;
+    return live !== null && live.state === InstanceState.RUNNING ? live : this.warmup;
+  }
+
+  /**
+   * The live match refused, so fall back to the arena rather than to the connection.
+   *
+   * §4.20's shape applied one stage earlier: a player who cannot be given the seat they asked
+   * for is left somewhere playable with a message, never dropped. The arena is the destination
+   * of last resort and always exists — so a refusal *from* the arena is the one case with
+   * nowhere left to go, and the connection is turned away.
+   */
+  private arenaFallback(
+    session: Session,
+    destination: MatchInstance,
+    rejoinNotice: string | null,
+  ): JoinResult | null {
+    if (destination === this.warmup) return null;
+    const fallback = this.warmup.seat(session, session.loadout);
+    if (fallback === null) return null;
+    this.router.admit(session, this.warmup);
     return {
-      player,
+      player: fallback,
       afterIdentity: () => {
-        this.sendSeatTo(session, destination, player.entityId, player.team, false);
+        this.sendSeatTo(session, this.warmup, fallback.entityId, fallback.team, false);
         if (rejoinNotice !== null) session.notice(rejoinNotice);
-        if (joinInProgress) {
-          log.info(`${session.displayName} joined match ${destination.id} in progress.`);
-          // The ballot belongs to the arena and this player is not in it. Sending them a vote
-          // state would put a ballot on screen for a cycle they cannot take part in — round
-          // three's stale-overlay bug, arriving by the one door that was left.
-          return;
-        }
+        session.notice('The match is full — you are in the arena until the next one.');
         this.sendVoteStateTo(session);
         this.sendPrepareIfBuilding(session);
       },
@@ -412,23 +511,29 @@ export class Server {
   }
 
   /**
-   * A callsign no other connected player is using (security audit 2026-10-04, S9).
+   * What goes out after the seat assignment, which is this connection's identity frame.
    *
-   * Names are chosen by the client and nothing made them unique, so a player could join as the
-   * name already on the board and be indistinguishable from its owner in the killfeed, the
-   * scoreboard and the vote — and two people who simply picked the same callsign could not tell
-   * which row was theirs. The second one in becomes `NAME (2)`, the next `NAME (3)`, cut to fit
-   * `MAX_NAME_LENGTH`. Compared without case, because `alice` beside `ALICE` is the same
-   * impersonation. Server-wide rather than per instance: the name travels with the connection
-   * through every migration, so it has to be unique everywhere the connection can go.
+   * A player who joined a match in progress is deliberately told **nothing** about the ballot:
+   * the cycle belongs to the arena and they are not in it, and a vote state would put a ballot
+   * on screen for a cycle they cannot take part in — round three's stale-overlay bug, arriving
+   * by the one door that was left.
    */
-  private uniqueDisplayName(session: Session): string {
-    const taken: string[] = [];
-    for (const other of this.sessions) {
-      if (other === session || other.closed || other.displayName === '') continue;
-      taken.push(other.displayName);
-    }
-    return uniqueDisplayName(session.displayName, taken, MAX_NAME_LENGTH);
+  private afterIdentityFor(
+    session: Session,
+    destination: MatchInstance,
+    player: NetPlayer,
+    rejoinNotice: string | null,
+  ): () => void {
+    return () => {
+      this.sendSeatTo(session, destination, player.entityId, player.team, false);
+      if (rejoinNotice !== null) session.notice(rejoinNotice);
+      if (destination !== this.warmup) {
+        log.info(`${session.displayName} joined match ${destination.id} in progress.`);
+        return;
+      }
+      this.sendVoteStateTo(session);
+      this.sendPrepareIfBuilding(session);
+    };
   }
 
   /**
@@ -459,7 +564,7 @@ export class Server {
     }
 
     const held = result.reservation;
-    const live = this.live?.instance ?? null;
+    const live = this.liveMatch;
     /**
      * The instance has to still be there, and still be the one the seat is in.
      *
@@ -511,170 +616,6 @@ export class Server {
   }
 
   /**
-   * A client asked to spend a streak (M11 Gate B, §8.22).
-   *
-   * A **request**, and every part of granting it is the server's. §4.16: *"The client is fully
-   * untrusted."* So the three things that could be lied about are each answered here rather than
-   * taken from the message:
-   *
-   * - **Which instance.** The router, never the client. A request from somebody in the arena
-   *   cannot reach into the live match.
-   * - **Whether they may buy it, and whether they can pay.** Two questions since round 4's B9,
-   *   because a balance answers only the second. The class check is here: `pricesFor` is the
-   *   list the server offered this seat, and a request for anything outside it is a client
-   *   asking for a streak it never had a key for. Everything else is inside
-   *   `StreakSystem.activate`, which debits through the one door that also refuses a streak
-   *   still cooling down and one whose previous instance is still in the world — and it is the
-   *   same door a bot would come through, which is what stops there being two economies.
-   * - **Where it goes.** At the player's own body, from the *server's* copy of their position.
-   *   The only coordinates taken from the client are the mortar's marked point, which is a
-   *   genuine choice the player makes on the map overlay and is clamped to the map by
-   *   `MortarStrike` itself.
-   *
-   * A refused request is logged at debug and otherwise silent. It is the ordinary consequence of
-   * a double keypress arriving either side of a death, and answering it would mean a message
-   * whose only reader is a HUD that the next `Streaks` frame corrects anyway.
-   */
-  private onStreakRequest(session: Session, kind: number, x: number, z: number): void {
-    const instance = this.router.instanceOf(session.playerId);
-    const player = session.player;
-    if (instance === null || player === null) return;
-
-    const def = STREAK_DEFS[kind];
-    if (def === undefined) {
-      // A kind index outside the table is malformed rather than merely wrong, and §4.16 puts
-      // the response to malformed input at the boundary: count it, drop it, never throw.
-      session.warn(`${session.displayName} asked for streak kind ${kind}, which does not exist.`);
-      return;
-    }
-
-    const streaks = instance.match.streaks;
-    if (!streaks.pricesFor(player.entityId).some((p) => p.id === def.id)) {
-      session.warn(`${session.displayName} asked for ${def.id}, which is not in their class.`);
-      return;
-    }
-
-    const sim = player.controller.sim;
-    // The mortar is marked on the map overlay; everything else is placed where the caller
-    // stands. `MortarStrike` clamps the mark to the playable area.
-    const isMortar = def.id === 'mortar';
-    const granted = streaks.activate(
-      player.entityId,
-      def.id,
-      isMortar ? x : sim.x,
-      isMortar ? 0 : sim.y,
-      isMortar ? z : sim.z,
-      sim.yaw,
-    );
-    if (granted === null) {
-      // Cannot pay, still cooling, or their last one is still up. Which of the three is in the
-      // economy report's refusal counters; here it is one line, because the next `Streaks`
-      // frame tells the client the same thing more precisely than a reply could.
-      log.debug(`${session.displayName} asked for ${def.id} and was refused.`);
-      return;
-    }
-    log.info(`${session.displayName} called in ${def.id} in instance ${instance.id}.`);
-  }
-
-  /**
-   * A client typed a cheat code (playtest round 4, F14).
-   *
-   * **The server decides, and always answers.** God mode, invisibility and free cam are facts
-   * about the simulation, so a client that granted itself one would either be ignored or be
-   * exploiting a hole; and thirty unearned kills is a purchase nobody made. So the code arrives
-   * as text, is parsed against *this* process's copy of the table, and is honoured only if
-   * `ServerConfig.cheatsEnabled` says so — which is off unless an operator set
-   * `CHEATS_ENABLED=1`.
-   *
-   * Four things are worth reading in the order they happen:
-   *
-   * - **An unknown code is answered before the flag is consulted**, because it is a typo rather
-   *   than an attempt at anything, and telling somebody "cheats are disabled" about a string
-   *   that is not a code would send them looking for an operator they do not need.
-   * - **The flag is checked before the seat**, so a server with cheats off gives one answer to
-   *   everybody and never reveals whether the code would have worked.
-   * - **`DEBUG666` never arrives here.** It is `CHEAT_LOCAL`, the client authors it, and if a
-   *   crafted frame sends it anyway the toggle lands in a mask the simulation does not read.
-   *   Written down rather than guarded, because the guard is the partition.
-   * - **Every grant, revoke and refusal is logged with the resulting mask.** That is the second
-   *   half of F14's *"make it visible"*: a bug report from a player who had god mode on is
-   *   otherwise indistinguishable from one from a player who did not, and nobody can go back
-   *   and ask.
-   */
-  private onCheatRequest(session: Session, code: string): void {
-    const entry = parseCheatCode(code);
-    if (entry === null) {
-      session.sendCheats(CheatOutcome.RefusedUnknown, session.cheats.mask);
-      return;
-    }
-    if (!this.cfg.cheatsEnabled) {
-      session.warn(`${session.displayName} typed a cheat code and this server has cheats disabled.`);
-      session.sendCheats(CheatOutcome.RefusedDisabled, session.cheats.mask);
-      return;
-    }
-
-    const instance = this.router.instanceOf(session.playerId);
-    const player = session.player;
-    if (instance === null || player === null) {
-      session.sendCheats(CheatOutcome.RefusedNoSeat, session.cheats.mask);
-      return;
-    }
-
-    if (entry.effect.kind === 'instant') {
-      /**
-       * `MO951357`, and it is the test P7 said it would be for P4's separation.
-       *
-       * It needs no compensating deduction anywhere, because the balance is **not** a read of
-       * `PlayerScore.kills` — P4 built `credit` as a second door precisely so unearned kills can
-       * buy streaks without appearing in the match results. `creditKills` is that door, and it
-       * already applies the aliveness rule every other unearned credit does.
-       *
-       * **Nothing is latched.** F14 set a `Wallet` bit here so the payment would leave a trace on
-       * screen, and that bit outlived its own subject: the ledger row it described is destroyed
-       * by the next migration (`removePlayer` runs `StreakSystem.onOwnerRemoved`), so the tag
-       * went on claiming an audit trail for a balance that no longer existed. An instant is
-       * *announced* by the client for a display duration — see the kinds on `CheatEffect` in
-       * `shared/cheats/Cheats.ts` — and the durable
-       * record of it is this log line and `StreakEconomyReport.credited`, which is where a
-       * transaction's record belongs.
-       */
-      instance.match.streaks.creditKills(player.entityId, entry.effect.kills);
-      log.warn(
-        `CHEAT: ${session.displayName} (player ${session.playerId}) took ` +
-          `${entry.effect.kills} kills into their streak balance in instance ${instance.id}; ` +
-          `entitlements unchanged at ${describeCheatMask(session.cheats.mask)}.`,
-      );
-      session.sendCheats(CheatOutcome.InstantApplied, session.cheats.mask);
-      return;
-    }
-
-    if (entry.effect.kind !== 'toggle') {
-      /**
-       * A `'surface'` code reaching the server is a client that should never have sent it.
-       *
-       * `DEBUG666` is the only one, it grants no entitlement, and `Game.requestCheat` returns
-       * before the send. So this is unreachable from the shipped client and is refused rather
-       * than asserted: §4.16 answers a frame that makes no sense at the boundary, and the type
-       * system knowing it cannot happen is not the same as the socket knowing.
-       */
-      session.warn(`${session.displayName} sent a client-side code to the server. Refused.`);
-      session.sendCheats(CheatOutcome.RefusedUnknown, session.cheats.mask);
-      return;
-    }
-
-    const before = session.cheats.mask;
-    const after = toggleCheat(before, entry.effect.bits);
-    session.cheats.set(after);
-    const granted = (after & entry.effect.bits) !== 0;
-    log.warn(
-      `CHEAT: ${session.displayName} (player ${session.playerId}) ` +
-        `${granted ? 'enabled' : 'cleared'} a cheat in instance ${instance.id}; ` +
-        `mask now ${describeCheatMask(after)}.`,
-    );
-    session.sendCheats(granted ? CheatOutcome.Granted : CheatOutcome.Revoked, after);
-  }
-
-  /**
    * A connection ended. Free the seat, and hold it open if it is worth holding (§6.7, F8).
    *
    * The reservation is made **before** `router.release`, and the order is the whole of it: the
@@ -703,7 +644,7 @@ export class Server {
     const player = session.player;
     if (token === null || player === null) return;
     const instance = this.router.instanceOf(session.playerId);
-    const live = this.live?.instance ?? null;
+    const live = this.liveMatch;
     if (instance === null || live === null || instance !== live) return;
     if (live.state !== InstanceState.RUNNING) return;
     this.reconnects.reserve(token, {
@@ -713,117 +654,6 @@ export class Server {
       entityId: player.entityId,
       team: player.team,
       loadout: session.loadout,
-    });
-  }
-
-  /**
-   * A class arrived (Tier 1 #20).
-   *
-   * Validated here and applied on the **next spawn** rather than to the standing body, per the
-   * handover's rule 3: *"Applying a class change live to a standing networked world
-   * reintroduced the same divergence by another door. Deferring to next spawn is CoD behaviour
-   * anyway."* §6.6 says the same thing from the player's side.
-   *
-   * The stored value is what gets locked into the `MatchRequest` at migration, so a class sent
-   * at any point during warmup is the class carried into the match.
-   */
-  private onLoadout(session: Session, raw: Parameters<typeof sanitiseNetLoadout>[0]): void {
-    const corrected: string[] = [];
-    const clean = sanitiseNetLoadout(raw, corrected);
-    if (clean === null) {
-      // Never a disconnect: a class the server cannot read is a client one build ahead or
-      // behind, and the M10 defaults are a working game.
-      session.warn(`${session.displayName} sent an unusable loadout; keeping the previous one.`);
-      return;
-    }
-    if (corrected.length > 0) session.noteCorrectedClass(corrected);
-    session.loadout = clean;
-
-    /**
-     * Queue it on whichever instance holds this player, for their next spawn (§6.6).
-     *
-     * Two things happen and both matter. The session copy is what gets **locked into the
-     * `MatchRequest` at migration** (§4.18) — that is Tier 1 #20's fix and it is why the class
-     * lives on the connection rather than in a world. The instance copy is what takes effect
-     * *now*, on the next respawn in the arena, so a player who edits their class sees it in
-     * their hands before the match starts.
-     *
-     * A player with no instance is mid-migration; the session copy still lands, so the class
-     * travels with them and applies on their first spawn in the destination.
-     */
-    const instance = this.router.instanceOf(session.playerId);
-    const player = session.player;
-    const queued =
-      instance !== null && player !== null
-        ? instance.match.setPendingLoadout(player.entityId, clean)
-        : false;
-    /**
-     * During the pre-match countdown it applies **now** rather than on the next spawn.
-     *
-     * That is what makes the quick class selector mean what it says — see
-     * `ServerMatch.applyPendingLoadoutNow` for why the freeze is the one window where an
-     * immediate change cannot cost a misprediction. Everywhere else this returns false and the
-     * ordinary §6.6 deferral stands.
-     */
-    const immediate =
-      queued && player !== null && instance !== null
-        ? instance.match.applyPendingLoadoutNow(player.entityId)
-        : false;
-
-    log.info(
-      `${session.displayName} set class "${clean.name}" — ` +
-        `${clean.primary.weaponId}/${clean.secondary.weaponId}, ` +
-        `perks [${clean.perks.filter((p) => p !== null).join(', ')}]. ` +
-        (immediate
-          ? 'Applied now (pre-match countdown).'
-          : queued
-            ? 'Applies on next spawn.'
-            : 'Applies when they next exist in a world.'),
-    );
-  }
-
-  private onVote(session: Session, phase: number, option: number): void {
-    const before = this.voteCycle.voteOf(session.playerId);
-    const accepted = this.voteCycle.castVote(session.playerId, phase, option);
-    if (!accepted) {
-      // §8.6 requires a vote outside its window to be demonstrably rejected. Logged rather
-      // than answered: the tally not moving is the client's feedback, and a reply would be a
-      // message a hostile client could make the server send at will.
-      session.warn(
-        `${session.displayName} voted ${option} in phase ${phase}; ` +
-          `the server is in phase ${this.voteCycle.phase} — rejected.`,
-      );
-      return;
-    }
-    /**
-     * Sent this tick, so the voter sees their own vote land rather than waiting up to a quarter
-     * of a second for the next scheduled tally — but **once per tick, and only for a change**
-     * (security audit S3).
-     *
-     * This used to broadcast from here, per vote, to every seat in the arena. A vote is legal to
-     * repeat and to change, so one client sending the same vote in a loop made the server send
-     * that many frames to every other player: an amplifier with a fan-out of the room. The
-     * flag is drained by `broadcastVoteStatePeriodically` later in the same tick.
-     */
-    if (option !== before) this.voteChanged = true;
-  }
-
-  private onReady(session: Session, matchId: number): void {
-    const target = this.live;
-    if (target === null || target.id !== matchId) {
-      this.router.mayAddress(session, matchId);
-      return;
-    }
-    target.instance.noteReady(session.playerId);
-    const waited = session.prepareSentAtMs === 0 ? 0 : nowMs() - session.prepareSentAtMs;
-    log.info(
-      `${session.displayName} ready for match ${matchId} after ${Math.round(waited)}ms of background build.`,
-    );
-    metric('migration', 'ready', {
-      playerId: session.playerId,
-      name: session.displayName,
-      matchId,
-      buildMs: Math.round(waited),
     });
   }
 
@@ -844,16 +674,7 @@ export class Server {
      * frame and nobody else theirs. The connection is dropped rather than left in an unknown
      * state — S4.16's answer to anything the server does not like is to close the link.
      */
-    for (const s of this.sessions) {
-      try {
-        s.receive();
-      } catch (err) {
-        const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
-        log.error(`session ${s.playerId} (${s.displayName}) threw while receiving: ${message}`);
-        metric('server', 'receiveFault', { playerId: s.playerId, reason: String(err) });
-        s.close('malformed message');
-      }
-    }
+    this.desk.receiveAll((s, err) => this.onReceiveFault(s, err));
 
     // 2. Step every RUNNING instance, each wrapped (§4.18).
     let total = 0;
@@ -872,16 +693,28 @@ export class Server {
     this.stepFlowGuarded(tickIndex);
 
     // 4. Release whatever the per-link condition simulator has been holding.
-    for (const s of this.sessions) {
-      const link = s.link;
-      if (isWsLink(link)) link.pumpOutbound();
-    }
+    this.desk.flushOutbound();
 
     // 5. Reap. Done last so a connection that died this tick still had its commands applied.
-    for (const s of this.sessions) s.checkTimeout();
+    this.desk.checkTimeouts();
     this.reap();
 
     this.maybeLogMetrics();
+  }
+
+  /**
+   * One client's frame threw inside a handler. Drop that connection and keep the tick.
+   *
+   * The connection is dropped rather than left in an unknown state — S4.16's answer to
+   * anything the server does not like is to close the link.
+   */
+  private onReceiveFault(session: Session, err: unknown): void {
+    const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    log.error(
+      `session ${session.playerId} (${session.displayName}) threw while receiving: ${message}`,
+    );
+    metric('server', 'receiveFault', { playerId: session.playerId, reason: String(err) });
+    session.close('malformed message');
   }
 
   /**
@@ -945,6 +778,20 @@ export class Server {
       session.notice('The arena was rebuilt after a server fault.');
     }
     metric('server', 'warmupRebuilt', { tick: tickIndex, reason: message, reseated: seated.length });
+  }
+
+  /**
+   * Take the connections that have closed out of everything that still names them.
+   *
+   * The desk drops the session object; what it is dropped *from* is this server's business —
+   * the router's one-instance map and the ballot's tally.
+   */
+  private reap(): void {
+    this.desk.reap((session) => {
+      this.router.release(session.playerId);
+      this.voteCycle.forget(session.playerId);
+      session.player = null;
+    });
   }
 
   // -- the skirmish flow ------------------------------------------------------
@@ -1070,32 +917,12 @@ export class Server {
    */
   private async onVoteResolved(resolution: VoteResolution): Promise<void> {
     if (this.allocating || this.live !== null) {
-      /**
-       * A vote resolved while a match already exists.
-       *
-       * §4.9 caps the process at one live match, so this is the cap doing its job — but it is
-       * also the signature of a `LiveMatch` that never reached `ENDED` and was therefore never
-       * destroyed, which would silently abort every cycle from then on. Logged loudly with the
-       * offending instance's state so the second reading is distinguishable from the first.
-       */
-      const state = this.live === null ? 'allocating' : instanceStateName(this.live.instance.state);
-      log.warn(
-        `a vote resolved while a match was already present (state ${state}); ignoring it. ` +
-          'If this repeats, a live match is stuck and is holding the only slot.',
-      );
-      this.noticeAll('The previous match has not finished — staying in the arena.');
-      this.voteCycle.resume(this.loop.currentTick);
+      this.refuseVoteWhileMatchPresent();
       return;
     }
 
     this.allocating = true;
-    const players: PlayerSlot[] = [...this.warmup.sessions].map((seat) => ({
-      playerId: seat.session.playerId,
-      displayName: seat.session.displayName,
-      // Locked here: the class as it is at the moment of the request (§4.18, §6.6).
-      loadout: seat.session.loadout,
-    }));
-
+    const players = this.lockedSlots();
     const startedMs = nowMs();
     try {
       const handle = await this.allocator.allocate({
@@ -1117,40 +944,83 @@ export class Server {
         ms: Math.round(elapsed * 100) / 100,
         humans: players.length,
       });
-
-      /**
-       * Start every client's background build now (§6.5).
-       *
-       * *"The client begins building meshes and procedural textures for the chosen map
-       * immediately, in the background, while the player is still playing warmup."* This is
-       * the message that starts it, and the readiness reports that answer it are what
-       * `READY_WAIT` waits on.
-       */
-      let prepared = 0;
-      for (const seat of this.warmup.sessions) {
-        seat.session.readyForMatch = -1;
-        seat.session.prepareSentAtMs = nowMs();
-        seat.session.sendPrepare(handle.id, resolution.mapId, resolution.modeId);
-        prepared++;
-      }
-      // Logged because it is one half of §7's per-client readiness time, and because "did the
-      // start-building message actually go out" is the first question when every client hits
-      // the readiness timeout.
-      log.info(`sent Prepare for match ${handle.id} (${resolution.mapId}) to ${prepared} client(s).`);
+      this.sendPrepareToArena(handle, resolution);
     } catch (err) {
-      const kind = err instanceof AllocationError ? err.kind : 'failure';
-      const text =
-        kind === 'capacity'
-          ? 'The server is at capacity — staying in the arena.'
-          : 'Could not start the match — staying in the arena.';
-      log.warn(`allocation failed (${kind}): ${err instanceof Error ? err.message : String(err)}`);
-      for (const seat of this.warmup.sessions) seat.session.notice(text);
-      metric('allocator', 'failed', { kind, modeId: resolution.modeId, mapId: resolution.mapId });
-      // Nothing was built, so there is nothing to leak and nobody moved. Back to free play.
-      this.voteCycle.resume(this.loop.currentTick);
+      this.onAllocationFailed(err, resolution);
     } finally {
       this.allocating = false;
     }
+  }
+
+  /**
+   * A vote resolved while a match already exists.
+   *
+   * §4.9 caps the process at one live match, so this is the cap doing its job — but it is
+   * also the signature of a `LiveMatch` that never reached `ENDED` and was therefore never
+   * destroyed, which would silently abort every cycle from then on. Logged loudly with the
+   * offending instance's state so the second reading is distinguishable from the first.
+   */
+  private refuseVoteWhileMatchPresent(): void {
+    const state = this.live === null ? 'allocating' : instanceStateName(this.live.instance.state);
+    log.warn(
+      `a vote resolved while a match was already present (state ${state}); ignoring it. ` +
+        'If this repeats, a live match is stuck and is holding the only slot.',
+    );
+    this.noticeAll('The previous match has not finished — staying in the arena.');
+    this.voteCycle.resume(this.loop.currentTick);
+  }
+
+  /** Everybody in the arena, with the class they are holding **now** (§4.18, §6.6). */
+  private lockedSlots(): PlayerSlot[] {
+    return [...this.warmup.sessions].map((seat) => ({
+      playerId: seat.session.playerId,
+      displayName: seat.session.displayName,
+      // Locked here: the class as it is at the moment of the request (§4.18, §6.6).
+      loadout: seat.session.loadout,
+    }));
+  }
+
+  /**
+   * Start every client's background build now (§6.5).
+   *
+   * *"The client begins building meshes and procedural textures for the chosen map
+   * immediately, in the background, while the player is still playing warmup."* This is
+   * the message that starts it, and the readiness reports that answer it are what
+   * `READY_WAIT` waits on.
+   *
+   * The count is logged because it is one half of §7's per-client readiness time, and because
+   * "did the start-building message actually go out" is the first question when every client
+   * hits the readiness timeout.
+   */
+  private sendPrepareToArena(handle: MatchHandle, resolution: VoteResolution): void {
+    let prepared = 0;
+    for (const seat of this.warmup.sessions) {
+      seat.session.readyForMatch = -1;
+      seat.session.prepareSentAtMs = nowMs();
+      seat.session.sendPrepare(handle.id, resolution.mapId, resolution.modeId);
+      prepared++;
+    }
+    log.info(`sent Prepare for match ${handle.id} (${resolution.mapId}) to ${prepared} client(s).`);
+  }
+
+  /**
+   * The allocator refused, in one of the three ways §4.17 names.
+   *
+   * Every path out leaves every player in the warmup arena with a message, never dropping
+   * them, stranding them, or leaking a half-built instance — nothing was built, so there is
+   * nothing to leak and nobody moved. The cycle resumes into free play so the next ballot
+   * opens on schedule rather than the arena sitting in `ALLOCATING` for ever.
+   */
+  private onAllocationFailed(err: unknown, resolution: VoteResolution): void {
+    const kind = err instanceof AllocationError ? err.kind : 'failure';
+    const text =
+      kind === 'capacity'
+        ? 'The server is at capacity — staying in the arena.'
+        : 'Could not start the match — staying in the arena.';
+    log.warn(`allocation failed (${kind}): ${err instanceof Error ? err.message : String(err)}`);
+    for (const seat of this.warmup.sessions) seat.session.notice(text);
+    metric('allocator', 'failed', { kind, modeId: resolution.modeId, mapId: resolution.mapId });
+    this.voteCycle.resume(this.loop.currentTick);
   }
 
   /**
@@ -1272,44 +1142,6 @@ export class Server {
     await this.allocator.destroy(handle);
   }
 
-  /**
-   * Allocate a live match and destroy it again, with nobody in it (§8.13).
-   *
-   * The teardown leak harness's one operation. It deliberately bypasses the vote cycle: the
-   * question is whether `LiveMatch` construction and `dispose` balance, and routing a hundred
-   * of them through a hundred sixty-second ballots would take an hour and a half to answer it.
-   *
-   * It does **not** bypass the allocator, because the allocator holds a reference to the handle
-   * and *"every reference held by the router, the session layer and the allocator"* is on
-   * §4.18's list of things `destroy()` must release.
-   *
-   * Rotates the map and mode across calls, so a leak that only appears on one map — a bigger
-   * navmesh, a mode with objective state — is not missed by a hundred repetitions of the
-   * cheapest one.
-   */
-  async allocateAndDestroyForLeakTest(): Promise<void> {
-    if (this.live !== null) await this.destroyLive();
-    const modeId = MODE_BALLOT[this.leakCycle % MODE_BALLOT.length] ?? 'TDM';
-    const mapId = MAP_BALLOT[this.leakCycle % MAP_BALLOT.length] ?? 'mp_foundry';
-    this.leakCycle++;
-
-    const handle = await this.allocator.allocate({
-      modeId,
-      mapId,
-      players: [],
-      botFill: { count: 10, tier: this.cfg.botDifficulty },
-    });
-    this.live = handle;
-    // One step, so the instance builds its entity list and its bots take a tick — a teardown
-    // that only ever released a never-stepped instance would miss anything allocated lazily on
-    // the first step, which is most of the per-tick pools.
-    handle.instance.begin(this.loop.currentTick);
-    handle.instance.step(this.loop.currentTick);
-    await this.destroyLive();
-  }
-
-  private leakCycle = 0;
-
   // -- broadcasts -------------------------------------------------------------
 
   /**
@@ -1373,9 +1205,7 @@ export class Server {
    * instance that failed may not exist, and §4.17 requires all of them to be told.
    */
   private noticeAll(text: string): void {
-    for (const session of this.sessions) {
-      if (!session.closed && session.state === 'live') session.notice(text);
-    }
+    this.desk.noticeAll(text);
   }
 
   private sendSeatTo(
@@ -1388,34 +1218,6 @@ export class Server {
     session.sendSeat(
       seatInfo(instance, entityId, team, this.loop.currentTick, this.cfg.snapshotHz, migrated),
     );
-  }
-
-  // -- housekeeping -----------------------------------------------------------
-
-  private buildWarmup(startTick: number): WarmupMatch {
-    return new WarmupMatch({
-      bakery: this.bakery,
-      snapshotHz: this.cfg.snapshotHz,
-      interpolationDelayMs: this.cfg.interpolationDelayMs,
-      seed: this.cfg.seed,
-      startTick,
-      bots: this.cfg.warmupBots,
-      difficulty: this.cfg.botDifficulty,
-    });
-  }
-
-  private reap(): void {
-    for (let i = this.sessions.length - 1; i >= 0; i--) {
-      const s = this.sessions[i];
-      if (s === undefined) continue;
-      if (!s.closed) continue;
-      // `close` already ran `onLeave`, which released the seat. This only drops the now-inert
-      // session object so the per-tick loops stay short.
-      this.router.release(s.playerId);
-      this.voteCycle.forget(s.playerId);
-      s.player = null;
-      this.sessions.splice(i, 1);
-    }
   }
 
   private maybeLogMetrics(): void {
@@ -1432,7 +1234,7 @@ export class Server {
       ticksLate: j.late,
       ticksDropped: j.dropped,
       hz: j.hz,
-      sessions: this.sessions.length,
+      sessions: this.desk.count,
       // §4.19: per-instance and total, separately. The total is what the event loop absorbs
       // and is the number that decides the real concurrency cap (§8.28).
       totalStepMs: round(this.totalStepMs),
@@ -1462,16 +1264,13 @@ export class Server {
       misroutedMessages: this.router.misroutedMessages,
     });
   }
+  //#endregion
 }
+//#endregion
 
-/** How often the vote state goes out. See `broadcastVoteStatePeriodically`. */
-const VOTE_BROADCAST_HZ = 4;
-
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function round(v: number): number {
   return Math.round(v * 100) / 100;
 }
-
-/** `pumpOutbound` is a `WsLink` concern, not part of the `INetLink` contract. */
-function isWsLink(link: unknown): link is WsLink {
-  return typeof (link as { pumpOutbound?: unknown }).pumpOutbound === 'function';
-}
+//#endregion

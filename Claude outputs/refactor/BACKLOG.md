@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**38 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**39 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -20,7 +20,9 @@ line observable output. **B5 opened #50** on 2026-10-20 — four comments naming
 own split had moved — and **rewrote #30** rather than closing it: it absorbed the call site the
 entry was bound to, which left the function with no production caller and turned the question
 into whether it stays at all. **B6 declined #13 with the same reason B5 gave** — the move is in
-a finished unit's files and reaches thirty files — and opened **#51**.
+a finished unit's files and reaches thirty files — and opened **#51**. **B7 opened #52** on
+2026-10-25, the same shape again: four comments naming flow members its own split had moved,
+three of them in the harness §10 keeps out of reach.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -52,6 +54,7 @@ and belong in its Step 2 plan.
 | ~~B4~~ | `server/instance/` InstanceClock, LiveMatch, VoteCycle, WarmupMatch | **closed** — nothing was bound to its four files: #13 is B5/B6's and its edit is in `shared/combat`, #42's and #30's file is `MatchInstance.ts` which is B5's. B4 opened #49, which was closed the same day |
 | ~~B5~~ | `server/instance/MatchInstance.ts` + the three files it was split into | **closed** — B5 absorbed #30's call site: `writePlayer` now reads the table this file already built, and `equipmentIndexOf` has no production caller left (see #30, rewritten). #13 was **declined with a reason**: `PLAYER_ENTITY_ID` appears nowhere in `server/instance/`, so B5 has no edit to make — the server-side importers are `Match.ts` (B6) and `Spectator.ts` (B8). #42 stays open but its four rules are now pinned by tests. B5 opened #50 |
 | ~~B6~~ | `server/Match.ts` + the two files it was split into | **declined with a reason** — #13's only edit in B6's file is the one argument `equipment.simulate` passes, and the move itself is in `shared/combat/DamageSystem.ts` and `LocalIdentity.ts`: A9's files, in the `check:style` ratchet, outside R3's fence. `grep` reaches **30 files** across all three partitions, four of them `client/debug`. No unit can close it; see #13, re-scoped. B6 opened #51 |
+| ~~B7~~ | `server/Server.ts` + the three files it was split into | **closed** — nothing was bound to it: all 38 entries were read and none names `Server.ts`. B7 opened #52 |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
 | C2 | `client/engine/` CameraRig, FrameLoop | #34 — reproduce the local camera jitter *before* refactoring these files |
 | C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
@@ -1098,6 +1101,34 @@ here only so that the next reader does not "fix" them.
 **Why B6 could not do it.** `NetPlayer.ts` and its test are B8's files, and `PLAN.md` is a root
 document §10 keeps out of the whole programme. One reading session, no behaviour. The
 `NetPlayer.ts` half is **bound to B8**, which owns that file and has not run yet.
+
+**Verify** reading. No oracle sees a comment.
+
+### #52 — Four references to flow members that moved out of `Server` · `open` *(opened 2026-10-25 by B7)*
+
+**Files** `src/server/instance/LiveMatch.ts:161`, `src/server/skirmishHarness.ts:1432`, `:1444`
+and `:1467`. **Origin** B7b.
+
+B7 split the skirmish flow out of `Server.ts` into `server/SkirmishFlow.ts`, and four comments
+name the old address:
+
+- `LiveMatch.ts:161` — *"True once every human who was here has gone. See `Server.stepFlow`."*
+  on `abandoned`. The reader it points at is `SkirmishFlow.stepFlow`, and the method that acts
+  on the answer is `SkirmishFlow.maybeAbandonLive`.
+- `skirmishHarness.ts:1432`, `:1444` and `:1467` — three mentions of `Server.finishLive`, which
+  is `SkirmishFlow.finishLive` now. The last one is inside a **failure message the harness
+  prints**, so it is the one a reader meets at the worst moment: *"is supposed to be prepared:
+  see Server.finishLive for the arena half."*
+
+Everything else still names something that exists: `Server.tick`, `Server.stepInstance`,
+`Server.rebuildWarmup`, `Server.stop`, `MatchInstance.seat` and `ServerMatch.*` all stayed where
+their comments say they are.
+
+**Why B7 could not do it.** `LiveMatch.ts` is B4's file and in the `check:style` ratchet, and
+`skirmishHarness.ts` is one of §10's instruments — out of scope for the whole programme, and the
+file #43 is already open against for the same reason. One reading session, no behaviour. The
+`LiveMatch.ts` half could also ride along with whichever session takes #51's `NetPlayer.ts` line,
+since both are a one-line comment fix in a finished unit's file.
 
 **Verify** reading. No oracle sees a comment.
 

@@ -1,6 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { clamp01, DEG2RAD } from '../../shared/core/MathUtil';
 import type { CameraConfig } from './CameraConfig';
+//#endregion
 
+// ===================================== CLASS CameraShake ====================================== \\
+//#region Class CameraShake
 /**
  * Additive shake channel (brief S5.4), ready for M2's weapon fire.
  *
@@ -14,6 +19,8 @@ import type { CameraConfig } from './CameraConfig';
  * impact cue, not a rumble.
  */
 export class CameraShake {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** 0..1. Read by the debug overlay. */
   trauma = 0;
 
@@ -22,7 +29,10 @@ export class CameraShake {
   roll = 0;
 
   private time = 0;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Add trauma. Values above 1 are clamped; overlapping hits do not stack forever. */
   add(amount: number): void {
     this.trauma = clamp01(this.trauma + amount);
@@ -54,8 +64,12 @@ export class CameraShake {
     this.pitch = wobble(t, f, 2.1) * cfg.shakePitchDeg * DEG2RAD * amp;
     this.roll = wobble(t, f, 4.3) * cfg.shakeRollDeg * DEG2RAD * amp;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /**
  * Irrational frequency ratios so the three sines never re-phase into a visible
  * repeating pattern.
@@ -67,3 +81,4 @@ function wobble(t: number, f: number, phase: number): number {
     Math.sin(t * f * 2.414 + phase * 2.3) * 0.11
   );
 }
+//#endregion

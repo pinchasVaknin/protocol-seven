@@ -9,9 +9,9 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**40 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**41 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
-nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
+nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12, and **#40**, **#44** and **#47** on 2026-10-19, with **#39**, **#41** and **#46** closed together the same day — the leaked snapshot, the write-only field and the guard that cannot fire, all three in files B1 and B2 had already finished and no later unit could touch — and **#31** by B3, in the one file it owned. **#32** and **#48** went together on 2026-10-19 — five comments naming two things that had moved or gone, in files §10 and R3 keep out of every unit's reach; #32's own count was one short, and the fourth was in `skirmishHarness.ts`. **#49** followed on
 the same day: the arena's boot log and the README promised an `instant respawn` that playtest
@@ -58,7 +58,7 @@ and belong in its Step 2 plan.
 | ~~B6~~ | `server/Match.ts` + the two files it was split into | **declined with a reason** — #13's only edit in B6's file is the one argument `equipment.simulate` passes, and the move itself is in `shared/combat/DamageSystem.ts` and `LocalIdentity.ts`: A9's files, in the `check:style` ratchet, outside R3's fence. `grep` reaches **30 files** across all three partitions, four of them `client/debug`. No unit can close it; see #13, re-scoped. B6 opened #51 |
 | ~~B7~~ | `server/Server.ts` + the three files it was split into | **closed** — nothing was bound to it: all 38 entries were read and none names `Server.ts`. B7 opened #52 |
 | ~~B8~~ | `server/` Config, Loop, MapBakery, MatchAllocator, Migration, NetPlayer, NodeClock, Router, Spectator, log, serve | **closed** — #51's two `NetPlayer` references were absorbed; #13 was **declined a third time** (`Spectator.ts` imports the constant, but the move is in A9's `shared/combat` files and reaches thirty files); #52's `LiveMatch.ts` line is **not** a B8 file and stays. B8 opened #53 at Step 0 |
-| C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
+| ~~C1~~ | `client/input/`, `client/player/`, `client/perks/`, `client/cinematic/` | **closed** — C1 absorbed #1's `IntroCamera` half under its own approval: the local `angleDelta` is gone and the file is on `MathUtil.angleDelta`, which moves `d = -PI` from `-PI` to `+PI`. What is left of #1 is `ClientMatch.angleDeltaRad`, which is C24's. C1 opened #54 |
 | C2 | `client/engine/` CameraRig, FrameLoop | #34 — reproduce the local camera jitter *before* refactoring these files |
 | C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
 | C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
@@ -288,11 +288,21 @@ changed, and all fifteen columns through `applyReplicated` and `reset`. Do not w
 
 ## 4. Independent — one decision each
 
-### #1 — Two local angle helpers that are **not** the shared one · `needs a decision from the user`
+### #1 — One local angle helper that is **not** the shared one · `bound to C24`
 
-**Files** `src/client/cinematic/IntroCamera.ts:83` and `src/client/ClientMatch.ts:3444`.
-**Origin** A1; the export half was **closed by A23** and `IntroPlan`'s copy **folded by A24**,
-both on 2026-10-17/18. **Touches two upcoming units** — see §1.
+**Files** `src/client/ClientMatch.ts:3444`. **Origin** A1; the export half was **closed by A23**,
+`IntroPlan`'s copy **folded by A24** (both 2026-10-17/18), and `IntroCamera`'s **folded by C1**
+on 2026-10-25. One copy is left — see §1.
+
+**What C1 finished.** `IntroCamera`'s local `angleDelta` is deleted and the file imports
+`MathUtil.angleDelta`, which the user approved as a deliberate behaviour change at exactly one
+input: a yaw blend whose two ends are a half turn apart now turns the other way. The decision
+was that `<` against `<=` there was a transcription slip rather than a choice — nothing in the
+file or its history ever argued for `[-PI, PI]` — and the rest of the fold is a no-op, which
+`IntroCamera.test.ts` pins by asserting the blend against the shared helper on both sides of the
+change. The boundary itself is **not** pinned: `d = -PI` exactly cannot be constructed through
+`cameraFor`, whose poses come from a real plan, so no test holds it. The SIM oracle was
+byte-identical across the change and the browser flyover was unchanged.
 
 **What A23 finished.** `MathUtil` exported one function under two names, `angleDelta` and
 `shortestAngle`, and the duplicate export is gone: the two call sites moved onto the survivor
@@ -304,34 +314,35 @@ helpers that are left. The 3,600-tick SIM hash was byte-identical across the cha
 what a no-op looks like. It took an approved fence exception (R2 and R3) because the edit lands
 in A1's finished files.
 
-**What is left, and it is not a no-op.** Two files still define their own copy, and **neither of
-them is the shared function**:
+**What is left, and it is not a no-op.** One file still defines its own copy, and it is **not**
+the shared function:
 
 ```
 MathUtil.angleDelta   if (d > PI) d -= TAU;  if (d <= -PI) d += TAU;   ->  (-PI, PI]
-IntroCamera           if (d > PI) d -= TAU;  if (d <  -PI) d += TAU;   ->  [-PI, PI]
 ClientMatch.angleDeltaRad while (d > PI) d -= TAU; while (d < -PI) d += TAU;  ->  [-PI, PI], no %
 ```
 
 The difference is `<=` against `<` at exactly **d = -PI**: the shared helper maps a half turn to
-`+PI`, the local copies keep `-PI`. `ClientMatch`'s is a third spelling again — `while` loops
+`+PI`, the local copy keeps `-PI`. `ClientMatch`'s is a third spelling again — `while` loops
 rather than `%`, which agrees everywhere the modulus does but is its own code.
 
-So folding them in is a **behaviour change at one input value**, in two places that are both
-about where a camera or an overlay points: the camera rig's follow and the mortar overlay's
-bearing. A24 folded the third — the intro plan's yaw blend — and `intro.txt` was byte-identical
-across every map and mode, which is the evidence the other two can be judged against.
+So folding it in is a **behaviour change at one input value**, in the place the mortar overlay's
+bearing is computed. A24 folded the intro plan's yaw blend and `intro.txt` was byte-identical
+across every map and mode; C1 folded the intro camera's and the SIM oracle was byte-identical
+too. Both are evidence this one can be judged the same way.
 
 At d = -PI the two answers are a half turn apart in sign, which is the one input where a blend
 would visibly swing the other way.
 
-**Decide** per site: fold it in and accept the `(-PI, PI]` boundary (and pin the new value in
-that unit's tests), or keep the local copy and write down *why* it wants `[-PI, PI]`. What is
-not acceptable is a fourth copy.
+**Decide** fold it in and accept the `(-PI, PI]` boundary (and pin what can be pinned in C24's
+tests), or keep the local copy and write down *why* it wants `[-PI, PI]`. Note what C1 found:
+the boundary input may well be unreachable through the public surface, in which case say so
+rather than writing a test that does not actually hold it. What is not acceptable is a fourth
+copy.
 
-**Where each one is done:** `IntroCamera.ts` in **C1** and `ClientMatch.ts` in **C24** — each
-inside its own unit's fence, under that unit's approval, because each is a behaviour question
-about that unit's code rather than a mechanical merge.
+**Where it is done:** `ClientMatch.ts` in **C24**, inside its own unit's fence and under that
+unit's approval, because it is a behaviour question about that unit's code rather than a
+mechanical merge.
 
 **Verify** `npm run check` + SIM snapshot/compare. Both are camera work and need the BROWSER
 check their units already run; neither is covered by an oracle the way `IntroPlan` was.
@@ -858,6 +869,33 @@ immune, because its figures go through `toFixed(3)`/`toFixed(4)`.
 ---
 
 ## 6b. Duplication that spans units — opened by A16
+
+### #54 — `IntroPlan.ease` is the last private copy of `smoothstep` · `open` *(opened 2026-10-25 by C1)*
+
+**Files** `src/shared/cinematic/IntroPlan.ts` (`ease`, line 601) and
+`src/shared/core/MathUtil.ts` (`smoothstep`). **Origin** C1.
+
+```
+MathUtil.smoothstep(0, 1, x)   const t = clamp01((x - 0) / (1 - 0));  return t*t*(3 - 2*t);
+IntroPlan.ease(u)              const c = u < 0 ? 0 : u > 1 ? 1 : u;   return c*c*(3 - 2*c);
+```
+
+Byte-identical bodies: `clamp01`'s is the same ternary pair character for character, and the
+`/ 1` is exact for every double, so `smoothstep(0, 1, u)` and `ease(u)` agree bit for bit —
+including on NaN and both infinities. C1 removed `IntroCamera`'s copy of exactly this function
+by calling `smoothstep` at its two sites; this is the one that is left.
+
+**Why C1 could not do it.** `IntroPlan.ts` is **A24**'s file: finished, in the `check:style`
+ratchet, and outside C1's fence (R3). The edit itself is two lines — delete `ease`, call
+`smoothstep(0, 1, u)` at its call sites — but deleting a non-exported helper in a finished
+file is that unit's commit to make, and §4.3 sends duplication that spans units here.
+
+**Watch for** `ease` is called from several places inside `IntroPlan`, so this is a small sweep
+rather than one substitution, and the file is the one the `intro` oracle reads end to end.
+
+**Verify** `npm run check` + SIM snapshot/compare → `PASS`. `intro.txt` is 602 lines of plan
+across every map and mode and must stay byte-identical; the bodies are identical, so anything
+else is a finding.
 
 ### #36 — One ring index, written twice in one unit · `open` *(opened 2026-10-19 by B1)*
 **Files** `src/server/net/InputBuffer.ts` (`slotIndex`) and `src/server/net/RigHistory.ts`

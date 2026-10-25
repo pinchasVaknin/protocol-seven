@@ -381,6 +381,15 @@ const FINISHED = {
     'src/server/serve.ts',
     'src/server/Spectator.ts',
   ],
+  C1: [
+    'src/client/cinematic/IntroCamera.ts',
+    'src/client/input/DeviceCapabilities.ts',
+    'src/client/input/Input.ts',
+    'src/client/perks/PerksRenderer.ts',
+    'src/client/player/CameraConfig.ts',
+    'src/client/player/CameraShake.ts',
+    'src/client/player/Viewmodel.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

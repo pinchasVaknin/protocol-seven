@@ -1,14 +1,3 @@
-import * as THREE from 'three';
-import { EV, type GameBus } from '../../shared/core/Events';
-import { clamp01 } from '../../shared/core/MathUtil';
-import { PLAYER_ENTITY_ID } from '../../shared/combat/DamageSystem';
-import {
-  PICKUP_HEIGHT,
-  PICKUP_LIFETIME,
-  type PerksRuntime,
-} from '../../shared/perks/PerksRuntime';
-import { Disposable } from '../../shared/core/Disposable';
-
 /**
  * What the perks look like (M9).
  *
@@ -26,12 +15,33 @@ import { Disposable } from '../../shared/core/Disposable';
  * A server has no reason to remember where a bot walked nine seconds ago.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { EV, type GameBus } from '../../shared/core/Events';
+import { clamp01 } from '../../shared/core/MathUtil';
+import { PLAYER_ENTITY_ID } from '../../shared/combat/DamageSystem';
+import {
+  PICKUP_HEIGHT,
+  PICKUP_LIFETIME,
+  type PerksRuntime,
+} from '../../shared/perks/PerksRuntime';
+import { Disposable } from '../../shared/core/Disposable';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Footsteps remembered for the tracker trail. */
 const TRAIL_CAPACITY = 160;
 /** Seconds a footprint stays visible. */
 const TRAIL_LIFETIME = 9;
+//#endregion
 
+// ==================================== CLASS PerksRenderer ===================================== \\
+//#region Class PerksRenderer
 export class PerksRenderer extends Disposable {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly group = new THREE.Group();
 
   /** Diagnostics for the F1 panel. */
@@ -42,16 +52,18 @@ export class PerksRenderer extends Disposable {
   private readonly pickupGeometry: THREE.BufferGeometry;
   private readonly pickupMaterial: THREE.MeshBasicMaterial;
 
-  private readonly trail: Float32Array;
+  private readonly trailRing: Float32Array;
   private readonly trailAge: Float32Array;
   private trailHead = 0;
   private readonly trailPositions: Float32Array;
   private readonly trailColors: Float32Array;
-  private readonly trailPoints3: THREE.Points;
+  private readonly trailCloud: THREE.Points;
   private readonly trailGeometry: THREE.BufferGeometry;
   private readonly trailMaterial: THREE.PointsMaterial;
+  //#endregion
 
-
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     private readonly perks: PerksRuntime,
     bus: GameBus,
@@ -64,54 +76,26 @@ export class PerksRenderer extends Disposable {
     const capacity = perks.pickups.length;
     this.pickupSpin = new Float32Array(capacity);
     this.pickupGeometry = new THREE.BoxGeometry(0.16, 0.2, 0.09);
-    this.pickupMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffb340,
-      transparent: true,
-      opacity: 0.9,
-      depthWrite: false,
-    });
-    for (let i = 0; i < capacity; i++) {
-      const mesh = new THREE.Mesh(this.pickupGeometry, this.pickupMaterial);
-      mesh.visible = false;
-      mesh.matrixAutoUpdate = false;
-      this.pickupMeshes.push(mesh);
-      this.group.add(mesh);
-    }
+    this.pickupMaterial = this.createPickupMaterial();
+    this.fillPickupPool(capacity);
 
     // ---- tracker trail ------------------------------------------------------
-    this.trail = new Float32Array(TRAIL_CAPACITY * 3);
+    this.trailRing = new Float32Array(TRAIL_CAPACITY * 3);
     this.trailAge = new Float32Array(TRAIL_CAPACITY).fill(Infinity);
     this.trailPositions = new Float32Array(TRAIL_CAPACITY * 3);
     this.trailColors = new Float32Array(TRAIL_CAPACITY * 3);
-    this.trailGeometry = new THREE.BufferGeometry();
-    this.trailGeometry.setAttribute('position', new THREE.BufferAttribute(this.trailPositions, 3));
-    this.trailGeometry.setAttribute('color', new THREE.BufferAttribute(this.trailColors, 3));
-    this.trailGeometry.setDrawRange(0, 0);
-    this.trailMaterial = new THREE.PointsMaterial({
-      size: 0.17,
-      sizeAttenuation: true,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.85,
-      depthWrite: false,
-    });
-    this.trailPoints3 = new THREE.Points(this.trailGeometry, this.trailMaterial);
-    this.trailPoints3.frustumCulled = false;
-    this.trailPoints3.visible = false;
-    this.group.add(this.trailPoints3);
+    this.trailGeometry = this.createTrailGeometry();
+    this.trailMaterial = this.createTrailMaterial();
+    this.trailCloud = this.createTrailCloud();
+    this.group.add(this.trailCloud);
 
     scene.add(this.group);
-
-    this.own(
-      bus.on(EV.PlayerFootstep, (p) => this.onFootstep(p.entityId, p.x, p.y, p.z)),
-      // A fresh life clears the trail: hunting the ghost of somebody who has already
-      // respawned across the map is worse than no information.
-      bus.on(EV.PlayerSpawned, (p) => {
-        if (p.entityId === PLAYER_ENTITY_ID) this.clearTrail();
-      }),
-    );
+    this.subscribeToBus(bus);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Render pass: bob the pickups, fade the trail. */
   render(dt: number): void {
     const pickups = this.perks.pickups;
@@ -147,13 +131,72 @@ export class PerksRenderer extends Disposable {
     this.trailGeometry.dispose();
     this.trailMaterial.dispose();
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private createPickupMaterial(): THREE.MeshBasicMaterial {
+    return new THREE.MeshBasicMaterial({
+      color: 0xffb340,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+    });
+  }
+
+  private fillPickupPool(capacity: number): void {
+    for (let i = 0; i < capacity; i++) {
+      const mesh = new THREE.Mesh(this.pickupGeometry, this.pickupMaterial);
+      mesh.visible = false;
+      mesh.matrixAutoUpdate = false;
+      this.pickupMeshes.push(mesh);
+      this.group.add(mesh);
+    }
+  }
+
+  private createTrailGeometry(): THREE.BufferGeometry {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(this.trailPositions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(this.trailColors, 3));
+    geometry.setDrawRange(0, 0);
+    return geometry;
+  }
+
+  private createTrailMaterial(): THREE.PointsMaterial {
+    return new THREE.PointsMaterial({
+      size: 0.17,
+      sizeAttenuation: true,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+  }
+
+  private createTrailCloud(): THREE.Points {
+    const cloud = new THREE.Points(this.trailGeometry, this.trailMaterial);
+    cloud.frustumCulled = false;
+    cloud.visible = false;
+    return cloud;
+  }
+
+  private subscribeToBus(bus: GameBus): void {
+    this.own(
+      bus.on(EV.PlayerFootstep, (p) => this.onFootstep(p.entityId, p.x, p.y, p.z)),
+      // A fresh life clears the trail: hunting the ghost of somebody who has already
+      // respawned across the map is worse than no information.
+      bus.on(EV.PlayerSpawned, (p) => {
+        if (p.entityId === PLAYER_ENTITY_ID) this.clearTrail();
+      }),
+    );
+  }
 
   private onFootstep(entityId: number, x: number, y: number, z: number): void {
     if (!this.perks.revealsFootstep(entityId)) return;
     const i = this.trailHead * 3;
-    this.trail[i] = x;
-    this.trail[i + 1] = y + 0.04;
-    this.trail[i + 2] = z;
+    this.trailRing[i] = x;
+    this.trailRing[i + 1] = y + 0.04;
+    this.trailRing[i + 2] = z;
     this.trailAge[this.trailHead] = 0;
     this.trailHead = (this.trailHead + 1) % TRAIL_CAPACITY;
   }
@@ -161,7 +204,7 @@ export class PerksRenderer extends Disposable {
   private clearTrail(): void {
     this.trailAge.fill(Infinity);
     this.trailGeometry.setDrawRange(0, 0);
-    this.trailPoints3.visible = false;
+    this.trailCloud.visible = false;
     this.trailPoints = 0;
   }
 
@@ -174,7 +217,7 @@ export class PerksRenderer extends Disposable {
    */
   private updateTrail(dt: number): void {
     if (!this.perks.perkState.tracker) {
-      if (this.trailPoints3.visible) this.clearTrail();
+      if (this.trailCloud.visible) this.clearTrail();
       return;
     }
     let write = 0;
@@ -184,9 +227,9 @@ export class PerksRenderer extends Disposable {
       if (age >= TRAIL_LIFETIME) continue;
       const src = i * 3;
       const dst = write * 3;
-      this.trailPositions[dst] = this.trail[src] ?? 0;
-      this.trailPositions[dst + 1] = this.trail[src + 1] ?? 0;
-      this.trailPositions[dst + 2] = this.trail[src + 2] ?? 0;
+      this.trailPositions[dst] = this.trailRing[src] ?? 0;
+      this.trailPositions[dst + 1] = this.trailRing[src + 1] ?? 0;
+      this.trailPositions[dst + 2] = this.trailRing[src + 2] ?? 0;
       // Fresh prints burn accent-hot and cool to a dim ember, so age reads as colour
       // rather than as a size the player has to compare across the room.
       const life = clamp01(1 - age / TRAIL_LIFETIME);
@@ -196,7 +239,7 @@ export class PerksRenderer extends Disposable {
       write++;
     }
     this.trailPoints = write;
-    this.trailPoints3.visible = write > 0;
+    this.trailCloud.visible = write > 0;
     if (write === 0) {
       this.trailGeometry.setDrawRange(0, 0);
       return;
@@ -205,4 +248,6 @@ export class PerksRenderer extends Disposable {
     this.trailGeometry.getAttribute('position').needsUpdate = true;
     this.trailGeometry.getAttribute('color').needsUpdate = true;
   }
+  //#endregion
 }
+//#endregion

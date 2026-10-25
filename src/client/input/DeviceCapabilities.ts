@@ -1,5 +1,3 @@
-import type { DeviceCapabilities } from '../../shared/ui/Capabilities';
-
 /**
  * Read what this browser says about its pointing devices (playtest round 5, F1).
  *
@@ -15,15 +13,13 @@ import type { DeviceCapabilities } from '../../shared/ui/Capabilities';
  * probe that cannot answer is read as "no information" and the caller's rules decide.
  */
 
-/** `true` when the query matches, `false` when it does not or cannot be asked. */
-function media(query: string): boolean {
-  try {
-    return window.matchMedia(query).matches;
-  } catch {
-    return false;
-  }
-}
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { DeviceCapabilities } from '../../shared/ui/Capabilities';
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function readDeviceCapabilities(): DeviceCapabilities {
   const touch = typeof navigator.maxTouchPoints === 'number' ? navigator.maxTouchPoints : 0;
   const fine = media('(pointer: fine)');
@@ -45,3 +41,16 @@ export function readDeviceCapabilities(): DeviceCapabilities {
     hasPointerLock: typeof Element.prototype.requestPointerLock === 'function',
   };
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** `true` when the query matches, `false` when it does not or cannot be asked. */
+function media(query: string): boolean {
+  try {
+    return window.matchMedia(query).matches;
+  } catch {
+    return false;
+  }
+}
+//#endregion

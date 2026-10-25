@@ -1,5 +1,10 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { TunableMeta } from '../../shared/player/MovementConfig';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * Camera feel (brief S5.4). Separate from MovementConfig because these numbers are
  * tuned against a different question — "does it read?" rather than "does it play?" —
@@ -44,7 +49,10 @@ export interface CameraConfig {
   /** Base shake frequency, Hz. Kept low; see S5.4. */
   shakeFrequency: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const DEFAULT_CAMERA_CONFIG: CameraConfig = {
   fov: 90,
   viewmodelFov: 65,
@@ -110,7 +118,10 @@ export const CAMERA_TUNABLES: Readonly<Record<keyof CameraConfig, TunableMeta>> 
 };
 
 export const CAMERA_CONFIG_KEYS = Object.keys(DEFAULT_CAMERA_CONFIG) as Array<keyof CameraConfig>;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function cameraConfigToSource(cfg: CameraConfig): string {
   const lines: string[] = ['export const DEFAULT_CAMERA_CONFIG: CameraConfig = {'];
   let lastGroup = '';
@@ -126,4 +137,5 @@ export function cameraConfigToSource(cfg: CameraConfig): string {
   lines.push('};');
   return lines.join('\n');
 }
+//#endregion
 

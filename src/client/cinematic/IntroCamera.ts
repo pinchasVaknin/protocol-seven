@@ -1,15 +1,3 @@
-import * as THREE from 'three';
-import {
-  COUNTDOWN_SECONDS,
-  planIntro,
-  RETURN_SECONDS,
-  type IntroPlan,
-  type IntroPose,
-} from '../../shared/cinematic/IntroPlan';
-import type { MovementConfig } from '../../shared/player/MovementConfig';
-import type { MatchWorld } from '../MatchWorld';
-import { SpaceSkip } from '../ui/SpaceSkip';
-
 /**
  * The match intro's camera (M15, Phase C): the plan, played over the round-one freeze.
  *
@@ -67,27 +55,45 @@ import { SpaceSkip } from '../ui/SpaceSkip';
  * flow is asked to take the gain, and whatever it did not take is what the offset carries.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import {
+  COUNTDOWN_SECONDS,
+  planIntro,
+  RETURN_SECONDS,
+  type IntroPlan,
+  type IntroPose,
+} from '../../shared/cinematic/IntroPlan';
+import { angleDelta, smoothstep } from '../../shared/core/MathUtil';
+import type { MovementConfig } from '../../shared/player/MovementConfig';
+import type { MatchWorld } from '../MatchWorld';
+import { SpaceSkip } from '../ui/SpaceSkip';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface IntroCameraDeps {
   readonly movement: MovementConfig;
 }
 
+/** The two parts of the world this camera reads, named off it rather than imported twice. */
+type IntroMatch = MatchWorld['match'];
+type IntroFlow = IntroMatch['flow'];
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** The intro's lens, vertical degrees; what the overview is fitted to. */
 export const FOV_DEG = 60;
 const BLEND_IN_SECONDS = 0.35;
+//#endregion
 
-function ease(u: number): number {
-  const c = u < 0 ? 0 : u > 1 ? 1 : u;
-  return c * c * (3 - 2 * c);
-}
-
-function angleDelta(a: number, b: number): number {
-  let d = (b - a) % (2 * Math.PI);
-  if (d > Math.PI) d -= 2 * Math.PI;
-  if (d < -Math.PI) d += 2 * Math.PI;
-  return d;
-}
-
+// ===================================== CLASS IntroCamera ====================================== \\
+//#region Class IntroCamera
 export class IntroCamera {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly deps: IntroCameraDeps;
   private readonly camera = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.1, 500);
   private readonly pose: IntroPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
@@ -107,10 +113,18 @@ export class IntroCamera {
   private boost = 0;
   private readonly skipper = new SpaceSkip({ enabled: () => true, onLeave: null });
 
+  private currentLabel = '';
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: IntroCameraDeps) {
     this.deps = deps;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Whether the intro is drawing this frame — the HUD and the viewmodel read it. */
   get active(): boolean {
     return this.plan !== null && !this.done;
@@ -122,8 +136,6 @@ export class IntroCamera {
     if (plan === null || this.done) return '';
     return this.currentLabel;
   }
-
-  private currentLabel = '';
 
   /**
    * The camera to render this frame, or null when the rig's is the one.
@@ -141,18 +153,10 @@ export class IntroCamera {
     const match = world.match;
     const flow = match.flow;
 
-    if (this.plannedFor !== world) {
-      // A new world: forget the old plan, and nothing is decided about this one yet.
-      this.plan = null;
-      this.plannedFor = world;
-      this.done = false;
-      this.boost = 0;
-    }
+    if (this.plannedFor !== world) this.rebindWorld(world);
     if (this.done) return null;
 
-    const eligible =
-      flow.currentPhase === 'WARMUP' && flow.round <= 1 && !match.inWarmupArena && match.mode.id !== 'RANGE';
-    if (!eligible) {
+    if (!this.isIntroEligible(match, flow)) {
       // Not the round-one freeze: no intro this match, and no second chance at it.
       if (this.plan !== null) this.finish();
       else this.done = true;
@@ -160,41 +164,9 @@ export class IntroCamera {
     }
 
     const total = flow.phaseSecondsTotal;
-    if (this.plan === null) {
-      const sim = world.player.sim;
-      this.plan = planIntro({
-        def: world.map.def,
-        nav: match.bots.nav,
-        collision: world.map.collision,
-        movement: this.deps.movement,
-        modeId: match.mode.id,
-        spawn: { x: sim.x, y: sim.y, z: sim.z },
-        fovDeg: FOV_DEG,
-        freezeSeconds: total,
-      });
-      this.plan.poseAt(this.plan.seconds, this.endPose);
-      this.listen();
-    }
-    const plan = this.plan;
+    const plan = this.plan ?? this.buildPlan(world, total);
 
-    /**
-     * The fast-forward, offered to the freeze first.
-     *
-     * `shortenWarmup` moves the phase forward when this client is the flow's authority and
-     * does nothing at all when it is not, so asking it and then **measuring what it took**
-     * is one line that is correct in both worlds — no branch here on whether there is a
-     * server, which is the sort of question a camera should not be asking. What it took is
-     * already in `phaseSecondsRemaining`; what it left is carried locally.
-     */
-    const gained = this.skipper.boost(dt);
-    if (gained > 0) {
-      const before = flow.phaseSecondsRemaining;
-      // Never into the countdown: `COUNTDOWN_SECONDS` is the human's number for reading the
-      // objective before the round starts (IntroPlan), and it is not the cinematic's to spend.
-      flow.shortenWarmup(Math.max(COUNTDOWN_SECONDS, before - gained));
-      const absorbed = before - flow.phaseSecondsRemaining;
-      this.boost += Math.max(0, gained - absorbed);
-    }
+    this.absorbFastForward(flow, dt);
     const t = total - flow.phaseSecondsRemaining + this.boost;
 
     // The timeline: the plan, then the return blend. Both run on `t`, so a held key speeds
@@ -211,11 +183,92 @@ export class IntroCamera {
     plan.poseAt(planT, this.pose);
     this.currentLabel = labelAt(plan, planT);
 
-    // The blends: rig → plan over the first `BLEND_IN_SECONDS`, plan → rig over the return.
-    let w = 1;
-    if (t < BLEND_IN_SECONDS) w = ease(t / BLEND_IN_SECONDS);
-    if (t > planEnd) w = 1 - ease((t - planEnd) / RETURN_SECONDS);
+    return this.writeCamera(rig, aspect, this.blendWeightAt(t, planEnd));
+  }
 
+  /** Called when the world goes away, so the next one plans afresh. */
+  reset(): void {
+    this.plan = null;
+    this.plannedFor = null;
+    this.done = false;
+    this.boost = 0;
+    this.unlisten();
+  }
+
+  dispose(): void {
+    this.reset();
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** A new world: forget the old plan, and nothing is decided about this one yet. */
+  private rebindWorld(world: MatchWorld): void {
+    this.plan = null;
+    this.plannedFor = world;
+    this.done = false;
+    this.boost = 0;
+  }
+
+  private isIntroEligible(match: IntroMatch, flow: IntroFlow): boolean {
+    return (
+      flow.currentPhase === 'WARMUP' && flow.round <= 1 && !match.inWarmupArena && match.mode.id !== 'RANGE'
+    );
+  }
+
+  private buildPlan(world: MatchWorld, freezeSeconds: number): IntroPlan {
+    const match = world.match;
+    const sim = world.player.sim;
+    const plan = planIntro({
+      def: world.map.def,
+      nav: match.bots.nav,
+      collision: world.map.collision,
+      movement: this.deps.movement,
+      modeId: match.mode.id,
+      spawn: { x: sim.x, y: sim.y, z: sim.z },
+      fovDeg: FOV_DEG,
+      freezeSeconds,
+    });
+    this.plan = plan;
+    plan.poseAt(plan.seconds, this.endPose);
+    this.listen();
+    return plan;
+  }
+
+  /**
+   * The fast-forward, offered to the freeze first.
+   *
+   * `shortenWarmup` moves the phase forward when this client is the flow's authority and
+   * does nothing at all when it is not, so asking it and then **measuring what it took**
+   * is one line that is correct in both worlds — no branch here on whether there is a
+   * server, which is the sort of question a camera should not be asking. What it took is
+   * already in `phaseSecondsRemaining`; what it left is carried locally.
+   */
+  private absorbFastForward(flow: IntroFlow, dt: number): void {
+    const gained = this.skipper.boost(dt);
+    if (gained <= 0) return;
+    const before = flow.phaseSecondsRemaining;
+    // Never into the countdown: `COUNTDOWN_SECONDS` is the human's number for reading the
+    // objective before the round starts (IntroPlan), and it is not the cinematic's to spend.
+    flow.shortenWarmup(Math.max(COUNTDOWN_SECONDS, before - gained));
+    const absorbed = before - flow.phaseSecondsRemaining;
+    this.boost += Math.max(0, gained - absorbed);
+  }
+
+  /** The blends: rig → plan over the first `BLEND_IN_SECONDS`, plan → rig over the return. */
+  private blendWeightAt(t: number, planEnd: number): number {
+    let w = 1;
+    if (t < BLEND_IN_SECONDS) w = smoothstep(0, 1, t / BLEND_IN_SECONDS);
+    if (t > planEnd) w = 1 - smoothstep(0, 1, (t - planEnd) / RETURN_SECONDS);
+    return w;
+  }
+
+  /** The frame itself: the pose `w` of the way from the rig to the plan, through one lens. */
+  private writeCamera(
+    rig: THREE.PerspectiveCamera,
+    aspect: number,
+    w: number,
+  ): THREE.PerspectiveCamera {
     const rigYaw = rig.rotation.y;
     const rigPitch = rig.rotation.x;
     const x = rig.position.x + (this.pose.x - rig.position.x) * w;
@@ -236,21 +289,6 @@ export class IntroCamera {
     return cam;
   }
 
-  /** Called when the world goes away, so the next one plans afresh. */
-  reset(): void {
-    this.plan = null;
-    this.plannedFor = null;
-    this.done = false;
-    this.boost = 0;
-    this.unlisten();
-  }
-
-  dispose(): void {
-    this.reset();
-  }
-
-  // -- internals -------------------------------------------------------------
-
   private finish(): void {
     this.done = true;
     this.currentLabel = '';
@@ -264,8 +302,12 @@ export class IntroCamera {
   private unlisten(): void {
     this.skipper.unlisten();
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /** The label of the segment `t` falls in. */
 function labelAt(plan: IntroPlan, t: number): string {
   let cursor = t;
@@ -275,3 +317,4 @@ function labelAt(plan: IntroPlan, t: number): string {
   }
   return plan.segments[plan.segments.length - 1]?.label ?? '';
 }
+//#endregion

@@ -1,7 +1,3 @@
-import { clamp, DEG2RAD, wrapAngle } from '../../shared/core/MathUtil';
-import { Btn, CommandRing, type InputCommand } from '../../shared/core/InputCommand';
-import { Keybinds, LocalBtn, mouseInput, type BindingMap } from '../../shared/core/Keybinds';
-
 /**
  * The only place in the project that touches keyboard, mouse or pointer lock.
  *
@@ -10,6 +6,36 @@ import { Keybinds, LocalBtn, mouseInput, type BindingMap } from '../../shared/co
  * is latched into a bitfield and stamped into a command once per sim tick.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { clamp, DEG2RAD, wrapAngle } from '../../shared/core/MathUtil';
+import {
+  Btn,
+  CommandRing,
+  type InputCommand,
+  type MutableInputCommand,
+} from '../../shared/core/InputCommand';
+import { Keybinds, LocalBtn, mouseInput, type BindingMap } from '../../shared/core/Keybinds';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+interface KeyboardLockApi {
+  lock(keyCodes?: string[]): Promise<void>;
+  unlock(): void;
+}
+
+export interface InputOptions {
+  readonly canvas: HTMLCanvasElement;
+  readonly sensitivity: number;
+  readonly invertY: boolean;
+  /** M8. Absent means the shipped defaults. */
+  readonly bindings?: BindingMap;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const PITCH_LIMIT = 89 * DEG2RAD;
 
 /** Radians of yaw per mouse count at sensitivity 1.0. Matches a ~0.022 CoD feel. */
@@ -45,30 +71,21 @@ const ALSO_PREVENT = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'] as cons
  */
 const WHEEL_HOLD_MS = 34;
 
-interface KeyboardLockApi {
-  lock(keyCodes?: string[]): Promise<void>;
-  unlock(): void;
-}
+/**
+ * Bits that cross the wire.
+ *
+ * The movement axes ride local bits above this mask (`core/Keybinds.ts`) so that binding
+ * lookup is uniform, and they are masked off before the command is built — `InputCommand`
+ * carries `moveX`/`moveZ` and has no bit assignments up there.
+ */
+const WIRE_BITS = 0x00ff_ffff;
+//#endregion
 
-/** Narrow `navigator.keyboard` without an `any`; it is not in the DOM lib types. */
-function keyboardLockApi(): KeyboardLockApi | null {
-  const keyboard = (navigator as Navigator & { keyboard?: unknown }).keyboard;
-  if (typeof keyboard !== 'object' || keyboard === null) return null;
-  const lock = (keyboard as { lock?: unknown }).lock;
-  const unlock = (keyboard as { unlock?: unknown }).unlock;
-  if (typeof lock !== 'function' || typeof unlock !== 'function') return null;
-  return keyboard as KeyboardLockApi;
-}
-
-export interface InputOptions {
-  readonly canvas: HTMLCanvasElement;
-  readonly sensitivity: number;
-  readonly invertY: boolean;
-  /** M8. Absent means the shipped defaults. */
-  readonly bindings?: BindingMap;
-}
-
+// ======================================== CLASS Input ========================================= \\
+//#region Class Input
 export class Input {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly canvas: HTMLCanvasElement;
   private readonly ring = new CommandRing(128);
 
@@ -155,6 +172,153 @@ export class Input {
    */
   private bindingsActive = true;
 
+  // -- handlers -----------------------------------------------------------
+
+  private readonly onKeyDown = (e: KeyboardEvent): void => {
+    // Escape is never bound to a game action and never prevented — the browser owns it —
+    // but the state machine wants to know. Announced before the focus guard so it works
+    // from a paused screen where a button has focus.
+    if (e.code === 'Escape' && !e.repeat) {
+      this.announceEscape();
+      return;
+    }
+    // While a debug slider has focus — or a front-end screen is up — the page belongs to the
+    // DOM, so only the overlay's own function keys are taken; everything else behaves like an
+    // ordinary web page, including Tab moving focus and the arrow keys scrolling a list.
+    const guarded = (this.domFocusGuard || !this.bindingsActive) && !ALWAYS_PREVENT.has(e.code);
+    if (!guarded && this.shouldPreventDefault(e.code)) e.preventDefault();
+    if (guarded) return;
+    if (e.repeat) return;
+
+    if (this.offerDigit(e)) return;
+
+    this.held.add(e.code);
+    this.buttons |= this.keybinds.bitsFor(e.code);
+  };
+
+  private readonly onKeyUp = (e: KeyboardEvent): void => {
+    this.held.delete(e.code);
+    // A bit stays set while any other binding for it is still held (Ctrl vs C).
+    this.buttons = this.recomputeKeyButtons();
+  };
+
+  private readonly onBlur = (): void => {
+    this.clearHeld();
+  };
+
+  private readonly onMouseMove = (e: MouseEvent): void => {
+    if (!this.locked) return;
+    if (this.settleCounter > 0) {
+      this.settleCounter--;
+      return;
+    }
+    const dx = clamp(e.movementX, -MAX_DELTA_PER_EVENT, MAX_DELTA_PER_EVENT);
+    const dy = clamp(e.movementY, -MAX_DELTA_PER_EVENT, MAX_DELTA_PER_EVENT);
+    // M8: the ADS multiplier is blended in by how far the sights are up, so the change
+    // arrives with the picture rather than a tenth of a second before it.
+    const adsScale = 1 + (this.adsSensitivity - 1) * this.adsFraction;
+    const scale = RAD_PER_COUNT * this.sensitivity * adsScale;
+    this.yawRad = wrapAngle(this.yawRad - dx * scale);
+    const pitchDelta = (this.invertY ? dy : -dy) * scale;
+    this.pitchRad = clamp(this.pitchRad + pitchDelta, -PITCH_LIMIT, PITCH_LIMIT);
+  };
+
+  /**
+   * Mouse buttons are latched unconditionally; whether they *mean* anything is the state
+   * machine's business, because outside a match the sim consumes `sampleNeutral` and
+   * never sees them. Gating on pointer lock here instead would make the input path
+   * untestable without a real cursor capture, and `MATCH` entry clears held buttons so
+   * the click that started the match cannot also pull the trigger.
+   */
+  private readonly onMouseDown = (e: MouseEvent): void => {
+    if (this.domFocusGuard || !this.bindingsActive) return;
+    // Armed and unlocked: this click is the gesture that gets the cursor back, and it is
+    // spent doing that. Passing it on as well would fire the weapon on the frame the player
+    // clicked to resume.
+    if (this.wantPointerLock && !this.locked) {
+      // The refusal is *not* cleared here. It describes an outcome, and the outcome of this
+      // attempt is not known yet — clearing it on the way in is what made the old flag
+      // unreadable as a condition (round 5, B8).
+      this.requestPointerLock();
+      return;
+    }
+    const bits = this.keybinds.bitsFor(mouseInput(e.button));
+    this.mouseButtons |= bits;
+    // Stamped here, at the DOM edge, so the latency probe measures the whole path. Keyed
+    // off the *bit* rather than off button 0, so a player who moved fire onto another
+    // button still gets a latency reading.
+    if ((bits & Btn.Fire) !== 0) this.firePressMs = performance.now();
+  };
+
+  private readonly onMouseUp = (e: MouseEvent): void => {
+    this.mouseButtons &= ~this.keybinds.bitsFor(mouseInput(e.button));
+  };
+
+  /**
+   * A wheel notch, latched for `WHEEL_HOLD_MS`.
+   *
+   * The bitfield is a level and a notch is an impulse, so the notch is given just enough
+   * duration for the 60 Hz sampler to see it exactly once. Not prevented unless something
+   * is actually bound to it, so the page still scrolls normally on a menu.
+   */
+  private readonly onWheel = (e: WheelEvent): void => {
+    // Returning *before* `preventDefault` is the point: on a menu the wheel has to reach the
+    // page, or a scrollable panel can only be scrolled in whichever direction happens not to
+    // be bound to anything.
+    if (this.domFocusGuard || !this.bindingsActive || e.deltaY === 0) return;
+    const bits = this.keybinds.bitsFor(e.deltaY < 0 ? 'WheelUp' : 'WheelDown');
+    if (bits === 0) return;
+    e.preventDefault();
+    this.wheelBits = bits;
+    this.wheelUntilMs = performance.now() + WHEEL_HOLD_MS;
+  };
+
+  private readonly onContextMenu = (e: Event): void => {
+    e.preventDefault();
+  };
+
+  private readonly onPointerLockChange = (): void => {
+    const nowLocked = document.pointerLockElement === this.canvas;
+    if (nowLocked === this.locked) return;
+    this.locked = nowLocked;
+    if (nowLocked) {
+      // Whatever was refused before, we have it now. The one place the refusal is cleared by
+      // success rather than by asking again.
+      this.lockRefused = false;
+      // Swallow the first delta so re-acquiring lock never snaps the view.
+      this.settleCounter = SETTLE_EVENTS_AFTER_LOCK;
+    } else {
+      this.clearHeld();
+    }
+    document.body.classList.toggle('op-locked', nowLocked);
+    for (const fn of this.lockListeners) fn(nowLocked);
+  };
+
+  private readonly onPointerLockError = (): void => {
+    // The other half of the pair `noteLockRefused` documents. This used to log and record
+    // nothing at all.
+    const alreadyKnown = this.lockRefused;
+    this.noteLockRefused();
+    if (this.wantPointerLock && alreadyKnown) return;
+    console.warn('[Input] pointer lock error; the browser refused the request.');
+  };
+
+  private readonly onFullscreenChange = (): void => {
+    this.tryKeyboardLock();
+  };
+
+  private readonly onFocusIn = (e: FocusEvent): void => {
+    this.domFocusGuard = isFormControl(e.target);
+    if (this.domFocusGuard) this.clearHeld();
+  };
+
+  private readonly onFocusOut = (): void => {
+    this.domFocusGuard = false;
+  };
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(opts: InputOptions) {
     this.canvas = opts.canvas;
     this.sensitivity = opts.sensitivity;
@@ -162,25 +326,10 @@ export class Input {
     this.keybinds = new Keybinds(opts.bindings);
     this.attach();
   }
+  //#endregion
 
-  // -- lifecycle ----------------------------------------------------------
-
-  private attach(): void {
-    window.addEventListener('keydown', this.onKeyDown, { passive: false });
-    window.addEventListener('keyup', this.onKeyUp);
-    window.addEventListener('blur', this.onBlur);
-    window.addEventListener('mousemove', this.onMouseMove);
-    window.addEventListener('mousedown', this.onMouseDown);
-    window.addEventListener('mouseup', this.onMouseUp);
-    window.addEventListener('wheel', this.onWheel, { passive: false });
-    this.canvas.addEventListener('contextmenu', this.onContextMenu);
-    document.addEventListener('pointerlockchange', this.onPointerLockChange);
-    document.addEventListener('pointerlockerror', this.onPointerLockError);
-    document.addEventListener('fullscreenchange', this.onFullscreenChange);
-    document.addEventListener('focusin', this.onFocusIn);
-    document.addEventListener('focusout', this.onFocusOut);
-  }
-
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   dispose(): void {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
@@ -216,19 +365,6 @@ export class Input {
         console.warn('[Input] pointer lock request rejected:', err);
       });
     }
-  }
-
-  /**
-   * A refusal arrived, from either of the two ways a browser can deliver one.
-   *
-   * There are two, and only one of them used to record anything: `requestPointerLock` returns a
-   * rejected promise on Chrome 113+, and every browser also fires `pointerlockerror` on the
-   * document. The event handler logged and set nothing, so on a build that returns `undefined`
-   * from the request the refusal was invisible even inside this class — which would have made
-   * B8's banner silently never appear on exactly the browsers most likely to refuse.
-   */
-  private noteLockRefused(): void {
-    this.lockRefused = true;
   }
 
   /**
@@ -305,14 +441,6 @@ export class Input {
   }
 
   /**
-   * Escape was pressed (M5).
-   *
-   * Only fires when the browser did *not* consume the key to release pointer lock — that
-   * case arrives through `onLockChange` instead. So one of the two always fires and never
-   * both, which is what makes "Esc pauses, Esc resumes" a single rule.
-   */
-
-  /**
    * Offer digit keys to a consumer before they reach their binding (M11).
    *
    * The handler returns whether it took the key. Used by the vote overlay, which is open for
@@ -323,6 +451,13 @@ export class Input {
     this.digitListeners.push(fn);
   }
 
+  /**
+   * Escape was pressed (M5).
+   *
+   * Only fires when the browser did *not* consume the key to release pointer lock — that
+   * case arrives through `onLockChange` instead. So one of the two always fires and never
+   * both, which is what makes "Esc pauses, Esc resumes" a single rule.
+   */
   onEscape(fn: () => void): void {
     this.escapeListeners.push(fn);
   }
@@ -444,24 +579,13 @@ export class Input {
       z *= inv;
     }
 
-    const cmd = this.ring.next();
-    cmd.seq = this.seq++;
-    cmd.tickIndex = tickIndex;
+    const cmd = this.nextCommand(tickIndex, nowMs);
     cmd.moveX = x;
     cmd.moveZ = z;
-    cmd.yaw = this.yawRad;
-    cmd.pitch = this.pitchRad;
     // The local movement bits are masked off: they are the sampler's business and the sim
     // has no bit assignments up there.
     cmd.buttons = (bits & WIRE_BITS) | stateBits;
-    cmd.sampledAtMs = nowMs;
     return cmd;
-  }
-
-  /** Everything currently down, including a wheel notch that has not expired. */
-  private liveBits(nowMs: number): number {
-    const wheel = nowMs <= this.wheelUntilMs ? this.wheelBits : 0;
-    return this.buttons | this.mouseButtons | wheel;
   }
 
   /**
@@ -471,16 +595,7 @@ export class Input {
    * depend on it — but keys pressed while a menu is up must not drive the player.
    */
   sampleNeutral(tickIndex: number, nowMs: number): InputCommand {
-    const cmd = this.ring.next();
-    cmd.seq = this.seq++;
-    cmd.tickIndex = tickIndex;
-    cmd.moveX = 0;
-    cmd.moveZ = 0;
-    cmd.yaw = this.yawRad;
-    cmd.pitch = this.pitchRad;
-    cmd.buttons = 0;
-    cmd.sampledAtMs = nowMs;
-    return cmd;
+    return this.nextCommand(tickIndex, nowMs);
   }
 
   /**
@@ -492,15 +607,8 @@ export class Input {
    * nothing and closes the M4 playtest note.
    */
   sampleSpectating(tickIndex: number, nowMs: number): InputCommand {
-    const cmd = this.ring.next();
-    cmd.seq = this.seq++;
-    cmd.tickIndex = tickIndex;
-    cmd.moveX = 0;
-    cmd.moveZ = 0;
-    cmd.yaw = this.yawRad;
-    cmd.pitch = this.pitchRad;
+    const cmd = this.nextCommand(tickIndex, nowMs);
     cmd.buttons = (this.buttons | this.mouseButtons) & Btn.Scoreboard;
-    cmd.sampledAtMs = nowMs;
     return cmd;
   }
 
@@ -513,58 +621,55 @@ export class Input {
     this.wheelUntilMs = 0;
     this.firePressMs = -1;
   }
+  //#endregion
 
-  // -- handlers -----------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private attach(): void {
+    window.addEventListener('keydown', this.onKeyDown, { passive: false });
+    window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.onBlur);
+    window.addEventListener('mousemove', this.onMouseMove);
+    window.addEventListener('mousedown', this.onMouseDown);
+    window.addEventListener('mouseup', this.onMouseUp);
+    window.addEventListener('wheel', this.onWheel, { passive: false });
+    this.canvas.addEventListener('contextmenu', this.onContextMenu);
+    document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    document.addEventListener('pointerlockerror', this.onPointerLockError);
+    document.addEventListener('fullscreenchange', this.onFullscreenChange);
+    document.addEventListener('focusin', this.onFocusIn);
+    document.addEventListener('focusout', this.onFocusOut);
+  }
 
-  private readonly onKeyDown = (e: KeyboardEvent): void => {
-    // Escape is never bound to a game action and never prevented — the browser owns it —
-    // but the state machine wants to know. Announced before the focus guard so it works
-    // from a paused screen where a button has focus.
-    if (e.code === 'Escape' && !e.repeat) {
-      for (const fn of this.escapeListeners) fn();
-      return;
-    }
-    // While a debug slider has focus — or a front-end screen is up — the page belongs to the
-    // DOM, so only the overlay's own function keys are taken; everything else behaves like an
-    // ordinary web page, including Tab moving focus and the arrow keys scrolling a list.
-    const guarded = (this.domFocusGuard || !this.bindingsActive) && !ALWAYS_PREVENT.has(e.code);
-    if (!guarded && this.shouldPreventDefault(e.code)) e.preventDefault();
-    if (guarded) return;
-    if (e.repeat) return;
+  private announceEscape(): void {
+    for (const fn of this.escapeListeners) fn();
+  }
 
-    /**
-     * Digit keys get first refusal, for the M11 vote overlay (§6.4).
-     *
-     * Offered **before** the binding bits are set and consumed if a listener takes it, because
-     * the digits are already bound: 1 and 2 are weapon slots and 3-5 are killstreaks. Without
-     * the early return, voting for mode 3 would also try to call in a UAV.
-     *
-     * A listener returning false leaves the key to its normal binding, so the digits behave
-     * exactly as they always have whenever no ballot is open — which is forty seconds in every
-     * sixty, and all of a live match.
-     *
-     * Placed after the focus guard on purpose: a ballot must not swallow a keystroke aimed at
-     * the loadout editor or a debug slider.
-     */
+  /**
+   * Digit keys get first refusal, for the M11 vote overlay (§6.4).
+   *
+   * Offered **before** the binding bits are set and consumed if a listener takes it, because
+   * the digits are already bound: 1 and 2 are weapon slots and 3-5 are killstreaks. Without
+   * the early return, voting for mode 3 would also try to call in a UAV.
+   *
+   * A listener returning false leaves the key to its normal binding, so the digits behave
+   * exactly as they always have whenever no ballot is open — which is forty seconds in every
+   * sixty, and all of a live match.
+   *
+   * Called after the focus guard on purpose: a ballot must not swallow a keystroke aimed at
+   * the loadout editor or a debug slider.
+   */
+  private offerDigit(e: KeyboardEvent): boolean {
     const digit = digitFor(e.code, e.key);
-    if (digit > 0) {
-      for (const fn of this.digitListeners) {
-        if (fn(digit)) {
-          e.preventDefault();
-          return;
-        }
+    if (digit <= 0) return false;
+    for (const fn of this.digitListeners) {
+      if (fn(digit)) {
+        e.preventDefault();
+        return true;
       }
     }
-
-    this.held.add(e.code);
-    this.buttons |= this.keybinds.bitsFor(e.code);
-  };
-
-  private readonly onKeyUp = (e: KeyboardEvent): void => {
-    this.held.delete(e.code);
-    // A bit stays set while any other binding for it is still held (Ctrl vs C).
-    this.buttons = this.recomputeKeyButtons();
-  };
+    return false;
+  }
 
   /**
    * Suppress the browser's own chord under anything the game binds.
@@ -582,119 +687,24 @@ export class Input {
     return this.keybinds.bitsFor(code) !== 0;
   }
 
-  private readonly onBlur = (): void => {
-    this.clearHeld();
-  };
-
-  private readonly onMouseMove = (e: MouseEvent): void => {
-    if (!this.locked) return;
-    if (this.settleCounter > 0) {
-      this.settleCounter--;
-      return;
-    }
-    const dx = clamp(e.movementX, -MAX_DELTA_PER_EVENT, MAX_DELTA_PER_EVENT);
-    const dy = clamp(e.movementY, -MAX_DELTA_PER_EVENT, MAX_DELTA_PER_EVENT);
-    // M8: the ADS multiplier is blended in by how far the sights are up, so the change
-    // arrives with the picture rather than a tenth of a second before it.
-    const adsScale = 1 + (this.adsSensitivity - 1) * this.adsFraction;
-    const scale = RAD_PER_COUNT * this.sensitivity * adsScale;
-    this.yawRad = wrapAngle(this.yawRad - dx * scale);
-    const pitchDelta = (this.invertY ? dy : -dy) * scale;
-    this.pitchRad = clamp(this.pitchRad + pitchDelta, -PITCH_LIMIT, PITCH_LIMIT);
-  };
+  private recomputeKeyButtons(): number {
+    let bits = 0;
+    for (const code of this.held) bits |= this.keybinds.bitsFor(code);
+    return bits;
+  }
 
   /**
-   * Mouse buttons are latched unconditionally; whether they *mean* anything is the state
-   * machine's business, because outside a match the sim consumes `sampleNeutral` and
-   * never sees them. Gating on pointer lock here instead would make the input path
-   * untestable without a real cursor capture, and `MATCH` entry clears held buttons so
-   * the click that started the match cannot also pull the trigger.
-   */
-  private readonly onMouseDown = (e: MouseEvent): void => {
-    if (this.domFocusGuard || !this.bindingsActive) return;
-    // Armed and unlocked: this click is the gesture that gets the cursor back, and it is
-    // spent doing that. Passing it on as well would fire the weapon on the frame the player
-    // clicked to resume.
-    if (this.wantPointerLock && !this.locked) {
-      // The refusal is *not* cleared here. It describes an outcome, and the outcome of this
-      // attempt is not known yet — clearing it on the way in is what made the old flag
-      // unreadable as a condition (round 5, B8).
-      this.requestPointerLock();
-      return;
-    }
-    const bits = this.keybinds.bitsFor(mouseInput(e.button));
-    this.mouseButtons |= bits;
-    // Stamped here, at the DOM edge, so the latency probe measures the whole path. Keyed
-    // off the *bit* rather than off button 0, so a player who moved fire onto another
-    // button still gets a latency reading.
-    if ((bits & Btn.Fire) !== 0) this.firePressMs = performance.now();
-  };
-
-  private readonly onMouseUp = (e: MouseEvent): void => {
-    this.mouseButtons &= ~this.keybinds.bitsFor(mouseInput(e.button));
-  };
-
-  /**
-   * A wheel notch, latched for `WHEEL_HOLD_MS`.
+   * A refusal arrived, from either of the two ways a browser can deliver one.
    *
-   * The bitfield is a level and a notch is an impulse, so the notch is given just enough
-   * duration for the 60 Hz sampler to see it exactly once. Not prevented unless something
-   * is actually bound to it, so the page still scrolls normally on a menu.
+   * There are two, and only one of them used to record anything: `requestPointerLock` returns a
+   * rejected promise on Chrome 113+, and every browser also fires `pointerlockerror` on the
+   * document. The event handler logged and set nothing, so on a build that returns `undefined`
+   * from the request the refusal was invisible even inside this class — which would have made
+   * B8's banner silently never appear on exactly the browsers most likely to refuse.
    */
-  private readonly onWheel = (e: WheelEvent): void => {
-    // Returning *before* `preventDefault` is the point: on a menu the wheel has to reach the
-    // page, or a scrollable panel can only be scrolled in whichever direction happens not to
-    // be bound to anything.
-    if (this.domFocusGuard || !this.bindingsActive || e.deltaY === 0) return;
-    const bits = this.keybinds.bitsFor(e.deltaY < 0 ? 'WheelUp' : 'WheelDown');
-    if (bits === 0) return;
-    e.preventDefault();
-    this.wheelBits = bits;
-    this.wheelUntilMs = performance.now() + WHEEL_HOLD_MS;
-  };
-
-  private readonly onContextMenu = (e: Event): void => {
-    e.preventDefault();
-  };
-
-  private readonly onPointerLockChange = (): void => {
-    const nowLocked = document.pointerLockElement === this.canvas;
-    if (nowLocked === this.locked) return;
-    this.locked = nowLocked;
-    if (nowLocked) {
-      // Whatever was refused before, we have it now. The one place the refusal is cleared by
-      // success rather than by asking again.
-      this.lockRefused = false;
-      // Swallow the first delta so re-acquiring lock never snaps the view.
-      this.settleCounter = SETTLE_EVENTS_AFTER_LOCK;
-    } else {
-      this.clearHeld();
-    }
-    document.body.classList.toggle('op-locked', nowLocked);
-    for (const fn of this.lockListeners) fn(nowLocked);
-  };
-
-  private readonly onPointerLockError = (): void => {
-    // The other half of the pair `noteLockRefused` documents. This used to log and record
-    // nothing at all.
-    const alreadyKnown = this.lockRefused;
-    this.noteLockRefused();
-    if (this.wantPointerLock && alreadyKnown) return;
-    console.warn('[Input] pointer lock error; the browser refused the request.');
-  };
-
-  private readonly onFullscreenChange = (): void => {
-    this.tryKeyboardLock();
-  };
-
-  private readonly onFocusIn = (e: FocusEvent): void => {
-    this.domFocusGuard = isFormControl(e.target);
-    if (this.domFocusGuard) this.clearHeld();
-  };
-
-  private readonly onFocusOut = (): void => {
-    this.domFocusGuard = false;
-  };
+  private noteLockRefused(): void {
+    this.lockRefused = true;
+  }
 
   private tryKeyboardLock(): void {
     if (!this.wantKeyboardLock) return;
@@ -714,21 +724,45 @@ export class Input {
     });
   }
 
-  private recomputeKeyButtons(): number {
-    let bits = 0;
-    for (const code of this.held) bits |= this.keybinds.bitsFor(code);
-    return bits;
+  /**
+   * The next ring slot, stamped with what all three samplers agree on.
+   *
+   * Zero allocation: the slot is one of the ring's own, and a caller that wants more than a
+   * neutral command overwrites the two or three fields that are its own.
+   */
+  private nextCommand(tickIndex: number, nowMs: number): MutableInputCommand {
+    const cmd = this.ring.next();
+    cmd.seq = this.seq++;
+    cmd.tickIndex = tickIndex;
+    cmd.moveX = 0;
+    cmd.moveZ = 0;
+    cmd.yaw = this.yawRad;
+    cmd.pitch = this.pitchRad;
+    cmd.buttons = 0;
+    cmd.sampledAtMs = nowMs;
+    return cmd;
   }
-}
 
-/**
- * Bits that cross the wire.
- *
- * The movement axes ride local bits above this mask (`core/Keybinds.ts`) so that binding
- * lookup is uniform, and they are masked off before the command is built — `InputCommand`
- * carries `moveX`/`moveZ` and has no bit assignments up there.
- */
-const WIRE_BITS = 0x00ff_ffff;
+  /** Everything currently down, including a wheel notch that has not expired. */
+  private liveBits(nowMs: number): number {
+    const wheel = nowMs <= this.wheelUntilMs ? this.wheelBits : 0;
+    return this.buttons | this.mouseButtons | wheel;
+  }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Narrow `navigator.keyboard` without an `any`; it is not in the DOM lib types. */
+function keyboardLockApi(): KeyboardLockApi | null {
+  const keyboard = (navigator as Navigator & { keyboard?: unknown }).keyboard;
+  if (typeof keyboard !== 'object' || keyboard === null) return null;
+  const lock = (keyboard as { lock?: unknown }).lock;
+  const unlock = (keyboard as { unlock?: unknown }).unlock;
+  if (typeof lock !== 'function' || typeof unlock !== 'function') return null;
+  return keyboard as KeyboardLockApi;
+}
 
 function isFormControl(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -755,3 +789,4 @@ function digitFor(code: string, key: string): number {
   if (code === '' && key.length === 1 && key >= '0' && key <= '9') return Number(key);
   return 0;
 }
+//#endregion

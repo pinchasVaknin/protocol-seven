@@ -1,6 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import type { CameraConfig } from './CameraConfig';
+//#endregion
 
+// ==================================== CLASS ViewmodelLayer ==================================== \\
+//#region Class ViewmodelLayer
 /**
  * The viewmodel layer.
  *
@@ -20,6 +25,8 @@ import type { CameraConfig } from './CameraConfig';
  * nothing attached to it.
  */
 export class ViewmodelLayer {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
 
@@ -31,7 +38,10 @@ export class ViewmodelLayer {
   private readonly fill = new THREE.HemisphereLight(0x9fb0c8, 0x22252b, 1.35);
   /** A cool rim from behind-left keeps the silhouette off the world behind it. */
   private readonly rim = new THREE.DirectionalLight(0x9ec4ff, 1.1);
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(cfg: CameraConfig) {
     this.camera = new THREE.PerspectiveCamera(cfg.viewmodelFov, 1, 0.008, 6);
     // Both lights aim at where the weapon actually sits (down and forward of the
@@ -50,7 +60,10 @@ export class ViewmodelLayer {
     this.camera.add(this.root);
     this.scene.add(this.camera);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** True when there is anything worth drawing. Lights alone do not count. */
   get hasContent(): boolean {
     return this.root.children.length > 0;
@@ -80,4 +93,6 @@ export class ViewmodelLayer {
     this.root.clear();
     this.scene.clear();
   }
+  //#endregion
 }
+//#endregion

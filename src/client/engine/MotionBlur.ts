@@ -1,5 +1,3 @@
-import * as THREE from 'three';
-
 /**
  * Optional accumulation motion blur (brief S6.3).
  *
@@ -38,6 +36,13 @@ import * as THREE from 'three';
  * you already shot.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** How much of the previous frame survives. Higher is a longer trail. */
 const STRENGTH = 0.55;
 
@@ -58,7 +63,14 @@ void main() {
 }
 `;
 
+const sizeScratch = new THREE.Vector2();
+//#endregion
+
+// ====================================== CLASS MotionBlur ====================================== \\
+//#region Class MotionBlur
 export class MotionBlur {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private sceneTarget: THREE.WebGLRenderTarget | null = null;
   private accumTarget: THREE.WebGLRenderTarget | null = null;
   private readonly quadScene = new THREE.Scene();
@@ -69,7 +81,10 @@ export class MotionBlur {
   private height = 0;
   /** True until the accumulation buffer holds a real frame. */
   private cold = true;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor() {
     this.material = new THREE.ShaderMaterial({
       uniforms: { uTexture: { value: null }, uOpacity: { value: 1 } },
@@ -83,7 +98,10 @@ export class MotionBlur {
     this.quad.frustumCulled = false;
     this.quadScene.add(this.quad);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Render `draw` through the blur and composite to the canvas.
    *
@@ -142,16 +160,10 @@ export class MotionBlur {
     this.width = 0;
     this.height = 0;
   }
+  //#endregion
 
-  /** `noUncheckedIndexedAccess` makes uniform lookups optional; resolve both in one place. */
-  private setQuad(texture: THREE.Texture, opacity: number): void {
-    const uniforms = this.material.uniforms;
-    const tex = uniforms['uTexture'];
-    const op = uniforms['uOpacity'];
-    if (tex !== undefined) tex.value = texture;
-    if (op !== undefined) op.value = opacity;
-  }
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private ensureTargets(renderer: THREE.WebGLRenderer, width: number, height: number): void {
     const w = Math.max(1, Math.floor(width));
     const h = Math.max(1, Math.floor(height));
@@ -177,6 +189,15 @@ export class MotionBlur {
     });
     this.cold = true;
   }
-}
 
-const sizeScratch = new THREE.Vector2();
+  /** `noUncheckedIndexedAccess` makes uniform lookups optional; resolve both in one place. */
+  private setQuad(texture: THREE.Texture, opacity: number): void {
+    const uniforms = this.material.uniforms;
+    const tex = uniforms['uTexture'];
+    const op = uniforms['uOpacity'];
+    if (tex !== undefined) tex.value = texture;
+    if (op !== undefined) op.value = opacity;
+  }
+  //#endregion
+}
+//#endregion

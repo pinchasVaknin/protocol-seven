@@ -390,6 +390,14 @@ const FINISHED = {
     'src/client/player/CameraShake.ts',
     'src/client/player/Viewmodel.ts',
   ],
+  C2: [
+    'src/client/engine/BrowserClock.ts',
+    'src/client/engine/CameraRig.ts',
+    'src/client/engine/FrameLoop.ts',
+    'src/client/engine/GpuWarmup.ts',
+    'src/client/engine/MotionBlur.ts',
+    'src/client/engine/Renderer.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

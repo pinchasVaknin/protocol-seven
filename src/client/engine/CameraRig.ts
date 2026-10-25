@@ -1,11 +1,3 @@
-import * as THREE from 'three';
-import { clamp, damp, DEG2RAD, lerp } from '../../shared/core/MathUtil';
-import type { CameraConfig } from '../player/CameraConfig';
-import { CameraShake } from '../player/CameraShake';
-import { ACTOR_INDICATOR_LAYER, SKY_LAYER } from './Renderer';
-import type { PlayerSnapshot } from '../../shared/player/PlayerState';
-import type { ViewmodelLayer } from '../player/Viewmodel';
-
 /**
  * Turns an interpolated player snapshot into a camera transform.
  *
@@ -18,6 +10,19 @@ import type { ViewmodelLayer } from '../player/Viewmodel';
  * tuned, or switched off, without touching the others.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { clamp, damp, DEG2RAD, lerp } from '../../shared/core/MathUtil';
+import type { CameraConfig } from '../player/CameraConfig';
+import { CameraShake } from '../player/CameraShake';
+import { ACTOR_INDICATOR_LAYER, SKY_LAYER } from './Renderer';
+import type { PlayerSnapshot } from '../../shared/player/PlayerState';
+import type { ViewmodelLayer } from '../player/Viewmodel';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface CameraDrive {
   sprint: boolean;
   tacSprint: boolean;
@@ -33,7 +38,10 @@ export interface CameraDrive {
   /** Viewmodel FOV multiplier at full ADS, from the equipped weapon. */
   adsViewmodelFovScale: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * Taken off the capsule radius before it is used as eye-to-wall clearance (round 4).
  *
@@ -56,9 +64,14 @@ const NEAR_MIN = 0.01;
  * what stops a narrow FOV from pushing the plane out far enough to clip something else.
  */
 const NEAR_MAX = 0.12;
+//#endregion
 
+// ====================================== CLASS CameraRig ======================================= \\
+//#region Class CameraRig
 /** Visual state, kept out of the sim: none of this affects gameplay. */
 export class CameraRig {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly camera: THREE.PerspectiveCamera;
   readonly shake = new CameraShake();
 
@@ -72,7 +85,10 @@ export class CameraRig {
 
   /** Metres of wall the eye is guaranteed to be behind. See `nearFor`. */
   private readonly clearance: number;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(cfg: CameraConfig, aspect: number, capsuleRadius: number) {
     this.fov = cfg.fov;
     this.clearance = Math.max(0.05, capsuleRadius - CLEARANCE_ALLOWANCE);
@@ -92,43 +108,16 @@ export class CameraRig {
     // World-space IFF stays outside the Chopper Gunner's thermal pass. See `Renderer`.
     this.camera.layers.enable(ACTOR_INDICATOR_LAYER);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   resize(aspect: number): void {
     this.camera.aspect = aspect;
     // The horizontal field of view is a function of the aspect, and the near plane is a
     // function of that — a window dragged wider must move it. See `nearFor`.
     this.camera.near = this.nearFor(this.camera.fov, aspect);
     this.camera.updateProjectionMatrix();
-  }
-
-  /**
-   * The largest near plane that cannot clip a wall the player is standing against (round 4).
-   *
-   * Round 3 raised this to a constant 0.20 m for depth precision and put a grey wedge through
-   * the geometry at the edge of the screen. The mistake was geometric: the capsule radius
-   * bounds how close the eye gets to a wall **along the wall's normal**, and the near plane
-   * clips on **view-space depth**. A point on that wall out at the corner of the screen is at
-   * `clearance · cos(halfHorizontalFov)`, which is a lot less than `clearance`:
-   *
-   * ```
-   *                                        hFOV    min view depth
-   *   90 FOV, 16:9 (the default)           121°       0.159 m      <- 0.20 clipped
-   *   90 + tac sprint + slide              140°       0.111 m      <- 0.12 clips too
-   *   FOV 120, 16:9                        144°       0.100 m
-   *   FOV 120 + adds, 21:9                 164°       0.045 m
-   * ```
-   *
-   * So reverting to 0.12 fixes the screenshot and leaves the same bug latent for anyone who
-   * slides, tac-sprints or plays at a wide FOV — which is not a fix, it is the same fix that
-   * has come back twice. The number is derived instead, from the two things that actually
-   * decide it, and recomputed wherever either changes. At the shipped defaults it evaluates to
-   * the 0.12 the report asked for; it only ever goes *down* from there, and 24-bit depth has
-   * the headroom to spare (0.6 mm at 10 m even at the 0.01 floor).
-   */
-  private nearFor(fovDeg: number, aspect: number): number {
-    const halfHorizontal = Math.atan(Math.tan(fovDeg * 0.5 * DEG2RAD) * Math.max(aspect, 0.1));
-    const limit = this.clearance * Math.cos(halfHorizontal);
-    return clamp(limit * NEAR_SAFETY, NEAR_MIN, NEAR_MAX);
   }
 
   /** Called from the landing event. `impactSpeed` is downward m/s at contact. */
@@ -169,24 +158,7 @@ export class CameraRig {
     const speed = lerp(prev.speed, curr.speed, alpha);
     const phase = interpolatePhase(prev.bobPhase, curr.bobPhase, alpha);
 
-    // ---- FOV ------------------------------------------------------------
-    let targetFov = cfg.fov;
-    if (drive.tacSprint) targetFov += cfg.fovTacSprintAdd;
-    else if (drive.sprint) targetFov += cfg.fovSprintAdd;
-    if (drive.slide) targetFov += cfg.fovSlideAdd;
-    const ads = drive.adsFraction < 0 ? 0 : drive.adsFraction > 1 ? 1 : drive.adsFraction;
-    targetFov *= lerp(1, drive.adsFovScale, ads);
-    this.fov = damp(this.fov, targetFov, cfg.fovRate, dt);
-    if (Math.abs(this.camera.fov - this.fov) > 0.01) {
-      this.camera.fov = this.fov;
-      // Sprinting and sliding widen the lens by up to 24°, which pulls the corner of the
-      // screen closer to the wall beside you. The near plane follows it — see `nearFor`.
-      this.camera.near = this.nearFor(this.fov, this.camera.aspect);
-      this.camera.updateProjectionMatrix();
-    }
-    // Pulling the viewmodel FOV in with the world FOV is what makes the sights appear to
-    // grow rather than the whole gun sliding toward the camera.
-    viewmodel?.setFov(cfg.viewmodelFov * lerp(1, drive.adsViewmodelFovScale, ads));
+    this.applyFieldOfView(drive, cfg, dt, viewmodel);
 
     // ---- bob -------------------------------------------------------------
     const speedRatio = Math.min(1, speed / Math.max(cfg.bobRefSpeed, 0.1));
@@ -197,13 +169,7 @@ export class CameraRig {
     const bobSide = Math.sin(phase) * bobAmount * cfg.bobLateralScale;
     const bobRoll = Math.sin(phase) * cfg.bobRollDeg * DEG2RAD * speedRatio;
 
-    // ---- landing dip (critically damped spring) --------------------------
-    this.dipVel += (-this.dipPos * cfg.landDipSpring - this.dipVel * cfg.landDipDamping) * dt;
-    this.dipPos += this.dipVel * dt;
-    if (this.dipPos < -cfg.landDipMax) {
-      this.dipPos = -cfg.landDipMax;
-      if (this.dipVel < 0) this.dipVel = 0;
-    }
+    this.advanceLandingDip(cfg, dt);
 
     // ---- roll ------------------------------------------------------------
     const strafe = lerp(prev.strafe, curr.strafe, alpha);
@@ -228,8 +194,85 @@ export class CameraRig {
       viewmodel.camera.rotation.copy(this.camera.rotation);
     }
   }
-}
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * The largest near plane that cannot clip a wall the player is standing against (round 4).
+   *
+   * Round 3 raised this to a constant 0.20 m for depth precision and put a grey wedge through
+   * the geometry at the edge of the screen. The mistake was geometric: the capsule radius
+   * bounds how close the eye gets to a wall **along the wall's normal**, and the near plane
+   * clips on **view-space depth**. A point on that wall out at the corner of the screen is at
+   * `clearance · cos(halfHorizontalFov)`, which is a lot less than `clearance`:
+   *
+   * ```
+   *                                        hFOV    min view depth
+   *   90 FOV, 16:9 (the default)           121°       0.159 m      <- 0.20 clipped
+   *   90 + tac sprint + slide              140°       0.111 m      <- 0.12 clips too
+   *   FOV 120, 16:9                        144°       0.100 m
+   *   FOV 120 + adds, 21:9                 164°       0.045 m
+   * ```
+   *
+   * So reverting to 0.12 fixes the screenshot and leaves the same bug latent for anyone who
+   * slides, tac-sprints or plays at a wide FOV — which is not a fix, it is the same fix that
+   * has come back twice. The number is derived instead, from the two things that actually
+   * decide it, and recomputed wherever either changes. At the shipped defaults it evaluates to
+   * the 0.12 the report asked for; it only ever goes *down* from there, and 24-bit depth has
+   * the headroom to spare (0.6 mm at 10 m even at the 0.01 floor).
+   */
+  private nearFor(fovDeg: number, aspect: number): number {
+    const halfHorizontal = Math.atan(Math.tan(fovDeg * 0.5 * DEG2RAD) * Math.max(aspect, 0.1));
+    const limit = this.clearance * Math.cos(halfHorizontal);
+    return clamp(limit * NEAR_SAFETY, NEAR_MIN, NEAR_MAX);
+  }
+
+  /**
+   * The whole FOV decision for one frame: the sprint, slide and ADS targets, the smoothing,
+   * the near plane that follows the lens, and the viewmodel's own FOV.
+   *
+   * Pulling the viewmodel FOV in with the world FOV is what makes the sights appear to
+   * grow rather than the whole gun sliding toward the camera.
+   */
+  private applyFieldOfView(
+    drive: CameraDrive,
+    cfg: CameraConfig,
+    dt: number,
+    viewmodel: ViewmodelLayer | null,
+  ): void {
+    let targetFov = cfg.fov;
+    if (drive.tacSprint) targetFov += cfg.fovTacSprintAdd;
+    else if (drive.sprint) targetFov += cfg.fovSprintAdd;
+    if (drive.slide) targetFov += cfg.fovSlideAdd;
+    const ads = drive.adsFraction < 0 ? 0 : drive.adsFraction > 1 ? 1 : drive.adsFraction;
+    targetFov *= lerp(1, drive.adsFovScale, ads);
+    this.fov = damp(this.fov, targetFov, cfg.fovRate, dt);
+    if (Math.abs(this.camera.fov - this.fov) > 0.01) {
+      this.camera.fov = this.fov;
+      // Sprinting and sliding widen the lens by up to 24°, which pulls the corner of the
+      // screen closer to the wall beside you. The near plane follows it — see `nearFor`.
+      this.camera.near = this.nearFor(this.fov, this.camera.aspect);
+      this.camera.updateProjectionMatrix();
+    }
+    viewmodel?.setFov(cfg.viewmodelFov * lerp(1, drive.adsViewmodelFovScale, ads));
+  }
+
+  /** The landing dip: one step of a critically damped spring, and the floor it may not pass. */
+  private advanceLandingDip(cfg: CameraConfig, dt: number): void {
+    this.dipVel += (-this.dipPos * cfg.landDipSpring - this.dipVel * cfg.landDipDamping) * dt;
+    this.dipPos += this.dipVel * dt;
+    if (this.dipPos < -cfg.landDipMax) {
+      this.dipPos = -cfg.landDipMax;
+      if (this.dipVel < 0) this.dipVel = 0;
+    }
+  }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /** Bob phase wraps at TAU; interpolate the short way around. */
 function interpolatePhase(a: number, b: number, alpha: number): number {
   const TAU = Math.PI * 2;
@@ -238,3 +281,4 @@ function interpolatePhase(a: number, b: number, alpha: number): number {
   if (delta < -Math.PI) delta += TAU;
   return a + delta * alpha;
 }
+//#endregion

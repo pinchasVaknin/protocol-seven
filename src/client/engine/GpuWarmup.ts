@@ -1,8 +1,3 @@
-import * as THREE from 'three';
-import { logger } from '../../shared/core/Log';
-
-const log = logger('GpuWarmup');
-
 /**
  * Shaders and textures onto the GPU before the frame that needs them (2026-09-28, part 5).
  *
@@ -39,15 +34,47 @@ const log = logger('GpuWarmup');
  * the old way, so a driver that never reports completion cannot freeze the picture.
  */
 
-/** The longest the picture is held for a compile. */
-const MAX_HOLD_MS = 1500;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { logger } from '../../shared/core/Log';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 interface Target {
   readonly scene: THREE.Scene;
   readonly camera: THREE.Camera;
 }
 
+/** What `compile` uses of a renderer. */
+export type Compiler = Pick<THREE.WebGLRenderer, 'compile' | 'properties' | 'extensions'>;
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('GpuWarmup');
+
+/** The longest the picture is held for a compile. */
+const MAX_HOLD_MS = 1500;
+
+/** The longest `compile` waits for the GPU to report a program linked before it stops asking. */
+export const COMPILE_GIVE_UP_MS = 10_000;
+
+const SHADOW_SIDE: Record<number, THREE.Side> = {
+  [THREE.FrontSide]: THREE.BackSide,
+  [THREE.BackSide]: THREE.FrontSide,
+  [THREE.DoubleSide]: THREE.DoubleSide,
+};
+
+let shadowTarget: THREE.WebGLRenderTarget | null = null;
+//#endregion
+
+// ====================================== CLASS GpuWarmup ======================================= \\
+//#region Class GpuWarmup
 class GpuWarmup {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private renderer: THREE.WebGLRenderer | null = null;
   private world: Target | null = null;
   /**
@@ -63,7 +90,10 @@ class GpuWarmup {
   /** For the console: how many holds there have been, and how long the last one lasted. */
   private holds = 0;
   private lastHoldMs = 0;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * The renderer and the scene every template is drawn into. `camera` decides only which lights
    * count (their layers); any camera in the scene will do.
@@ -123,6 +153,14 @@ class GpuWarmup {
     return true;
   }
 
+  /** For the console: how many holds there have been and how long the last one took. */
+  report(): { holds: number; lastHoldMs: number; holding: boolean } {
+    return { holds: this.holds, lastHoldMs: Math.round(this.lastHoldMs), holding: this.inFlight !== null };
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * Compile the scene, and every adopted template for its lights, and go again until a pass adds
    * no program.
@@ -155,19 +193,22 @@ class GpuWarmup {
       if (performance.now() - this.holdStartedMs > MAX_HOLD_MS) return;
     }
   }
-
-  /** For the console: how many holds there have been and how long the last one took. */
-  report(): { holds: number; lastHoldMs: number; holding: boolean } {
-    return { holds: this.holds, lastHoldMs: Math.round(this.lastHoldMs), holding: this.inFlight !== null };
-  }
+  //#endregion
 }
+//#endregion
 
-/** The longest `compile` waits for the GPU to report a program linked before it stops asking. */
-export const COMPILE_GIVE_UP_MS = 10_000;
+// ===================================== DERIVED CONSTANTS ====================================== \\
+//#region Derived Constants
+/**
+ * One for the page, like `palette`: templates arrive deep inside services that have no renderer,
+ * and threading one down to each of them to hold one reference would be ceremony. `Game` attaches
+ * the renderer and the scene once, at boot.
+ */
+export const gpuWarmup = new GpuWarmup();
+//#endregion
 
-/** What `compile` uses of a renderer. */
-export type Compiler = Pick<THREE.WebGLRenderer, 'compile' | 'properties' | 'extensions'>;
-
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * `WebGLRenderer.compileAsync`, with the wait done here instead of by three.js.
  *
@@ -191,11 +232,7 @@ export function compile(renderer: Compiler, root: THREE.Object3D, camera: THREE.
   const startedMs = performance.now();
   return new Promise((resolve) => {
     const check = (): void => {
-      for (const material of waiting) {
-        const program = (renderer.properties.get(material) as { currentProgram?: { isReady(): boolean } }).currentProgram;
-        if (program === undefined || program.isReady()) waiting.delete(material);
-      }
-      if (waiting.size === 0 || performance.now() - startedMs > COMPILE_GIVE_UP_MS) resolve();
+      if (isEveryProgramLinked(renderer, waiting) || performance.now() - startedMs > COMPILE_GIVE_UP_MS) resolve();
       else setTimeout(check, 10);
     };
     // As three.js does: at once when the GPU can report progress; without the extension every
@@ -203,6 +240,21 @@ export function compile(renderer: Compiler, root: THREE.Object3D, camera: THREE.
     if (renderer.extensions.has('KHR_parallel_shader_compile')) check();
     else setTimeout(check, 10);
   });
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * One poll of `waiting`: every material that is linked, or that was disposed while we waited, is
+ * dropped from it. True once there is nothing left to wait for.
+ */
+function isEveryProgramLinked(renderer: Compiler, waiting: Set<THREE.Material>): boolean {
+  for (const material of waiting) {
+    const program = (renderer.properties.get(material) as { currentProgram?: { isReady(): boolean } }).currentProgram;
+    if (program === undefined || program.isReady()) waiting.delete(material);
+  }
+  return waiting.size === 0;
 }
 
 /**
@@ -220,41 +272,9 @@ export function compile(renderer: Compiler, root: THREE.Object3D, camera: THREE.
  * lights with a render target bound and the fog and environment taken off for the synchronous
  * moment `compile` reads them. Nothing is drawn, and everything is put back before it returns.
  */
-const SHADOW_SIDE: Record<number, THREE.Side> = {
-  [THREE.FrontSide]: THREE.BackSide,
-  [THREE.BackSide]: THREE.FrontSide,
-  [THREE.DoubleSide]: THREE.DoubleSide,
-};
-let shadowTarget: THREE.WebGLRenderTarget | null = null;
-
 function compileShadowPass(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera): Promise<void> {
   if (!renderer.shadowMap.enabled) return Promise.resolve();
-  const proxies = new THREE.Group();
-  const seen = new Set<string>();
-  scene.traverseVisible((node) => {
-    const mesh = node as THREE.Mesh;
-    if (mesh.isMesh !== true || !mesh.castShadow || (mesh as THREE.BatchedMesh).isBatchedMesh === true) return;
-    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-      if (material === undefined || !material.visible) continue;
-      const depth = depthMaterialFor(material);
-      const skinned = (mesh as THREE.SkinnedMesh).isSkinnedMesh === true;
-      const instanced = (mesh as THREE.InstancedMesh).isInstancedMesh === true;
-      const key = [
-        skinned,
-        instanced,
-        instanced && (mesh as THREE.InstancedMesh).instanceColor !== null,
-        mesh.geometry.morphAttributes.position?.length ?? 0,
-        depth.side,
-        depth.map !== null,
-        depth.alphaMap !== null,
-        depth.alphaTest > 0,
-        depth.displacementMap !== null,
-      ].join();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      proxies.add(proxyFor(mesh, depth));
-    }
-  });
+  const proxies = collectShadowProxies(scene);
   if (proxies.children.length === 0) return Promise.resolve();
 
   shadowTarget ??= new THREE.WebGLRenderTarget(1, 1);
@@ -271,6 +291,50 @@ function compileShadowPass(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
     scene.fog = fog;
     scene.environment = environment;
   }
+}
+
+/** Every visible shadow caster in `scene`, as one proxy per distinct kind. Never drawn. */
+function collectShadowProxies(scene: THREE.Scene): THREE.Group {
+  const proxies = new THREE.Group();
+  const seen = new Set<string>();
+  scene.traverseVisible((node) => {
+    const mesh = node as THREE.Mesh;
+    if (mesh.isMesh !== true || !mesh.castShadow || (mesh as THREE.BatchedMesh).isBatchedMesh === true) return;
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      addShadowProxy(proxies, seen, mesh, material);
+    }
+  });
+  return proxies;
+}
+
+/**
+ * `material`'s depth variant on `mesh`'s geometry, added to `proxies` unless `seen` already holds
+ * a caster of the same kind — the key is everything the depth program is compiled for.
+ */
+function addShadowProxy(
+  proxies: THREE.Group,
+  seen: Set<string>,
+  mesh: THREE.Mesh,
+  material: THREE.Material | undefined,
+): void {
+  if (material === undefined || !material.visible) return;
+  const depth = depthMaterialFor(material);
+  const skinned = (mesh as THREE.SkinnedMesh).isSkinnedMesh === true;
+  const instanced = (mesh as THREE.InstancedMesh).isInstancedMesh === true;
+  const key = [
+    skinned,
+    instanced,
+    instanced && (mesh as THREE.InstancedMesh).instanceColor !== null,
+    mesh.geometry.morphAttributes.position?.length ?? 0,
+    depth.side,
+    depth.map !== null,
+    depth.alphaMap !== null,
+    depth.alphaTest > 0,
+    depth.displacementMap !== null,
+  ].join();
+  if (seen.has(key)) return;
+  seen.add(key);
+  proxies.add(proxyFor(mesh, depth));
 }
 
 /** A depth material as `WebGLShadowMap.getDepthMaterial` would set one up for `material`. */
@@ -320,10 +384,4 @@ function uploadTextures(renderer: THREE.WebGLRenderer, root: THREE.Object3D): vo
     }
   });
 }
-
-/**
- * One for the page, like `palette`: templates arrive deep inside services that have no renderer,
- * and threading one down to each of them to hold one reference would be ceremony. `Game` attaches
- * the renderer and the scene once, at boot.
- */
-export const gpuWarmup = new GpuWarmup();
+//#endregion

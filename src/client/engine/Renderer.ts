@@ -1,35 +1,13 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import type { ShadowQuality } from '../../shared/meta/SaveData';
 import { MotionBlur } from './MotionBlur';
 import type { ViewmodelLayer } from '../player/Viewmodel';
+//#endregion
 
-/**
- * What each shadow tier costs and buys (M8, brief S6.3).
- *
- * `size` is the shadow map edge in texels and is the whole cost: 4096 is four times the
- * fill of 2048 and sixteen times 1024, and on integrated graphics the depth pass is a real
- * fraction of the frame. `radiusScale` multiplies whatever softness the *map* asked for
- * (`LightDef.shadowRadius`), so a tier change never overrides a map's art direction — Dunes
- * stays harder-edged than Foundry at every quality level, it is simply blurrier or sharper
- * in proportion.
- *
- * `off` disables the shadow map outright rather than shrinking it to nothing. A 256-texel
- * shadow is worse than no shadow: it is a rectangle of noise under everything.
- */
-/**
- * `biasScale` is round 3, and it closes a tier-dependent shimmer.
- *
- * `normalBias` is a distance in *world metres* that a shadow lookup is pushed along the
- * surface normal to stop a surface shadowing itself. The distance it has to cover is one
- * shadow texel, and a texel is `2 * shadowExtent / size` metres — so halving the map size
- * doubles the texel and the authored bias stops covering it. On the **low** tier every map
- * was running a bias of about half a texel, which is the textbook acne case: a fine moving
- * speckle over every large surface, worst at grazing angles, and exactly the kind of thing a
- * report calls flickering. Medium was marginal at 1.05 texels and high was over-biased.
- *
- * Scaling by `2048 / size` keeps every tier at whatever the map author chose in texels rather
- * than in metres, so the setting changes sharpness and cost and stops changing correctness.
- */
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The layer the sky is drawn on, and the only object on it (playtest round 5, F2).
  *
@@ -55,6 +33,32 @@ export const SKY_LAYER = 1;
  */
 export const ACTOR_INDICATOR_LAYER = 2;
 
+/**
+ * What each shadow tier costs and buys (M8, brief S6.3).
+ *
+ * `size` is the shadow map edge in texels and is the whole cost: 4096 is four times the
+ * fill of 2048 and sixteen times 1024, and on integrated graphics the depth pass is a real
+ * fraction of the frame. `radiusScale` multiplies whatever softness the *map* asked for
+ * (`LightDef.shadowRadius`), so a tier change never overrides a map's art direction — Dunes
+ * stays harder-edged than Foundry at every quality level, it is simply blurrier or sharper
+ * in proportion.
+ *
+ * `off` disables the shadow map outright rather than shrinking it to nothing. A 256-texel
+ * shadow is worse than no shadow: it is a rectangle of noise under everything.
+ *
+ * `biasScale` is round 3, and it closes a tier-dependent shimmer.
+ *
+ * `normalBias` is a distance in *world metres* that a shadow lookup is pushed along the
+ * surface normal to stop a surface shadowing itself. The distance it has to cover is one
+ * shadow texel, and a texel is `2 * shadowExtent / size` metres — so halving the map size
+ * doubles the texel and the authored bias stops covering it. On the **low** tier every map
+ * was running a bias of about half a texel, which is the textbook acne case: a fine moving
+ * speckle over every large surface, worst at grazing angles, and exactly the kind of thing a
+ * report calls flickering. Medium was marginal at 1.05 texels and high was over-biased.
+ *
+ * Scaling by `2048 / size` keeps every tier at whatever the map author chose in texels rather
+ * than in metres, so the setting changes sharpness and cost and stops changing correctness.
+ */
 export const SHADOW_TIERS: Readonly<
   Record<ShadowQuality, { size: number; radiusScale: number; biasScale: number }>
 > = {
@@ -63,386 +67,6 @@ export const SHADOW_TIERS: Readonly<
   medium: { size: 2048, radiusScale: 1, biasScale: 1 },
   high: { size: 4096, radiusScale: 1.6, biasScale: 0.5 },
 };
-
-/**
- * Renderer ownership: size, colour management, shadows, and the two-pass draw
- * (world, then viewmodel over a cleared depth buffer).
- *
- * Target is 60 FPS in Chrome on integrated graphics, so the defaults lean cheap:
- * pixel ratio is capped, shadows are a single 2048 PCF-soft cascade, and there is no
- * post-processing stack. Antialiasing is MSAA on the default framebuffer, which
- * integrated parts do in hardware for close to free.
- */
-export class Renderer {
-  readonly three: THREE.WebGLRenderer;
-  private widthPx = 1;
-  private heightPx = 1;
-  private ratio = 1;
-  /** Built on first use: most matches never call in a Chopper Gunner. */
-  private thermalWorldMaterial: THREE.ShaderMaterial | null = null;
-  private thermalHotMaterial: THREE.ShaderMaterial | null = null;
-  /** Post-M8: the gunner's own side, drawn near-black. See `renderGunship`. */
-  private thermalColdMaterial: THREE.ShaderMaterial | null = null;
-  /** M8. The live shadow tier; lights read it when a map is loaded and when it changes. */
-  private shadowTier: ShadowQuality = 'medium';
-  /** M8. Null unless the player has asked for motion blur. */
-  private blur: MotionBlur | null = null;
-
-  /**
-   * `checkShaderErrors` is the diagnostic build's switch, and it is off everywhere else
-   * (2026-10-18).
-   *
-   * three.js checks a program for link errors in `onFirstUse` — the first frame that actually
-   * *draws* the material, not the compile that prepared it — and the check is four synchronous
-   * calls into the GPU process: `getProgramInfoLog`, `getShaderInfoLog` twice, and
-   * `getProgramParameter(LINK_STATUS)`. Each is a round trip the main thread waits out, and
-   * `getProgramInfoLog` in particular forces a parallel link to finish — which is exactly what
-   * `KHR_parallel_shader_compile` and `engine/GpuWarmup.ts` exist to avoid. A Chrome profile of
-   * the deployed build measured **701 ms of `getProgramInfoLog` in a twenty-second trace**, the
-   * largest single item in it, and a stall that long trips `NetClient`'s `RESYNC_TICKS` (20
-   * ticks, 333 ms) — which throws the prediction away and teleports the player. The hitch and
-   * the rubberbanding reported from that session are one cause.
-   *
-   * Off, a bad program draws nothing and says nothing, so the flag follows the same gate that
-   * decides whether this page gets `__p7` at all: on under `npm run dev`, on with `?debug=1`,
-   * off for everybody else. `ui/CharacterStage.ts` and `ui/WeaponPreview.ts` have shipped with
-   * it off unconditionally since they were written; this is that decision for the renderer that
-   * draws the match.
-   */
-  constructor(canvas: HTMLCanvasElement, checkShaderErrors = false) {
-    this.three = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      powerPreference: 'high-performance',
-      /**
-       * Round 2: `stencil: false` -> true, and it is a *depth* decision.
-       *
-       * Nothing here draws a stencil. The reason to ask for one is that the pair is what
-       * drivers actually allocate: a context asking for depth-without-stencil is free to hand
-       * back `DEPTH_COMPONENT16`, and several do, where depth-plus-stencil is
-       * `DEPTH24_STENCIL8` on every implementation this game can run on. Sixteen bits across
-       * a 0.12-400 m frustum cannot separate a 1 cm trim lip from the wall behind it at
-       * ordinary combat range, which is the reported jitter; twenty-four bits has two orders
-       * of magnitude in hand.
-       *
-       * The cost is 8 bits per sample on the MSAA buffer and no fill: the clears here are
-       * explicit and none of them touch stencil.
-       */
-      stencil: true,
-      alpha: false,
-    });
-    this.three.autoClear = false;
-    this.three.setClearColor(0x0c0e11, 1);
-    this.three.outputColorSpace = THREE.SRGBColorSpace;
-    this.three.toneMapping = THREE.ACESFilmicToneMapping;
-    // Raised from 1.05 in M5. ACES rolls the shoulder off hard, and at 1.05 the mid-tones
-    // of a grey-box map — which is nearly all of it — were sitting in the part of the curve
-    // where everything converges on the same dark grey. See the M4 playtest note.
-    this.three.toneMappingExposure = 1.25;
-    this.three.shadowMap.enabled = true;
-    // PCFSoftShadowMap was deprecated in three r185 and silently falls back to
-    // PCFShadowMap with a console warning. Ask for what we actually get; softness
-    // comes from the map size and the light's shadow radius instead.
-    this.three.shadowMap.type = THREE.PCFShadowMap;
-    this.three.debug.checkShaderErrors = checkShaderErrors;
-  }
-
-  /** `scale` is the user's render-scale setting; device pixel ratio is capped at 2. */
-  setSize(width: number, height: number, scale: number): void {
-    this.widthPx = Math.max(1, Math.floor(width));
-    this.heightPx = Math.max(1, Math.floor(height));
-    this.ratio = Math.min(2, Math.max(0.5, window.devicePixelRatio * scale));
-    this.three.setPixelRatio(this.ratio);
-    this.three.setSize(this.widthPx, this.heightPx, false);
-  }
-
-  get aspect(): number {
-    return this.widthPx / this.heightPx;
-  }
-
-  get shadowQuality(): ShadowQuality {
-    return this.shadowTier;
-  }
-
-  /**
-   * Set the shadow tier and push it into every shadow-casting light in the scene (M8).
-   *
-   * Applied live rather than at the next map load: a setting that needs a restart to take
-   * effect is a setting a player cannot evaluate, and evaluating it is the entire reason it
-   * exists on a screen whose job is finding a playable configuration.
-   *
-   * Changing `mapSize` on an existing shadow needs its render target disposed, or three.js
-   * keeps drawing into the old one at the old resolution and the setting appears to do
-   * nothing at all.
-   */
-  setShadowQuality(quality: ShadowQuality, scene: THREE.Object3D): void {
-    this.shadowTier = quality;
-    const tier = SHADOW_TIERS[quality];
-    this.three.shadowMap.enabled = tier.size > 0;
-
-    scene.traverse((object) => {
-      const light = object as THREE.Object3D & { isLight?: boolean; shadow?: THREE.LightShadow };
-      const shadow = light.shadow;
-      if (light.isLight !== true || shadow === undefined) return;
-      const authored = shadowAuthoring.get(shadow);
-      if (authored === undefined) return;
-
-      if (tier.size === 0) {
-        light.castShadow = false;
-        return;
-      }
-      light.castShadow = authored.castShadow;
-      shadow.radius = authored.radius * tier.radiusScale;
-      // Round 3: the bias follows the tier too, or changing quality changes whether the map
-      // has acne on it. See `SHADOW_TIERS`.
-      shadow.normalBias = authored.normalBias * tier.biasScale;
-      if (shadow.mapSize.width !== tier.size) {
-        shadow.mapSize.set(tier.size, tier.size);
-        // The existing target is the old size; it has to go or nothing changes on screen.
-        shadow.map?.dispose();
-        shadow.map = null;
-      }
-    });
-    this.three.shadowMap.needsUpdate = true;
-  }
-
-  get pixelRatio(): number {
-    return this.ratio;
-  }
-
-  render(scene: THREE.Scene, camera: THREE.Camera, viewmodel: ViewmodelLayer | null): void {
-    const blur = this.blur;
-    if (blur === null) {
-      this.three.clear(true, true, false);
-      this.drawFrame(scene, camera, viewmodel);
-      return;
-    }
-    // The same closure the direct path calls, so there is one description of what a frame
-    // contains and the blurred path cannot forget the viewmodel pass.
-    blur.render(this.three, () => this.drawFrame(scene, camera, viewmodel));
-  }
-
-  private drawFrame(scene: THREE.Scene, camera: THREE.Camera, viewmodel: ViewmodelLayer | null): void {
-    this.three.render(scene, camera);
-    if (viewmodel !== null && viewmodel.hasContent) {
-      // Fresh depth so the viewmodel can never intersect world geometry.
-      this.three.clearDepth();
-      this.three.render(viewmodel.scene, viewmodel.camera);
-    }
-  }
-
-  /**
-   * Turn accumulation motion blur on or off (M8, S6.3).
-   *
-   * Built on the first frame it is wanted and destroyed the moment it is not, so a player
-   * who leaves it off never allocates a render target. See `engine/MotionBlur.ts`.
-   */
-  setMotionBlur(on: boolean): void {
-    if (on === (this.blur !== null)) return;
-    if (on) {
-      this.blur = new MotionBlur();
-      return;
-    }
-    this.blur?.dispose();
-    this.blur = null;
-  }
-
-  get motionBlurEnabled(): boolean {
-    return this.blur !== null;
-  }
-
-  /** Drop the blur history — on a respawn, a map change or a camera takeover. */
-  resetMotionBlur(): void {
-    this.blur?.reset();
-  }
-
-  /**
-   * The Chopper Gunner's view (M7, brief S6.1; reworked post-M8).
-   *
-   * The brief asks for "a render pass, not a colour filter over the normal view", and the
-   * difference is not pedantry — it decides what the picture can *say*. A filter tints an
-   * already-lit image, so a body in shadow stays dark and the sky stays bright, which is the
-   * opposite of what a gunship optic shows. A pass decides what each object is:
-   *
-   *  1. The world is drawn with an override material that ignores lighting entirely and
-   *     shades on surface facing, so the map reads as legible grey terrain **at night as
-   *     well as by day** — the map's own lights are not consulted at all, which is the whole
-   *     point on Depot.
-   *  2. Depth is kept and the bodies are drawn in two further passes: `cold` — the gunner's
-   *     own side — in near-black, and `hot` — everybody else — in orange. Both are occluded
-   *     by the depth buffer pass one wrote, so a body behind a container is still behind it.
-   *
-   * **The IFF split is the post-M8 change.** M7 drew every body hot, so the gunner could not
-   * tell their own team from the enemy and the streak was as likely to wipe the friendly
-   * half of the map as the hostile one. Groups rather than a per-object test keeps this a
-   * render pass that knows nothing about teams: it is handed the cold ones and the hot ones
-   * and draws them differently. Each side is a *list* of groups (M13 Phase A) because
-   * Free-for-All has no cold side at all — both substrate groups are hot and the list is
-   * empty — and a pass that took exactly one of each could only draw half the lobby cold.
-   *
-   * ## Why the sky is the *renderer's* clear colour and not `scene.background` (round 2)
-   *
-   * This is three passes that share one depth buffer and one colour buffer, and that only
-   * works if passes two and three do not clear. `autoClear` is off for exactly that reason —
-   * but `scene.background`, when it holds a `Color`, is not a passive backdrop: three's
-   * background stage sets `forceClear` and calls `renderer.clear(autoClearColor,
-   * autoClearDepth, ...)` *regardless* of `autoClear`. Those two flags default to true and
-   * nothing here was turning them off, so every one of the three `render` calls wiped the
-   * one before it. The player saw the last pass only: a flat background with orange enemies
-   * floating on it, no map and no team-mates. That is verbatim the post-M8 report, and both
-   * halves of it — "the world is pitch black" and "teammates are invisible" — are this one
-   * line.
-   *
-   * So the optic's sky is set as the *renderer's* clear colour and cleared once, by hand,
-   * and the scene's background is nulled for the duration. A null background leaves
-   * `forceClear` false, which leaves `autoClear` in charge, which is off.
-   *
-   * Nothing is post-processed and no render target is allocated, which is what keeps this
-   * inside the frame budget on integrated graphics.
-   */
-  renderGunship(
-    scene: THREE.Scene,
-    camera: THREE.Camera,
-    hot: readonly THREE.Object3D[],
-    cold: readonly THREE.Object3D[],
-  ): void {
-    const previousOverride = scene.overrideMaterial;
-    const previousBackground = scene.background;
-    const previousFog = scene.fog;
-    this.three.getClearColor(previousClear);
-    const previousClearAlpha = this.three.getClearAlpha();
-
-    // Bodies are hidden for the world pass and drawn by the two that follow. Without this
-    // they would be shaded as terrain first and then overdrawn, which costs a pass and — on
-    // a body exactly coplanar with the floor it stands on — flickers between the two.
-    const bodiesWereVisible = new Map<THREE.Object3D, boolean>();
-    for (const group of hot) bodiesWereVisible.set(group, group.visible);
-    for (const group of cold) bodiesWereVisible.set(group, group.visible);
-    for (const group of bodiesWereVisible.keys()) group.visible = false;
-
-    scene.overrideMaterial = this.gunshipWorld();
-    // Fog and a sky colour are lighting cues, and the optic has neither. The optic's own
-    // flat sky is the clear colour rather than the scene background — see the note above.
-    scene.background = null;
-    scene.fog = null;
-    this.three.setClearColor(GUNSHIP_BACKGROUND, 1);
-
-    // The one clear of the three passes. Everything after this shares the depth buffer it
-    // writes, which is what makes a body behind a container stay behind it.
-    this.three.clear(true, true, false);
-    this.three.render(scene, camera);
-    scene.overrideMaterial = previousOverride;
-
-    for (const [group, visible] of bodiesWereVisible) group.visible = visible;
-
-    this.drawBodies(scene, camera, cold, hot, this.gunshipCold(), previousOverride);
-    this.drawBodies(scene, camera, hot, cold, this.gunshipHot(), previousOverride);
-
-    scene.background = previousBackground;
-    scene.fog = previousFog;
-    this.three.setClearColor(previousClear, previousClearAlpha);
-  }
-
-  /**
-   * Draw one set of body groups with an override material, with everything else hidden.
-   *
-   * `exclude` is the *other* set, which has to be hidden explicitly because its groups are
-   * siblings under the same top-level node — hiding by scene child alone would draw both.
-   */
-  private drawBodies(
-    scene: THREE.Scene,
-    camera: THREE.Camera,
-    subjects: readonly THREE.Object3D[],
-    exclude: readonly THREE.Object3D[],
-    material: THREE.Material,
-    restoreOverride: THREE.Material | null,
-  ): void {
-    if (!subjects.some((s) => s.visible)) return;
-
-    const wasVisible = new Map<THREE.Object3D, boolean>();
-    for (const child of scene.children) {
-      wasVisible.set(child, child.visible);
-      // A subject may be nested (a team group under the roster node), so the test is
-      // ancestry rather than identity.
-      child.visible = subjects.some((s) => child === s || isAncestorOf(child, s));
-    }
-    const excludeWas = new Map<THREE.Object3D, boolean>();
-    for (const group of exclude) {
-      excludeWas.set(group, group.visible);
-      group.visible = false;
-    }
-
-    scene.overrideMaterial = material;
-    this.three.render(scene, camera);
-    scene.overrideMaterial = restoreOverride;
-
-    for (const [group, visible] of excludeWas) group.visible = visible;
-    for (const [child, visible] of wasVisible) child.visible = visible;
-  }
-
-  private gunshipWorld(): THREE.Material {
-    if (this.thermalWorldMaterial === null) {
-      this.thermalWorldMaterial = new THREE.ShaderMaterial({
-        uniforms: {},
-        vertexShader: GUNSHIP_VERT,
-        fragmentShader: GUNSHIP_WORLD_FRAG,
-        fog: false,
-      });
-    }
-    return this.thermalWorldMaterial;
-  }
-
-  private gunshipHot(): THREE.Material {
-    if (this.thermalHotMaterial === null) {
-      this.thermalHotMaterial = new THREE.ShaderMaterial({
-        uniforms: {},
-        vertexShader: GUNSHIP_VERT,
-        fragmentShader: GUNSHIP_HOT_FRAG,
-        fog: false,
-      });
-    }
-    return this.thermalHotMaterial;
-  }
-
-  private gunshipCold(): THREE.Material {
-    if (this.thermalColdMaterial === null) {
-      this.thermalColdMaterial = new THREE.ShaderMaterial({
-        uniforms: {},
-        vertexShader: GUNSHIP_VERT,
-        fragmentShader: GUNSHIP_COLD_FRAG,
-        fog: false,
-      });
-    }
-    return this.thermalColdMaterial;
-  }
-
-  /**
-   * Clear to the background colour and draw nothing.
-   *
-   * `autoClear` is off (the two-pass draw controls its own clears), so without this the
-   * canvas holds the last frame it rendered — which from M4 means the final frame of the
-   * previous match sitting behind the main menu.
-   */
-  clear(): void {
-    this.three.clear(true, true, false);
-  }
-
-  get info(): THREE.WebGLInfo {
-    return this.three.info;
-  }
-
-  dispose(): void {
-    this.blur?.dispose();
-    this.blur = null;
-    this.thermalWorldMaterial?.dispose();
-    this.thermalWorldMaterial = null;
-    this.thermalHotMaterial?.dispose();
-    this.thermalHotMaterial = null;
-    this.thermalColdMaterial?.dispose();
-    this.thermalColdMaterial = null;
-    this.three.dispose();
-  }
-}
 
 /**
  * What each shadow was *authored* at, keyed by the shadow itself.
@@ -459,26 +83,6 @@ const shadowAuthoring = new WeakMap<
   THREE.LightShadow,
   { radius: number; castShadow: boolean; normalBias: number }
 >();
-
-/** Whether `descendant` sits anywhere below `node`. Used by the gunship body passes. */
-function isAncestorOf(node: THREE.Object3D, descendant: THREE.Object3D): boolean {
-  let current: THREE.Object3D | null = descendant.parent;
-  while (current !== null) {
-    if (current === node) return true;
-    current = current.parent;
-  }
-  return false;
-}
-
-/** Called by `MapLoader` once per light, with the values the map asked for. */
-export function rememberShadowAuthoring(
-  shadow: THREE.LightShadow,
-  radius: number,
-  castShadow: boolean,
-  normalBias: number,
-): void {
-  shadowAuthoring.set(shadow, { radius, castShadow, normalBias });
-}
 
 /**
  * The optic has no sky. A flat mid grey, so the horizon is not a black void.
@@ -621,3 +225,411 @@ void main() {
   gl_FragColor = vec4(mix(near, far, t), 1.0);
 }
 `;
+//#endregion
+
+// ======================================= CLASS Renderer ======================================= \\
+//#region Class Renderer
+/**
+ * Renderer ownership: size, colour management, shadows, and the two-pass draw
+ * (world, then viewmodel over a cleared depth buffer).
+ *
+ * Target is 60 FPS in Chrome on integrated graphics, so the defaults lean cheap:
+ * pixel ratio is capped, shadows are a single 2048 PCF-soft cascade, and there is no
+ * post-processing stack. Antialiasing is MSAA on the default framebuffer, which
+ * integrated parts do in hardware for close to free.
+ */
+export class Renderer {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
+  readonly three: THREE.WebGLRenderer;
+  private widthPx = 1;
+  private heightPx = 1;
+  private ratio = 1;
+  /** Built on first use: most matches never call in a Chopper Gunner. */
+  private thermalWorldMaterial: THREE.ShaderMaterial | null = null;
+  private thermalHotMaterial: THREE.ShaderMaterial | null = null;
+  /** Post-M8: the gunner's own side, drawn near-black. See `renderGunship`. */
+  private thermalColdMaterial: THREE.ShaderMaterial | null = null;
+  /** M8. The live shadow tier; lights read it when a map is loaded and when it changes. */
+  private shadowTier: ShadowQuality = 'medium';
+  /** M8. Null unless the player has asked for motion blur. */
+  private blur: MotionBlur | null = null;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  /**
+   * `checkShaderErrors` is the diagnostic build's switch, and it is off everywhere else
+   * (2026-10-18).
+   *
+   * three.js checks a program for link errors in `onFirstUse` — the first frame that actually
+   * *draws* the material, not the compile that prepared it — and the check is four synchronous
+   * calls into the GPU process: `getProgramInfoLog`, `getShaderInfoLog` twice, and
+   * `getProgramParameter(LINK_STATUS)`. Each is a round trip the main thread waits out, and
+   * `getProgramInfoLog` in particular forces a parallel link to finish — which is exactly what
+   * `KHR_parallel_shader_compile` and `engine/GpuWarmup.ts` exist to avoid. A Chrome profile of
+   * the deployed build measured **701 ms of `getProgramInfoLog` in a twenty-second trace**, the
+   * largest single item in it, and a stall that long trips `NetClient`'s `RESYNC_TICKS` (20
+   * ticks, 333 ms) — which throws the prediction away and teleports the player. The hitch and
+   * the rubberbanding reported from that session are one cause.
+   *
+   * Off, a bad program draws nothing and says nothing, so the flag follows the same gate that
+   * decides whether this page gets `__p7` at all: on under `npm run dev`, on with `?debug=1`,
+   * off for everybody else. `ui/CharacterStage.ts` and `ui/WeaponPreview.ts` have shipped with
+   * it off unconditionally since they were written; this is that decision for the renderer that
+   * draws the match.
+   */
+  constructor(canvas: HTMLCanvasElement, checkShaderErrors = false) {
+    this.three = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      powerPreference: 'high-performance',
+      /**
+       * Round 2: `stencil: false` -> true, and it is a *depth* decision.
+       *
+       * Nothing here draws a stencil. The reason to ask for one is that the pair is what
+       * drivers actually allocate: a context asking for depth-without-stencil is free to hand
+       * back `DEPTH_COMPONENT16`, and several do, where depth-plus-stencil is
+       * `DEPTH24_STENCIL8` on every implementation this game can run on. Sixteen bits across
+       * a 0.12-400 m frustum cannot separate a 1 cm trim lip from the wall behind it at
+       * ordinary combat range, which is the reported jitter; twenty-four bits has two orders
+       * of magnitude in hand.
+       *
+       * The cost is 8 bits per sample on the MSAA buffer and no fill: the clears here are
+       * explicit and none of them touch stencil.
+       */
+      stencil: true,
+      alpha: false,
+    });
+    this.three.autoClear = false;
+    this.three.setClearColor(0x0c0e11, 1);
+    this.three.outputColorSpace = THREE.SRGBColorSpace;
+    this.three.toneMapping = THREE.ACESFilmicToneMapping;
+    // Raised from 1.05 in M5. ACES rolls the shoulder off hard, and at 1.05 the mid-tones
+    // of a grey-box map — which is nearly all of it — were sitting in the part of the curve
+    // where everything converges on the same dark grey. See the M4 playtest note.
+    this.three.toneMappingExposure = 1.25;
+    this.three.shadowMap.enabled = true;
+    // PCFSoftShadowMap was deprecated in three r185 and silently falls back to
+    // PCFShadowMap with a console warning. Ask for what we actually get; softness
+    // comes from the map size and the light's shadow radius instead.
+    this.three.shadowMap.type = THREE.PCFShadowMap;
+    this.three.debug.checkShaderErrors = checkShaderErrors;
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  /** `scale` is the user's render-scale setting; device pixel ratio is capped at 2. */
+  setSize(width: number, height: number, scale: number): void {
+    this.widthPx = Math.max(1, Math.floor(width));
+    this.heightPx = Math.max(1, Math.floor(height));
+    this.ratio = Math.min(2, Math.max(0.5, window.devicePixelRatio * scale));
+    this.three.setPixelRatio(this.ratio);
+    this.three.setSize(this.widthPx, this.heightPx, false);
+  }
+
+  get aspect(): number {
+    return this.widthPx / this.heightPx;
+  }
+
+  get shadowQuality(): ShadowQuality {
+    return this.shadowTier;
+  }
+
+  /**
+   * Set the shadow tier and push it into every shadow-casting light in the scene (M8).
+   *
+   * Applied live rather than at the next map load: a setting that needs a restart to take
+   * effect is a setting a player cannot evaluate, and evaluating it is the entire reason it
+   * exists on a screen whose job is finding a playable configuration.
+   *
+   * Changing `mapSize` on an existing shadow needs its render target disposed, or three.js
+   * keeps drawing into the old one at the old resolution and the setting appears to do
+   * nothing at all.
+   */
+  setShadowQuality(quality: ShadowQuality, scene: THREE.Object3D): void {
+    this.shadowTier = quality;
+    const tier = SHADOW_TIERS[quality];
+    this.three.shadowMap.enabled = tier.size > 0;
+
+    scene.traverse((object) => {
+      const light = object as THREE.Object3D & { isLight?: boolean; shadow?: THREE.LightShadow };
+      const shadow = light.shadow;
+      if (light.isLight !== true || shadow === undefined) return;
+      const authored = shadowAuthoring.get(shadow);
+      if (authored === undefined) return;
+
+      if (tier.size === 0) {
+        light.castShadow = false;
+        return;
+      }
+      light.castShadow = authored.castShadow;
+      shadow.radius = authored.radius * tier.radiusScale;
+      // Round 3: the bias follows the tier too, or changing quality changes whether the map
+      // has acne on it. See `SHADOW_TIERS`.
+      shadow.normalBias = authored.normalBias * tier.biasScale;
+      if (shadow.mapSize.width !== tier.size) {
+        shadow.mapSize.set(tier.size, tier.size);
+        // The existing target is the old size; it has to go or nothing changes on screen.
+        shadow.map?.dispose();
+        shadow.map = null;
+      }
+    });
+    this.three.shadowMap.needsUpdate = true;
+  }
+
+  get pixelRatio(): number {
+    return this.ratio;
+  }
+
+  render(scene: THREE.Scene, camera: THREE.Camera, viewmodel: ViewmodelLayer | null): void {
+    const blur = this.blur;
+    if (blur === null) {
+      this.three.clear(true, true, false);
+      this.drawFrame(scene, camera, viewmodel);
+      return;
+    }
+    // The same closure the direct path calls, so there is one description of what a frame
+    // contains and the blurred path cannot forget the viewmodel pass.
+    blur.render(this.three, () => this.drawFrame(scene, camera, viewmodel));
+  }
+
+  /**
+   * Turn accumulation motion blur on or off (M8, S6.3).
+   *
+   * Built on the first frame it is wanted and destroyed the moment it is not, so a player
+   * who leaves it off never allocates a render target. See `engine/MotionBlur.ts`.
+   */
+  setMotionBlur(on: boolean): void {
+    if (on === (this.blur !== null)) return;
+    if (on) {
+      this.blur = new MotionBlur();
+      return;
+    }
+    this.blur?.dispose();
+    this.blur = null;
+  }
+
+  get motionBlurEnabled(): boolean {
+    return this.blur !== null;
+  }
+
+  /** Drop the blur history — on a respawn, a map change or a camera takeover. */
+  resetMotionBlur(): void {
+    this.blur?.reset();
+  }
+
+  /**
+   * The Chopper Gunner's view (M7, brief S6.1; reworked post-M8).
+   *
+   * The brief asks for "a render pass, not a colour filter over the normal view", and the
+   * difference is not pedantry — it decides what the picture can *say*. A filter tints an
+   * already-lit image, so a body in shadow stays dark and the sky stays bright, which is the
+   * opposite of what a gunship optic shows. A pass decides what each object is:
+   *
+   *  1. The world is drawn with an override material that ignores lighting entirely and
+   *     shades on surface facing, so the map reads as legible grey terrain **at night as
+   *     well as by day** — the map's own lights are not consulted at all, which is the whole
+   *     point on Depot.
+   *  2. Depth is kept and the bodies are drawn in two further passes: `cold` — the gunner's
+   *     own side — in near-black, and `hot` — everybody else — in orange. Both are occluded
+   *     by the depth buffer pass one wrote, so a body behind a container is still behind it.
+   *
+   * **The IFF split is the post-M8 change.** M7 drew every body hot, so the gunner could not
+   * tell their own team from the enemy and the streak was as likely to wipe the friendly
+   * half of the map as the hostile one. Groups rather than a per-object test keeps this a
+   * render pass that knows nothing about teams: it is handed the cold ones and the hot ones
+   * and draws them differently. Each side is a *list* of groups (M13 Phase A) because
+   * Free-for-All has no cold side at all — both substrate groups are hot and the list is
+   * empty — and a pass that took exactly one of each could only draw half the lobby cold.
+   *
+   * ## Why the sky is the *renderer's* clear colour and not `scene.background` (round 2)
+   *
+   * This is three passes that share one depth buffer and one colour buffer, and that only
+   * works if passes two and three do not clear. `autoClear` is off for exactly that reason —
+   * but `scene.background`, when it holds a `Color`, is not a passive backdrop: three's
+   * background stage sets `forceClear` and calls `renderer.clear(autoClearColor,
+   * autoClearDepth, ...)` *regardless* of `autoClear`. Those two flags default to true and
+   * nothing here was turning them off, so every one of the three `render` calls wiped the
+   * one before it. The player saw the last pass only: a flat background with orange enemies
+   * floating on it, no map and no team-mates. That is verbatim the post-M8 report, and both
+   * halves of it — "the world is pitch black" and "teammates are invisible" — are this one
+   * line.
+   *
+   * So the optic's sky is set as the *renderer's* clear colour and cleared once, by hand,
+   * and the scene's background is nulled for the duration. A null background leaves
+   * `forceClear` false, which leaves `autoClear` in charge, which is off.
+   *
+   * Nothing is post-processed and no render target is allocated, which is what keeps this
+   * inside the frame budget on integrated graphics.
+   */
+  renderGunship(
+    scene: THREE.Scene,
+    camera: THREE.Camera,
+    hot: readonly THREE.Object3D[],
+    cold: readonly THREE.Object3D[],
+  ): void {
+    const previousOverride = scene.overrideMaterial;
+    const previousBackground = scene.background;
+    const previousFog = scene.fog;
+    this.three.getClearColor(previousClear);
+    const previousClearAlpha = this.three.getClearAlpha();
+
+    // Bodies are hidden for the world pass and drawn by the two that follow. Without this
+    // they would be shaded as terrain first and then overdrawn, which costs a pass and — on
+    // a body exactly coplanar with the floor it stands on — flickers between the two.
+    const bodiesWereVisible = new Map<THREE.Object3D, boolean>();
+    for (const group of hot) bodiesWereVisible.set(group, group.visible);
+    for (const group of cold) bodiesWereVisible.set(group, group.visible);
+    for (const group of bodiesWereVisible.keys()) group.visible = false;
+
+    scene.overrideMaterial = this.gunshipWorld();
+    // Fog and a sky colour are lighting cues, and the optic has neither. The optic's own
+    // flat sky is the clear colour rather than the scene background — see the note above.
+    scene.background = null;
+    scene.fog = null;
+    this.three.setClearColor(GUNSHIP_BACKGROUND, 1);
+
+    // The one clear of the three passes. Everything after this shares the depth buffer it
+    // writes, which is what makes a body behind a container stay behind it.
+    this.three.clear(true, true, false);
+    this.three.render(scene, camera);
+    scene.overrideMaterial = previousOverride;
+
+    for (const [group, visible] of bodiesWereVisible) group.visible = visible;
+
+    this.drawBodies(scene, camera, cold, hot, this.gunshipCold(), previousOverride);
+    this.drawBodies(scene, camera, hot, cold, this.gunshipHot(), previousOverride);
+
+    scene.background = previousBackground;
+    scene.fog = previousFog;
+    this.three.setClearColor(previousClear, previousClearAlpha);
+  }
+
+  /**
+   * Clear to the background colour and draw nothing.
+   *
+   * `autoClear` is off (the two-pass draw controls its own clears), so without this the
+   * canvas holds the last frame it rendered — which from M4 means the final frame of the
+   * previous match sitting behind the main menu.
+   */
+  clear(): void {
+    this.three.clear(true, true, false);
+  }
+
+  get info(): THREE.WebGLInfo {
+    return this.three.info;
+  }
+
+  dispose(): void {
+    this.blur?.dispose();
+    this.blur = null;
+    this.thermalWorldMaterial?.dispose();
+    this.thermalWorldMaterial = null;
+    this.thermalHotMaterial?.dispose();
+    this.thermalHotMaterial = null;
+    this.thermalColdMaterial?.dispose();
+    this.thermalColdMaterial = null;
+    this.three.dispose();
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private drawFrame(scene: THREE.Scene, camera: THREE.Camera, viewmodel: ViewmodelLayer | null): void {
+    this.three.render(scene, camera);
+    if (viewmodel !== null && viewmodel.hasContent) {
+      // Fresh depth so the viewmodel can never intersect world geometry.
+      this.three.clearDepth();
+      this.three.render(viewmodel.scene, viewmodel.camera);
+    }
+  }
+
+  /**
+   * Draw one set of body groups with an override material, with everything else hidden.
+   *
+   * `exclude` is the *other* set, which has to be hidden explicitly because its groups are
+   * siblings under the same top-level node — hiding by scene child alone would draw both.
+   */
+  private drawBodies(
+    scene: THREE.Scene,
+    camera: THREE.Camera,
+    subjects: readonly THREE.Object3D[],
+    exclude: readonly THREE.Object3D[],
+    material: THREE.Material,
+    restoreOverride: THREE.Material | null,
+  ): void {
+    if (!subjects.some((s) => s.visible)) return;
+
+    const wasVisible = new Map<THREE.Object3D, boolean>();
+    for (const child of scene.children) {
+      wasVisible.set(child, child.visible);
+      // A subject may be nested (a team group under the roster node), so the test is
+      // ancestry rather than identity.
+      child.visible = subjects.some((s) => child === s || isAncestorOf(child, s));
+    }
+    const excludeWas = new Map<THREE.Object3D, boolean>();
+    for (const group of exclude) {
+      excludeWas.set(group, group.visible);
+      group.visible = false;
+    }
+
+    scene.overrideMaterial = material;
+    this.three.render(scene, camera);
+    scene.overrideMaterial = restoreOverride;
+
+    for (const [group, visible] of excludeWas) group.visible = visible;
+    for (const [child, visible] of wasVisible) child.visible = visible;
+  }
+
+  private gunshipWorld(): THREE.Material {
+    return (this.thermalWorldMaterial ??= thermalMaterial(GUNSHIP_WORLD_FRAG));
+  }
+
+  private gunshipHot(): THREE.Material {
+    return (this.thermalHotMaterial ??= thermalMaterial(GUNSHIP_HOT_FRAG));
+  }
+
+  private gunshipCold(): THREE.Material {
+    return (this.thermalColdMaterial ??= thermalMaterial(GUNSHIP_COLD_FRAG));
+  }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** Called by `MapLoader` once per light, with the values the map asked for. */
+export function rememberShadowAuthoring(
+  shadow: THREE.LightShadow,
+  radius: number,
+  castShadow: boolean,
+  normalBias: number,
+): void {
+  shadowAuthoring.set(shadow, { radius, castShadow, normalBias });
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Whether `descendant` sits anywhere below `node`. Used by the gunship body passes. */
+function isAncestorOf(node: THREE.Object3D, descendant: THREE.Object3D): boolean {
+  let current: THREE.Object3D | null = descendant.parent;
+  while (current !== null) {
+    if (current === node) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
+/** One of the three thermal override materials: the shared vertex stage, `fragment`, and no fog. */
+function thermalMaterial(fragment: string): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {},
+    vertexShader: GUNSHIP_VERT,
+    fragmentShader: fragment,
+    fog: false,
+  });
+}
+//#endregion

@@ -1,9 +1,16 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import {
   TickAccumulator,
   type FrameSample,
   type LoopHandlers,
 } from '../../shared/core/Loop';
 
+export type { FrameSample, LoopHandlers };
+//#endregion
+
+// ========================================= CLASS Loop ========================================= \\
+//#region Class Loop
 /**
  * The browser's frame driver (brief S4.1).
  *
@@ -16,6 +23,8 @@ import {
  * `cancelAnimationFrame` and `performance.now()`. The sim itself never sees any of them.
  */
 export class Loop {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly ticks = new TickAccumulator();
   private lastMs = 0;
   private rafId = 0;
@@ -37,54 +46,6 @@ export class Loop {
    * independent of frame rate (acceptance criterion 5). See DEBUG.md.
    */
   syntheticLoadMs = 0;
-
-  constructor(private readonly handlers: LoopHandlers) {}
-
-  /** See `TickAccumulator.simSpeed`. */
-  get simSpeed(): number {
-    return this.ticks.simSpeed;
-  }
-
-  set simSpeed(v: number) {
-    this.ticks.simSpeed = v;
-  }
-
-  /** See `TickAccumulator.maxStepsPerFrame`. */
-  get maxStepsPerFrame(): number {
-    return this.ticks.maxStepsPerFrame;
-  }
-
-  set maxStepsPerFrame(v: number) {
-    this.ticks.maxStepsPerFrame = v;
-  }
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.lastMs = performance.now();
-    this.ticks.reset();
-    this.rafId = requestAnimationFrame(this.frame);
-  }
-
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    cancelAnimationFrame(this.rafId);
-    this.rafId = 0;
-  }
-
-  get isRunning(): boolean {
-    return this.running;
-  }
-
-  get currentTick(): number {
-    return this.ticks.currentTick;
-  }
-
-  /** Seconds of simulated time elapsed. Derived from ticks, never from wall clock. */
-  get simTime(): number {
-    return this.ticks.simTime;
-  }
 
   private readonly frame = (nowMs: number): void => {
     this.rafId = requestAnimationFrame(this.frame);
@@ -116,10 +77,66 @@ export class Loop {
     s.starved = this.ticks.starved;
     this.handlers.onFrame?.(s);
   };
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  constructor(private readonly handlers: LoopHandlers) {}
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    this.lastMs = performance.now();
+    this.ticks.reset();
+    this.rafId = requestAnimationFrame(this.frame);
+  }
+
+  stop(): void {
+    if (!this.running) return;
+    this.running = false;
+    cancelAnimationFrame(this.rafId);
+    this.rafId = 0;
+  }
+
+  get isRunning(): boolean {
+    return this.running;
+  }
+
+  get currentTick(): number {
+    return this.ticks.currentTick;
+  }
+
+  /** Seconds of simulated time elapsed. Derived from ticks, never from wall clock. */
+  get simTime(): number {
+    return this.ticks.simTime;
+  }
+
+  /** See `TickAccumulator.simSpeed`. */
+  get simSpeed(): number {
+    return this.ticks.simSpeed;
+  }
+
+  set simSpeed(v: number) {
+    this.ticks.simSpeed = v;
+  }
+
+  /** See `TickAccumulator.maxStepsPerFrame`. */
+  get maxStepsPerFrame(): number {
+    return this.ticks.maxStepsPerFrame;
+  }
+
+  set maxStepsPerFrame(v: number) {
+    this.ticks.maxStepsPerFrame = v;
+  }
+  //#endregion
 }
+//#endregion
 
-export type { FrameSample, LoopHandlers };
-
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function busyWait(ms: number): void {
   const end = performance.now() + ms;
   // Deliberately hot: this is a debug tool for making frames expensive on purpose.
@@ -127,3 +144,4 @@ function busyWait(ms: number): void {
     /* spin */
   }
 }
+//#endregion

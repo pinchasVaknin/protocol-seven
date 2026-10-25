@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**41 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**42 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -24,7 +24,9 @@ a finished unit's files and reaches thirty files — and opened **#51**. **B7 op
 2026-10-25, the same shape again: four comments naming flow members its own split had moved,
 three of them in the harness §10 keeps out of reach. **B8 opened #53** on 2026-10-25 from its
 own Step 0: the NET oracle failed three different ways on an untouched tree when run behind the
-SIM ones, and passed both times it was run alone.
+SIM ones, and passed both times it was run alone. **C2 reproduced #34** on 2026-10-25 — the
+first entry answered by measurement rather than by an edit — and left it open, rewritten with
+its numbers and pointed somewhere else; it opened **#55** from its own BROWSER check.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -59,7 +61,7 @@ and belong in its Step 2 plan.
 | ~~B7~~ | `server/Server.ts` + the three files it was split into | **closed** — nothing was bound to it: all 38 entries were read and none names `Server.ts`. B7 opened #52 |
 | ~~B8~~ | `server/` Config, Loop, MapBakery, MatchAllocator, Migration, NetPlayer, NodeClock, Router, Spectator, log, serve | **closed** — #51's two `NetPlayer` references were absorbed; #13 was **declined a third time** (`Spectator.ts` imports the constant, but the move is in A9's `shared/combat` files and reaches thirty files); #52's `LiveMatch.ts` line is **not** a B8 file and stays. B8 opened #53 at Step 0 |
 | ~~C1~~ | `client/input/`, `client/player/`, `client/perks/`, `client/cinematic/` | **closed** — C1 absorbed #1's `IntroCamera` half under its own approval: the local `angleDelta` is gone and the file is on `MathUtil.angleDelta`, which moves `d = -PI` from `-PI` to `+PI`. What is left of #1 is `ClientMatch.angleDeltaRad`, which is C24's. C1 opened #54 |
-| C2 | `client/engine/` CameraRig, FrameLoop | #34 — reproduce the local camera jitter *before* refactoring these files |
+| ~~C2~~ | `client/engine/` BrowserClock, CameraRig, FrameLoop, GpuWarmup, MotionBlur, Renderer | **reproduction done, entry stays open** — C2 drove the real frame path with a clock it controlled and ruled out all three of #34's candidates *inside its own files*: the render-pass alpha tracks wall clock to 1.5e-11 ms under ±8 ms of jitter, the only layers integrated with `dt` move 0.0041° under a 6–36 ms clock disagreement, and one float32 ulp at 40 m is 4.8 µm against a 32 mm bob. #34 is rewritten with the numbers and re-pointed at the four things the reproduction could not cover. C2 noted `CameraRig.interpolatePhase` in #1 and opened #55 |
 | C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
 | C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
@@ -333,6 +335,29 @@ too. Both are evidence this one can be judged the same way.
 
 At d = -PI the two answers are a half turn apart in sign, which is the one input where a blend
 would visibly swing the other way.
+
+**A third spelling of the same unwrap, noted by C2 on 2026-10-25.**
+`src/client/engine/CameraRig.ts`'s non-exported `interpolatePhase` carries the unwrap inline:
+
+```
+CameraRig.interpolatePhase  let d = b - a; if (d > PI) d -= TAU; if (d < -PI) d += TAU;
+                            return a + d * alpha;                 ->  [-PI, PI], no %
+```
+
+It is **not** `angleDelta` — it interpolates toward `b` by `alpha` and only *uses* the delta — so
+there is nothing to substitute without first extracting `angleDelta(a, b)` out of it, and that
+lands on both of the differences this entry is about: the `% TAU` (which only matters for
+`|b − a| > TAU`, unreachable here) and `<` against `<=` at `d = -PI`. C2 declined to fold it:
+the function sits on the per-frame camera path (R7), the change is a behaviour change at one
+input exactly as above, and the unit had no approval for one. C2 measured the real input range
+instead — `bobPhase` advances at most **0.736 rad per tick** at 4.92 m/s, so the two spellings
+agree on every value the game can produce, and the boundary is as unreachable as C1 found
+`IntroCamera`'s to be. `CameraRig.test.ts` pins both wrap directions and the no-wrap case with
+exact doubles, so whoever folds this in has the before/after already written.
+
+**Where it is done:** C24, with `ClientMatch`'s copy, or in a session of its own — `CameraRig.ts`
+is **C2**'s file, now finished and in the `check:style` ratchet, so a later unit cannot reach it
+under R3 either.
 
 **Decide** fold it in and accept the `(-PI, PI]` boundary (and pin what can be pinned in C24's
 tests), or keep the local copy and write down *why* it wants `[-PI, PI]`. Note what C1 found:
@@ -700,27 +725,106 @@ they do not have today. **Decide inside C11** whether a per-target owner on a de
 whether the cheap answer is to take `static` out of `TargetDummy.decals` and lose the holes on the
 range altogether.
 
-### #34 — The camera trembles while walking the arena · `bound to C2` · `needs reproduction`
-**Files** most likely `src/client/engine/CameraRig.ts` and `FrameLoop.ts` (C2); `CameraConfig.ts`
-and `CameraShake.ts` (C1, already completed) are the other candidates. **Origin** reported from
-play, 2026-10-19.
+### #34 — The camera trembles while walking the arena · `open` · *measured by C2; not in `client/engine/`* *(rewritten 2026-10-25 by C2)*
+**Files** **not** `src/client/engine/CameraRig.ts` or `FrameLoop.ts` — those are measured clean
+below. The four places left to look are named at the end. **Origin** reported from play,
+2026-10-19; reproduced and measured by C2 on 2026-10-25, on the clean tree before it edited
+anything.
 
 Walking freely around the arena the view shakes slightly — small, continuous, and **local**: it is
 there with no server in the picture, so it is none of the remote-pose work f5d1e72 and df7d87b
-closed. Nothing is diagnosed and nothing is measured yet. Three candidates are worth separating
-first, because each wants a different fix:
+closed.
 
-1. **The render-pass alpha.** A camera that reads the *simulation* pose on a frame that is not a
-   tick boundary gets a sawtooth at the beat between the frame rate and `DT` — the same class of
-   defect `MapRender.ts:429` records for props that "jitter and shake as you approach them".
-2. **A curve on the wrong clock.** Sway or landing shake advanced per *frame* instead of per `DT`
-   trembles at exactly the rate the frame time varies.
-3. **Float precision.** `Renderer.ts:125` already discusses this for ordinary combat range and says
-   twenty-four bits is two orders short; a camera far from the origin is where that shows.
+**How it was measured.** The browser pane cannot hold pointer lock and throttles
+`requestAnimationFrame`, so neither a real clock nor real input was available. Instead the match
+was driven through `__p7`: `loop.stop()`, `requestAnimationFrame` replaced with a no-op, and
+`loop.frame(t)` called by hand with a timestamp chosen per frame. That is the real path —
+`TickAccumulator.take` → the sim steps → `Game.draw` → `CameraRig.update` → the WebGL draw — with
+the one variable under control, which is the only way to tell a timing defect from the bob itself.
+The bots' input was frozen (`BotDirector.inputFrozen`) and every `brain.steer` stubbed so no shot
+could raise `CameraShake.trauma`, and the subject walked a circle at 4.92 m/s to stay off walls.
+Nine hundred frames per configuration. The full write-up, with the four experiment tables, is in
+the session notes for C2.
 
-**C2 reproduces it with the frame stats up before it changes anything.** A trembling camera is the
-one defect a refactor can silently "fix" by reordering two assignments, after which nobody knows
-which of the three it was.
+**All three candidates are ruled out inside C2's files.**
+
+1. **The render-pass alpha — ruled out by measurement.** The rendered simulation time
+   `tau = (currentTick - 1 + alpha) * DT` tracked the injected wall-clock delta to a maximum error
+   of **7.3e-12 ms** at uniform frame times, **1.5e-11 ms** at ±4 ms of jitter and **1.5e-11 ms**
+   at ±8 ms. That is float noise, not a sawtooth, and it is analytic rather than lucky: `take`
+   banks the whole elapsed interval and `alpha` is read *after* the steps run, so
+   `tau = elapsed − DT` identically. There is a constant one-tick latency and no beat.
+2. **A curve on the wrong clock — bounded three orders below visibility.** Of the layers
+   `CameraRig.update` composes, only `roll`, `fov` and `dipPos` are integrated with `dt`; position,
+   eye height and both bob offsets are pure functions of the alpha-interpolated snapshot and read
+   no clock at all. `fov` and `dipPos` measured a residual of **exactly 0** while walking. In the
+   adversarial run `performance.now` was left real, so `Game.draw`'s own `dt` ranged **6.2–35.6 ms**
+   against an exact 16.667 ms frame delta — a wider disagreement between the two clocks than any
+   real browser produces. The roll residual moved from 6.2e-5 to 7.1e-5 rad, which is
+   **0.0041 degrees**.
+3. **Float precision — ruled out by magnitude.** Within 40 m of the origin one float32 ulp is
+   **4.8 µm**, three orders under `cfg.bobAmplitude` (32 mm). `Renderer.ts:125` is about
+   *depth-buffer bits*, which is a different quantity from camera position.
+
+**Two more things the entry did not name, measured clean as well.** `curr.grounded` is read raw
+rather than interpolated and gates `bobAmount`, so a one-tick flicker would snap the bob 32 mm —
+over 900 frames of walking it never flickered. And `interpolatePhase` would fold if `bobPhase`
+advanced more than π in a tick; the maximum measured was **0.736 rad/tick** at 4.92 m/s (about
+0.15 rad/tick per m/s), better than 2× headroom at any reachable speed.
+
+**Where to look next — the four things the reproduction could not cover.**
+
+1. **The mouse.** `yaw` and `pitch` are the one camera input that is *not* interpolated (it is the
+   deliberate exception in S4.1), and the pane cannot hold pointer lock, so they came from a
+   synthetic command stream. A real mouse delivers sub-pixel deltas at its own rate; that path is
+   untested here and is the first place to look.
+2. **Uneven ground.** `curr.y` stayed 0 for all 900 frames, so stairs, kerbs and
+   `Movement.tryStepUp` were never exercised. A step that resolves differently on adjacent ticks
+   would read exactly like this report.
+3. **Real frame timings.** Every number above is from a clock C2 chose. The pane throttles rAF, so
+   the distribution a real session produces was never sampled.
+4. **Shadow shimmer, which is not camera motion at all.** `Renderer.ts:19–32` records a
+   tier-dependent acne that `biasScale` closes, and calls the **low** tier's the worst — "a fine
+   moving speckle over every large surface, worst at grazing angles". A speckle that moves with the
+   view is indistinguishable, in a report, from a camera that trembles. The reproduction ran on
+   `medium`. **Ask which shadow tier the report was played on before anything else is investigated.**
+
+### #55 — The Chopper Gunner optic draws a flat grey field and no map · `open` *(opened 2026-10-25 by C2)*
+**Files** `src/client/engine/Renderer.ts` (`renderGunship`, `GUNSHIP_VERT`, `GUNSHIP_WORLD_FRAG`)
+and whatever hands it the scene and the camera — `src/client/Game.ts` (C23) is the caller.
+**Origin** C2's BROWSER check, 2026-10-25.
+
+Call in a Chopper Gunner and the optic shows a flat dark grey field with the HUD over it: no
+terrain, no containers, no bodies — the clear colour and nothing else. The normal view comes back
+intact when the streak ends, so everything `renderGunship` saves and restores is working.
+
+**It is not C2's change, and that is measured rather than argued.** C2's edit in this file is the
+three lazy material getters collapsing onto one `thermalMaterial(fragment)` helper; a
+position-independent diff of every non-comment line shows nothing else in the gunship path moved,
+and all four shader strings hash identically to `HEAD`. More directly: C2 put the **original**
+`Renderer.ts` back on disk, reloaded, played a match and called the streak again, and the optic was
+flat in exactly the same way. The file was then restored and re-verified by hash.
+
+**What was established.** Instrumenting the instance showed `renderGunship` called **419 times** in
+one run, with the camera at y = 34 (airborne, so the streak's camera is live), one hot group, one
+cold group, 12 scene children, and `camera.layers.mask === 1` — layer 0 only, which is what the
+`SKY_LAYER` note says it should be. All three thermal materials were built
+(`thermalWorldMaterial`, `thermalHotMaterial`, `thermalColdMaterial` all non-null), so the override
+materials exist and the three passes ran. **No console error, in a dev build where
+`checkShaderErrors` is on** — so the programs linked. What is missing is the geometry.
+
+**Where to start.** Either the world pass draws nothing (the override material compiles but
+produces nothing visible, or the objects fail the camera's layer test), or the picture is drawn and
+then overwritten. `renderer.info.render` could not answer this from the console because
+`autoReset` resets it at the start of every `render` call and `renderGunship` makes three — read it
+*inside* the pass, between the three `render` calls, with `autoReset` off.
+
+**Watch for** this may be the browser pane rather than the game: C2 saw it only there, and never in
+a normal browser window. Reproduce it in Chrome before spending anything on the shader.
+
+**Verify** BROWSER: call in a chopper on Foundry and on Depot (the map the pass's own notes were
+written against) and compare against the three descriptions in `renderGunship`'s JSDoc — grey
+terrain, near-black team-mates, orange enemies.
 
 ### #35 — The arsenal's viewmodels are fetched on demand, so a grey primitive stands in · `bound to C23` · `needs a decision from the user`
 **Files** `src/client/Game.ts` — `warmWeaponAssets` and `warmWorldAssets`. The service itself,

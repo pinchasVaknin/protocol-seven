@@ -1,5 +1,10 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { Clock } from '../../shared/core/Clock';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The browser's implementation of the shared clock (M9, S3).
  *
@@ -12,3 +17,4 @@ export const browserClock: Clock = {
     return performance.now();
   },
 };
+//#endregion

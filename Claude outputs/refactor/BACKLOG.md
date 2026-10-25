@@ -729,7 +729,8 @@ range altogether.
 **Files** **not** `src/client/engine/CameraRig.ts` or `FrameLoop.ts` — those are measured clean
 below. The four places left to look are named at the end. **Origin** reported from play,
 2026-10-19; reproduced and measured by C2 on 2026-10-25, on the clean tree before it edited
-anything; the shadow tier it was played on was supplied by the user the same day.
+anything; the shadow tier it was played on was supplied by the user the same day, and a second
+reproduction that day closed the two gaps the first one left.
 
 Walking freely around the arena the view shakes slightly — small, continuous, and **local**: it is
 there with no server in the picture, so it is none of the remote-pose work f5d1e72 and df7d87b
@@ -803,28 +804,64 @@ the strongest signal on the entry and it points away from rendering:
   grounded, `groundSnap` pulling back down, forever — which is 0.82° of pitch against a wall
   0.35 m away, *"which is why the report always said 'up close'"*.
 
-**C2's reproduction answered neither of those questions**, and that is the gap to close:
+C2's first reproduction answered neither question — it walked for all 900 frames, kept away from
+walls on purpose, and ran on flat ground — so **both were measured in a second pass the same day**,
+on the same tree, with the same harness. Full tables in the session notes
+(`C2-backlog-34-round-two.md`).
 
-1. **It never stood still.** The subject walked a circle for every one of the 900 frames, so
-   round 4's own first question has not been re-asked since round 4 answered it.
-2. **It kept away from walls on purpose.** C2 switched to circle-strafing precisely *because* the
-   subject kept stopping dead against walls — which is the exact configuration round 3's
-   `tryStepUp` wobble needs.
-3. **The ground was flat.** `curr.y` stayed **exactly 0** across all 900 frames, so stairs, kerbs
-   and `tryStepUp` were never exercised. That figure is also the one piece of good news here: a
-   live 5 mm limit cycle would have shown as `y` oscillating between 0 and 0.005, so round 4's fix
-   is holding *while walking on the flat*. The gate at `Movement.ts:452–457` — ground snap only
-   when not already grounded — is still in place.
-4. **The mouse.** `yaw` and `pitch` are the one camera input that is *not* interpolated (the
-   deliberate exception in S4.1), and the pane cannot hold pointer lock, so they came from a
-   synthetic command stream. A real mouse delivers sub-pixel deltas at its own rate.
-5. **Real frame timings.** Every number above is from a clock C2 chose; the pane throttles rAF, so
-   the distribution a real session produces was never sampled.
+**A — standing perfectly still, 600 ticks, zero input.** Round 4's own first question.
 
-**So the order to work this in** is: flip the shadow tier (settles 4 at no cost); stand perfectly
-still and read `curr.y` over a few hundred ticks; walk into a wall and hold; then stairs and kerbs.
-The files are `src/shared/player/Movement.ts` and the collision resolver — **not**
-`src/client/engine/`, which is what the measurement above already establishes.
+| `sim.y` distinct values | `sim.vy` | `grounded` | `steppedUp` | camera `y` spread |
+|---|---|---|---|---|
+| **1** (−2.08e-17 m) | exactly 0 every tick | true every tick | never | **1.1 picometres** |
+
+Round 4's signature was 5 mm alternating at ~20 Hz. This is thirteen orders of magnitude under it.
+The gate at `Movement.ts:452–457` — ground snap only when not already grounded — is holding.
+
+**B — pressed against a wall with the input still held, 600 ticks.** Round 3's configuration: the
+subject walked into a wall (z 21 → 17.565, speed to exactly 0) and kept pushing.
+
+| camera max per-tick step | camera `y` spread | `sim.y` distinct | `steppedUp` ticks |
+|---|---|---|---|
+| **exactly 0** | exactly 0 | 1 | **0** |
+
+Round 3 measured 120 step-ups in 120 ticks in this configuration. Zero in 600, and a camera that
+does not move by one float ulp.
+
+**C — 3,080 ticks of varied traverse**, reaching 705 mm of elevation, 45 airborne ticks, 2 step-up
+events, 3 landings. **The 5 mm skin overshoot is still there, as a one-tick transient, every time:**
+
+```
+ tick   2574   2575   2576   2577   2578   2579      <- a 525 mm fall, then contact
+ y/mm  146.3   76.3    1.3    5.0    0.0    0.0
+ gr       0      0      0      1      1      1
+```
+
+All three landings: `y = 5.000 mm` on the contact tick, `0.000` on the next, duration **1 tick**,
+deterministically. The step-up completes the same way — `704.989 → 700.000`, corrected on the
+following tick. That is `collisionSkin`: `resolve` pushes out by `depth + skin` and overshoots,
+exactly as round 4 describes. What round 4 removed was not the overshoot but the thing that made it
+*cycle*. Every "reversal" anywhere in the 3,080 ticks is one of these one-tick corrections; there is
+no sustained oscillation at any point.
+
+**Verdict: neither historical cause reproduces.** A single 16.7 ms pop of 5 mm when you land, or
+when a step-up completes, is a pop on an *event*. This report says the view trembles **while
+walking**, which is continuous, and walking on the flat produced a camera static to the picometre.
+
+**What is left, after two reproductions, three candidates and two historical causes.** In order:
+
+1. **The shadow tier — and only the user can run it.** Set shadows to `off` or `high` and say
+   whether the trembling changes. `low` has `radiusScale: 0.6`, the hardest edge over the fewest
+   texels, so it is still where a residual per-texel error would be sharpest. Ten seconds, and it
+   settles the question completely.
+2. **The mouse.** `yaw` and `pitch` are the one camera input that is never interpolated (the
+   deliberate exception in S4.1), and neither reproduction used a real one — the pane cannot hold
+   pointer lock, so both drove a synthetic command stream. This is now the largest unexamined
+   surface by a distance.
+3. **Real frame timings.** Every number in both passes is from a clock the test chose.
+
+**Do not spend more on `src/client/engine/` or on `src/shared/player/Movement.ts` for this entry.**
+Both are measured clean, twice.
 
 ### #55 — The Chopper Gunner optic draws a flat grey field and no map · `open` *(opened 2026-10-25 by C2)*
 **Files** `src/client/engine/Renderer.ts` (`renderGunship`, `GUNSHIP_VERT`, `GUNSHIP_WORLD_FRAG`)

@@ -1,5 +1,10 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { Clock } from '../shared/core/Clock';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * Node's implementation of the shared clock (M9, S3).
  *
@@ -20,3 +25,4 @@ export const nodeClock: Clock = {
     return Number(process.hrtime.bigint() - ORIGIN_NS) / 1e6;
   },
 };
+//#endregion

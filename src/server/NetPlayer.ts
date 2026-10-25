@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { BotTeam, Combatant } from '../shared/ai/Combatant';
 import { Cheat, type CheatGrants } from '../shared/cheats/Cheats';
 import {
@@ -23,7 +25,10 @@ import { heldMoveScale, type WeaponDef } from '../shared/weapons/WeaponDefs';
 import { handsOffWeapon, WeaponSystem } from '../shared/weapons/WeaponSystem';
 import type { CollisionWorld } from '../shared/world/CollisionWorld';
 import { InputBuffer } from './net/InputBuffer';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * A connected human, on the server (M10, S4.15).
  *
@@ -80,12 +85,36 @@ export interface NetPlayerDeps {
    */
   readonly characterIndex: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Scratch for the frozen-countdown command. One per process; never escapes a tick. */
+const frozenCmd = {
+  seq: 0,
+  tickIndex: 0,
+  moveX: 0,
+  moveZ: 0,
+  yaw: 0,
+  pitch: 0,
+  buttons: 0,
+  sampledAtMs: 0,
+};
+//#endregion
+
+// ====================================== CLASS NetPlayer ======================================= \\
+//#region Class NetPlayer
 export class NetPlayer implements Combatant {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly rig = new HitboxRig(HUMANOID_RIG);
+
   readonly health: Health;
+
   readonly controller: PlayerController;
+
   readonly weapons: WeaponSystem;
+
   readonly input = new InputBuffer();
 
   /** The M3 animation seam, replicated verbatim so a human animates like a bot (S6.5). */
@@ -100,7 +129,7 @@ export class NetPlayer implements Combatant {
    * The grenade mechanic put the pin pull and the throw on the **fire button**, and the
    * snapshot's `EFlag.Firing` is read straight off that bit — so without this everyone else
    * would watch a player cook a grenade and see them firing a rifle they are not holding.
-   * Written by `ServerMatch.stepThrowers` from the one authority on it, the thrower's `busy`.
+   * Written by `MatchThrows.stepThrowers` from the one authority on it, the thrower's `busy`.
    */
   handBusy = false;
 
@@ -111,6 +140,7 @@ export class NetPlayer implements Combatant {
    * people watching draw the grenade — not the rifle — in the arm that throws it.
    */
   heldEquipment: EquipmentId | null = null;
+
   throwPhase: ThrowPhase = 'IDLE';
 
   /**
@@ -136,12 +166,16 @@ export class NetPlayer implements Combatant {
    * tick by the match and read once a tick by the snapshot.
    */
   meleeSeconds = 0;
+
   /** The previous tick's buttons, for the melee's rising edge. */
   meleePrevButtons = 0;
 
   kills = 0;
+
   deaths = 0;
+
   shotsFired = 0;
+
   shotsHit = 0;
 
   /** Seconds until this player may respawn. Zero when alive or free to return. */
@@ -157,13 +191,17 @@ export class NetPlayer implements Combatant {
   active = false;
 
   private readonly deps: NetPlayerDeps;
+
   /** The body other players see — the `Hello`'s skin index (M16, B6). */
   readonly characterIndex: number;
+
   private alive_ = false;
+
   private readonly residual = { yaw: 0, pitch: 0 };
 
   /** The last command actually simulated. The ack the client reconciles against. */
   private lastCommandSeq = -1;
+
   private lastCommandTick = -1;
 
   /**
@@ -175,9 +213,23 @@ export class NetPlayer implements Combatant {
    * shoot. The weapon's own state cannot express that and the command can.
    */
   lastButtons = 0;
+
   /** The whole of the last command consumed, or null before the first. See `advance`. */
   lastCommand: InputCommand | null = null;
 
+  /**
+   * The live perk state.
+   *
+   * A field rather than a read-through to `deps`, because a class can now change mid-session
+   * (§6.6) and `deps` is the class this player *joined* with. Everything that asks about perks
+   * — bot perception's Dead Silence check, the streak system's discount — must see the current
+   * answer, not the founding one.
+   */
+  private perks_: PerkState;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     readonly entityId: number,
     readonly displayName: string,
@@ -216,17 +268,10 @@ export class NetPlayer implements Combatant {
     this.controller.speedScale = deps.perks.moveSpeedMult;
     this.perks_ = deps.perks;
   }
+  //#endregion
 
-  /**
-   * The live perk state.
-   *
-   * A field rather than a read-through to `deps`, because a class can now change mid-session
-   * (§6.6) and `deps` is the class this player *joined* with. Everything that asks about perks
-   * — bot perception's Dead Silence check, the streak system's discount — must see the current
-   * answer, not the founding one.
-   */
-  private perks_: PerkState;
-
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** The perks this player is carrying. Read by bot perception and the streak system. */
   get perks(): PerkState {
     return this.perks_;
@@ -259,27 +304,35 @@ export class NetPlayer implements Combatant {
   get px(): number {
     return this.controller.sim.x;
   }
+
   get py(): number {
     return this.controller.sim.y;
   }
+
   get pz(): number {
     return this.controller.sim.z;
   }
+
   get yaw(): number {
     return this.controller.sim.yaw;
   }
+
   get vx(): number {
     return this.controller.sim.vx;
   }
+
   get vz(): number {
     return this.controller.sim.vz;
   }
+
   get eyeHeight(): number {
     return this.controller.sim.eyeHeight;
   }
+
   get aimHeight(): number {
     return this.rig.layout.aimY;
   }
+
   /**
    * Capsule height over stand height, 1 standing. What the snapshot carries as
    * `heightScale`: the procedural placeholder's squash, not the rig's (M13 C2).
@@ -287,10 +340,12 @@ export class NetPlayer implements Combatant {
   get capsuleScale(): number {
     return this.controller.sim.capsuleHeight / Math.max(this.deps.movement.standHeight, 1e-3);
   }
+
   get quiet(): boolean {
     const stance = this.controller.sim.stance;
     return stance === 'CROUCH' || stance === 'SLIDE';
   }
+
   /**
    * `SPEC[]2` — nothing comes looking (playtest round 4, F14).
    *
@@ -307,6 +362,7 @@ export class NetPlayer implements Combatant {
   get participating(): boolean {
     return this.active && this.health.alive && !this.deps.cheats.has(Cheat.Unseen);
   }
+
   /**
    * `SPEC[]1` — takes no damage (playtest round 4, F14).
    *
@@ -320,6 +376,7 @@ export class NetPlayer implements Combatant {
   get invulnerable(): boolean {
     return this.deps.cheats.has(Cheat.God);
   }
+
   get glinting(): boolean {
     return this.weapons.glinting;
   }
@@ -453,7 +510,10 @@ export class NetPlayer implements Combatant {
 
     this.advance(cmd);
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private advance(cmd: InputCommand): void {
     const prevButtons = this.lastButtons;
     this.lastButtons = cmd.buttons;
@@ -496,16 +556,6 @@ export class NetPlayer implements Combatant {
     this.rig.setTransform(sim.x, sim.y, sim.z, sim.yaw);
     savePlayerSim(sim, this.simState);
   }
+  //#endregion
 }
-
-/** Scratch for the frozen-countdown command. One per process; never escapes a tick. */
-const frozenCmd = {
-  seq: 0,
-  tickIndex: 0,
-  moveX: 0,
-  moveZ: 0,
-  yaw: 0,
-  pitch: 0,
-  buttons: 0,
-  sampledAtMs: 0,
-};
+//#endregion

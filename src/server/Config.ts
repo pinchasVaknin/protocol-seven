@@ -1,8 +1,13 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { isBotDifficulty, type BotDifficulty } from '../shared/ai/DifficultyTiers';
 import { NET_PERFECT, parseConditions, type NetConditions } from '../shared/net/NetSim';
 import { IDLE_KICK_MS, MAX_CONNECTIONS, MAX_CONNECTIONS_PER_IP } from '../shared/net/Protocol';
 import { VOTE_CYCLE_CONFIG, type VoteCycleConfig } from '../shared/net/Skirmish';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * Server configuration, from the environment (M10, S4.9 and S6.6).
  *
@@ -211,7 +216,10 @@ export interface ServerConfig {
    */
   readonly idleKickSeconds: number;
 }
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function loadConfig(env: Record<string, string | undefined>): ServerConfig {
   const conditionSpec = env['NET_SIM'] ?? '';
   const parsed = conditionSpec === '' ? NET_PERFECT : parseConditions(conditionSpec);
@@ -346,7 +354,10 @@ export function describeConfig(cfg: ServerConfig): string {
     (rotation === '' ? '' : ` (harness rotation${rotation})`)
   );
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function intOr(raw: string | undefined, fallback: number, min: number, max: number): number {
   if (raw === undefined || raw.trim() === '') return fallback;
   const n = Number(raw);
@@ -392,3 +403,4 @@ function listOr(raw: string | undefined, fallback: readonly string[]): readonly 
     .filter((s) => s !== '');
   return parts.length === 0 ? fallback : parts;
 }
+//#endregion

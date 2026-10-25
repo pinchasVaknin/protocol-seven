@@ -1,14 +1,3 @@
-import { navBakeOptionsFor } from '../shared/ai/BotDirector';
-import { nowMs } from '../shared/core/Clock';
-import { logger } from '../shared/core/Log';
-import { MAPS, type MapEntry } from '../shared/modes/ModeRegistry';
-import { DEFAULT_MOVEMENT_CONFIG, type MovementConfig } from '../shared/player/MovementConfig';
-import { loadMapCollision, shareMapCollision, type LoadedCollision } from '../shared/world/MapLoader';
-import { bakeNavmesh, type NavGrid } from '../shared/world/Navmesh';
-import { metric } from './log';
-
-const log = logger('bakery');
-
 /**
  * Every map, baked once, before the first connection is accepted (M11, S4.19).
  *
@@ -41,6 +30,20 @@ const log = logger('bakery');
  * cost is invisible to the boot report.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { navBakeOptionsFor } from '../shared/ai/BotDirector';
+import { nowMs } from '../shared/core/Clock';
+import { logger } from '../shared/core/Log';
+import { MAPS, type MapEntry } from '../shared/modes/ModeRegistry';
+import { DEFAULT_MOVEMENT_CONFIG, type MovementConfig } from '../shared/player/MovementConfig';
+import { loadMapCollision, shareMapCollision, type LoadedCollision } from '../shared/world/MapLoader';
+import { bakeNavmesh, type NavGrid } from '../shared/world/Navmesh';
+import { metric } from './log';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface BakedMap {
   readonly entry: MapEntry;
   /** Collider set + spatial hash. Immutable; `instanceView()` wraps it per instance. */
@@ -69,11 +72,25 @@ export interface BootBakeReport {
   readonly heapDeltaBytes: number;
   readonly rssAfterBytes: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('bakery');
+//#endregion
+
+// ====================================== CLASS MapBakery ======================================= \\
+//#region Class MapBakery
 export class MapBakery {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly byId = new Map<string, BakedMap>();
-  private report: BootBakeReport | null = null;
 
+  private report: BootBakeReport | null = null;
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Bake every map in the registry. Call once, before the listener opens.
    *
@@ -161,8 +178,12 @@ export class MapBakery {
     const baked = this.get(mapId);
     return { collision: shareMapCollision(baked.collision), nav: baked.nav };
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /**
  * Typed-array bytes held by a collision bake.
  *
@@ -200,3 +221,4 @@ function rssBytes(): number {
 function round(v: number): number {
   return Math.round(v * 100) / 100;
 }
+//#endregion

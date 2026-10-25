@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**39 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**40 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -22,7 +22,9 @@ entry was bound to, which left the function with no production caller and turned
 into whether it stays at all. **B6 declined #13 with the same reason B5 gave** — the move is in
 a finished unit's files and reaches thirty files — and opened **#51**. **B7 opened #52** on
 2026-10-25, the same shape again: four comments naming flow members its own split had moved,
-three of them in the harness §10 keeps out of reach.
+three of them in the harness §10 keeps out of reach. **B8 opened #53** on 2026-10-25 from its
+own Step 0: the NET oracle failed three different ways on an untouched tree when run behind the
+SIM ones, and passed both times it was run alone.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -55,6 +57,7 @@ and belong in its Step 2 plan.
 | ~~B5~~ | `server/instance/MatchInstance.ts` + the three files it was split into | **closed** — B5 absorbed #30's call site: `writePlayer` now reads the table this file already built, and `equipmentIndexOf` has no production caller left (see #30, rewritten). #13 was **declined with a reason**: `PLAYER_ENTITY_ID` appears nowhere in `server/instance/`, so B5 has no edit to make — the server-side importers are `Match.ts` (B6) and `Spectator.ts` (B8). #42 stays open but its four rules are now pinned by tests. B5 opened #50 |
 | ~~B6~~ | `server/Match.ts` + the two files it was split into | **declined with a reason** — #13's only edit in B6's file is the one argument `equipment.simulate` passes, and the move itself is in `shared/combat/DamageSystem.ts` and `LocalIdentity.ts`: A9's files, in the `check:style` ratchet, outside R3's fence. `grep` reaches **30 files** across all three partitions, four of them `client/debug`. No unit can close it; see #13, re-scoped. B6 opened #51 |
 | ~~B7~~ | `server/Server.ts` + the three files it was split into | **closed** — nothing was bound to it: all 38 entries were read and none names `Server.ts`. B7 opened #52 |
+| ~~B8~~ | `server/` Config, Loop, MapBakery, MatchAllocator, Migration, NetPlayer, NodeClock, Router, Spectator, log, serve | **closed** — #51's two `NetPlayer` references were absorbed; #13 was **declined a third time** (`Spectator.ts` imports the constant, but the move is in A9's `shared/combat` files and reaches thirty files); #52's `LiveMatch.ts` line is **not** a B8 file and stays. B8 opened #53 at Step 0 |
 | C1 | `client/cinematic/IntroCamera.ts` | #1 (local copy, `[-PI, PI]`) |
 | C2 | `client/engine/` CameraRig, FrameLoop | #34 — reproduce the local camera jitter *before* refactoring these files |
 | C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
@@ -1078,18 +1081,15 @@ need a session of their own, as #32 and #48 did.
 
 **Verify** reading. No oracle sees a comment.
 
-### #51 — Three references to `ServerMatch.stepThrowers`, which is now `MatchThrows`' · `open` *(opened 2026-10-24 by B6)*
+### #51 — One reference to `ServerMatch.stepThrowers`, which is now `MatchThrows`' · `open` *(opened 2026-10-24 by B6)*
 
-**Files** `src/server/NetPlayer.ts:103`, `src/server/NetPlayer.test.ts:90`, `PLAN.md:1633`.
-**Origin** B6.
+**Files** `PLAN.md:1633`. **Origin** B6. **Two of the three were closed by B8** on 2026-10-25:
+`NetPlayer.ts:103` and `NetPlayer.test.ts:90` are B8's own files and now name
+`MatchThrows.stepThrowers`.
 
 B6 moved the grenade hands out of `Match.ts` into `server/MatchThrows.ts`, and three comments
 name the old address:
 
-- `NetPlayer.ts:103` — *"Written by `ServerMatch.stepThrowers` from the one authority on it,
-  the thrower's `busy`"*, on the `handBusy` field. Still true about *what* writes it; wrong
-  about where that lives.
-- `NetPlayer.test.ts:90` — the same sentence in the test that pins the field.
 - `PLAN.md:1633` — *"`ServerMatch.stepThrowers`, is what keeps a muzzle flash off a man holding
   a grenade."*
 
@@ -1131,6 +1131,64 @@ file #43 is already open against for the same reason. One reading session, no be
 since both are a one-line comment fix in a finished unit's file.
 
 **Verify** reading. No oracle sees a comment.
+
+### #53 — The NET oracle fails three different ways when it runs behind the SIM ones · `open` *(opened 2026-10-25 by B8)*
+
+**Files** `Claude outputs/refactor/oracles.mjs` (the `skirmish` child, ~line 179) and
+`REFACTOR-PROMPT.md` §6's NET procedure. **Origin** B8's Step 0, on a clean tree at `9b6460f`.
+
+B8 could not establish a baseline. Four NET runs on an **untouched** tree produced three
+*different* red lines and one pass:
+
+| # | how it was run | verdict |
+|---|---|---|
+| 1 | `oracles.mjs snapshot --net`, with `npm run check` running beside it | `1 misprediction(s) entering a live match (Tier 1 #20)` |
+| 2 | the harness alone: `MATCH_ROUND_SECONDS=150 node dist-server/skirmishHarness.js --cycles 1 --drop-return 1` | **PASSED** |
+| 3 | `oracles.mjs snapshot --net`, nothing else running | `--drop-return 1 was set and no drop/return cycle completed (F8)` |
+| 4 | `oracles.mjs snapshot --net`, nothing else running | `3 of 3 client(s) saw a summary and were never migrated back (B4)` |
+
+**All three failures are the same failure: the observation window closing before the timeline it
+is measuring.** Run 4 says so in its own numbers — *"post-match hold: 3 client(s) held, **0
+migrated back**; screen said 29.8/29.8/29.8s (server hold 30s)"*, with the run ending at 261 s.
+The clients were two tenths of a second short of the hold they were waiting on. Run 3 is the
+same shape one stage earlier: `--drop-return` had no room left. Run 1 is the load version —
+against run 2 it carried 145/201/150 mispredictions rather than 48/65/57, **20-23 resyncs rather
+than 2-3**, 218-222 catch-up frames rather than 60-66, and `totalStepMs` 13.42 rather than 0.66;
+one of those catch-up corrections landed on tick 16 of the 60-tick post-migration window, which
+is what §8.9 counts.
+
+**The run that passed is the only one that ran alone.** Through `oracles.mjs` the skirmish child
+starts after a server-bundle build and twelve SIM oracles in the same invocation, and then has
+to hold a 150-second match timeline inside a budget whose slack §6 states as *"a constant 20 s
+whatever the round"*. Standalone: 2 passes out of 2 (runs 2 and the baseline B8 then took).
+Through `oracles.mjs`: 0 out of 3, on the same commit, on the same day.
+
+**What B8 did instead**, with the user's approval, and what every unit from here should do until
+this is fixed: take the SIM snapshot with `oracles.mjs snapshot <dir>` (no `--net`), and run the
+NET check as its own invocation with nothing else on the machine —
+
+```
+MATCH_ROUND_SECONDS=150 node --expose-gc dist-server/skirmishHarness.js --cycles 1 --drop-return 1
+```
+
+— reporting both verdicts. `oracles.mjs compare` then covers the eleven SIM files, and the NET
+verdict is quoted from its own run. **Never run `npm run check` beside a NET run**; B8's first
+measurement was ruined that way and the mistake is cheap to repeat.
+
+**Scope** decide between the two fixes and apply one: (1) have `oracles.mjs` run the skirmish
+child in its own invocation, or at least with the SIM work finished and the process settled
+first — the smaller change, and it matches what the measurement says; or (2) raise the harness's
+slack from 20 s, which §6's table already identifies as the lever but which only moves the
+failure rate rather than removing the coupling. Then correct §6's procedure, which currently
+tells a unit to take both halves in one command.
+
+**Why B8 could not do it.** `oracles.mjs` and the prompt are the programme's own instruments,
+and §10 keeps `skirmishHarness.ts` out of every unit's reach — the same reason #43 is still
+open against that file. This needs a session of its own, and it blocks nothing: the separated
+method gives a sound baseline today.
+
+**Verify** five NET runs each way on a quiet machine, which is the measurement §6's own table
+was built from.
 
 ### The missing item
 The chat list was counted as 24 and this file received 22 of them. Neither #19 (folded into #2) nor

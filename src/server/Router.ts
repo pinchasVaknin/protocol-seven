@@ -1,10 +1,18 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { logger } from '../shared/core/Log';
 import type { MatchId } from '../shared/net/Skirmish';
 import type { MatchInstance, UnseatCause } from './instance/MatchInstance';
 import type { PlayerId, Session } from './net/Session';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const log = logger('router');
+//#endregion
 
+// ======================================== CLASS Router ======================================== \\
+//#region Class Router
 /**
  * Which instance each connection belongs to, and the only answer to that question (M11, §4.18).
  *
@@ -26,11 +34,16 @@ const log = logger('router');
  * confused client from a hostile one and does not need to.
  */
 export class Router {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly byPlayer = new Map<PlayerId, MatchInstance>();
 
   /** Messages refused because their target instance was not the sender's. §8.15's number. */
   misroutedMessages = 0;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Put a connection into an instance for the first time.
    *
@@ -91,7 +104,7 @@ export class Router {
    */
   mayAddress(session: Session, matchId: MatchId): boolean {
     const instance = this.byPlayer.get(session.playerId);
-    if (instance !== null && instance !== undefined && instance.id === matchId) return true;
+    if (instance !== undefined && instance.id === matchId) return true;
     this.misroutedMessages++;
     log.warn(
       `${session.displayName} (player ${session.playerId}) addressed instance ${matchId} ` +
@@ -104,4 +117,6 @@ export class Router {
   get playerCount(): number {
     return this.byPlayer.size;
   }
+  //#endregion
 }
+//#endregion

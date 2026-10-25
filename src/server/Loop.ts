@@ -1,9 +1,3 @@
-import { nowMs } from '../shared/core/Clock';
-import { DT, SIM_HZ } from '../shared/core/Loop';
-import { logger } from '../shared/core/Log';
-
-const log = logger('Loop');
-
 /**
  * The server's fixed 60 Hz tick (brief S4.10).
  *
@@ -46,27 +40,15 @@ const log = logger('Loop');
  * on a two-second stall and delivers nothing on time while it does.
  */
 
-const TICK_MS = 1000 / SIM_HZ;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { nowMs } from '../shared/core/Clock';
+import { DT, SIM_HZ } from '../shared/core/Loop';
+import { logger } from '../shared/core/Log';
+//#endregion
 
-/**
- * How early to ask the timer to wake, in ms.
- *
- * Node's `setTimeout` never fires early but is regularly late. Waking a whisker early and
- * finding nothing due yet costs one cheap re-arm; waking late costs jitter on every tick.
- */
-const WAKE_MARGIN_MS = 3;
-
-/**
- * Ticks that may be run back to back to catch up after a stall.
- *
- * 250 ms of simulation. Long enough to absorb a GC pause or a slow first frame, short enough
- * that the loop cannot disappear into a catch-up burst.
- */
-const MAX_CATCHUP_TICKS = 15;
-
-/** Delivered intervals kept for the jitter percentiles. 30 s at 60 Hz. */
-const JITTER_WINDOW = 1800;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface TickJitter {
   /** Delivered interval between consecutive ticks, ms. */
   readonly p50: number;
@@ -98,29 +80,120 @@ export interface ServerLoopOptions {
   /** Called once, after the loop stops. */
   readonly onStop?: () => void;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('Loop');
+
+
+const TICK_MS = 1000 / SIM_HZ;
+
+/**
+ * How early to ask the timer to wake, in ms.
+ *
+ * Node's `setTimeout` never fires early but is regularly late. Waking a whisker early and
+ * finding nothing due yet costs one cheap re-arm; waking late costs jitter on every tick.
+ */
+const WAKE_MARGIN_MS = 3;
+
+/**
+ * Ticks that may be run back to back to catch up after a stall.
+ *
+ * 250 ms of simulation. Long enough to absorb a GC pause or a slow first frame, short enough
+ * that the loop cannot disappear into a catch-up burst.
+ */
+const MAX_CATCHUP_TICKS = 15;
+
+/** Delivered intervals kept for the jitter percentiles. 30 s at 60 Hz. */
+const JITTER_WINDOW = 1800;
+//#endregion
+
+// ====================================== CLASS ServerLoop ====================================== \\
+//#region Class ServerLoop
 export class ServerLoop {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly opts: ServerLoopOptions;
 
   private startMs = 0;
+
   private tickIndex = 0;
+
   private running = false;
+
   private timer: ReturnType<typeof setTimeout> | null = null;
+
   /** The last stretch before a tick is due runs here instead. See `arm`. */
   private immediate: ReturnType<typeof setImmediate> | null = null;
 
   private lastTickMs = 0;
+
   private readonly intervals = new Float64Array(JITTER_WINDOW);
+
   private intervalCount = 0;
+
   private intervalHead = 0;
+
   private lateTicks = 0;
+
   private droppedTicks = 0;
+
   private simMsTotal = 0;
 
+  private readonly wake = (): void => {
+    this.timer = null;
+    this.immediate = null;
+    if (!this.running) return;
+
+    let ran = 0;
+    while (this.running) {
+      const now = nowMs();
+      const dueMs = this.startMs + this.tickIndex * TICK_MS;
+      if (now < dueMs) break;
+
+      if (ran >= MAX_CATCHUP_TICKS) {
+        // Too far behind to catch up without starving the event loop. Skip the backlog and
+        // rebase the timetable to now, so the run continues on time from here rather than
+        // chasing a debt it will never repay.
+        const behind = now - dueMs;
+        const skipped = Math.floor(behind / TICK_MS);
+        this.droppedTicks += skipped;
+        this.startMs += skipped * TICK_MS;
+        log.warn(
+          `stalled ${behind.toFixed(0)}ms; skipped ${skipped} tick(s) and rebased the schedule.`,
+        );
+        break;
+      }
+
+      if (now - dueMs > TICK_MS) this.lateTicks++;
+      this.record(now);
+
+      const t0 = nowMs();
+      this.opts.tick(this.tickIndex);
+      this.simMsTotal += nowMs() - t0;
+      this.tickIndex++;
+      ran++;
+
+      if (this.opts.shouldContinue !== undefined && !this.opts.shouldContinue(this.tickIndex)) {
+        this.stop();
+        return;
+      }
+    }
+
+    this.arm();
+  };
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(opts: ServerLoopOptions) {
     this.opts = opts;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get currentTick(): number {
     return this.tickIndex;
   }
@@ -192,7 +265,10 @@ export class ServerLoop {
       hz: elapsed > 0 ? round3((this.tickIndex / elapsed) * 1000) : 0,
     };
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   // -- internals ------------------------------------------------------------
 
   private arm(): void {
@@ -220,57 +296,19 @@ export class ServerLoop {
     this.immediate = setImmediate(this.wake);
   }
 
-  private readonly wake = (): void => {
-    this.timer = null;
-    this.immediate = null;
-    if (!this.running) return;
-
-    let ran = 0;
-    while (this.running) {
-      const now = nowMs();
-      const dueMs = this.startMs + this.tickIndex * TICK_MS;
-      if (now < dueMs) break;
-
-      if (ran >= MAX_CATCHUP_TICKS) {
-        // Too far behind to catch up without starving the event loop. Skip the backlog and
-        // rebase the timetable to now, so the run continues on time from here rather than
-        // chasing a debt it will never repay.
-        const behind = now - dueMs;
-        const skipped = Math.floor(behind / TICK_MS);
-        this.droppedTicks += skipped;
-        this.startMs += skipped * TICK_MS;
-        log.warn(
-          `stalled ${behind.toFixed(0)}ms; skipped ${skipped} tick(s) and rebased the schedule.`,
-        );
-        break;
-      }
-
-      if (now - dueMs > TICK_MS) this.lateTicks++;
-      this.record(now);
-
-      const t0 = nowMs();
-      this.opts.tick(this.tickIndex);
-      this.simMsTotal += nowMs() - t0;
-      this.tickIndex++;
-      ran++;
-
-      if (this.opts.shouldContinue !== undefined && !this.opts.shouldContinue(this.tickIndex)) {
-        this.stop();
-        return;
-      }
-    }
-
-    this.arm();
-  };
-
   private record(now: number): void {
     this.intervals[this.intervalHead] = now - this.lastTickMs;
     this.lastTickMs = now;
     this.intervalHead = (this.intervalHead + 1) % JITTER_WINDOW;
     if (this.intervalCount < JITTER_WINDOW) this.intervalCount++;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function round3(v: number): number {
   return Math.round(v * 1000) / 1000;
 }
+//#endregion

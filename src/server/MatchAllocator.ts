@@ -1,13 +1,3 @@
-import type { BotDifficulty } from '../shared/ai/DifficultyTiers';
-import type { LoadoutSlot } from '../shared/meta/Loadouts';
-import { logger } from '../shared/core/Log';
-import type { InstanceStateId, MatchId } from '../shared/net/Skirmish';
-import { LiveMatch, type LiveMatchOptions } from './instance/LiveMatch';
-import type { MapBakery } from './MapBakery';
-import type { PlayerId } from './net/Session';
-
-const log = logger('allocator');
-
 /**
  * Match allocation, behind one interface (M11, §4.17).
  *
@@ -31,6 +21,19 @@ const log = logger('allocator');
  * rather than merely written.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { BotDifficulty } from '../shared/ai/DifficultyTiers';
+import type { LoadoutSlot } from '../shared/meta/Loadouts';
+import { logger } from '../shared/core/Log';
+import type { InstanceStateId, MatchId } from '../shared/net/Skirmish';
+import { LiveMatch, type LiveMatchOptions } from './instance/LiveMatch';
+import type { MapBakery } from './MapBakery';
+import type { PlayerId } from './net/Session';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** A player being carried into a new match, with their class already resolved (§4.18). */
 export interface PlayerSlot {
   readonly playerId: PlayerId;
@@ -71,32 +74,22 @@ export interface IMatchAllocator {
   readonly capacity: { readonly max: number; readonly inUse: number };
 }
 
-/** Thrown by an allocator that cannot satisfy a request. Never reaches a client verbatim. */
-export class AllocationError extends Error {
-  constructor(
-    message: string,
-    readonly kind: 'capacity' | 'failure' | 'invalid',
-  ) {
-    super(message);
-    this.name = 'AllocationError';
-  }
-}
-
+/**
+ * What the allocator needs once, at construction.
+ *
+ * **Bot difficulty was here too, as `botTier`, and it was never read** (playtest round 4, F1).
+ * `allocate` takes it from `MatchRequest.botFill.tier` — the per-request value, which is the
+ * right one, because a difficulty is a property of the match being asked for rather than of the
+ * allocator asking. The construction-time copy was set to `'MIX'` at the one call site and went
+ * nowhere, so it read as a wired knob and was one. Deleted rather than made authoritative: one
+ * fact, one path, and the path is the request.
+ */
 export interface InProcessAllocatorOptions {
   readonly bakery: MapBakery;
   readonly snapshotHz: number;
   readonly interpolationDelayMs: number;
   readonly readyTimeoutMs: number;
   readonly summaryHoldSeconds: number;
-  /**
-   * Bot difficulty was here too, as `botTier`, and it was **never read** (playtest round 4, F1).
-   *
-   * `allocate` takes it from `MatchRequest.botFill.tier` — the per-request value, which is the
-   * right one, because a difficulty is a property of the match being asked for rather than of
-   * the allocator asking. The construction-time copy was set to `'MIX'` at the one call site and
-   * went nowhere, so it read as a wired knob and was one. Deleted rather than made authoritative:
-   * one fact, one path, and the path is the request.
-   */
   /** The master's current tick, so a new instance is stamped correctly before its first step. */
   readonly currentTick: () => number;
   readonly seed: number;
@@ -104,6 +97,59 @@ export interface InProcessAllocatorOptions {
   readonly roundSecondsOverride?: number;
 }
 
+/**
+ * Fault injection over a real allocator (§4.17, test-only).
+ *
+ * §4.17 requires this and is specific about what it must prove: *"The vote cycle must handle
+ * all three by leaving every player in the warmup arena with a message, never by dropping them,
+ * stranding them, or leaking a half-built instance."*
+ *
+ * The three faults are separate knobs because they fail at different points and the recoveries
+ * are not the same:
+ *
+ * - **latency** — allocation succeeds, late. The cycle must not assume it has an instance
+ *   before the promise resolves, and must not start a second cycle on top of the first.
+ * - **failure** — allocation rejects. Everybody stays in the arena with a message.
+ * - **capacity** — allocation rejects with a different reason, and the message differs.
+ *
+ * It wraps rather than replaces, so what is under test is the real allocator's behaviour with
+ * a fault in front of it rather than a second implementation that might be wrong in its own
+ * way.
+ */
+export interface FaultConfig {
+  /** Milliseconds to stall before delegating. Zero is no stall. */
+  latencyMs: number;
+  /** Reject the next N allocations outright. Decremented on each use. */
+  failuresRemaining: number;
+  /** Report zero capacity and reject, regardless of the real allocator's state. */
+  exhausted: boolean;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('allocator');
+//#endregion
+
+// =================================== CLASS AllocationError ==================================== \\
+//#region Class AllocationError
+/** Thrown by an allocator that cannot satisfy a request. Never reaches a client verbatim. */
+export class AllocationError extends Error {
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  constructor(
+    message: string,
+    readonly kind: 'capacity' | 'failure' | 'invalid',
+  ) {
+    super(message);
+    this.name = 'AllocationError';
+  }
+  //#endregion
+}
+//#endregion
+
+// =============================== CLASS InProcessMatchAllocator ================================ \\
+//#region Class InProcessMatchAllocator
 /**
  * The allocator that ships: one live match at a time, in this process (§4.9).
  *
@@ -113,12 +159,22 @@ export interface InProcessAllocatorOptions {
  * one.
  */
 export class InProcessMatchAllocator implements IMatchAllocator {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private live: MatchHandle | null = null;
+
   private nextId: MatchId = 1;
+
   private allocations = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly options: InProcessAllocatorOptions) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get capacity(): { max: number; inUse: number } {
     return { max: 1, inUse: this.live === null ? 0 : 1 };
   }
@@ -183,41 +239,25 @@ export class InProcessMatchAllocator implements IMatchAllocator {
   get allocationCount(): number {
     return this.allocations;
   }
+  //#endregion
 }
+//#endregion
 
-/**
- * Fault injection over a real allocator (§4.17, test-only).
- *
- * §4.17 requires this and is specific about what it must prove: *"The vote cycle must handle
- * all three by leaving every player in the warmup arena with a message, never by dropping them,
- * stranding them, or leaking a half-built instance."*
- *
- * The three faults are separate knobs because they fail at different points and the recoveries
- * are not the same:
- *
- * - **latency** — allocation succeeds, late. The cycle must not assume it has an instance
- *   before the promise resolves, and must not start a second cycle on top of the first.
- * - **failure** — allocation rejects. Everybody stays in the arena with a message.
- * - **capacity** — allocation rejects with a different reason, and the message differs.
- *
- * It wraps rather than replaces, so what is under test is the real allocator's behaviour with
- * a fault in front of it rather than a second implementation that might be wrong in its own
- * way.
- */
-export interface FaultConfig {
-  /** Milliseconds to stall before delegating. Zero is no stall. */
-  latencyMs: number;
-  /** Reject the next N allocations outright. Decremented on each use. */
-  failuresRemaining: number;
-  /** Report zero capacity and reject, regardless of the real allocator's state. */
-  exhausted: boolean;
-}
-
+// ================================= CLASS FaultyMatchAllocator ================================= \\
+//#region Class FaultyMatchAllocator
 export class FaultyMatchAllocator implements IMatchAllocator {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly faults: FaultConfig = { latencyMs: 0, failuresRemaining: 0, exhausted: false };
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly inner: IMatchAllocator) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get capacity(): { max: number; inUse: number } {
     if (this.faults.exhausted) return { max: 0, inUse: 0 };
     return this.inner.capacity;
@@ -243,8 +283,12 @@ export class FaultyMatchAllocator implements IMatchAllocator {
   destroy(handle: MatchHandle): Promise<void> {
     return this.inner.destroy(handle);
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /**
  * A promise that resolves after `ms`.
  *
@@ -258,3 +302,4 @@ function delay(ms: number): Promise<void> {
     timer.unref?.();
   });
 }
+//#endregion

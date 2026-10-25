@@ -1,13 +1,3 @@
-import { nowMs } from '../shared/core/Clock';
-import { logger } from '../shared/core/Log';
-import type { WelcomeInfo } from '../shared/net/Messages';
-import { metric } from './log';
-import type { MatchInstance } from './instance/MatchInstance';
-import type { Router } from './Router';
-import type { PlayerId, Session } from './net/Session';
-
-const log = logger('migration');
-
 /**
  * Moving a player between instances (M11, §4.18).
  *
@@ -31,6 +21,19 @@ const log = logger('migration');
  * 5. **Failure leaves the player where they are, with a message.** Never a disconnect.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { nowMs } from '../shared/core/Clock';
+import { logger } from '../shared/core/Log';
+import type { WelcomeInfo } from '../shared/net/Messages';
+import { metric } from './log';
+import type { MatchInstance } from './instance/MatchInstance';
+import type { Router } from './Router';
+import type { PlayerId, Session } from './net/Session';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MigrationRecord {
   readonly playerId: PlayerId;
   readonly displayName: string;
@@ -41,12 +44,30 @@ export interface MigrationRecord {
   readonly ok: boolean;
   readonly reason: string;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('migration');
+
+const MAX_RECORDS = 512;
+//#endregion
+
+// ====================================== CLASS Migration ======================================= \\
+//#region Class Migration
 export class Migration {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly records: MigrationRecord[] = [];
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly router: Router) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Move one connection from its current instance into `to`, on `tick`.
    *
@@ -131,7 +152,10 @@ export class Migration {
   get log(): readonly MigrationRecord[] {
     return this.records;
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * Drop the oldest records once the list is long.
    *
@@ -171,11 +195,13 @@ export class Migration {
     }
     metric('migration', ok ? 'moved' : 'failed', { ...entry });
   }
+  //#endregion
 }
+//#endregion
 
-const MAX_RECORDS = 512;
-
-function seatInfo(
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function seatInfo(
   instance: MatchInstance,
   entityId: number,
   team: 'A' | 'B',
@@ -196,5 +222,4 @@ function seatInfo(
     migrated,
   };
 }
-
-export { seatInfo };
+//#endregion

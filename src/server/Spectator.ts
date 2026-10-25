@@ -1,8 +1,13 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { HitboxRig, HUMANOID_RIG } from '../shared/combat/HitboxRig';
 import { PLAYER_ENTITY_ID } from '../shared/combat/DamageSystem';
 import type { BotTeam, Combatant } from '../shared/ai/Combatant';
 import { Health, type HealthConfig } from '../shared/player/Health';
+//#endregion
 
+// ====================================== CLASS Spectator ======================================= \\
+//#region Class Spectator
 /**
  * The seat where a local player would sit, permanently empty (M9, S4.9).
  *
@@ -25,33 +30,55 @@ import { Health, type HealthConfig } from '../shared/player/Health';
  * used: it is not registered with the `DamageSystem`, so nothing can address it.
  */
 export class Spectator implements Combatant {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly entityId = PLAYER_ENTITY_ID;
+
   readonly displayName = 'SPECTATOR';
+
   readonly rig = new HitboxRig(HUMANOID_RIG);
+
   readonly health: Health;
 
+  // A pose is required by the interface. It is the origin and it never moves, which is
+  // harmless precisely because `participating` is false — nothing ever reads these.
+  readonly px = 0;
+
+  readonly py = 0;
+
+  readonly pz = 0;
+
+  readonly yaw = 0;
+
+  readonly vx = 0;
+
+  readonly vz = 0;
+
+  readonly eyeHeight = 1.65;
+
+  readonly aimHeight = 1.26;
+
+  readonly quiet = true;
+
+  readonly glinting = false;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     readonly team: BotTeam,
     healthConfig: HealthConfig,
   ) {
     this.health = new Health(healthConfig);
   }
+  //#endregion
 
-  // A pose is required by the interface. It is the origin and it never moves, which is
-  // harmless precisely because `participating` is false — nothing ever reads these.
-  readonly px = 0;
-  readonly py = 0;
-  readonly pz = 0;
-  readonly yaw = 0;
-  readonly vx = 0;
-  readonly vz = 0;
-  readonly eyeHeight = 1.65;
-  readonly aimHeight = 1.26;
-  readonly quiet = true;
-  readonly glinting = false;
-
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Never. This is the whole class. */
   get participating(): boolean {
     return false;
   }
+  //#endregion
 }
+//#endregion

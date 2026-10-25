@@ -87,7 +87,7 @@ describe('a connected player’s rifle', () => {
 
   it('does not fire while a grenade is in the hand, however long the button is held', () => {
     const r = rig();
-    // `ServerMatch.stepThrowers` writes this from the thrower every tick: drawn, cooking, thrown.
+    // `MatchThrows.stepThrowers` writes this from the thrower every tick: drawn, cooking, thrown.
     r.player.handBusy = true;
     r.hold(Btn.Fire, 120);
     expect(r.shots()).toBe(0);

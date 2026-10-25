@@ -1,12 +1,3 @@
-import { installClock } from '../shared/core/Clock';
-import { logger } from '../shared/core/Log';
-import { describeConditions } from '../shared/net/NetSim';
-import { PROTOCOL_VERSION } from '../shared/net/Protocol';
-import { loadConfig, productionHazards } from './Config';
-import { Server } from './Server';
-import { installServerLogging, metric } from './log';
-import { nodeClock } from './NodeClock';
-
 /**
  * The dedicated server's entry point (M10, S4.9 and S6.6).
  *
@@ -24,26 +15,80 @@ import { nodeClock } from './NodeClock';
  * tick rate to be different in that respect.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { installClock } from '../shared/core/Clock';
+import { logger } from '../shared/core/Log';
+import { describeConditions } from '../shared/net/NetSim';
+import { PROTOCOL_VERSION } from '../shared/net/Protocol';
+import { loadConfig, productionHazards, type ServerConfig } from './Config';
+import { Server } from './Server';
+import { installServerLogging, metric } from './log';
+import { nodeClock } from './NodeClock';
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 async function main(): Promise<number> {
   const cfg = loadConfig(process.env);
-
-  // Before anything simulates. `nowMs()` throws rather than falling back, deliberately.
-  installClock(nodeClock);
-  installServerLogging(process.stdout.isTTY === true ? 'text' : 'json', 'info');
+  installRuntime();
 
   const log = logger('server');
+  /**
+   * One warning per setting that is wrong for real players (security audit S13), before the
+   * listener opens. Each is a deliberate choice somewhere, so none stops the boot.
+   */
+  const hazards = productionHazards(cfg, process.env);
+  logBoot(log, cfg, hazards);
+  emitBootMetric(cfg, hazards);
+
+  /**
+   * Construction bakes every map (§4.19), so this line is where the boot bake time is spent —
+   * before the listener opens and therefore before any client can be affected by it.
+   */
+  const server = new Server(cfg);
+
+  try {
+    await server.start();
+  } catch (err) {
+    log.error(`failed to listen on ${cfg.host}:${cfg.port} — ${errText(err)}`);
+    return 1;
+  }
+
+  installSignalHandlers(server, log);
+  installLastResort(log);
+
+  // Resolves only on shutdown; the loop keeps the process alive.
+  return new Promise<number>(() => {
+    /* never resolves — the server runs until a signal stops it */
+  });
+}
+
+/**
+ * The clock and the log sink, before anything simulates.
+ *
+ * `nowMs()` throws rather than falling back, deliberately — a process that silently used a
+ * wrong clock would be a process whose every measurement is wrong. JSON whenever stdout is not
+ * a TTY, because a redirected log is being read by something.
+ */
+function installRuntime(): void {
+  installClock(nodeClock);
+  installServerLogging(process.stdout.isTTY === true ? 'text' : 'json', 'info');
+}
+
+/** The boot lines a human reads: what this build is, and what is unsafe about this run. */
+function logBoot(log: ReturnType<typeof logger>, cfg: ServerConfig, hazards: readonly string[]): void {
   log.info(`PROTOCOL SEVEN dedicated server — node ${process.version}, protocol v${PROTOCOL_VERSION}.`);
   if (!isIdle(cfg.conditions)) {
     log.warn(`NET_SIM active on every outbound link: ${describeConditions(cfg.conditions)}`);
   }
-  /**
-   * One warning per setting that is wrong for real players (security audit S13), before the
-   * listener opens. Each is a deliberate choice somewhere, so none stops the boot; each is a line
-   * of its own with the same prefix, so it cannot hide in the long description below.
-   */
-  const hazards = productionHazards(cfg, process.env);
+  // Each hazard is a line of its own with the same prefix, so it cannot hide in the long
+  // description below.
   for (const hazard of hazards) log.warn(`UNSAFE FOR PRODUCTION: ${hazard}`);
+}
 
+/** The same boot, as one record a log search or an alert can count. */
+function emitBootMetric(cfg: ServerConfig, hazards: readonly string[]): void {
   metric('server', 'boot', {
     node: process.version,
     pid: process.pid,
@@ -62,28 +107,17 @@ async function main(): Promise<number> {
     // The same list as the warnings, as data, for a log search or an alert to count.
     hazards,
   });
+}
 
-  /**
-   * Construction bakes every map (§4.19), so this line is where the boot bake time is spent —
-   * before the listener opens and therefore before any client can be affected by it.
-   */
-  const server = new Server(cfg);
-
-  try {
-    await server.start();
-  } catch (err) {
-    log.error(`failed to listen on ${cfg.host}:${cfg.port} — ${errText(err)}`);
-    return 1;
-  }
-
-  /**
-   * Graceful shutdown.
-   *
-   * A process manager sends `SIGTERM` on restart and deploy (S6.6). Closing the sessions
-   * first means every connected client gets a `Bye` with a reason and can say so, rather than
-   * a socket that simply stops — which a client cannot distinguish from a network failure and
-   * would sit in a reconnect loop over.
-   */
+/**
+ * Graceful shutdown.
+ *
+ * A process manager sends `SIGTERM` on restart and deploy (S6.6). Closing the sessions first
+ * means every connected client gets a `Bye` with a reason and can say so, rather than a socket
+ * that simply stops — which a client cannot distinguish from a network failure and would sit in
+ * a reconnect loop over.
+ */
+function installSignalHandlers(server: Server, log: ReturnType<typeof logger>): void {
   let shuttingDown = false;
   const shutdown = (signal: string): void => {
     if (shuttingDown) return;
@@ -95,25 +129,22 @@ async function main(): Promise<number> {
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
+}
 
-  /**
-   * The last line of defence (S4.16: *"malformed input must never crash the server"*).
-   *
-   * Every decode path is already total, and this is the belt to that braces: an unexpected
-   * throw anywhere is logged with its stack **to our log** and the process keeps running.
-   * Nothing here ever reaches a client. Node's default for an unhandled rejection is to
-   * terminate, and on an internet-facing process that is a denial-of-service vector.
-   */
+/**
+ * The last line of defence (S4.16: *"malformed input must never crash the server"*).
+ *
+ * Every decode path is already total, and this is the belt to that braces: an unexpected throw
+ * anywhere is logged with its stack **to our log** and the process keeps running. Nothing here
+ * ever reaches a client. Node's default for an unhandled rejection is to terminate, and on an
+ * internet-facing process that is a denial-of-service vector.
+ */
+function installLastResort(log: ReturnType<typeof logger>): void {
   process.on('uncaughtException', (err) => {
     log.error(`uncaught: ${err.stack ?? err.message}`);
   });
   process.on('unhandledRejection', (reason) => {
     log.error(`unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`);
-  });
-
-  // Resolves only on shutdown; the loop keeps the process alive.
-  return new Promise<number>(() => {
-    /* never resolves — the server runs until a signal stops it */
   });
 }
 
@@ -124,7 +155,10 @@ function isIdle(c: { latencyMs: number; jitterMs: number; lossPct: number }): bo
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+//#endregion
 
+// =================================== MODULE INITIALISATION ==================================== \\
+//#region Module Initialisation
 main().then(
   (code) => {
     if (code !== 0) process.exit(code);
@@ -134,3 +168,4 @@ main().then(
     process.exit(1);
   },
 );
+//#endregion

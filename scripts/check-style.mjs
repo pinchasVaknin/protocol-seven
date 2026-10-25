@@ -368,6 +368,19 @@ const FINISHED = {
     'src/server/SessionDesk.ts',
     'src/server/SkirmishFlow.ts',
   ],
+  B8: [
+    'src/server/Config.ts',
+    'src/server/Loop.ts',
+    'src/server/log.ts',
+    'src/server/MapBakery.ts',
+    'src/server/MatchAllocator.ts',
+    'src/server/Migration.ts',
+    'src/server/NetPlayer.ts',
+    'src/server/NodeClock.ts',
+    'src/server/Router.ts',
+    'src/server/serve.ts',
+    'src/server/Spectator.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

@@ -725,7 +725,7 @@ they do not have today. **Decide inside C11** whether a per-target owner on a de
 whether the cheap answer is to take `static` out of `TargetDummy.decals` and lose the holes on the
 range altogether.
 
-### #34 — The camera trembles while walking the arena · `open` · *measured by C2; not in `client/engine/`* *(rewritten 2026-10-25 by C2)*
+### #34 — The camera trembles while walking the arena · `open` · *the mouse → yaw path is the live candidate; everything else is measured clean* *(rewritten 2026-10-25, extended 2026-10-26, by C2)*
 **Files** **not** `src/client/engine/CameraRig.ts` or `FrameLoop.ts` — those are measured clean
 below. The four places left to look are named at the end. **Origin** reported from play,
 2026-10-19; reproduced and measured by C2 on 2026-10-25, on the clean tree before it edited
@@ -848,20 +848,67 @@ no sustained oscillation at any point.
 when a step-up completes, is a pop on an *event*. This report says the view trembles **while
 walking**, which is continuous, and walking on the flat produced a camera static to the picometre.
 
-**What is left, after two reproductions, three candidates and two historical causes.** In order:
-
-1. **The shadow tier — and only the user can run it.** Set shadows to `off` or `high` and say
-   whether the trembling changes. `low` has `radiusScale: 0.6`, the hardest edge over the fewest
-   texels, so it is still where a residual per-texel error would be sharpest. Ten seconds, and it
-   settles the question completely.
-2. **The mouse.** `yaw` and `pitch` are the one camera input that is never interpolated (the
-   deliberate exception in S4.1), and neither reproduction used a real one — the pane cannot hold
-   pointer lock, so both drove a synthetic command stream. This is now the largest unexamined
-   surface by a distance.
-3. **Real frame timings.** Every number in both passes is from a clock the test chose.
-
 **Do not spend more on `src/client/engine/` or on `src/shared/player/Movement.ts` for this entry.**
-Both are measured clean, twice.
+Both are measured clean, twice. The shadow tier was also ruled out by the user on 2026-10-25.
+
+## The mouse path, measured — the first candidate with a visible number *(2026-10-26)*
+
+`Input.onMouseMove` (`src/client/input/Input.ts:209`) integrates the view angle **per event**, and
+`CameraRig.update` is handed `input.yaw` **raw at render rate** — the deliberate S4.1 exception and
+the one camera input with no interpolation anywhere. The rendered yaw at frame *k* is therefore the
+sum of whichever mouse deltas happened to arrive before frame *k*: two unsynchronised clocks
+deciding how one continuous motion is cut into frames.
+
+Measured against the shipped handler (the pane cannot hold pointer lock, so `input.locked` was set
+directly; everything downstream of that one line is the shipped code, verified by a single
+`movementX: 10` event moving `input.yaw` by exactly −0.022 rad). A virtual mouse clock dispatches
+real `MouseEvent('mousemove')`s at a chosen poll rate, carrying the fractional remainder the way a
+real mouse carries counts; the hand moves at a **constant** angular velocity throughout, so every
+variation below is produced by the code.
+
+Rendered turn rate for a steady hand, with ±2 ms of frame jitter:
+
+| hand | event rate | rendered | spread |
+|---|---|---|---|
+| 25 °/s | 1000 Hz | 17 – 33 °/s | ±61% |
+| 25 °/s | 125 Hz | 8 – 39 °/s | **±123%** |
+| 25 °/s | ~60 Hz coalesced | **0 – 51 °/s** | **±203%** |
+| 101 °/s | 1000 Hz | 92 – 110 °/s | ±18% |
+| 101 °/s | 125 Hz | 49 – 148 °/s | **±98%** |
+| 101 °/s | ~60 Hz coalesced | **0 – 196 °/s** | **±195%** |
+
+On a perfectly uniform frame clock the same runs give 7.5% at 1000 Hz and 52.6% at 125 Hz, so the
+mouse rate alone is already the dominant term and frame jitter multiplies it. **Hand still → exactly
+0 in every configuration**: this is on the turning axis only, and only while turning. **The mean is
+always right** — 100.6–100.9 °/s against a 101 °/s hand, 25.1–25.2 against 25 — so nothing is lost
+or gained and only the per-frame distribution is wrong, which is why three rounds of looking at
+positions never found it.
+
+**The tidiest arrival pattern is the worst row.** `~60 Hz coalesced` is Chrome delivering one
+coalesced `mousemove` per animation frame, and its `minVel` is exactly 0: when the event rate and
+the frame rate are nearly equal, a few milliseconds of jitter gives some frames two events and
+others none, so the view renders no rotation at all on one frame and double on the next. The
+sensitivity is governed by the *ratio* — near 1 beats hardest, ~2 (125 Hz) is bad, ~16 (1000 Hz) is
+mildest.
+
+For scale, against everything else measured for this entry: 0.0041° for the whole camera
+composition and frame-timing path without a mouse, 5 mm for one tick on a landing, 4.8 µm for float
+precision at 40 m — against 8–39 °/s around a 25 °/s hand here. Three to four orders of magnitude
+above anything else, on the most visible axis.
+
+**What this does not prove.** Claude in Chrome was not connected, so there was no real pointer lock
+and no real-device event stream; this is the transfer function with the arrival pattern as a
+controlled input, not a recording of the user's machine. **Two numbers settle it: the polling rate
+of the user's mouse, and whether their Chrome is coalescing.**
+
+**If it is confirmed, the fix is a design decision and not refactor work.** S4.1 takes the angles
+raw *on purpose* — zero added look latency is the stated reason. The standard remedy is to stop
+treating a mouse event as instantaneous: give each delta its own `event.timeStamp`, pull sub-frame
+events out with `getCoalescedEvents()`, and resolve the angle at the frame's display time — the
+alpha idea the position path already uses, applied to the view angle, for well under one frame of
+latency instead of the full tick the position path pays. That changes the input contract and a
+documented design decision, so it needs the user's call and a session of its own; `Input.ts` is
+**C1**'s file and in the `check:style` ratchet, so no later unit can reach it under R3 either.
 
 ### #55 — The Chopper Gunner optic draws a flat grey field and no map · `open` *(opened 2026-10-25 by C2)*
 **Files** `src/client/engine/Renderer.ts` (`renderGunship`, `GUNSHIP_VERT`, `GUNSHIP_WORLD_FRAG`)

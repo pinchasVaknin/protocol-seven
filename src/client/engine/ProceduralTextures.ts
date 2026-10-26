@@ -1,8 +1,3 @@
-import * as THREE from 'three';
-import { Rng } from '../../shared/core/Rng';
-import { MATERIAL_KEYS, type MaterialKey } from '../../shared/world/maps/types';
-import { materialBaseColor } from '../../shared/world/maps/albedo';
-
 /**
  * All surface detail is generated in code (brief S2): no texture packs, no CDN.
  *
@@ -11,23 +6,85 @@ import { materialBaseColor } from '../../shared/world/maps/albedo';
  * fixed so a build always looks identical — decoration must not depend on Math.random.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { Rng } from '../../shared/core/Rng';
+import { MATERIAL_KEYS, type MaterialKey } from '../../shared/world/maps/types';
+import { materialBaseColor } from '../../shared/world/maps/albedo';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MaterialProfile {
   /** Metres of world space per texture repeat. */
   readonly worldScale: number;
   readonly texture: THREE.Texture;
 }
 
+/** What a material is: one painter, and how far a tile of it stretches. */
+interface MaterialRecipe {
+  readonly paint: (ctx: CanvasRenderingContext2D, rng: Rng, base: number) => void;
+  readonly worldScale: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const TEX_SIZE = 256;
 
+/**
+ * Every material, as a painter and a repeat length.
+ *
+ * `satisfies Record<MaterialKey, MaterialRecipe>` is what makes this exhaustive: a material key
+ * added to `world/maps/types.ts` without a recipe here is a compile error rather than a surface
+ * that silently paints nothing. The painters are function declarations below, so they are hoisted
+ * and this table may read them at module load.
+ */
+const RECIPES = {
+  concrete: { paint: (ctx, rng, base) => paintConcrete(ctx, rng, base, 0.13), worldScale: 2 },
+  concreteDark: { paint: (ctx, rng, base) => paintConcrete(ctx, rng, base, 0.16), worldScale: 2 },
+  floor: { paint: paintFloor, worldScale: 2 },
+  metal: { paint: paintMetal, worldScale: 1 },
+  hazard: { paint: paintHazard, worldScale: 1 },
+  accent: { paint: paintAccent, worldScale: 1 },
+  rubber: { paint: paintRubber, worldScale: 1 },
+  // 2 m per repeat gives four courses of brick a metre, which reads at running speed.
+  brick: { paint: paintBrick, worldScale: 2 },
+  rust: { paint: paintRust, worldScale: 2.4 },
+  grate: { paint: paintGrate, worldScale: 1 },
+
+  // ---- M8 -------------------------------------------------------------
+  // 3 m per repeat: a desert street is a big flat surface and a 1 m tile on it
+  // reads as a chequerboard the moment you sprint down the lane.
+  sand: { paint: paintSand, worldScale: 3 },
+  plaster: { paint: paintPlaster, worldScale: 2.4 },
+  clayTile: { paint: paintClayTile, worldScale: 1.4 },
+  wood: { paint: paintWood, worldScale: 1.6 },
+  asphalt: { paint: paintAsphalt, worldScale: 3 },
+  paintedSteel: { paint: paintPaintedSteel, worldScale: 2.4 },
+} satisfies Record<MaterialKey, MaterialRecipe>;
+//#endregion
+
+// ================================== CLASS ProceduralTextures ================================== \\
+//#region Class ProceduralTextures
 export class ProceduralTextures {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly cache = new Map<MaterialKey, MaterialProfile>();
   private readonly maxAnisotropy: number;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(renderer: THREE.WebGLRenderer) {
     this.maxAnisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     for (const key of MATERIAL_KEYS) this.cache.set(key, this.build(key));
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Shared with anything else that builds a CanvasTexture: the weapon, decals, Fx. */
   get anisotropy(): number {
     return this.maxAnisotropy;
@@ -43,7 +100,10 @@ export class ProceduralTextures {
     for (const profile of this.cache.values()) profile.texture.dispose();
     this.cache.clear();
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private build(key: MaterialKey): MaterialProfile {
     const canvas = document.createElement('canvas');
     canvas.width = TEX_SIZE;
@@ -53,80 +113,14 @@ export class ProceduralTextures {
 
     // A distinct but fixed seed per material.
     const rng = new Rng(0x0be7a704 ^ hashString(key));
-    let worldScale = 2;
+    const recipe = RECIPES[key];
+    recipe.paint(ctx, rng, materialBaseColor(key));
 
-    switch (key) {
-      case 'concrete':
-        paintConcrete(ctx, rng, materialBaseColor('concrete'), 0.13);
-        worldScale = 2;
-        break;
-      case 'concreteDark':
-        paintConcrete(ctx, rng, materialBaseColor('concreteDark'), 0.16);
-        worldScale = 2;
-        break;
-      case 'floor':
-        paintFloor(ctx, rng, materialBaseColor('floor'));
-        worldScale = 2;
-        break;
-      case 'metal':
-        paintMetal(ctx, rng, materialBaseColor('metal'));
-        worldScale = 1;
-        break;
-      case 'hazard':
-        paintHazard(ctx, rng, materialBaseColor('hazard'));
-        worldScale = 1;
-        break;
-      case 'accent':
-        paintAccent(ctx, rng, materialBaseColor('accent'));
-        worldScale = 1;
-        break;
-      case 'rubber':
-        paintRubber(ctx, rng, materialBaseColor('rubber'));
-        worldScale = 1;
-        break;
-      case 'brick':
-        paintBrick(ctx, rng, materialBaseColor('brick'));
-        // 2 m per repeat gives four courses of brick a metre, which reads at running speed.
-        worldScale = 2;
-        break;
-      case 'rust':
-        paintRust(ctx, rng, materialBaseColor('rust'));
-        worldScale = 2.4;
-        break;
-      case 'grate':
-        paintGrate(ctx, rng, materialBaseColor('grate'));
-        worldScale = 1;
-        break;
+    return { worldScale: recipe.worldScale, texture: this.makeTexture(canvas) };
+  }
 
-      // ---- M8 -------------------------------------------------------------
-      case 'sand':
-        paintSand(ctx, rng, materialBaseColor('sand'));
-        // 3 m per repeat: a desert street is a big flat surface and a 1 m tile on it
-        // reads as a chequerboard the moment you sprint down the lane.
-        worldScale = 3;
-        break;
-      case 'plaster':
-        paintPlaster(ctx, rng, materialBaseColor('plaster'));
-        worldScale = 2.4;
-        break;
-      case 'clayTile':
-        paintClayTile(ctx, rng, materialBaseColor('clayTile'));
-        worldScale = 1.4;
-        break;
-      case 'wood':
-        paintWood(ctx, rng, materialBaseColor('wood'));
-        worldScale = 1.6;
-        break;
-      case 'asphalt':
-        paintAsphalt(ctx, rng, materialBaseColor('asphalt'));
-        worldScale = 3;
-        break;
-      case 'paintedSteel':
-        paintPaintedSteel(ctx, rng, materialBaseColor('paintedSteel'));
-        worldScale = 2.4;
-        break;
-    }
-
+  /** The tiling, mipmapped, sRGB wrapper every painted tile ends up in. */
+  private makeTexture(canvas: HTMLCanvasElement): THREE.Texture {
     const texture = new THREE.CanvasTexture(canvas);
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
@@ -136,11 +130,14 @@ export class ProceduralTextures {
     texture.minFilter = THREE.LinearMipmapLinearFilter;
     texture.magFilter = THREE.LinearFilter;
     texture.needsUpdate = true;
-
-    return { worldScale, texture };
+    return texture;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 // -- painters ---------------------------------------------------------------
 
 function paintConcrete(ctx: CanvasRenderingContext2D, rng: Rng, base: number, grain: number): void {
@@ -711,3 +708,4 @@ function hashString(s: string): number {
   }
   return h >>> 0;
 }
+//#endregion

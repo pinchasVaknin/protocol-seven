@@ -1,37 +1,36 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import { Rng } from '../../shared/core/Rng';
+//#endregion
 
-/**
- * The flamethrower's jet (2026-09-28).
- *
- * The weapon fired a muzzle flash and a gunshot voice ten times a second and nothing else, so
- * the one weapon in the game that is not a bullet read as a machine gun with an orange light —
- * which is what the report said. This draws the thing the damage already was: a cone of fire
- * from the barrel to wherever the jet stops.
- *
- * ## One event, a continuous stream
- *
- * Fuel is spent in ticks — `WeaponFired` arrives at the weapon's 600 rpm, every 0.1 s — and a
- * burst of particles on each would be a jet that pulses. So each tick's particles are born
- * *spread back across the interval it covers*: particle `i` is advanced along its own path by a
- * random fraction of `TICK_SECONDS` at birth, exactly as if it had been emitted then. The stream
- * is continuous at any frame rate, and nothing here has to know whether the trigger is still down;
- * when the ticks stop, the stream simply runs out of fuel.
- *
- * ## Where it starts and where it stops
- *
- * It stops where `WeaponSystem.fireFlame` said the jet did — its reach or the first wall — and a
- * particle that gets there loses its forward speed and spreads, so fire held on a wall splashes
- * on the wall. That end point is on the wire, so a remote player's jet stops at the same wall.
- *
- * It starts at the muzzle. For everybody else that is the event's muzzle; for the local player it
- * is the viewmodel's, carried across into the world camera — the gun is drawn with its own field
- * of view, so the muzzle the player sees is not where the world thinks the barrel is, and a jet
- * from the world's muzzle would leave the screen a hand's width from the nozzle.
- *
- * Pooled and preallocated like `Fx`: one instanced mesh, one draw, nothing allocated per shot.
- */
+// =========================================== TYPES ============================================ \\
+//#region Types
+interface Flame {
+  active: boolean;
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  /** Where the jet stops, along the direction this particle was launched on. */
+  ox: number;
+  oy: number;
+  oz: number;
+  dx: number;
+  dy: number;
+  dz: number;
+  reach: number;
+  splashed: boolean;
+  life: number;
+  maxLife: number;
+  spin: number;
+}
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const FLAME_CAP = 720;
 /** Particles per tick of fuel. Twelve at ten ticks a second, about a hundred alive per jet. */
 const PER_TICK = 12;
@@ -70,30 +69,43 @@ const INTENSITY = 0.5;
 const SPLASH_SECONDS = 0.14;
 
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
+//#endregion
 
-interface Flame {
-  active: boolean;
-  x: number;
-  y: number;
-  z: number;
-  vx: number;
-  vy: number;
-  vz: number;
-  /** Where the jet stops, along the direction this particle was launched on. */
-  ox: number;
-  oy: number;
-  oz: number;
-  dx: number;
-  dy: number;
-  dz: number;
-  reach: number;
-  splashed: boolean;
-  life: number;
-  maxLife: number;
-  spin: number;
-}
-
+// ======================================= CLASS FlameFx ======================================== \\
+//#region Class FlameFx
+/**
+ * The flamethrower's jet (2026-09-28).
+ *
+ * The weapon fired a muzzle flash and a gunshot voice ten times a second and nothing else, so
+ * the one weapon in the game that is not a bullet read as a machine gun with an orange light —
+ * which is what the report said. This draws the thing the damage already was: a cone of fire
+ * from the barrel to wherever the jet stops.
+ *
+ * ## One event, a continuous stream
+ *
+ * Fuel is spent in ticks — `WeaponFired` arrives at the weapon's 600 rpm, every 0.1 s — and a
+ * burst of particles on each would be a jet that pulses. So each tick's particles are born
+ * *spread back across the interval it covers*: particle `i` is advanced along its own path by a
+ * random fraction of `TICK_SECONDS` at birth, exactly as if it had been emitted then. The stream
+ * is continuous at any frame rate, and nothing here has to know whether the trigger is still down;
+ * when the ticks stop, the stream simply runs out of fuel.
+ *
+ * ## Where it starts and where it stops
+ *
+ * It stops where `WeaponSystem.fireFlame` said the jet did — its reach or the first wall — and a
+ * particle that gets there loses its forward speed and spreads, so fire held on a wall splashes
+ * on the wall. That end point is on the wire, so a remote player's jet stops at the same wall.
+ *
+ * It starts at the muzzle. For everybody else that is the event's muzzle; for the local player it
+ * is the viewmodel's, carried across into the world camera — the gun is drawn with its own field
+ * of view, so the muzzle the player sees is not where the world thinks the barrel is, and a jet
+ * from the world's muzzle would leave the screen a hand's width from the nozzle.
+ *
+ * Pooled and preallocated like `Fx`: one instanced mesh, one draw, nothing allocated per shot.
+ */
 export class FlameFx {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Added to the world scene. */
   readonly group = new THREE.Group();
 
@@ -115,7 +127,10 @@ export class FlameFx {
   private readonly viewAxis = new THREE.Vector3(0, 0, 1);
   private readonly scratchColor = new THREE.Color();
   private readonly origin = new THREE.Vector3();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor() {
     this.group.name = 'fx:flame';
     for (let i = 0; i < FLAME_CAP; i++) this.flames.push(makeFlame());
@@ -143,7 +158,10 @@ export class FlameFx {
     if (this.mesh.instanceColor !== null) this.mesh.instanceColor.needsUpdate = true;
     this.group.add(this.mesh);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get activeParticles(): number {
     let n = 0;
     for (const f of this.flames) if (f.active) n++;
@@ -251,9 +269,10 @@ export class FlameFx {
     for (const d of this.disposables) d.dispose();
     this.group.clear();
   }
+  //#endregion
 
-  // -- internals --------------------------------------------------------------
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /** Move one particle on by `dt`: drag, lift, and the splash at the end of the jet. */
   private advance(f: Flame, dt: number): void {
     f.life -= dt;
@@ -301,8 +320,12 @@ export class FlameFx {
     out.project(vmCamera).unproject(camera);
     out.sub(cameraPos).normalize().multiplyScalar(distance).add(cameraPos);
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function makeFlame(): Flame {
   return {
     active: false,
@@ -374,3 +397,4 @@ function firstFree(list: readonly Flame[]): number {
   }
   return -1;
 }
+//#endregion

@@ -1,7 +1,3 @@
-﻿import * as THREE from 'three';
-import { Rng } from '../../shared/core/Rng';
-import { DECAL_HOLE_FRACTION, DECAL_RIM_FRACTION } from '../../shared/world/maps/materials';
-
 /**
  * Generated art for `Fx` (brief S2: zero external assets).
  *
@@ -10,6 +6,15 @@ import { DECAL_HOLE_FRACTION, DECAL_RIM_FRACTION } from '../../shared/world/maps
  * build always looks identical.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { Rng } from '../../shared/core/Rng';
+import { DECAL_HOLE_FRACTION, DECAL_RIM_FRACTION } from '../../shared/world/maps/materials';
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** Two crossed quads plus a forward-facing star: cheap, and reads from every angle. */
 export function buildFlashGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
@@ -149,3 +154,4 @@ export function buildDecalTexture(anisotropy: number): THREE.Texture {
   texture.needsUpdate = true;
   return texture;
 }
+//#endregion

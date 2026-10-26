@@ -1,39 +1,14 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import { Rng } from '../../shared/core/Rng';
 import { surfaceAtIndex } from '../../shared/world/maps/materials';
 import { DecalField } from './Decals';
 import { buildFlashGeometry, buildFlashTexture } from './FxAssets';
+//#endregion
 
-/**
- * Shot feedback: muzzle flash, tracers, impact debris and decals (brief S6.5).
- *
- * Everything here is pooled and preallocated. A 700 RPM weapon fires twelve rounds a
- * second; anything that allocates per shot shows up in the frame histogram as a sawtooth
- * within about ten seconds of holding the trigger, which is exactly what acceptance
- * criterion 6 is looking for.
- *
- * Draw-call budget: one instanced mesh per effect class (tracers, sparks, dust, decals),
- * one mesh for the muzzle flash and one reused point light — six draws for all of it,
- * regardless of how much is on screen.
- *
- * This runs at render rate. None of it is gameplay; the round already landed.
- */
-
-const TRACER_CAP = 24;
-const SPARK_CAP = 220;
-const DUST_CAP = 220;
-
-/** Visual travel speed, m/s. The round was hitscan; the streak is theatre. */
-const TRACER_SPEED = 620;
-const TRACER_LENGTH = 3.2;
-const TRACER_WIDTH = 0.022;
-
-const FLASH_SECONDS = 0.05;
-const FLASH_FRAMES = 3;
-const MUZZLE_LIGHT_DISTANCE = 12;
-
-const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 interface Tracer {
   active: boolean;
   x: number;
@@ -58,8 +33,45 @@ interface Particle {
   maxLife: number;
   size: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const TRACER_CAP = 24;
+const SPARK_CAP = 220;
+const DUST_CAP = 220;
+
+/** Visual travel speed, m/s. The round was hitscan; the streak is theatre. */
+const TRACER_SPEED = 620;
+const TRACER_LENGTH = 3.2;
+const TRACER_WIDTH = 0.022;
+
+const FLASH_SECONDS = 0.05;
+const FLASH_FRAMES = 3;
+const MUZZLE_LIGHT_DISTANCE = 12;
+
+const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
+//#endregion
+
+// ========================================== CLASS Fx ========================================== \\
+//#region Class Fx
+/**
+ * Shot feedback: muzzle flash, tracers, impact debris and decals (brief S6.5).
+ *
+ * Everything here is pooled and preallocated. A 700 RPM weapon fires twelve rounds a
+ * second; anything that allocates per shot shows up in the frame histogram as a sawtooth
+ * within about ten seconds of holding the trigger, which is exactly what acceptance
+ * criterion 6 is looking for.
+ *
+ * Draw-call budget: one instanced mesh per effect class (tracers, sparks, dust, decals),
+ * one mesh for the muzzle flash and one reused point light — six draws for all of it,
+ * regardless of how much is on screen.
+ *
+ * This runs at render rate. None of it is gameplay; the round already landed.
+ */
 export class Fx {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Added to the world scene. */
   readonly group = new THREE.Group();
 
@@ -113,7 +125,10 @@ export class Fx {
   private readonly scratchDir = new THREE.Vector3();
   private readonly scratchColor = new THREE.Color();
   private readonly forwardAxis = new THREE.Vector3(0, 0, 1);
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(anisotropy: number) {
     this.group.name = 'fx';
 
@@ -161,7 +176,10 @@ export class Fx {
     this.muzzleLight.name = 'fx:muzzleLight';
     this.group.add(this.muzzleLight);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get activeTracers(): number {
     return countActive(this.tracers);
   }
@@ -315,9 +333,10 @@ export class Fx {
     for (const d of this.disposables) d.dispose();
     this.group.clear();
   }
+  //#endregion
 
-  // -- internals ------------------------------------------------------------
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private makeInstanced(
     geometry: THREE.BufferGeometry,
     material: THREE.Material,
@@ -488,8 +507,12 @@ export class Fx {
       mesh.rotation.z = frame * 1.9 + this.flashScale;
     }
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function makeParticle(): Particle {
   return { active: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 1, size: 0.02 };
 }
@@ -509,3 +532,4 @@ function countActive(list: Array<{ active: boolean }>): number {
   for (const item of list) if (item.active) n++;
   return n;
 }
+//#endregion

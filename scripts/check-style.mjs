@@ -404,6 +404,13 @@ const FINISHED = {
     'src/client/engine/AudioSpecs.ts',
     'src/client/engine/ProceduralAudio.ts',
   ],
+  C4: [
+    'src/client/engine/Decals.ts',
+    'src/client/engine/FlameFx.ts',
+    'src/client/engine/Fx.ts',
+    'src/client/engine/FxAssets.ts',
+    'src/client/engine/ProceduralTextures.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

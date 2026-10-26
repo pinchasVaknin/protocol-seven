@@ -63,7 +63,7 @@ and belong in its Step 2 plan.
 | ~~C1~~ | `client/input/`, `client/player/`, `client/perks/`, `client/cinematic/` | **closed** — C1 absorbed #1's `IntroCamera` half under its own approval: the local `angleDelta` is gone and the file is on `MathUtil.angleDelta`, which moves `d = -PI` from `-PI` to `+PI`. What is left of #1 is `ClientMatch.angleDeltaRad`, which is C24's. C1 opened #54 |
 | ~~C2~~ | `client/engine/` BrowserClock, CameraRig, FrameLoop, GpuWarmup, MotionBlur, Renderer | **reproduction done, entry stays open** — C2 drove the real frame path with a clock it controlled and ruled out all three of #34's candidates *inside its own files*: the render-pass alpha tracks wall clock to 1.5e-11 ms under ±8 ms of jitter, the only layers integrated with `dt` move 0.0041° under a 6–36 ms clock disagreement, and one float32 ulp at 40 m is 4.8 µm against a 32 mm bob. #34 is rewritten with the numbers and re-pointed at the five things the reproduction could not cover — and, with the shadow tier the user then supplied, at the two earlier rounds that found this same symptom in the *simulation* both times. C2 noted `CameraRig.interpolatePhase` in #1 and opened #55 |
 | ~~C3~~ | `client/engine/` AudioGraph, AudioMix, AudioSpecs, ProceduralAudio | **closed** — nothing was bound to its four files: no §1 row, no entry naming any of them, and the only hits for "audio", "sound" or "sfx" in this whole file are the words *unsound* and *sound baseline*. C3 opened #56, which its own characterization tests found |
-| C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
+| ~~C4~~ | `client/engine/` Decals, Fx, FxAssets, FlameFx, ProceduralTextures | **#33 declined with a reason** — its C4 half is conditional on a decision the entry says is **C11's** ("Decide inside C11 whether a per-target owner on a decal is worth it"), and C11 has not run; C4 cannot absorb half a task whose shape another unit has yet to choose, and building an unused API is what R2 refuses. C4 measured the cost of that API into #33 instead, so C11 can decide with a number. C4 noted `ProceduralTextures.smooth` in #54 and opened nothing |
 | C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
@@ -726,6 +726,24 @@ they do not have today. **Decide inside C11** whether a per-target owner on a de
 whether the cheap answer is to take `static` out of `TargetDummy.decals` and lose the holes on the
 range altogether.
 
+**What that API would cost, measured by C4 on 2026-10-26** (which declined this entry, because the
+decision above is C11's and C11 has not run). `DecalField` is a ring of `CAPACITY` instance slots
+— **376** at the shipped tables, derived from the largest magazine the arsenal can assemble — with
+a cursor, a count, and no notion of who placed what. Adding ownership is:
+
+- one parallel array of `CAPACITY` owner ids beside the ring, written in `place` and cleared on
+  recycle. About 1.5 KB, and `place` already writes two instance attributes so a third store is
+  nothing;
+- a `clearOwner(id)` that walks all 376 slots and hides the matching ones. That is a full pass
+  rather than the O(1) `place` this class is built around, but it runs on a death or a respawn,
+  not per frame, and `clear()` already walks the whole ring the same way;
+- one more parameter on `place`, which is already nine — or an owner set on the field before the
+  shot, which `Ballistics` would have to remember to clear.
+
+So the cost is small and the awkward part is the ninth-plus parameter, not the memory or the scan.
+The cheap alternative the entry offers — dropping `static` from `TargetDummy.decals` — costs
+nothing in this file and loses the holes on the range, which is the trade C11 is choosing between.
+
 ### #34 — The camera trembles while walking the arena · `open` · *every candidate reached so far is measured clean; nothing is confirmed against the reporter's own machine* *(rewritten 2026-10-25, extended and corrected 2026-10-26, by C2)*
 **Files** **not** `src/client/engine/CameraRig.ts` or `FrameLoop.ts` — those are measured clean
 below. The four places left to look are named at the end. **Origin** reported from play,
@@ -733,7 +751,10 @@ below. The four places left to look are named at the end. **Origin** reported fr
 anything; the shadow tier it was played on was supplied by the user the same day, and a second
 reproduction that day closed the two gaps the first one left. **C3 opened #56** on 2026-10-26,
 found by its own characterization tests: the one caller in `ProceduralAudio` that fills the shared
-scratch spec without setting every field it depends on.
+scratch spec without setting every field it depends on. **C4 opened nothing** on 2026-10-26 and
+declined #33 with a reason — its half is conditional on a choice the entry reserves for C11 — but
+measured into that entry what the API it asks about would cost, so C11 decides with a number
+rather than an impression.
 
 Walking freely around the arena the view shakes slightly — small, continuous, and **local**: it is
 there with no server in the picture, so it is none of the remote-pose work f5d1e72 and df7d87b
@@ -1191,6 +1212,21 @@ file is that unit's commit to make, and §4.3 sends duplication that spans units
 
 **Watch for** `ease` is called from several places inside `IntroPlan`, so this is a small sweep
 rather than one substitution, and the file is the one the `intro` oracle reads end to end.
+
+**A third copy, noted by C4 on 2026-10-26.** `src/client/engine/ProceduralTextures.ts`'s private
+`smooth(t)` is `t * t * (3 - 2 * t)` — the same body again, without the clamp:
+
+```
+MathUtil.smoothstep(0, 1, x)   clamp01(x) then t*t*(3 - 2*t)
+IntroPlan.ease(u)              its own clamp then the same
+ProceduralTextures.smooth(t)   no clamp at all
+```
+
+It is only ever called with a lattice fraction, which is in range by construction, so the three
+agree on every input it can actually receive. C4 did not fold it: `smooth` runs inside the value
+noise, 65,536 times per texture across sixteen textures at load, so an added clamp is real work on
+a load-time hot loop — and §4.3 sends duplication that spans units here anyway. Whoever takes this
+entry should take all three at once.
 
 **Verify** `npm run check` + SIM snapshot/compare → `PASS`. `intro.txt` is 602 lines of plan
 across every map and mode and must stay byte-identical; the bodies are identical, so anything

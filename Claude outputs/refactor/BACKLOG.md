@@ -725,7 +725,7 @@ they do not have today. **Decide inside C11** whether a per-target owner on a de
 whether the cheap answer is to take `static` out of `TargetDummy.decals` and lose the holes on the
 range altogether.
 
-### #34 — The camera trembles while walking the arena · `open` · *the mouse → yaw path is the live candidate; everything else is measured clean* *(rewritten 2026-10-25, extended 2026-10-26, by C2)*
+### #34 — The camera trembles while walking the arena · `open` · *every candidate reached so far is measured clean; nothing is confirmed against the reporter's own machine* *(rewritten 2026-10-25, extended and corrected 2026-10-26, by C2)*
 **Files** **not** `src/client/engine/CameraRig.ts` or `FrameLoop.ts` — those are measured clean
 below. The four places left to look are named at the end. **Origin** reported from play,
 2026-10-19; reproduced and measured by C2 on 2026-10-25, on the clean tree before it edited
@@ -896,12 +896,43 @@ composition and frame-timing path without a mouse, 5 mm for one tick on a landin
 precision at 40 m — against 8–39 °/s around a 25 °/s hand here. Three to four orders of magnitude
 above anything else, on the most visible axis.
 
-**What this does not prove.** Claude in Chrome was not connected, so there was no real pointer lock
-and no real-device event stream; this is the transfer function with the arrival pattern as a
-controlled input, not a recording of the user's machine. **Two numbers settle it: the polling rate
-of the user's mouse, and whether their Chrome is coalescing.**
+### The arrival pattern above is **not** Chrome's, and that demotes this candidate *(2026-10-26, same day)*
 
-**If it is confirmed, the fix is a design decision and not refactor work.** S4.1 takes the angles
+The table is a true measurement of the shipped code, but it is only as good as the arrival pattern
+fed into it, and the model used an **independent** event source free-running against the frame
+clock. Chrome does not behave that way, and checking the platform behaviour rather than assuming it
+is what turned this up:
+
+- **Since Chrome 60 continuous events are frame-aligned.** `mousemove` and `pointermove` are
+  dispatched *just before* the `requestAnimationFrame` callback, not when the device produces them.
+  So there is one per frame — never the two-then-zero beat the `~60 Hz coalesced` row models.
+  **That row does not describe Chrome and is withdrawn as a prediction about it.**
+- **Chrome sums the movement it coalesces.** Where Chrome drops events for performance, the
+  dispatched event's `movementX`/`movementY` are the *sum* of the individual values of the
+  coalesced samples. The Pointer Events spec leaves this non-normative ("could be the sum"), but
+  Chrome does it.
+
+Put together: `Input.onMouseMove` receives, once per frame, the total movement for that frame's
+window. The per-frame yaw increment is therefore the true hand movement over that interval, and
+the rendered angular velocity is correct. **The mouse's polling rate is not the variable this entry
+needs**, and the 125 Hz / 250 Hz rows describe a stream Chrome does not deliver.
+
+What the measurement does still establish is a **sensitivity**: this path has no interpolation and
+no time-alignment of its own, so it is entirely at the mercy of how the host groups events into
+frames. It is correct *because Chrome groups them well*, not because the code defends itself. That
+is worth knowing and worth a comment, but it is not a defect and not a cause.
+
+**Residual uncertainty, and the one thing still unmeasured.** The sources for the summing behaviour
+are a W3C issue and spec text about `pointermove`, not Chrome's own documentation about `mousemove`
+under pointer lock, and the spec language is explicitly non-normative. Claude in Chrome was never
+connected in this session, so nothing here was confirmed against the user's actual browser and
+mouse. A recorder is written and ready
+(`p7-mouse-recorder.js` in the C2 session scratchpad): it reports the real event rate, the real
+events-per-frame histogram, `getCoalescedEvents()` counts, the real frame-time distribution and the
+yaw actually rendered. It needs the extension connected and about ten seconds of the user moving
+the mouse. Until then the honest status is **prior strongly against the mouse path**, not closed.
+
+**If it were ever confirmed, the fix would be a design decision and not refactor work.** S4.1 takes the angles
 raw *on purpose* — zero added look latency is the stated reason. The standard remedy is to stop
 treating a mouse event as instantaneous: give each delta its own `event.timeStamp`, pull sub-frame
 events out with `getCoalescedEvents()`, and resolve the angle at the frame's display time — the

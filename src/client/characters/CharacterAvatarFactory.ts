@@ -1,7 +1,12 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { CharacterAssetBundle } from './CharacterAssetRepository';
 import { CharacterAvatar } from './CharacterAvatar';
+//#endregion
 
+// ================================ CLASS CharacterAvatarFactory ================================ \\
+//#region Class CharacterAvatarFactory
 /**
  * Synchronous composition of an already-loaded character.
  *
@@ -9,12 +14,19 @@ import { CharacterAvatar } from './CharacterAvatar';
  * the repository has completed preload, so actor creation never awaits I/O inside a frame.
  */
 export class CharacterAvatarFactory {
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly assets: CharacterAssetBundle) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   create(): CharacterAvatar {
     // `Object3D.clone(true)` would leave SkinnedMeshes referring to the source skeleton. That
     // makes one actor's mixer pose every actor; SkeletonUtils clones the bone hierarchy safely
     // while retaining shared geometry and textures.
     return new CharacterAvatar(cloneSkeleton(this.assets.skinTemplate), this.assets);
   }
+  //#endregion
 }
+//#endregion

@@ -1,9 +1,3 @@
-import * as THREE from 'three';
-import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
-import { THROW_FOLLOW_THROUGH, THROW_RELEASE_TIME } from '../../shared/equipment/ThrowController';
-import { selectThrowClip } from './AnimationSelector';
-import type { CharacterAnimationId } from './CharacterCatalog';
-
 /**
  * The throw, on the upper body alone (2026-09-28, the human's bug 1, option A).
  *
@@ -30,6 +24,17 @@ import type { CharacterAnimationId } from './CharacterCatalog';
  * is the stance's, as it was for the whole-body clip.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
+import { THROW_FOLLOW_THROUGH, THROW_RELEASE_TIME } from '../../shared/equipment/ThrowController';
+import { selectThrowClip } from './AnimationSelector';
+import type { CharacterAnimationId } from './CharacterCatalog';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** Where in a throw clip each stage of the throw sits, as fractions of the clip. */
 interface ThrowClipTiming {
   /** The grenade held up in front of the chest, pin still in. */
@@ -41,7 +46,10 @@ interface ThrowClipTiming {
   /** The arm through and coming back: where the follow-through ends and the fade to the rifle starts. */
   readonly settled: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * Measured through the real import path on Echo, the right hand against the hips, and looked at.
  *
@@ -83,12 +91,22 @@ const SLIDE_FADE_SECONDS = 0.07;
  */
 const UPPER_BODY = /(Spine\d*|Neck\d*|Head|(Left|Right)(Shoulder|Arm|ForeArm|Hand\w*))$/;
 
+const scratch = new THREE.Quaternion();
+//#endregion
+
+// ==================================== CLASS UpperBodyClip ===================================== \\
+//#region Class UpperBodyClip
 /** One throw clip's upper-body rotation tracks, bound to one skeleton. */
 class UpperBodyClip {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly bones: THREE.Object3D[] = [];
   private readonly interpolants: THREE.Interpolant[] = [];
   readonly duration: number;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     readonly id: 'throwStand' | 'throwWalk' | 'throwCrouch',
     root: THREE.Object3D,
@@ -108,7 +126,10 @@ class UpperBodyClip {
       );
     }
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get timing(): ThrowClipTiming {
     return THROW_CLIP_TIMING[this.id];
   }
@@ -118,11 +139,15 @@ class UpperBodyClip {
     const v = this.interpolants[index]!.evaluate(time);
     return out.set(v[0]!, v[1]!, v[2]!, v[3]!);
   }
+  //#endregion
 }
+//#endregion
 
-const scratch = new THREE.Quaternion();
-
+// ====================================== CLASS ThrowLayer ====================================== \\
+//#region Class ThrowLayer
 export class ThrowLayer {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly clips = new Map<string, UpperBodyClip>();
   private clip: UpperBodyClip | null = null;
   /** Clip seconds the upper body is posed at. */
@@ -136,12 +161,18 @@ export class ThrowLayer {
   /** The pose a clip switch blends from, per bone of the new clip, and how far through it is. */
   private switchFrom: THREE.Quaternion[] = [];
   private switchT = 1;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     private readonly root: THREE.Object3D,
     private readonly source: ReadonlyMap<CharacterAnimationId, readonly THREE.AnimationClip[]>,
   ) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Whether the layer is posing anything at all. */
   get active(): boolean {
     return this.clip !== null && this.weight > 0;
@@ -199,7 +230,10 @@ export class ThrowLayer {
     this.weight = 0;
     this.switchT = 1;
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * Move the pose time for this frame. Each stage's rate is set when the stage starts, from where
    * the arm is then, so a tap-throw that arrives mid-wind-up still reaches `release` on time.
@@ -256,4 +290,6 @@ export class ThrowLayer {
     this.clips.set(id, built);
     return built;
   }
+  //#endregion
 }
+//#endregion

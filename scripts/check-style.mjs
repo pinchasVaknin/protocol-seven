@@ -411,6 +411,23 @@ const FINISHED = {
     'src/client/engine/FxAssets.ts',
     'src/client/engine/ProceduralTextures.ts',
   ],
+  C5: [
+    'src/client/characters/ActorAvatar.ts',
+    'src/client/characters/AnimationSelector.ts',
+    'src/client/characters/AnimationVariant.ts',
+    'src/client/characters/CharacterAnimator.ts',
+    'src/client/characters/CharacterAssetImport.ts',
+    'src/client/characters/CharacterAssetRepository.ts',
+    'src/client/characters/CharacterAssetService.ts',
+    'src/client/characters/CharacterAvatar.ts',
+    'src/client/characters/CharacterAvatarFactory.ts',
+    'src/client/characters/CharacterSkin.ts',
+    'src/client/characters/CharacterAvatarProvider.ts',
+    'src/client/characters/CharacterCatalog.ts',
+    'src/client/characters/RandomCharacterSelector.ts',
+    'src/client/characters/ThrowLayer.ts',
+    'src/client/characters/WeaponSupportHandConstraint.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

@@ -1,11 +1,14 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { logger } from '../../shared/core/Log';
 import type { RenderableActor } from '../../shared/ai/BotVisualState';
 import type { ActorAvatar } from './ActorAvatar';
 import type { CharacterDefinition } from './CharacterCatalog';
 import type { CharacterAvatarFactory } from './CharacterAvatarFactory';
+//#endregion
 
-const log = logger('CharacterAssets');
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** The renderer's narrow dependency on optional character presentation. */
 export interface CharacterAvatarProvider {
   readonly isReady: boolean;
@@ -23,7 +26,15 @@ export interface CharacterAvatarProvider {
 export type CharacterAvatarProviderResolver = (
   actor: RenderableActor,
 ) => CharacterAvatarProvider;
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('CharacterAssets');
+//#endregion
+
+// ============================ CLASS FactoryCharacterAvatarProvider ============================ \\
+//#region Class FactoryCharacterAvatarProvider
 /**
  * Match-scoped view of an app-scoped character factory.
  *
@@ -31,14 +42,22 @@ export type CharacterAvatarProviderResolver = (
  * service remains free to finish a retry and make its factory visible to other providers.
  */
 export class FactoryCharacterAvatarProvider implements CharacterAvatarProvider {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private creationFailed = false;
   private disposed = false;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     private readonly definition: CharacterDefinition,
     private readonly factory: () => CharacterAvatarFactory | null,
   ) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get isReady(): boolean {
     return !this.disposed && !this.creationFailed && this.factory() !== null;
   }
@@ -63,8 +82,13 @@ export class FactoryCharacterAvatarProvider implements CharacterAvatarProvider {
   dispose(): void {
     this.disposed = true;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+//#endregion

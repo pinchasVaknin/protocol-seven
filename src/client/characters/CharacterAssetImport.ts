@@ -1,11 +1,3 @@
-import * as THREE from 'three';
-import type {
-  CharacterAnimationDefinition,
-  CharacterAnimationId,
-  CharacterId,
-  CharacterRigProfile,
-} from './CharacterCatalog';
-
 /**
  * The import pipeline: what happens to a parsed GLB before it may become a shared template.
  *
@@ -16,6 +8,19 @@ import type {
  * the message is the review point a newly exported asset gets.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import type {
+  CharacterAnimationDefinition,
+  CharacterAnimationId,
+  CharacterId,
+  CharacterRigProfile,
+} from './CharacterCatalog';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * What `importClip` needs to know about the skin a clip is being prepared for: the motion
  * bone's bind position, which the planar root lock is pinned to, and the bones the skin has,
@@ -26,7 +31,16 @@ export interface SkinBinding {
   readonly bindMotionPosition: THREE.Vector3;
   readonly bones: ReadonlySet<string>;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Vector3 track component for each axis name a rig profile may lock. */
+const AXIS_COMPONENT = { x: 0, y: 1, z: 2 } as const;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** Check a skin against its rig profile and return what clips are prepared against. */
 export function validateSkin(
   scene: THREE.Object3D,
@@ -97,7 +111,10 @@ export function importClip(
   lockRootTranslation(clip, rig, skin.bindMotionPosition, definition.id);
   return clip;
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /**
  * A skin may use a different local unit from the reviewed animation export. Convert the cloned
  * position tracks at the asset boundary, before they reach a mixer or a shared template.
@@ -142,9 +159,6 @@ function selectSourceClip(
   return clip;
 }
 
-/** Vector3 track component for each axis name a rig profile may lock. */
-const AXIS_COMPONENT = { x: 0, y: 1, z: 2 } as const;
-
 /**
  * Imported Mixamo clips carry translation on the hips. It is motion authored for another
  * controller, not permission to move this actor's replicated pose. The configured components
@@ -177,3 +191,4 @@ function lockRootTranslation(
     }
   }
 }
+//#endregion

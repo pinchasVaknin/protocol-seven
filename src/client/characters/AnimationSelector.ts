@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
 import {
   isLowStance as isLowStanceId,
@@ -5,7 +7,10 @@ import {
   LOCOMOTION_RUN_SPEED,
 } from '../../shared/player/Stance';
 import type { CharacterAnimationId } from './CharacterCatalog';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The walk and run thresholds are the simulation's (`shared/player/Stance`), because the
  * hitbox rig picks a crouching body's layout by the same speeds (`rigLayoutFor`, M13 C2):
@@ -43,35 +48,16 @@ const RUN_SPEED = LOCOMOTION_RUN_SPEED;
  */
 const RUN_RELEASE_SPEED = 5;
 
-/**
- * Whether a standing body is drawn in a run, from what it is actually doing.
- *
- * **Motion decides, and the sprint flag only breaks a tie inside the band.** It used to be
- * `input.sprinting || planarSpeed >= RUN_SPEED`, an *or* that let the flag name the loop on its
- * own, and over a real wire that is wrong twice: measured in a nine-body networked match, a body
- * moving at **2.11 m/s** was drawn at a full run because its sprint bit was set — a bot leaning
- * into a corner, a human who pressed the key against a wall — and when the bit dropped two
- * tenths of a second later the clip restarted back into a walk. Fourteen of the eighty loop
- * changes in that ten seconds were run loops entered or left below 5 m/s.
- *
- * A sprint that is not moving is not a sprint. So: above `RUN_SPEED` the body runs whatever the
- * flag says; below `RUN_RELEASE_SPEED` it does not, whatever the flag says; and between the two
- * the flag — or the fact that it is already running — decides, which is where a body accelerating
- * into a sprint and a body leaning out of one both live.
- */
-function isRunning(input: ActorAnimationInput, planarSpeed: number, drawnRunning: boolean): boolean {
-  if (planarSpeed >= RUN_SPEED) return true;
-  if (planarSpeed < RUN_RELEASE_SPEED) return false;
-  return drawnRunning || input.sprinting;
-}
-
 /** The loops that read as a run, for `selectLocomotion`'s own hysteresis. */
 const RUN_LOOPS: ReadonlySet<CharacterAnimationId> = new Set<CharacterAnimationId>([
   'runRelaxed',
   'runWeaponReadyPistol',
   'crouchRunAiming',
 ]);
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** Whether the loop a body is already drawn in is a run. See `RUN_RELEASE_SPEED`. */
 export function isRunLoop(id: CharacterAnimationId | null): boolean {
   return id !== null && RUN_LOOPS.has(id);
@@ -120,18 +106,7 @@ export function selectLocomotion(
   drawnRunning = false,
 ): CharacterAnimationId {
   if (input.stance === 'SLIDE') return 'slide';
-  const low = isLowStance(input);
-
-  if (low) {
-    // The pistol family has no crouched walk and no crouched run, so above the dead zone a
-    // sidearm is drawn in the rifle's — and wears the rifle's hitbox layout with it, which is
-    // the whole reason an incomplete family is admissible. See `rigLayoutFor`.
-    // The crouched threshold is exactly the simulation's, with no band and no flag: it is shared
-    // with `rigLayoutFor`, and the clip and the boxes have to change pose on the same number.
-    if (planarSpeed >= RUN_SPEED) return 'crouchRunAiming';
-    if (planarSpeed > IDLE_SPEED) return 'crouchWalkAiming';
-    return pistol ? 'crouchIdleAimingPistol' : 'crouchIdleAiming';
-  }
+  if (isLowStance(input)) return selectCrouchLoop(planarSpeed, pistol);
 
   // The current asset pack has no hip-ready loops. Its "Relaxed" standing/walking clips do
   // not hold a firearm, so an armed actor must use the reviewed weapon-ready clips even when
@@ -232,3 +207,46 @@ export function selectAction(input: ActorAnimationInput, planarSpeed: number): C
   if (!input.sprinting && planarSpeed < RUN_SPEED) return 'reloadWalk';
   return null;
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Whether a standing body is drawn in a run, from what it is actually doing.
+ *
+ * **Motion decides, and the sprint flag only breaks a tie inside the band.** It used to be
+ * `input.sprinting || planarSpeed >= RUN_SPEED`, an *or* that let the flag name the loop on its
+ * own, and over a real wire that is wrong twice: measured in a nine-body networked match, a body
+ * moving at **2.11 m/s** was drawn at a full run because its sprint bit was set — a bot leaning
+ * into a corner, a human who pressed the key against a wall — and when the bit dropped two
+ * tenths of a second later the clip restarted back into a walk. Fourteen of the eighty loop
+ * changes in that ten seconds were run loops entered or left below 5 m/s.
+ *
+ * A sprint that is not moving is not a sprint. So: above `RUN_SPEED` the body runs whatever the
+ * flag says; below `RUN_RELEASE_SPEED` it does not, whatever the flag says; and between the two
+ * the flag — or the fact that it is already running — decides, which is where a body accelerating
+ * into a sprint and a body leaning out of one both live.
+ */
+function isRunning(input: ActorAnimationInput, planarSpeed: number, drawnRunning: boolean): boolean {
+  if (planarSpeed >= RUN_SPEED) return true;
+  if (planarSpeed < RUN_RELEASE_SPEED) return false;
+  return drawnRunning || input.sprinting;
+}
+
+/**
+ * The crouched loop, from speed alone.
+ *
+ * The pistol family has no crouched walk and no crouched run, so above the dead zone a
+ * sidearm is drawn in the rifle's — and wears the rifle's hitbox layout with it, which is
+ * the whole reason an incomplete family is admissible. See `rigLayoutFor`.
+ *
+ * The crouched threshold is exactly the simulation's, with no band and no flag: it is shared
+ * with `rigLayoutFor`, and the clip and the boxes have to change pose on the same number. That
+ * is the one reason this is not the standing branch with a different set of slot ids.
+ */
+function selectCrouchLoop(planarSpeed: number, pistol: boolean): CharacterAnimationId {
+  if (planarSpeed >= RUN_SPEED) return 'crouchRunAiming';
+  if (planarSpeed > IDLE_SPEED) return 'crouchWalkAiming';
+  return pistol ? 'crouchIdleAimingPistol' : 'crouchIdleAiming';
+}
+//#endregion

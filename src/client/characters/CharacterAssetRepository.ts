@@ -1,8 +1,13 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { CharacterAnimationId, CharacterDefinition } from './CharacterCatalog';
 import { importClip, validateSkin } from './CharacterAssetImport';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * Parsed, shared templates. They are immutable from the perspective of an avatar instance.
  *
@@ -20,7 +25,10 @@ export interface CharacterAssetRepository {
   preload(definition: CharacterDefinition): Promise<CharacterAssetBundle>;
   dispose(): void;
 }
+//#endregion
 
+// ============================= CLASS GltfCharacterAssetRepository ============================= \\
+//#region Class GltfCharacterAssetRepository
 /**
  * Browser implementation for GLB character assets.
  *
@@ -39,6 +47,8 @@ export interface CharacterAssetRepository {
  * discarding anything that succeeded.
  */
 export class GltfCharacterAssetRepository implements CharacterAssetRepository {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly loader = new GLTFLoader();
   /** `public/` URLs are not hashed, so a catalog version belongs in the cache identity. */
   private readonly bundles = new Map<string, Promise<CharacterAssetBundle>>();
@@ -46,7 +56,10 @@ export class GltfCharacterAssetRepository implements CharacterAssetRepository {
   private readonly animationSources = new Map<string, Promise<readonly THREE.AnimationClip[]>>();
   private readonly loadedSkins = new Set<THREE.Object3D>();
   private disposed = false;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   preload(definition: CharacterDefinition): Promise<CharacterAssetBundle> {
     if (this.disposed) return Promise.reject(new Error('Character asset repository has been disposed.'));
 
@@ -72,7 +85,10 @@ export class GltfCharacterAssetRepository implements CharacterAssetRepository {
     for (const skin of this.loadedSkins) disposeTemplate(skin);
     this.loadedSkins.clear();
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private async load(definition: CharacterDefinition): Promise<CharacterAssetBundle> {
     const animationDefinitions = Object.values(definition.animations).flat();
     const loaded = await Promise.allSettled([
@@ -143,25 +159,23 @@ export class GltfCharacterAssetRepository implements CharacterAssetRepository {
     });
     return task;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /** Release resources owned by the loaded template once every avatar using it is already gone. */
 function disposeTemplate(root: THREE.Object3D): void {
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
   const textures = new Set<THREE.Texture>();
 
-  root.traverse((node) => {
-    const mesh = node as THREE.Mesh;
-    if (mesh.geometry instanceof THREE.BufferGeometry) geometries.add(mesh.geometry);
-    const material = mesh.material;
-    if (Array.isArray(material)) {
-      for (const item of material) materials.add(item);
-    } else if (material instanceof THREE.Material) {
-      materials.add(material);
-    }
-  });
+  collectDisposables(root, geometries, materials);
 
+  // A texture is reached through the material that holds it, so the materials are walked first
+  // and the textures released after: the sets are what keeps one shared by two meshes from being
+  // disposed twice.
   for (const material of materials) {
     for (const value of Object.values(material as unknown as Record<string, unknown>)) {
       if (value instanceof THREE.Texture) textures.add(value);
@@ -172,3 +186,22 @@ function disposeTemplate(root: THREE.Object3D): void {
   for (const geometry of geometries) geometry.dispose();
   root.clear();
 }
+
+/** Every distinct geometry and material under `root`, into the two sets given. */
+function collectDisposables(
+  root: THREE.Object3D,
+  geometries: Set<THREE.BufferGeometry>,
+  materials: Set<THREE.Material>,
+): void {
+  root.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (mesh.geometry instanceof THREE.BufferGeometry) geometries.add(mesh.geometry);
+    const material = mesh.material;
+    if (Array.isArray(material)) {
+      for (const item of material) materials.add(item);
+    } else if (material instanceof THREE.Material) {
+      materials.add(material);
+    }
+  });
+}
+//#endregion

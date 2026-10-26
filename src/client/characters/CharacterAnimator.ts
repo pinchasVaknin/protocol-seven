@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import type { CharacterAnimationDefinition, CharacterAnimationId, CharacterDefinition } from './CharacterCatalog';
 import {
@@ -16,7 +18,20 @@ import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
 import { DEFAULT_MOVEMENT_CONFIG } from '../../shared/player/MovementConfig';
 import { MELEE_SWING_SECONDS } from '../../shared/weapons/Melee';
 import { ThrowLayer } from './ThrowLayer';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+/** One variant of one slot, resolved: the action and the catalogue entry it came from. */
+interface Playing {
+  readonly id: CharacterAnimationId;
+  readonly definition: CharacterAnimationDefinition;
+  readonly action: THREE.AnimationAction;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const CROSS_FADE_SECONDS = 0.14;
 
 /**
@@ -107,14 +122,10 @@ const GROUND_EDGE_GRACE = 0.08;
  * it was ever a gait change.
  */
 const LOOP_SETTLE_SECONDS = 0.1;
+//#endregion
 
-/** One variant of one slot, resolved: the action and the catalogue entry it came from. */
-interface Playing {
-  readonly id: CharacterAnimationId;
-  readonly definition: CharacterAnimationDefinition;
-  readonly action: THREE.AnimationAction;
-}
-
+// ================================== CLASS CharacterAnimator =================================== \\
+//#region Class CharacterAnimator
 /**
  * Per-avatar animation state. Clips are shared templates, but the mixer and actions in this
  * class are never shared between characters.
@@ -150,6 +161,8 @@ interface Playing {
  * class never chooses one itself.
  */
 export class CharacterAnimator {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly mixer: THREE.AnimationMixer;
   private readonly actions = new Map<string, THREE.AnimationAction>();
   private active: Playing | null = null;
@@ -200,7 +213,10 @@ export class CharacterAnimator {
     if (wasLaunch && this.wasAirborne) return;
     if (!this.dead && next !== null) this.playLoop(next);
   };
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     private readonly root: THREE.Object3D,
     private readonly definition: CharacterDefinition,
@@ -210,7 +226,10 @@ export class CharacterAnimator {
     this.mixer.addEventListener('finished', this.onFinished);
     this.throwLayer = new ThrowLayer(root, clips);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get isDying(): boolean {
     return this.dead;
   }
@@ -268,67 +287,30 @@ export class CharacterAnimator {
     // library had `standToCrouch`, the way down was `crouchToStand` played backwards, and the
     // trap in that — the cross-fade's time warp divides by the time scale and flips a negative
     // one — is on record in PLAN.md, Phase C3). The loop that was asked for waits until the
-    // transition finishes. The slide has a clip of its own and a branch of its own below; every
+    // transition finishes. The slide has a clip of its own and a branch of its own; every
     // other stance change cross-fades between loops, which is safer than pretending the asset
     // pack covers the mantle.
-    if (this.wasAirborne !== airborne) {
-      // The ground edge is first and it **interrupts**, which none of the others do. Two reasons,
-      // and the first was measured rather than reasoned: a jump shorter than the 0.55 s launch
-      // clip never showed its landing at all, because the launch still owned the body on the
-      // frame the feet touched down — a 330 ms hop played half a launch and went back to idle.
-      // The second is the standing rule of this area: leaving or meeting the ground moves the
-      // hitbox layout, and a body drawn in a pose its boxes disagree with is the defect M13 C2
-      // found on the sliding body. A gesture or a stance transition already playing is dropped
-      // here. A throw is not: it is the upper body's (`ThrowLayer`), and it carries on over the jump.
-      //
-      // It also outranks the crouch edge, and `wasLow` is advanced below either way — so a body
-      // that jumps out of a kneel does not stand up in mid-air and does not owe a `crouchToStand`
-      // on the way down. What it lands in is whatever the simulation says it is doing.
-      //
-      // Including a slide: at 20 snapshots a second a body can land and start one between two of
-      // them, and handing `jumpLand` a slide to resume would play the whole clip from its run-in.
-      if (sliding) {
-        this.beginSlide();
-      } else {
-        this.slide = null;
-        this.begin(selectGroundTransition(airborne), desired);
-      }
-    } else if (sliding !== this.wasSliding) {
-      // The slide edge comes before the crouch edge, which it also is — `SLIDE` is a low stance,
-      // and without this a slide would open with `standToCrouch` and close with `crouchToStand`.
-      // Neither is what a body does going into or out of a slide.
-      if (sliding) this.beginSlide();
-      else this.endSlide(desired);
-    } else if (sliding) {
-      this.holdSlide();
-    } else if (this.transition !== null) {
-      this.pendingLocomotion = desired;
-    } else if (gesture !== null && this.gestureLatch !== gesture) {
-      this.gestureLatch = gesture;
-      const started = this.begin(gesture, desired);
-      // A swing is fitted to the swing, like a reload.
-      fitToSeconds(started.action, MELEE_SWING_SECONDS);
-    } else if (airborne) {
-      // Still off the ground with the launch finished: hold its clamped last frame, which is the
-      // air pose, and ask for nothing else. Measured in a live match before this branch existed —
-      // the 0.55 s launch ended 30 ms before the landing and the body spent that frame in a
-      // standing idle, which on a long fall is a man descending a lift shaft at attention. The
-      // loop the landing hands back to is still tracked, so the body comes down into whatever the
-      // simulation says it is doing.
-      this.pendingLocomotion = desired;
-      this.action = null;
-    } else if (this.wasLow !== low) {
-      this.begin(selectStanceTransition(low, pistol), desired);
-    } else {
-      const action = selectAction(input, planarSpeed);
-      if (action !== null) {
-        if (this.action?.id !== action) {
-          this.action = this.playOneShot(action, 0);
-          fitToSeconds(this.action.action, input.reloadSeconds);
-        }
-      } else {
+    if (!this.handleGroundOrSlideEdge(sliding, airborne, desired)) {
+      if (this.transition !== null) {
+        this.pendingLocomotion = desired;
+      } else if (gesture !== null && this.gestureLatch !== gesture) {
+        this.gestureLatch = gesture;
+        const started = this.begin(gesture, desired);
+        // A swing is fitted to the swing, like a reload.
+        fitToSeconds(started.action, MELEE_SWING_SECONDS);
+      } else if (airborne) {
+        // Still off the ground with the launch finished: hold its clamped last frame, which is
+        // the air pose, and ask for nothing else. Measured in a live match before this branch
+        // existed — the 0.55 s launch ended 30 ms before the landing and the body spent that
+        // frame in a standing idle, which on a long fall is a man descending a lift shaft at
+        // attention. The loop the landing hands back to is still tracked, so the body comes down
+        // into whatever the simulation says it is doing.
+        this.pendingLocomotion = desired;
         this.action = null;
-        this.playLoop(desired);
+      } else if (this.wasLow !== low) {
+        this.begin(selectStanceTransition(low, pistol), desired);
+      } else {
+        this.playActionOrLoop(input, planarSpeed, desired);
       }
     }
 
@@ -337,6 +319,135 @@ export class CharacterAnimator {
     this.wasAirborne = airborne;
     // Whatever the legs were just given, the arms are the throw's while a grenade is out.
     this.throwLayer.step(input, planarSpeed, dt);
+  }
+
+  /**
+   * `variant` is the simulation's `deathVariant`, already dealt from `(entityId, deathSerial)`
+   * and identical on the server, so the slot's clips are indexed by it rather than dealt again
+   * here; `DEATH_VARIANTS` stays the simulation's count and the catalogue's is folded into it
+   * (`check:animations` keeps the two dividing).
+   */
+  beginDeath(input: ActorAnimationInput, variant: number): void {
+    this.dead = true;
+    // A body falls as the death clip has it, arms and all.
+    this.throwLayer.reset();
+    this.pendingLocomotion = null;
+    this.transition = null;
+    this.slide = null;
+    this.gestureLatch = null;
+    this.action = null;
+    const id = selectDeath(input);
+    const count = this.clips.get(id)?.length ?? 0;
+    this.playOneShot(id, count > 0 ? ((variant % count) + count) % count : 0);
+  }
+
+  endDeath(): void {
+    if (!this.dead) return;
+    this.dead = false;
+    this.throwLayer.reset();
+    this.transition = null;
+    this.gestureLatch = null;
+    this.action = null;
+    this.pendingLocomotion = null;
+    this.slide = null;
+    this.wasLow = false;
+    this.wasSliding = false;
+    this.wasAirborne = false;
+    this.airborneHeldFor = 0;
+    this.settledLoop = null;
+    this.candidateLoop = null;
+    this.candidateHeldFor = 0;
+    this.active = null;
+    this.mixer.stopAllAction();
+    // Flush property bindings so the respawn starts from its bind pose, not the final death
+    // frame. The next `setLocomotion` call starts the correct loop.
+    this.mixer.update(0);
+  }
+
+  update(dt: number): void {
+    if (dt > 0) this.mixer.update(dt);
+    // After the mixer, which has just posed every bone: the throw takes the upper body over it.
+    this.throwLayer.apply();
+  }
+
+  dispose(): void {
+    this.mixer.removeEventListener('finished', this.onFinished);
+    this.mixer.stopAllAction();
+    this.mixer.uncacheRoot(this.root);
+    this.actions.clear();
+    this.active = null;
+    this.transition = null;
+    this.slide = null;
+    this.action = null;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * The three branches that answer to a *change of footing*, in their priority order. True when
+   * one of them took the frame.
+   *
+   * The ground edge is first and it **interrupts**, which none of the others do. Two reasons, and
+   * the first was measured rather than reasoned: a jump shorter than the 0.55 s launch clip never
+   * showed its landing at all, because the launch still owned the body on the frame the feet
+   * touched down — a 330 ms hop played half a launch and went back to idle. The second is the
+   * standing rule of this area: leaving or meeting the ground moves the hitbox layout, and a body
+   * drawn in a pose its boxes disagree with is the defect M13 C2 found on the sliding body. A
+   * gesture or a stance transition already playing is dropped here. A throw is not: it is the
+   * upper body's (`ThrowLayer`), and it carries on over the jump.
+   *
+   * It also outranks the crouch edge, and `wasLow` is advanced by the caller either way — so a
+   * body that jumps out of a kneel does not stand up in mid-air and does not owe a
+   * `crouchToStand` on the way down. What it lands in is whatever the simulation says it is doing.
+   *
+   * Including a slide: at 20 snapshots a second a body can land and start one between two of
+   * them, and handing `jumpLand` a slide to resume would play the whole clip from its run-in.
+   *
+   * The slide edge comes second, before the crouch edge — which it also is, since `SLIDE` is a low
+   * stance. Without it a slide would open with `standToCrouch` and close with `crouchToStand`, and
+   * neither is what a body does going into or out of one.
+   */
+  private handleGroundOrSlideEdge(sliding: boolean, airborne: boolean, desired: CharacterAnimationId): boolean {
+    if (this.wasAirborne !== airborne) {
+      if (sliding) {
+        this.beginSlide();
+      } else {
+        this.slide = null;
+        this.begin(selectGroundTransition(airborne), desired);
+      }
+      return true;
+    }
+    if (sliding !== this.wasSliding) {
+      if (sliding) this.beginSlide();
+      else this.endSlide(desired);
+      return true;
+    }
+    if (sliding) {
+      this.holdSlide();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * The last branch: the action one-shot that stands in for the loop while the input says the
+   * actor is doing it, or the loop itself.
+   *
+   * The reload is fitted to the magazine it is drawing rather than played at the clip's own
+   * speed, and it is started once — restarting it every frame the bit is up would be a body
+   * reloading forever.
+   */
+  private playActionOrLoop(input: ActorAnimationInput, planarSpeed: number, desired: CharacterAnimationId): void {
+    const action = selectAction(input, planarSpeed);
+    if (action === null) {
+      this.action = null;
+      this.playLoop(desired);
+      return;
+    }
+    if (this.action?.id === action) return;
+    this.action = this.playOneShot(action, 0);
+    fitToSeconds(this.action.action, input.reloadSeconds);
   }
 
   /**
@@ -431,66 +542,6 @@ export class CharacterAnimator {
     return started;
   }
 
-  /**
-   * `variant` is the simulation's `deathVariant`, already dealt from `(entityId, deathSerial)`
-   * and identical on the server, so the slot's clips are indexed by it rather than dealt again
-   * here; `DEATH_VARIANTS` stays the simulation's count and the catalogue's is folded into it
-   * (`check:animations` keeps the two dividing).
-   */
-  beginDeath(input: ActorAnimationInput, variant: number): void {
-    this.dead = true;
-    // A body falls as the death clip has it, arms and all.
-    this.throwLayer.reset();
-    this.pendingLocomotion = null;
-    this.transition = null;
-    this.slide = null;
-    this.gestureLatch = null;
-    this.action = null;
-    const id = selectDeath(input);
-    const count = this.clips.get(id)?.length ?? 0;
-    this.playOneShot(id, count > 0 ? ((variant % count) + count) % count : 0);
-  }
-
-  endDeath(): void {
-    if (!this.dead) return;
-    this.dead = false;
-    this.throwLayer.reset();
-    this.transition = null;
-    this.gestureLatch = null;
-    this.action = null;
-    this.pendingLocomotion = null;
-    this.slide = null;
-    this.wasLow = false;
-    this.wasSliding = false;
-    this.wasAirborne = false;
-    this.airborneHeldFor = 0;
-    this.settledLoop = null;
-    this.candidateLoop = null;
-    this.candidateHeldFor = 0;
-    this.active = null;
-    this.mixer.stopAllAction();
-    // Flush property bindings so the respawn starts from its bind pose, not the final death
-    // frame. The next `setLocomotion` call starts the correct loop.
-    this.mixer.update(0);
-  }
-
-  update(dt: number): void {
-    if (dt > 0) this.mixer.update(dt);
-    // After the mixer, which has just posed every bone: the throw takes the upper body over it.
-    this.throwLayer.apply();
-  }
-
-  dispose(): void {
-    this.mixer.removeEventListener('finished', this.onFinished);
-    this.mixer.stopAllAction();
-    this.mixer.uncacheRoot(this.root);
-    this.actions.clear();
-    this.active = null;
-    this.transition = null;
-    this.slide = null;
-    this.action = null;
-  }
-
   /** The variant of a locomotion slot this life wears. */
   private lifeVariant(id: CharacterAnimationId): number {
     return variantFor(id, this.entityId, this.spawnSerial, this.clips.get(id)?.length ?? 0);
@@ -516,19 +567,21 @@ export class CharacterAnimator {
 
   private playLoop(id: CharacterAnimationId): void {
     if (this.active?.id === id && this.transition === null) return;
-    const next = this.resolve(id, this.lifeVariant(id));
-    const previous = this.active?.action ?? null;
-    next.action.reset();
-    next.action.enabled = true;
-    next.action.setEffectiveWeight(1);
-    next.action.setEffectiveTimeScale(1);
-    next.action.play();
-    if (previous !== null && previous !== next.action) next.action.crossFadeFrom(previous, CROSS_FADE_SECONDS, true);
-    this.active = next;
+    this.startAction(this.resolve(id, this.lifeVariant(id)), CROSS_FADE_SECONDS);
   }
 
   private playOneShot(id: CharacterAnimationId, variant: number, fadeSeconds = CROSS_FADE_SECONDS): Playing {
-    const next = this.resolve(id, variant);
+    return this.startAction(this.resolve(id, variant), fadeSeconds);
+  }
+
+  /**
+   * Put `next` in front: reset it to frame 0 at full weight and speed, and cross-fade the clip it
+   * replaces out underneath it.
+   *
+   * The reset is what makes a loop change cost a restart, which is why `LOOP_SETTLE_SECONDS` and
+   * `GROUND_EDGE_GRACE` exist — everything that reaches here has already earned its place.
+   */
+  private startAction(next: Playing, fadeSeconds: number): Playing {
     const previous = this.active?.action ?? null;
     next.action.reset();
     next.action.enabled = true;
@@ -539,8 +592,12 @@ export class CharacterAnimator {
     this.active = next;
     return next;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /**
  * Play a one-shot so it ends when the thing it depicts does. A 3.3 s reload clip on a 1.7 s
  * SMG plays at ×1.95 and is over when the magazine is; on a 4.4 s LMG it plays at ×0.75. Left
@@ -558,3 +615,4 @@ function fitToSeconds(action: THREE.AnimationAction, seconds: number, span?: num
   const scale = THREE.MathUtils.clamp(duration / seconds, 1 / 3, 3);
   action.setEffectiveTimeScale(scale);
 }
+//#endregion

@@ -1,6 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { cosmeticVariantFor } from '../../shared/ai/BotVisualState';
 import type { CharacterAnimationId } from './CharacterCatalog';
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Which variant of a slot a body wears (M13 Phase D).
  *
@@ -24,7 +29,10 @@ export function variantFor(slot: CharacterAnimationId, entityId: number, serial:
   if (count <= 1) return 0;
   return cosmeticVariantFor(entityId ^ slotSalt(slot), serial, count);
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /** FNV-1a over the slot id: a stable 32-bit salt per slot, computed once per call site. */
 function slotSalt(slot: string): number {
   let hash = 0x811c9dc5;
@@ -34,3 +42,4 @@ function slotSalt(slot: string): number {
   }
   return hash >>> 0;
 }
+//#endregion

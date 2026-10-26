@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import {
   stockShift,
@@ -8,7 +10,10 @@ import {
 } from './ActorAvatar';
 import type { CharacterIndicatorPadProfile, CharacterRigProfile } from './CharacterCatalog';
 import { WeaponSupportHandConstraint } from './WeaponSupportHandConstraint';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * How far from the wrist to the middle knuckle a grenade sits: a little past halfway, which is the
  * middle of the palm rather than the heel of it. See `CharacterSkin.configureGrenadeSocket`.
@@ -19,7 +24,10 @@ const PALM_ALONG = 0.55;
  * of a hand and the half-width of a frag's body, so the one rests on the other.
  */
 const GRENADE_OFF_PALM_M = 0.035;
+//#endregion
 
+// ==================================== CLASS CharacterSkin ===================================== \\
+//#region Class CharacterSkin
 /**
  * One cloned skin and its cosmetic attachments.
  *
@@ -28,6 +36,8 @@ const GRENADE_OFF_PALM_M = 0.035;
  * team, while the renderer owns separate IFF markers and nameplates.
  */
 export class CharacterSkin {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly root = new THREE.Group();
 
   private readonly weaponSocket = new THREE.Group();
@@ -45,7 +55,10 @@ export class CharacterSkin {
   private weaponAway = false;
   private grenade: THREE.Object3D | null = null;
   private grenadeAsset: HeldEquipmentAsset | null = null;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(instance: THREE.Object3D, rig: CharacterRigProfile) {
     this.root.name = `character-skin:${rig.id}`;
     this.root.rotation.y = rig.modelYaw;
@@ -74,7 +87,10 @@ export class CharacterSkin {
     hand.add(this.grenadeSocket);
     this.configureGrenadeSocket(hand, compensation);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   setWeapon(asset: HeldWeaponAsset | null): void {
     // The asset, not its id: the same weapon in a new finish is a new asset (playtest round 3, R4.4).
     if (asset === this.heldAsset) return;
@@ -202,7 +218,10 @@ export class CharacterSkin {
     });
     this.root.clear();
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private prepareMeshes(instance: THREE.Object3D): void {
     instance.traverse((node) => {
       if ((node as THREE.Object3D & { isMesh?: boolean }).isMesh !== true) return;
@@ -273,8 +292,12 @@ export class CharacterSkin {
       .multiplyScalar(PALM_ALONG)
       .addScaledVector(face, GRENADE_OFF_PALM_M * compensation);
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /**
  * The node a shoulder pad hangs from, under its bone at the profile's offset and rotation —
  * the same construction as the support hand's palm marker, and in the same bone-local units.
@@ -310,3 +333,4 @@ function relativeUniformScale(root: THREE.Vector3, child: THREE.Vector3, rigId: 
   }
   return rootAverage / childAverage;
 }
+//#endregion

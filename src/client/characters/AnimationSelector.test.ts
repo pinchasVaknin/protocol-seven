@@ -4,8 +4,10 @@ import { rigLayoutFor } from '../../shared/combat/HitboxRig';
 import { LOCOMOTION_IDLE_SPEED, LOCOMOTION_RUN_SPEED, STANCES } from '../../shared/player/Stance';
 import {
   isAirborne,
+  isLowStance,
   isRunLoop,
   selectAction,
+  selectDeath,
   selectGesture,
   selectGroundTransition,
   selectLocomotion,
@@ -285,5 +287,88 @@ describe('the drawn pose and the hitbox layout are one decision', () => {
         }
       }
     }
+  });
+});
+
+/**
+ * The corners the suite above does not reach, added by unit C5 before its refactor.
+ *
+ * `selectLocomotion` is the function being split, and the split moves the crouch branch into a
+ * helper — so the branch's three answers and the order the guards run in are pinned here as well
+ * as through the cross product above.
+ */
+describe('selectLocomotion: the order its guards run in', () => {
+  it('lets the slide outrank every other fact, including a crouch', () => {
+    // SLIDE is itself a low stance, so if the crouch branch ran first a slide would be drawn as a
+    // crouched run. `rigLayoutFor` gives SLIDE its own layout, so the two would disagree.
+    for (const speed of [STILL, WALKING, RUNNING]) {
+      for (const armed of [false, true]) {
+        expect(selectLocomotion(input({ stance: 'SLIDE' }), speed, armed, false, true)).toBe('slide');
+      }
+    }
+  });
+
+  it('answers the crouch branch from speed alone, with no band and no flag', () => {
+    const low = input({ stance: 'CROUCH' });
+    expect(selectLocomotion(low, STILL, true, false)).toBe('crouchIdleAiming');
+    expect(selectLocomotion(low, LOCOMOTION_IDLE_SPEED, true, false)).toBe('crouchIdleAiming');
+    expect(selectLocomotion(low, LOCOMOTION_IDLE_SPEED + 0.01, true, false)).toBe('crouchWalkAiming');
+    expect(selectLocomotion(low, LOCOMOTION_RUN_SPEED, true, false)).toBe('crouchRunAiming');
+    // Neither the sprint flag nor an existing run loop moves the crouched edge.
+    expect(selectLocomotion(input({ stance: 'CROUCH', sprinting: true }), WALKING, true, false, true)).toBe(
+      'crouchWalkAiming',
+    );
+  });
+
+  it('treats the idle dead zone as inclusive, so a body at the threshold stands still', () => {
+    expect(selectLocomotion(input(), LOCOMOTION_IDLE_SPEED, true, false)).toBe('idleWeaponReady');
+    expect(selectLocomotion(input(), LOCOMOTION_IDLE_SPEED + 0.01, true, false)).toBe('walkWeaponReady');
+  });
+
+  it('lets `armed` decide only for a rifle, never for a sidearm', () => {
+    // A pistol is weapon-ready by construction, so `armed` cannot change any of its four answers.
+    for (const speed of [STILL, WALKING, RUNNING]) {
+      expect(selectLocomotion(input(), speed, false, true)).toBe(selectLocomotion(input(), speed, true, true));
+    }
+  });
+});
+
+describe('isLowStance', () => {
+  it('is the simulation’s own answer, and a slide is low', () => {
+    expect(isLowStance(input({ stance: 'CROUCH' }))).toBe(true);
+    expect(isLowStance(input({ stance: 'SLIDE' }))).toBe(true);
+    expect(isLowStance(input({ stance: 'STAND' }))).toBe(false);
+    // AIRBORNE is not low: the jump clips were measured against the standing layout.
+    expect(isLowStance(input({ stance: 'AIRBORNE' }))).toBe(false);
+  });
+});
+
+describe('selectDeath', () => {
+  it('falls the way the body was standing', () => {
+    expect(selectDeath(input())).toBe('deathStand');
+    expect(selectDeath(input({ stance: 'CROUCH' }))).toBe('deathCrouch');
+    // A body killed mid-slide is low, and falls from the kneel.
+    expect(selectDeath(input({ stance: 'SLIDE' }))).toBe('deathCrouch');
+    expect(selectDeath(input({ stance: 'AIRBORNE' }))).toBe('deathStand');
+  });
+});
+
+describe('selectThrowClip and selectAction at the edges', () => {
+  it('throws from the standing clip while airborne, because the air is not low', () => {
+    expect(selectThrowClip(input({ throwing: true, stance: 'AIRBORNE' }), STILL)).toBe('throwStand');
+    expect(selectThrowClip(input({ throwing: true, stance: 'AIRBORNE' }), WALKING)).toBe('throwWalk');
+  });
+
+  it('draws no reload the library has no clip for', () => {
+    // Crouch-walking, sprinting and running all have no reload clip; the body keeps its loop.
+    expect(selectAction(input({ reloading: true, stance: 'CROUCH' }), WALKING)).toBeNull();
+    expect(selectAction(input({ reloading: true, sprinting: true }), WALKING)).toBeNull();
+    expect(selectAction(input({ reloading: true }), RUNNING)).toBeNull();
+    expect(selectAction(input({ reloading: true, stance: 'SLIDE' }), WALKING)).toBeNull();
+  });
+
+  it('is null whenever the body is not reloading at all', () => {
+    expect(selectAction(input(), STILL)).toBeNull();
+    expect(selectAction(input({ aiming: true, firing: true }), STILL)).toBeNull();
   });
 });

@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { logger } from '../../shared/core/Log';
 import { gpuWarmup } from '../engine/GpuWarmup';
 import { FactoryCharacterAvatarProvider, type CharacterAvatarProvider } from './CharacterAvatarProvider';
@@ -7,12 +9,21 @@ import {
   GltfCharacterAssetRepository,
   type CharacterAssetRepository,
 } from './CharacterAssetRepository';
+//#endregion
 
-const log = logger('CharacterAssets');
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** Observable state for a future loading surface or skin picker. */
 export type CharacterAssetStatus = 'idle' | 'loading' | 'ready' | 'error';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('CharacterAssets');
+//#endregion
+
+// ================================ CLASS CharacterAssetService ================================= \\
+//#region Class CharacterAssetService
 /**
  * Application-lifetime owner for parsed character GLB templates and their synchronous factories.
  *
@@ -21,13 +32,21 @@ export type CharacterAssetStatus = 'idle' | 'loading' | 'ready' | 'error';
  * without ever owning or disposing shared geometry, textures, or clips.
  */
 export class CharacterAssetService {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly factories = new Map<string, CharacterAvatarFactory>();
   private readonly loading = new Map<string, Promise<void>>();
   private readonly statuses = new Map<string, CharacterAssetStatus>();
   private disposed = false;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly repository: CharacterAssetRepository = new GltfCharacterAssetRepository()) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Start or join a background load. It never creates an avatar during a render frame. */
   preload(definition: CharacterDefinition): Promise<void> {
     if (this.disposed) return Promise.reject(new Error('Character asset service has been disposed.'));
@@ -99,13 +118,20 @@ export class CharacterAssetService {
     this.statuses.clear();
     this.repository.dispose();
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private factoryFor(definition: CharacterDefinition): CharacterAvatarFactory | null {
     if (this.disposed) return null;
     return this.factories.get(assetKey(definition)) ?? null;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function assetKey(definition: CharacterDefinition): string {
   return `${definition.id}@${definition.version}`;
 }
@@ -113,3 +139,4 @@ function assetKey(definition: CharacterDefinition): string {
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+//#endregion

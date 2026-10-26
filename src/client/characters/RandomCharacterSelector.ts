@@ -1,10 +1,15 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { Rng } from '../../shared/core/Rng';
 import {
   BOT_CHARACTER_IDS,
   DEFAULT_CHARACTER_ID,
   type CharacterId,
 } from './CharacterCatalog';
+//#endregion
 
+// =============================== CLASS RandomCharacterSelector ================================ \\
+//#region Class RandomCharacterSelector
 /**
  * Match-scoped cosmetic assignment of skins to rendered actors.
  *
@@ -23,11 +28,19 @@ import {
  * agree on it until the server replicates the choice.
  */
 export class RandomCharacterSelector {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly assignments = new Map<number, CharacterId>();
   private deck: CharacterId[] = [];
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly rng: Rng) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   characterIdFor(entityId: number): CharacterId {
     const existing = this.assignments.get(entityId);
     if (existing !== undefined) return existing;
@@ -37,8 +50,12 @@ export class RandomCharacterSelector {
     this.assignments.set(entityId, id);
     return id;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /** Fisher–Yates over the eligible catalog. */
 function shuffledCharacterIds(rng: Rng): CharacterId[] {
   const ids = [...BOT_CHARACTER_IDS];
@@ -48,3 +65,4 @@ function shuffledCharacterIds(rng: Rng): CharacterId[] {
   }
   return ids;
 }
+//#endregion

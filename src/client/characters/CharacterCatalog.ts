@@ -6,8 +6,14 @@
  * cost before it becomes eligible for a match. `scripts/check-animations.mjs`
  * holds the animation half of it to the folder it names, in the gate.
  */
-import { DEFAULT_SKIN_ID, SKIN_IDS, type SkinId } from '../../shared/meta/Skins';
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { DEFAULT_SKIN_ID, SKIN_IDS, type SkinId } from '../../shared/meta/Skins';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * The ids are `shared/`'s table (M16, B6.1): the wire names a skin by its position in
  * `SKIN_IDS`, so the list lives where both halves can read it, and this file keys everything
@@ -156,6 +162,11 @@ export interface CharacterDefinition {
   readonly animations: Readonly<Record<CharacterAnimationId, CharacterAnimationSlot>>;
 }
 
+type ClipKind = 'loop' | 'weaponReadyLoop' | 'oneShot';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 // M15 B0: the skins were re-encoded (1024 px, JPEG) — the URLs move so a cached 28 MB Echo is not kept.
 // 2026-09-23: every skin and clip now carries its Mixamo attribution in `asset.extras`
 // (`scripts/credits.mjs`), so the bytes moved again and a cached copy is the un-credited one.
@@ -178,15 +189,6 @@ const ANIMATION_ROOT = '/models/bots/animations';
 const SHOULDER_PAD_LATERAL_CM = 8;
 const SHOULDER_PAD_DROP_CM = 4;
 const SHOULDER_PAD_ROTATION: readonly [number, number, number] = [-Math.PI, 0, -Math.PI / 2];
-
-function shoulderPads(lateralCm: number, unitScale = 1): CharacterIndicatorProfile {
-  const offset: readonly [number, number, number] = [0, SHOULDER_PAD_DROP_CM * unitScale, -lateralCm * unitScale];
-  return {
-    headBone: 'mixamorigHead',
-    leftShoulder: { bone: 'mixamorigLeftArm', offset, rotation: SHOULDER_PAD_ROTATION },
-    rightShoulder: { bone: 'mixamorigRightArm', offset, rotation: SHOULDER_PAD_ROTATION },
-  };
-}
 
 const MIXAMO_V1_RIG: CharacterRigProfile = {
   id: 'mixamo-v1',
@@ -224,14 +226,6 @@ const MIXAMO_V1_RIG: CharacterRigProfile = {
   modelYaw: Math.PI,
 };
 
-/**
- * A bulkier sleeve than the pack's: the same rig with the pads further out. Measured the way
- * the base number was; see `shoulderPads`.
- */
-function withShoulderPads(base: CharacterRigProfile, id: string, lateralCm: number): CharacterRigProfile {
-  return { ...base, id, indicators: shoulderPads(lateralCm) };
-}
-
 const ECHO_RIG = withShoulderPads(MIXAMO_V1_RIG, 'mixamo-v1/echo', 9.6);
 const RHINO_RIG = withShoulderPads(MIXAMO_V1_RIG, 'mixamo-v1/rhino', 12.3);
 
@@ -253,31 +247,6 @@ const APEX_RIG: CharacterRigProfile = {
   indicators: shoulderPads(8.7, 10),
   modelScale: 1.025,
 };
-function versionedAssetUrl(path: string, version: string): string {
-  return `${path}?v=${encodeURIComponent(version)}`;
-}
-
-type ClipKind = 'loop' | 'weaponReadyLoop' | 'oneShot';
-
-/**
- * A slot's variants, each a file named by its path under `public/models/bots/animations/`
- * without the extension, in the order `variantFor` indexes them. The folder is the slot family
- * (`locomotion/stand`, `deaths`, …); the README there says what each folder means, and
- * `check:animations` holds this table and that folder to each other, so a file nobody
- * catalogued and a catalogue entry nobody shipped both fail the gate. Variants share the kind:
- * two clips that disagree about looping or about holding a weapon are two slots, not two
- * variants.
- */
-function slot(id: CharacterAnimationId, kind: ClipKind, first: string, ...rest: readonly string[]): CharacterAnimationSlot {
-  const define = (path: string): CharacterAnimationDefinition => ({
-    id,
-    url: versionedAssetUrl(`${ANIMATION_ROOT}/${path}.glb`, CHARACTER_VERSION),
-    clipName: path.slice(path.lastIndexOf('/') + 1),
-    loop: kind !== 'oneShot',
-    weaponReady: kind === 'weaponReadyLoop',
-  });
-  return [define(first), ...rest.map(define)];
-}
 
 /**
  * The library (M13 Phase D). Slots were decided from `scripts/animation-manifest.mjs` and
@@ -354,22 +323,6 @@ const MIXAMO_ANIMATIONS: Readonly<Record<CharacterAnimationId, CharacterAnimatio
   deathCrouch: slot('deathCrouch', 'oneShot', 'deaths/Death_Crouch', 'deaths/Death_Crouch_01'),
 };
 
-function character(
-  id: CharacterId,
-  fileName: string,
-  rig: CharacterRigProfile = MIXAMO_V1_RIG,
-): CharacterDefinition {
-  return {
-    id,
-    name: fileName.replace(/\.glb$/, '').toUpperCase(),
-    version: CHARACTER_VERSION,
-    skinUrl: versionedAssetUrl(`/models/bots/skins/${fileName}`, CHARACTER_VERSION),
-    thumbUrl: versionedAssetUrl(`/models/bots/skins/thumbs/${fileName.replace(/\.glb$/, '.png')}`, CHARACTER_VERSION),
-    rig,
-    animations: MIXAMO_ANIMATIONS,
-  };
-}
-
 export const CHARACTER_DEFINITIONS = {
   apex: character('apex', 'Apex.glb', APEX_RIG),
   echo: character('echo', 'Echo.glb', ECHO_RIG),
@@ -394,7 +347,72 @@ export const BOT_CHARACTER_IDS: readonly CharacterId[] = SKIN_IDS;
  * no skin does not compile.
  */
 export const DEFAULT_CHARACTER_ID: CharacterId = DEFAULT_SKIN_ID;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function characterDefinition(id: CharacterId): CharacterDefinition {
   return CHARACTER_DEFINITIONS[id];
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** The pad pair for one rig, from the measured constants. See `SHOULDER_PAD_LATERAL_CM`. */
+function shoulderPads(lateralCm: number, unitScale = 1): CharacterIndicatorProfile {
+  const offset: readonly [number, number, number] = [0, SHOULDER_PAD_DROP_CM * unitScale, -lateralCm * unitScale];
+  return {
+    headBone: 'mixamorigHead',
+    leftShoulder: { bone: 'mixamorigLeftArm', offset, rotation: SHOULDER_PAD_ROTATION },
+    rightShoulder: { bone: 'mixamorigRightArm', offset, rotation: SHOULDER_PAD_ROTATION },
+  };
+}
+
+/**
+ * A bulkier sleeve than the pack's: the same rig with the pads further out. Measured the way
+ * the base number was; see `shoulderPads`.
+ */
+function withShoulderPads(base: CharacterRigProfile, id: string, lateralCm: number): CharacterRigProfile {
+  return { ...base, id, indicators: shoulderPads(lateralCm) };
+}
+
+function versionedAssetUrl(path: string, version: string): string {
+  return `${path}?v=${encodeURIComponent(version)}`;
+}
+
+/**
+ * A slot's variants, each a file named by its path under `public/models/bots/animations/`
+ * without the extension, in the order `variantFor` indexes them. The folder is the slot family
+ * (`locomotion/stand`, `deaths`, …); the README there says what each folder means, and
+ * `check:animations` holds this table and that folder to each other, so a file nobody
+ * catalogued and a catalogue entry nobody shipped both fail the gate. Variants share the kind:
+ * two clips that disagree about looping or about holding a weapon are two slots, not two
+ * variants.
+ */
+function slot(id: CharacterAnimationId, kind: ClipKind, first: string, ...rest: readonly string[]): CharacterAnimationSlot {
+  const define = (path: string): CharacterAnimationDefinition => ({
+    id,
+    url: versionedAssetUrl(`${ANIMATION_ROOT}/${path}.glb`, CHARACTER_VERSION),
+    clipName: path.slice(path.lastIndexOf('/') + 1),
+    loop: kind !== 'oneShot',
+    weaponReady: kind === 'weaponReadyLoop',
+  });
+  return [define(first), ...rest.map(define)];
+}
+
+function character(
+  id: CharacterId,
+  fileName: string,
+  rig: CharacterRigProfile = MIXAMO_V1_RIG,
+): CharacterDefinition {
+  return {
+    id,
+    name: fileName.replace(/\.glb$/, '').toUpperCase(),
+    version: CHARACTER_VERSION,
+    skinUrl: versionedAssetUrl(`/models/bots/skins/${fileName}`, CHARACTER_VERSION),
+    thumbUrl: versionedAssetUrl(`/models/bots/skins/thumbs/${fileName.replace(/\.glb$/, '.png')}`, CHARACTER_VERSION),
+    rig,
+    animations: MIXAMO_ANIMATIONS,
+  };
+}
+//#endregion

@@ -1,20 +1,14 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { AnnouncerCue } from '../../shared/core/Events';
 import { surfaceAtIndex } from '../../shared/world/maps/materials';
 import { VotePhase, type VotePhaseId } from '../../shared/net/Skirmish';
 import { AudioGraph } from './AudioGraph';
+import type { NoiseSpec, OscSpec } from './AudioSpecs';
+//#endregion
 
-/**
- * The game's own voices, layered out of the two primitives in `AudioGraph` (brief S6.7).
- *
- * Everything audible in PROTOCOL SEVEN is a handful of `noiseBurst` and `oscHit` calls with
- * different numbers — that is the toolkit S6.7 asks for, and it is why M5 can add eleven
- * weapons without adding a synthesis engine. The weapon voices live next to the weapons,
- * in `weapons/WeaponAudio.ts`; what is here is the world: feet, landings and the slide.
- *
- * The bus architecture, the single convolver and the voice pool are all inherited from
- * `AudioGraph`, unchanged since M1.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** One formant-shaped noise band. `at` is seconds from the start of the phrase. */
 interface Syllable {
   readonly at: number;
@@ -33,7 +27,10 @@ interface AnnouncerPhrase {
   readonly bodyFrom: number;
   readonly bodyTo: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The announcer's phrase book.
  *
@@ -133,8 +130,24 @@ const ANNOUNCER_PHRASES: Readonly<Record<AnnouncerCue, AnnouncerPhrase>> = {
     bodyTo: 100,
   },
 };
+//#endregion
 
+// =================================== CLASS ProceduralAudio ==================================== \\
+//#region Class ProceduralAudio
+/**
+ * The game's own voices, layered out of the two primitives in `AudioGraph` (brief S6.7).
+ *
+ * Everything audible in PROTOCOL SEVEN is a handful of `noiseBurst` and `oscHit` calls with
+ * different numbers — that is the toolkit S6.7 asks for, and it is why M5 can add eleven
+ * weapons without adding a synthesis engine. The weapon voices live next to the weapons,
+ * in `weapons/WeaponAudio.ts`; what is here is the world: feet, landings and the slide.
+ *
+ * The bus architecture, the single convolver and the voice pool are all inherited from
+ * `AudioGraph`, unchanged since M1.
+ */
 export class ProceduralAudio extends AudioGraph {
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Footstep: a short band-passed noise burst, coloured by the surface underfoot.
    * Heavy steps sit lower and louder and pick up a body thump, which is what separates
@@ -153,13 +166,8 @@ export class ProceduralAudio extends AudioGraph {
     const surface = surfaceAtIndex(material);
     const intensity = Math.min(1, 0.35 + speed / 9) * gain;
 
-    const spec = this.noiseScratch;
+    const spec = this.worldNoise(x, y, z);
     spec.roll = 'footstep';
-    spec.x = x;
-    spec.y = y;
-    spec.z = z;
-    spec.positional = true;
-    spec.bus = 'sfx';
     spec.filter = 'bandpass';
     spec.freq = surface.stepFreq * (heavy ? 0.62 : 1) * this.random(0.86, 1.16);
     spec.freqEnd = spec.freq * 0.7;
@@ -172,12 +180,7 @@ export class ProceduralAudio extends AudioGraph {
     this.noiseBurst(spec);
 
     if (!heavy) return;
-    const osc = this.oscScratch;
-    osc.x = x;
-    osc.y = y;
-    osc.z = z;
-    osc.positional = true;
-    osc.bus = 'sfx';
+    const osc = this.worldOsc(x, y, z);
     osc.type = 'sine';
     osc.freq = this.random(115, 150);
     osc.freqEnd = osc.freq * 0.45;
@@ -205,13 +208,8 @@ export class ProceduralAudio extends AudioGraph {
     if (t < 0.08) return;
     const surface = surfaceAtIndex(material);
 
-    const spec = this.noiseScratch;
+    const spec = this.worldNoise(x, y, z);
     spec.roll = 'footstep';
-    spec.x = x;
-    spec.y = y;
-    spec.z = z;
-    spec.positional = true;
-    spec.bus = 'sfx';
     spec.filter = 'bandpass';
     spec.freq = surface.stepFreq * 0.42 * this.random(0.9, 1.1);
     spec.freqEnd = spec.freq * 0.6;
@@ -223,12 +221,9 @@ export class ProceduralAudio extends AudioGraph {
     spec.rate = 1;
     this.noiseBurst(spec);
 
-    const osc = this.oscScratch;
-    osc.x = x;
-    osc.y = y;
-    osc.z = z;
-    osc.positional = true;
-    osc.bus = 'sfx';
+    // No `roll` is set here, so the thump takes whatever curve the previous oscillator left on
+    // the shared scratch. Pins current behaviour; suspected bug: BACKLOG #56.
+    const osc = this.worldOsc(x, y, z);
     osc.type = 'sine';
     osc.freq = this.random(95, 125);
     osc.freqEnd = osc.freq * 0.42;
@@ -274,12 +269,7 @@ export class ProceduralAudio extends AudioGraph {
     let span = 0;
 
     for (const syllable of phrase.syllables) {
-      const spec = this.noiseScratch;
-      spec.x = 0;
-      spec.y = 0;
-      spec.z = 0;
-      spec.positional = false;
-      spec.bus = 'ui';
+      const spec = this.uiNoise();
       spec.filter = 'bandpass';
       spec.freq = syllable.freq;
       spec.freqEnd = syllable.freqEnd;
@@ -294,12 +284,7 @@ export class ProceduralAudio extends AudioGraph {
     }
 
     // A low body under the phrase, so a call has authority rather than sounding like static.
-    const body = this.oscScratch;
-    body.x = 0;
-    body.y = 0;
-    body.z = 0;
-    body.positional = false;
-    body.bus = 'ui';
+    const body = this.uiOsc();
     body.type = 'sine';
     body.freq = phrase.bodyFrom;
     body.freqEnd = phrase.bodyTo;
@@ -327,12 +312,7 @@ export class ProceduralAudio extends AudioGraph {
     const t = Math.max(0, Math.min(1, intensity));
     const level = 0.34 + 0.4 * t;
 
-    const beat = this.oscScratch;
-    beat.x = 0;
-    beat.y = 0;
-    beat.z = 0;
-    beat.positional = false;
-    beat.bus = 'ui';
+    const beat = this.uiOsc();
     beat.type = 'sine';
     beat.filterFreq = 220;
     beat.filterQ = 0.9;
@@ -366,12 +346,7 @@ export class ProceduralAudio extends AudioGraph {
   playRing(intensity: number): void {
     if (!this.hasContext) return;
     const t = Math.max(0, Math.min(1, intensity));
-    const spec = this.oscScratch;
-    spec.x = 0;
-    spec.y = 0;
-    spec.z = 0;
-    spec.positional = false;
-    spec.bus = 'ui';
+    const spec = this.uiOsc();
     spec.type = 'sine';
     spec.freq = 4200;
     spec.freqEnd = 3100;
@@ -386,12 +361,7 @@ export class ProceduralAudio extends AudioGraph {
 
   /** Short sine sweep. The UI vocabulary (S6.7). */
   playUiSweep(from: number, to: number, level: number, decay: number): void {
-    const spec = this.oscScratch;
-    spec.x = 0;
-    spec.y = 0;
-    spec.z = 0;
-    spec.positional = false;
-    spec.bus = 'ui';
+    const spec = this.uiOsc();
     spec.type = 'sine';
     spec.freq = from;
     spec.freqEnd = to;
@@ -435,12 +405,7 @@ export class ProceduralAudio extends AudioGraph {
 
     this.playUiSweep(root, root * 4 / 3, 0.22, 0.16);
 
-    const second = this.oscScratch;
-    second.x = 0;
-    second.y = 0;
-    second.z = 0;
-    second.positional = false;
-    second.bus = 'ui';
+    const second = this.uiOsc();
     second.type = 'triangle';
     second.freq = root * 4 / 3;
     second.freqEnd = root * 2;
@@ -479,12 +444,7 @@ export class ProceduralAudio extends AudioGraph {
 
     this.playUiSweep(392, 1046, 0.3, 0.62);
 
-    const body = this.oscScratch;
-    body.x = 0;
-    body.y = 0;
-    body.z = 0;
-    body.positional = false;
-    body.bus = 'ui';
+    const body = this.uiOsc();
     body.type = 'triangle';
     body.freq = 98;
     body.freqEnd = 196;
@@ -496,12 +456,7 @@ export class ProceduralAudio extends AudioGraph {
     body.filterQ = 0.9;
     this.oscHit(body);
 
-    const air = this.noiseScratch;
-    air.x = 0;
-    air.y = 0;
-    air.z = 0;
-    air.positional = false;
-    air.bus = 'ui';
+    const air = this.uiNoise();
     air.filter = 'bandpass';
     air.freq = 3200;
     air.freqEnd = 6400;
@@ -529,12 +484,7 @@ export class ProceduralAudio extends AudioGraph {
     if (!this.hasContext) return;
     const weight = 1 + 0.18 * Math.min(index, 2);
 
-    const body = this.oscScratch;
-    body.x = 0;
-    body.y = 0;
-    body.z = 0;
-    body.positional = false;
-    body.bus = 'ui';
+    const body = this.uiOsc();
     body.type = 'sine';
     body.freq = 110;
     body.freqEnd = 38;
@@ -546,12 +496,7 @@ export class ProceduralAudio extends AudioGraph {
     body.filterQ = 0.8;
     this.oscHit(body);
 
-    const click = this.noiseScratch;
-    click.x = 0;
-    click.y = 0;
-    click.z = 0;
-    click.positional = false;
-    click.bus = 'ui';
+    const click = this.uiNoise();
     click.filter = 'lowpass';
     click.freq = 2400;
     click.freqEnd = 300;
@@ -572,12 +517,7 @@ export class ProceduralAudio extends AudioGraph {
   playSplashShock(): void {
     if (!this.hasContext) return;
 
-    const hiss = this.noiseScratch;
-    hiss.x = 0;
-    hiss.y = 0;
-    hiss.z = 0;
-    hiss.positional = false;
-    hiss.bus = 'ui';
+    const hiss = this.uiNoise();
     hiss.filter = 'lowpass';
     hiss.freq = 9000;
     hiss.freqEnd = 180;
@@ -589,12 +529,7 @@ export class ProceduralAudio extends AudioGraph {
     hiss.rate = 1;
     this.noiseBurst(hiss);
 
-    const floor = this.oscScratch;
-    floor.x = 0;
-    floor.y = 0;
-    floor.z = 0;
-    floor.positional = false;
-    floor.bus = 'ui';
+    const floor = this.uiOsc();
     floor.type = 'triangle';
     floor.freq = 70;
     floor.freqEnd = 45;
@@ -617,12 +552,7 @@ export class ProceduralAudio extends AudioGraph {
 
     this.playUiSweep(587, 1568, 0.26, 0.9);
 
-    const under = this.oscScratch;
-    under.x = 0;
-    under.y = 0;
-    under.z = 0;
-    under.positional = false;
-    under.bus = 'ui';
+    const under = this.uiOsc();
     under.type = 'triangle';
     under.freq = 294;
     under.freqEnd = 784;
@@ -634,12 +564,7 @@ export class ProceduralAudio extends AudioGraph {
     under.filterQ = 0.7;
     this.oscHit(under, 0.06);
 
-    const air = this.noiseScratch;
-    air.x = 0;
-    air.y = 0;
-    air.z = 0;
-    air.positional = false;
-    air.bus = 'ui';
+    const air = this.uiNoise();
     air.filter = 'bandpass';
     air.freq = 1200;
     air.freqEnd = 7000;
@@ -667,12 +592,7 @@ export class ProceduralAudio extends AudioGraph {
     if (!this.hasContext) return;
     const win = kind === 'WIN';
 
-    const body = this.oscScratch;
-    body.x = 0;
-    body.y = 0;
-    body.z = 0;
-    body.positional = false;
-    body.bus = 'ui';
+    const body = this.uiOsc();
     body.type = 'sine';
     body.freq = win ? 110 : 88;
     body.freqEnd = win ? 40 : 30;
@@ -684,12 +604,7 @@ export class ProceduralAudio extends AudioGraph {
     body.filterQ = 0.8;
     this.oscHit(body);
 
-    const click = this.noiseScratch;
-    click.x = 0;
-    click.y = 0;
-    click.z = 0;
-    click.positional = false;
-    click.bus = 'ui';
+    const click = this.uiNoise();
     click.filter = 'lowpass';
     click.freq = win ? 2600 : 1400;
     click.freqEnd = 300;
@@ -713,12 +628,7 @@ export class ProceduralAudio extends AudioGraph {
     if (!this.hasContext) return;
     this.playUiSweep(220, 660, 0.1, 0.45);
 
-    const air = this.noiseScratch;
-    air.x = 0;
-    air.y = 0;
-    air.z = 0;
-    air.positional = false;
-    air.bus = 'ui';
+    const air = this.uiNoise();
     air.filter = 'bandpass';
     air.freq = 900;
     air.freqEnd = 5200;
@@ -741,12 +651,7 @@ export class ProceduralAudio extends AudioGraph {
     const freq = rank <= 0 ? 784 : rank === 1 ? 659 : 523;
     this.playUiSweep(freq * 0.97, freq, 0.2, 0.4);
 
-    const under = this.oscScratch;
-    under.x = 0;
-    under.y = 0;
-    under.z = 0;
-    under.positional = false;
-    under.bus = 'ui';
+    const under = this.uiOsc();
     under.type = 'triangle';
     under.freq = freq / 2;
     under.freqEnd = freq / 2;
@@ -758,7 +663,10 @@ export class ProceduralAudio extends AudioGraph {
     under.filterQ = 0.7;
     this.oscHit(under, 0.02);
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /** True once `start()` has built the graph. Guards the composed sounds. */
   private get hasContext(): boolean {
     return this.poolSize > 0;
@@ -768,4 +676,60 @@ export class ProceduralAudio extends AudioGraph {
   private random(min: number, max: number): number {
     return this.rng.range(min, max);
   }
+
+  /**
+   * The shared noise spec, routed as a sound that happens somewhere in the world.
+   *
+   * Returns the scratch rather than a new object: a 700 RPM weapon plus footsteps would
+   * otherwise allocate a spec per layer per shot. The caller fills in the rest.
+   */
+  private worldNoise(x: number, y: number, z: number): NoiseSpec {
+    const spec = this.noiseScratch;
+    spec.x = x;
+    spec.y = y;
+    spec.z = z;
+    spec.positional = true;
+    spec.bus = 'sfx';
+    return spec;
+  }
+
+  /** The shared oscillator spec, routed as a sound that happens somewhere in the world. */
+  private worldOsc(x: number, y: number, z: number): OscSpec {
+    const spec = this.oscScratch;
+    spec.x = x;
+    spec.y = y;
+    spec.z = z;
+    spec.positional = true;
+    spec.bus = 'sfx';
+    return spec;
+  }
+
+  /**
+   * The shared noise spec, routed as a sound that happens *to the player*.
+   *
+   * The `ui` bus is routed around the world's low-pass and the duck, which is what keeps a
+   * call or a heartbeat in front of a world that has gone quiet and woolly.
+   */
+  private uiNoise(): NoiseSpec {
+    const spec = this.noiseScratch;
+    spec.x = 0;
+    spec.y = 0;
+    spec.z = 0;
+    spec.positional = false;
+    spec.bus = 'ui';
+    return spec;
+  }
+
+  /** The shared oscillator spec, routed as a sound that happens *to the player*. */
+  private uiOsc(): OscSpec {
+    const spec = this.oscScratch;
+    spec.x = 0;
+    spec.y = 0;
+    spec.z = 0;
+    spec.positional = false;
+    spec.bus = 'ui';
+    return spec;
+  }
+  //#endregion
 }
+//#endregion

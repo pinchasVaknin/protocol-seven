@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { ObjectPool } from '../../shared/core/ObjectPool';
 import { Rng } from '../../shared/core/Rng';
 import { DISTANCE_PROFILES, type DistanceProfileName } from './AudioMix';
@@ -14,26 +16,10 @@ import {
   type OscSpec,
   type ReverbSpec,
 } from './AudioSpecs';
+//#endregion
 
-/**
- * The Web Audio graph and the two synthesis primitives everything else is built from
- * (brief S4.5, S6.7). Synthesis only — no files, no CDN.
- *
- * Graph, built exactly once:
- *
- *   source -> filter -> occlusion -> gain -+-> spatial -> panner -> sfx -+-> master
- *                                          +-> flat ------------> ui  --+
- *                                          `-> send -> reverbSend -> convolver -> master
- *
- * There is exactly ONE ConvolverNode in the process, on a send. Never one per source,
- * never one per shot. The impulse response is generated, not loaded.
- *
- * Voices are pooled. A 700 RPM weapon fires twelve times a second and each shot is four
- * layers; building a node graph per layer is how a browser FPS ends up hitching audibly
- * within a magazine. The only nodes created per sound are the one-shot source and
- * oscillator nodes, which the spec requires to be single-use.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 interface Voice {
   filter: BiquadFilterNode;
   occlusion: BiquadFilterNode;
@@ -45,7 +31,10 @@ interface Voice {
   /** ctx.currentTime at which this voice may be recycled. */
   endsAt: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Preallocated to cover sustained automatic fire plus footsteps and impacts. */
 const VOICE_POOL_SIZE = 128;
 
@@ -94,8 +83,31 @@ const DUCK_RELEASE = 0.22;
 
 const noiseScratch = makeNoiseSpec();
 const oscScratch = makeOscSpec();
+//#endregion
 
+// ====================================== CLASS AudioGraph ====================================== \\
+//#region Class AudioGraph
+/**
+ * The Web Audio graph and the two synthesis primitives everything else is built from
+ * (brief S4.5, S6.7). Synthesis only — no files, no CDN.
+ *
+ * Graph, built exactly once:
+ *
+ *   source -> filter -> occlusion -> gain -+-> spatial -> panner -> sfx -+-> master
+ *                                          +-> flat ------------> ui  --+
+ *                                          `-> send -> reverbSend -> convolver -> master
+ *
+ * There is exactly ONE ConvolverNode in the process, on a send. Never one per source,
+ * never one per shot. The impulse response is generated, not loaded.
+ *
+ * Voices are pooled. A 700 RPM weapon fires twelve times a second and each shot is four
+ * layers; building a node graph per layer is how a browser FPS ends up hitching audibly
+ * within a magazine. The only nodes created per sound are the one-shot source and
+ * oscillator nodes, which the spec requires to be single-use.
+ */
 export class AudioGraph {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   protected ctx: AudioContext | null = null;
   protected noise: AudioBuffer | null = null;
   protected readonly rng = new Rng(0x5eed_f007);
@@ -133,6 +145,15 @@ export class AudioGraph {
   /** Sounds refused because `MAX_ACTIVE_VOICES` was already sounding. Reported in F1. */
   voicesDropped = 0;
 
+  /**
+   * Declared last because it was declared last: `useDefineForClassFields` initialises
+   * instance fields in declaration order, and this one used to sit below the methods.
+   */
+  private slideFilter: BiquadFilterNode | null = null;
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get isRunning(): boolean {
     return this.ctx !== null && this.ctx.state === 'running';
   }
@@ -183,54 +204,10 @@ export class AudioGraph {
     const ctx = new Ctor({ latencyHint: 'interactive' });
     this.ctx = ctx;
 
-    const master = ctx.createGain();
-    master.gain.value = this.masterVolume;
-    master.connect(ctx.destination);
-    this.master = master;
-
-    /**
-     * Two nodes sit between the world and the master, and `ui` is routed around both:
-     *
-     *   sfx --------+-> worldFilter -> duck -> master
-     *   reverbReturn +
-     *   music -----------------------------> master
-     *   ui --------------------------------> master
-     *
-     * `worldFilter` is the low-health muffle and `duck` is the announcer duck, so a sting
-     * and your own heartbeat stay in front of a world that has gone quiet and woolly. Both
-     * are built once here — there is no per-source filtering added by either (S4.5).
-     */
-    const duckGain = ctx.createGain();
-    duckGain.gain.value = 1;
-    duckGain.connect(master);
-    this.duckGain = duckGain;
-
-    const worldFilter = ctx.createBiquadFilter();
-    worldFilter.type = 'lowpass';
-    worldFilter.frequency.value = OPEN_CUTOFF;
-    worldFilter.Q.value = 0.5;
-    worldFilter.connect(duckGain);
-    this.worldFilter = worldFilter;
-
-    for (const name of ['sfx', 'music', 'ui'] as const) {
-      const bus = ctx.createGain();
-      bus.gain.value = 1;
-      bus.connect(name === 'sfx' ? worldFilter : master);
-      this.buses.set(name, bus);
-    }
-
-    // The one and only convolver, on a send.
-    const convolver = ctx.createConvolver();
-    convolver.buffer = buildImpulseResponse(ctx, this.rng, DEFAULT_REVERB);
-    this.convolver = convolver;
-    const reverbSend = ctx.createGain();
-    reverbSend.gain.value = 1;
-    const reverbReturn = ctx.createGain();
-    reverbReturn.gain.value = 0.5;
-    reverbSend.connect(convolver);
-    convolver.connect(reverbReturn);
-    reverbReturn.connect(worldFilter);
-    this.reverbSend = reverbSend;
+    const master = this.createMasterChain(ctx);
+    const worldFilter = this.createWorldChain(ctx, master);
+    this.createBuses(ctx, worldFilter, master);
+    const reverbSend = this.createReverbSend(ctx, worldFilter);
 
     this.noise = buildNoiseBuffer(ctx, this.rng, NOISE_SECONDS);
 
@@ -238,16 +215,7 @@ export class AudioGraph {
     const ui = this.buses.get('ui');
     if (sfx === undefined || ui === undefined) throw new Error('[Audio] buses missing');
 
-    this.pool = new ObjectPool<Voice>(
-      () => this.buildVoice(ctx, sfx, ui, reverbSend),
-      (v) => {
-        v.gain.gain.cancelScheduledValues(0);
-        v.gain.gain.value = 0;
-      },
-      VOICE_POOL_SIZE,
-      'audio-voice',
-    );
-
+    this.pool = this.createVoicePool(ctx, sfx, ui, reverbSend);
     this.buildSlideVoice(ctx, sfx);
 
     this.started = true;
@@ -349,17 +317,6 @@ export class AudioGraph {
     return this.muffle;
   }
 
-  private applyMuffle(): void {
-    const filter = this.worldFilter;
-    const ctx = this.ctx;
-    if (filter === null || ctx === null) return;
-    const combined = Math.max(this.healthMuffle, this.flashMuffle, this.concussionMuffle);
-    if (Math.abs(combined - this.muffle) < 0.01) return;
-    this.muffle = combined;
-    const cutoff = OPEN_CUTOFF * Math.pow(MUFFLED_CUTOFF / OPEN_CUTOFF, combined);
-    filter.frequency.setTargetAtTime(cutoff, ctx.currentTime, 0.12);
-  }
-
   /** Update the listener each frame from the camera. `forward` and `up` are unit. */
   setListener(
     px: number,
@@ -404,8 +361,6 @@ export class AudioGraph {
       pool.release(v);
     }
   }
-
-  // -- the two primitives ----------------------------------------------------
 
   /**
    * Filtered noise burst with an optional filter sweep. The workhorse.
@@ -552,10 +507,100 @@ export class AudioGraph {
     this.worldFilter?.frequency.cancelScheduledValues(now);
     this.worldFilter?.frequency.setValueAtTime(OPEN_CUTOFF, now);
   }
+  //#endregion
 
-  // -- internals -------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** The master gain, at the stored volume, into the destination. */
+  private createMasterChain(ctx: AudioContext): GainNode {
+    const master = ctx.createGain();
+    master.gain.value = this.masterVolume;
+    master.connect(ctx.destination);
+    this.master = master;
+    return master;
+  }
 
-  private slideFilter: BiquadFilterNode | null = null;
+  /**
+   * The two nodes that sit between the world and the master, and that `ui` is routed around:
+   *
+   *   sfx --------+-> worldFilter -> duck -> master
+   *   reverbReturn +
+   *   music -----------------------------> master
+   *   ui --------------------------------> master
+   *
+   * `worldFilter` is the low-health muffle and `duck` is the announcer duck, so a sting
+   * and your own heartbeat stay in front of a world that has gone quiet and woolly. Both
+   * are built once here — there is no per-source filtering added by either (S4.5).
+   */
+  private createWorldChain(ctx: AudioContext, master: GainNode): BiquadFilterNode {
+    const duckGain = ctx.createGain();
+    duckGain.gain.value = 1;
+    duckGain.connect(master);
+    this.duckGain = duckGain;
+
+    const worldFilter = ctx.createBiquadFilter();
+    worldFilter.type = 'lowpass';
+    worldFilter.frequency.value = OPEN_CUTOFF;
+    worldFilter.Q.value = 0.5;
+    worldFilter.connect(duckGain);
+    this.worldFilter = worldFilter;
+    return worldFilter;
+  }
+
+  /** The three buses. Only `sfx` goes through the world's filter and duck. */
+  private createBuses(ctx: AudioContext, worldFilter: BiquadFilterNode, master: GainNode): void {
+    for (const name of ['sfx', 'music', 'ui'] as const) {
+      const bus = ctx.createGain();
+      bus.gain.value = 1;
+      bus.connect(name === 'sfx' ? worldFilter : master);
+      this.buses.set(name, bus);
+    }
+  }
+
+  /** The one and only convolver, on a send. */
+  private createReverbSend(ctx: AudioContext, worldFilter: BiquadFilterNode): GainNode {
+    const convolver = ctx.createConvolver();
+    convolver.buffer = buildImpulseResponse(ctx, this.rng, DEFAULT_REVERB);
+    this.convolver = convolver;
+    const reverbSend = ctx.createGain();
+    reverbSend.gain.value = 1;
+    const reverbReturn = ctx.createGain();
+    reverbReturn.gain.value = 0.5;
+    reverbSend.connect(convolver);
+    convolver.connect(reverbReturn);
+    reverbReturn.connect(worldFilter);
+    this.reverbSend = reverbSend;
+    return reverbSend;
+  }
+
+  /** The pool, and the rule that a released voice is silent before it is handed out again. */
+  private createVoicePool(
+    ctx: AudioContext,
+    sfx: GainNode,
+    ui: GainNode,
+    reverbSend: GainNode,
+  ): ObjectPool<Voice> {
+    return new ObjectPool<Voice>(
+      () => this.buildVoice(ctx, sfx, ui, reverbSend),
+      (v) => {
+        v.gain.gain.cancelScheduledValues(0);
+        v.gain.gain.value = 0;
+      },
+      VOICE_POOL_SIZE,
+      'audio-voice',
+    );
+  }
+
+  private applyMuffle(): void {
+    const filter = this.worldFilter;
+    const ctx = this.ctx;
+    if (filter === null || ctx === null) return;
+    const combined = Math.max(this.healthMuffle, this.flashMuffle, this.concussionMuffle);
+    if (Math.abs(combined - this.muffle) < 0.01) return;
+    this.muffle = combined;
+    const cutoff = OPEN_CUTOFF * Math.pow(MUFFLED_CUTOFF / OPEN_CUTOFF, combined);
+    filter.frequency.setTargetAtTime(cutoff, ctx.currentTime, 0.12);
+  }
 
   private buildVoice(ctx: AudioContext, sfx: GainNode, ui: GainNode, reverbSend: GainNode): Voice {
     const filter = ctx.createBiquadFilter();
@@ -676,4 +721,6 @@ export class AudioGraph {
     v.gain.gain.exponentialRampToValueAtTime(peak, now + rise);
     v.gain.gain.exponentialRampToValueAtTime(0.0001, now + rise + decay);
   }
+  //#endregion
 }
+//#endregion

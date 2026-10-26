@@ -34,6 +34,8 @@
  * inline at a call site.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * How a category of sound falls off with distance.
  *
@@ -49,6 +51,11 @@ export interface DistanceProfile {
   readonly maxDistance: number;
 }
 
+export type DistanceProfileName = keyof typeof DISTANCE_PROFILES;
+//#endregion
+
+// ============================================ DATA ============================================ \\
+//#region Data
 /**
  * The five curves.
  *
@@ -68,8 +75,6 @@ export const DISTANCE_PROFILES = {
   /** Bodies, doors, objects. Between handling and impact. */
   world: { refDistance: 2.6, rolloff: 1.1, maxDistance: 70 },
 } as const satisfies Record<string, DistanceProfile>;
-
-export type DistanceProfileName = keyof typeof DISTANCE_PROFILES;
 
 /**
  * Per-source level trims, applied on top of whatever a voice authored.
@@ -107,4 +112,4 @@ export const MIX = {
   /** Announcer stings and UI. They ride their own bus and duck the world (S6.4). */
   announcer: 1.0,
 } as const;
-
+//#endregion

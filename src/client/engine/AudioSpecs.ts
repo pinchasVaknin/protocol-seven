@@ -1,6 +1,3 @@
-import type { Rng } from '../../shared/core/Rng';
-import type { DistanceProfileName } from './AudioMix';
-
 /**
  * The parameter records the audio toolkit takes, and the two buffers it is built on.
  *
@@ -13,10 +10,15 @@ import type { DistanceProfileName } from './AudioMix';
  * `ProceduralAudio.noiseScratch`.
  */
 
-export type BusName = 'sfx' | 'music' | 'ui';
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { Rng } from '../../shared/core/Rng';
+import type { DistanceProfileName } from './AudioMix';
+//#endregion
 
-/** Seconds of shared white noise every noise-based sound reads from. */
-export const NOISE_SECONDS = 2;
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type BusName = 'sfx' | 'music' | 'ui';
 
 export interface NoiseSpec {
   x: number;
@@ -47,26 +49,6 @@ export interface NoiseSpec {
   roll: DistanceProfileName;
 }
 
-export function makeNoiseSpec(): NoiseSpec {
-  return {
-    x: 0,
-    y: 0,
-    z: 0,
-    positional: true,
-    bus: 'sfx',
-    filter: 'bandpass',
-    freq: 1000,
-    freqEnd: 1000,
-    q: 1,
-    level: 0.4,
-    attack: 0.004,
-    decay: 0.1,
-    wet: 0.15,
-    rate: 1,
-    roll: 'world',
-  };
-}
-
 export interface OscSpec {
   x: number;
   y: number;
@@ -85,6 +67,64 @@ export interface OscSpec {
   filterQ: number;
   /** M8. See `NoiseSpec.roll`. */
   roll: DistanceProfileName;
+}
+
+/** True when world geometry blocks the straight line from a point to the listener. */
+export type OcclusionTest = (x: number, y: number, z: number) => boolean;
+
+/**
+ * The room, as the audio graph hears it. Maps carry one of these from M4 (`MapDef.reverb`).
+ *
+ * Structurally identical to `world/maps/types.ts`'s `ReverbDef` and written out again rather
+ * than imported: `engine/` has no business depending on the map format, and an impulse
+ * response is a property of a space whether or not a map file described it.
+ */
+export interface ReverbSpec {
+  /** Tail length, seconds. */
+  readonly seconds: number;
+  /** Decay exponent. Higher is a faster, drier fall-off. */
+  readonly decay: number;
+  /** Brightness of the early part, 0..1. High reads as bare steel and concrete. */
+  readonly brightness: number;
+  /** Discrete early reflections: delay in seconds and amplitude, 0..1. */
+  readonly earlyTaps: readonly Readonly<{ delay: number; gain: number }>[];
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Seconds of shared white noise every noise-based sound reads from. */
+export const NOISE_SECONDS = 2;
+
+/** The room M1 shipped with, and the fallback for a map that does not describe one. */
+export const DEFAULT_REVERB: ReverbSpec = {
+  seconds: 1.35,
+  decay: 2.6,
+  brightness: 0.35,
+  earlyTaps: [],
+};
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeNoiseSpec(): NoiseSpec {
+  return {
+    x: 0,
+    y: 0,
+    z: 0,
+    positional: true,
+    bus: 'sfx',
+    filter: 'bandpass',
+    freq: 1000,
+    freqEnd: 1000,
+    q: 1,
+    level: 0.4,
+    attack: 0.004,
+    decay: 0.1,
+    wet: 0.15,
+    rate: 1,
+    roll: 'world',
+  };
 }
 
 export function makeOscSpec(): OscSpec {
@@ -107,9 +147,6 @@ export function makeOscSpec(): OscSpec {
   };
 }
 
-/** True when world geometry blocks the straight line from a point to the listener. */
-export type OcclusionTest = (x: number, y: number, z: number) => boolean;
-
 /** White noise, generated once and shared by every noise-based sound. */
 export function buildNoiseBuffer(ctx: AudioContext, rng: Rng, seconds: number): AudioBuffer {
   const length = Math.floor(ctx.sampleRate * seconds);
@@ -118,32 +155,6 @@ export function buildNoiseBuffer(ctx: AudioContext, rng: Rng, seconds: number): 
   for (let i = 0; i < length; i++) data[i] = rng.spread();
   return buffer;
 }
-
-/**
- * The room, as the audio graph hears it. Maps carry one of these from M4 (`MapDef.reverb`).
- *
- * Structurally identical to `world/maps/types.ts`'s `ReverbDef` and written out again rather
- * than imported: `engine/` has no business depending on the map format, and an impulse
- * response is a property of a space whether or not a map file described it.
- */
-export interface ReverbSpec {
-  /** Tail length, seconds. */
-  readonly seconds: number;
-  /** Decay exponent. Higher is a faster, drier fall-off. */
-  readonly decay: number;
-  /** Brightness of the early part, 0..1. High reads as bare steel and concrete. */
-  readonly brightness: number;
-  /** Discrete early reflections: delay in seconds and amplitude, 0..1. */
-  readonly earlyTaps: readonly Readonly<{ delay: number; gain: number }>[];
-}
-
-/** The room M1 shipped with, and the fallback for a map that does not describe one. */
-export const DEFAULT_REVERB: ReverbSpec = {
-  seconds: 1.35,
-  decay: 2.6,
-  brightness: 0.35,
-  earlyTaps: [],
-};
 
 /**
  * Impulse response for the single convolver (brief S6.6).
@@ -164,32 +175,46 @@ export const DEFAULT_REVERB: ReverbSpec = {
 export function buildImpulseResponse(ctx: AudioContext, rng: Rng, spec: ReverbSpec): AudioBuffer {
   const length = Math.max(1, Math.floor(ctx.sampleRate * spec.seconds));
   const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) writeChannel(buffer, ch, spec, rng);
+  return buffer;
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * One ear of the room: the diffuse tail, then the early reflections on top of it.
+ *
+ * The taps are added *after* the decay envelope rather than under it, because a slap off a
+ * near wall is its own arrival and not part of the tail it precedes.
+ */
+function writeChannel(buffer: AudioBuffer, ch: number, spec: ReverbSpec, rng: Rng): void {
+  const data = buffer.getChannelData(ch);
+  const length = data.length;
+  const sampleRate = buffer.sampleRate;
   // Bright rooms let more of the noise straight through the one-pole; dark ones smear it.
   const openness = 0.18 + 0.42 * Math.min(1, Math.max(0, spec.brightness));
 
-  for (let ch = 0; ch < 2; ch++) {
-    const data = buffer.getChannelData(ch);
-    let lp = 0;
-    for (let i = 0; i < length; i++) {
-      const t = i / length;
-      const envelope = Math.pow(1 - t, spec.decay);
-      lp += (rng.spread() - lp) * (openness - (openness - 0.1) * t);
-      data[i] = lp * envelope;
-    }
+  let lp = 0;
+  for (let i = 0; i < length; i++) {
+    const t = i / length;
+    const envelope = Math.pow(1 - t, spec.decay);
+    lp += (rng.spread() - lp) * (openness - (openness - 0.1) * t);
+    data[i] = lp * envelope;
+  }
 
-    // Early reflections, offset per channel so the two ears do not hear the same wall.
-    const skew = ch === 0 ? 1 : 1.14;
-    for (const tap of spec.earlyTaps) {
-      const at = Math.floor(tap.delay * skew * ctx.sampleRate);
-      if (at <= 0 || at >= length) continue;
-      const width = Math.max(2, Math.floor(0.0012 * ctx.sampleRate));
-      for (let k = 0; k < width; k++) {
-        const index = at + k;
-        if (index >= length) break;
-        const shape = 1 - k / width;
-        data[index] = (data[index] ?? 0) + rng.spread() * tap.gain * shape * 2;
-      }
+  // Early reflections, offset per channel so the two ears do not hear the same wall.
+  const skew = ch === 0 ? 1 : 1.14;
+  for (const tap of spec.earlyTaps) {
+    const at = Math.floor(tap.delay * skew * sampleRate);
+    if (at <= 0 || at >= length) continue;
+    const width = Math.max(2, Math.floor(0.0012 * sampleRate));
+    for (let k = 0; k < width; k++) {
+      const index = at + k;
+      if (index >= length) break;
+      const shape = 1 - k / width;
+      data[index] = (data[index] ?? 0) + rng.spread() * tap.gain * shape * 2;
     }
   }
-  return buffer;
 }
+//#endregion

@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**42 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**43 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -62,6 +62,7 @@ and belong in its Step 2 plan.
 | ~~B8~~ | `server/` Config, Loop, MapBakery, MatchAllocator, Migration, NetPlayer, NodeClock, Router, Spectator, log, serve | **closed** — #51's two `NetPlayer` references were absorbed; #13 was **declined a third time** (`Spectator.ts` imports the constant, but the move is in A9's `shared/combat` files and reaches thirty files); #52's `LiveMatch.ts` line is **not** a B8 file and stays. B8 opened #53 at Step 0 |
 | ~~C1~~ | `client/input/`, `client/player/`, `client/perks/`, `client/cinematic/` | **closed** — C1 absorbed #1's `IntroCamera` half under its own approval: the local `angleDelta` is gone and the file is on `MathUtil.angleDelta`, which moves `d = -PI` from `-PI` to `+PI`. What is left of #1 is `ClientMatch.angleDeltaRad`, which is C24's. C1 opened #54 |
 | ~~C2~~ | `client/engine/` BrowserClock, CameraRig, FrameLoop, GpuWarmup, MotionBlur, Renderer | **reproduction done, entry stays open** — C2 drove the real frame path with a clock it controlled and ruled out all three of #34's candidates *inside its own files*: the render-pass alpha tracks wall clock to 1.5e-11 ms under ±8 ms of jitter, the only layers integrated with `dt` move 0.0041° under a 6–36 ms clock disagreement, and one float32 ulp at 40 m is 4.8 µm against a 32 mm bob. #34 is rewritten with the numbers and re-pointed at the five things the reproduction could not cover — and, with the shadow tier the user then supplied, at the two earlier rounds that found this same symptom in the *simulation* both times. C2 noted `CameraRig.interpolatePhase` in #1 and opened #55 |
+| ~~C3~~ | `client/engine/` AudioGraph, AudioMix, AudioSpecs, ProceduralAudio | **closed** — nothing was bound to its four files: no §1 row, no entry naming any of them, and the only hits for "audio", "sound" or "sfx" in this whole file are the words *unsound* and *sound baseline*. C3 opened #56, which its own characterization tests found |
 | C4 | `client/engine/` Decals, Fx | #33's other half, and only if clearing one target's marks needs an API they do not have |
 | C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
@@ -730,7 +731,9 @@ range altogether.
 below. The four places left to look are named at the end. **Origin** reported from play,
 2026-10-19; reproduced and measured by C2 on 2026-10-25, on the clean tree before it edited
 anything; the shadow tier it was played on was supplied by the user the same day, and a second
-reproduction that day closed the two gaps the first one left.
+reproduction that day closed the two gaps the first one left. **C3 opened #56** on 2026-10-26,
+found by its own characterization tests: the one caller in `ProceduralAudio` that fills the shared
+scratch spec without setting every field it depends on.
 
 Walking freely around the arena the view shakes slightly — small, continuous, and **local**: it is
 there with no server in the picture, so it is none of the remote-pose work f5d1e72 and df7d87b
@@ -940,6 +943,46 @@ alpha idea the position path already uses, applied to the view angle, for well u
 latency instead of the full tick the position path pays. That changes the input contract and a
 documented design decision, so it needs the user's call and a session of its own; `Input.ts` is
 **C1**'s file and in the `check:style` ratchet, so no later unit can reach it under R3 either.
+
+### #56 — The landing thump inherits its distance curve from whatever played before it · `open` *(opened 2026-10-26 by C3)*
+**Files** `src/client/engine/ProceduralAudio.ts` — `playLanding`, the oscillator block. **Origin**
+C3's characterization tests, 2026-10-26.
+
+`ProceduralAudio` pours every sound into one of two **module-level scratch specs**
+(`AudioGraph.noiseScratch` / `oscScratch`) and hands it straight to a primitive, which is
+deliberate: a 700 RPM weapon plus footsteps would otherwise allocate a spec per layer per shot.
+The contract that makes it safe is that each caller sets every field it depends on.
+
+`playLanding`'s body thump does not. It sets fourteen of the fifteen fields and leaves **`roll`**
+— the distance-falloff curve (`engine/AudioMix.ts`) — at whatever the previous oscillator sound
+left on the shared object. Every other positional sound in the file sets it: `playFootstep` sets
+it on both its layers, and `playLanding` sets it on its own *noise* layer one block above. The
+thump is the only one that does not, and it is `positional` on the `sfx` bus, so
+`AudioGraph.routeVoice` genuinely reads it.
+
+In practice it is usually `'footstep'`, because a heavy step sets that and you normally take one
+before you land — which is also why nobody has heard it. But a landing that follows a UI sound,
+or the first landing after load, gets `'world'`: `refDistance` 2.6 and `rolloff` 1.1 against the
+footstep curve's 1.6 and 1.6, so the thump carries noticeably further than it was tuned to. The
+first landing of a match is the reliable case.
+
+**Why C3 could not fix it.** R1. The fix is one line — `osc.roll = 'footstep';` — but it changes
+what a listener hears at a real distance, and a refactor unit may not. C3 pinned the current
+behaviour instead (`ProceduralAudio.test.ts`, "leaves the landing thump on whatever distance curve
+the last oscillator used") and left a comment on the block naming this entry, per §5.9.
+
+**Decide** whether the thump should be on `'footstep'` like the burst above it — almost certainly
+yes, and then the test flips to assert that — or whether a landing is a bigger source than a step
+and wants `'world'` or `'impact'` deliberately. Either way, **set it explicitly**: the defect is
+the silence, not the value.
+
+**Watch for** the same class of bug anywhere else a caller fills a shared scratch. C3 checked this
+file and `playLanding`'s thump is the only one; `weapons/WeaponAudio.ts` (C10) uses the same two
+scratches and was not in C3's fence.
+
+**Verify** `npm run check`, plus the BROWSER counters C3 used: `__p7.game.audio` publishes
+`poolSize`, `voiceCount`, `sourcesStarted` and `voicesDropped`, and a landing is one noise burst
+and one oscillator hit.
 
 ### #55 — The Chopper Gunner optic draws a flat grey field and no map · `open` *(opened 2026-10-25 by C2)*
 **Files** `src/client/engine/Renderer.ts` (`renderGunship`, `GUNSHIP_VERT`, `GUNSHIP_WORLD_FRAG`)

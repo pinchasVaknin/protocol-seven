@@ -398,6 +398,12 @@ const FINISHED = {
     'src/client/engine/MotionBlur.ts',
     'src/client/engine/Renderer.ts',
   ],
+  C3: [
+    'src/client/engine/AudioGraph.ts',
+    'src/client/engine/AudioMix.ts',
+    'src/client/engine/AudioSpecs.ts',
+    'src/client/engine/ProceduralAudio.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

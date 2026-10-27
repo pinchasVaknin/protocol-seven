@@ -65,6 +65,7 @@ and belong in its Step 2 plan.
 | ~~C3~~ | `client/engine/` AudioGraph, AudioMix, AudioSpecs, ProceduralAudio | **closed** — nothing was bound to its four files: no §1 row, no entry naming any of them, and the only hits for "audio", "sound" or "sfx" in this whole file are the words *unsound* and *sound baseline*. C3 opened #56, which its own characterization tests found |
 | ~~C4~~ | `client/engine/` Decals, Fx, FxAssets, FlameFx, ProceduralTextures | **#33 declined with a reason** — its C4 half is conditional on a decision the entry says is **C11's** ("Decide inside C11 whether a per-target owner on a decal is worth it"), and C11 has not run; C4 cannot absorb half a task whose shape another unit has yet to choose, and building an unused API is what R2 refuses. C4 measured the cost of that API into #33 instead, so C11 can decide with a number. C4 noted `ProceduralTextures.smooth` in #54 and opened nothing |
 | ~~C5~~ | `client/characters/` ActorAvatar, AnimationSelector, AnimationVariant, CharacterAnimator, CharacterAssetImport, CharacterAssetRepository, CharacterAssetService, CharacterAvatar, CharacterAvatarFactory, CharacterAvatarProvider, CharacterCatalog, CharacterSkin, RandomCharacterSelector, ThrowLayer, WeaponSupportHandConstraint | **closed** — nothing was bound to its fifteen files: no §1 row, and not one of the fifteen names, nor `client/characters`, appears anywhere in this file. The broader sweep is empty too — *animator*, *avatar*, *skinned*, *bind pose*, *mixamo* and *clip* have no hits at all, every *character* hit is the phrase “character for character” or “characterization test”, and every *rig* hit is inside *forbids*, *original* or *right*. C5 opened nothing: its 109 characterization tests found no behaviour worth an entry — the one surprise, a crouch edge whose `pendingLocomotion` is still the *old* settled loop, is `LOOP_SETTLE_SECONDS` working as written, and is pinned in both halves |
+| ~~C6~~ | `client/weapons/ViewmodelAnim.ts` + the seven files it was split into | **closed** — nothing was bound to it: no §1 row, and *ViewmodelAnim*, *recoil*, *sway*, *charging handle* and *ViewmodelHands* have no hits anywhere in this file. #35 names viewmodels but is **C23's** and its edit is in `Game.ts`, outside R3's fence — declined with a reason. Every *bob* hit is #34's camera bob. **C6 opened #57**, which its own characterization tests found: the base matrix the arms are solved against is one shared scratch, and a grenade or a knife posed later in the frame overwrites it before the riot shield's glove reads it |
 | C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
@@ -965,6 +966,49 @@ alpha idea the position path already uses, applied to the view angle, for well u
 latency instead of the full tick the position path pays. That changes the input contract and a
 documented design decision, so it needs the user's call and a session of its own; `Input.ts` is
 **C1**'s file and in the `check:style` ratchet, so no later unit can reach it under R3 either.
+
+### #57 — The riot shield's glove is solved against the grenade, not against the weapon · `open` *(opened 2026-10-27 by C6)*
+**Files** `src/client/weapons/ViewmodelAnim.ts` — `update` and `poseShield`; the shared matrix now lives
+in `WeaponBasePose.ts` as `HandsBase`. **Origin** C6's characterization tests, 2026-10-27.
+
+One `Matrix4` is the base pose a frame's arms are solved against, and `update` composes the weapon's
+pose into it and hands the *same object* on:
+
+```
+  const base = this.handsBase.fromPose(pose, ...);   // the weapon's
+  this.model.hands?.update(base);                    // correct
+  this.knives.pose(this.handsBase, ...);             // overwrites it with the blade's
+  this.grenades.pose(this.handsBase, ...);           // overwrites it with the grenade's
+  this.poseShield(pose, hipOnly);                    // reads it — and gets the grenade's
+```
+
+So whenever a knife or a grenade is posed in the same frame as the shield, the plate's one glove is
+solved against wherever the held item is. Measured on the shipped code: the weapon's base translation
+was `(0.1488, -0.1366, -0.3205)` and the plate was handed `(0.2151, -0.0756, -0.3005)` — the grenade's
+wind-up, about 9 cm away and turned.
+
+**It is reachable.** The riot shield killstreak gives you a sidearm, and a throw is not blocked while
+it is up, so a grenade thrown from behind the plate runs this every frame of the throw. A melee does
+too. What it looks like is the glove on the plate jumping to where the grenade is and back.
+
+**Why C6 could not fix it.** R1. The fix is one line — give the plate its own `HandsBase`, or compose
+the weapon's a second time before `poseShield` — but it changes what is drawn, and a refactor unit may
+not. C6 kept the sharing exactly as it is, named it on `HandsBase` so it is visible rather than
+accidental, and pinned it (`ViewmodelAnim.test.ts`, "solves the plate's glove against the grenade's
+pose, not the weapon's"). Per §5.9 the test flips to the correct assertion when this is fixed.
+
+**Decide** whether the plate should take the weapon's base — almost certainly yes, since the arrangement
+`poseShield`'s own JSDoc describes is *"its hands are updated against the same base the weapon's would
+have been"*, which is the thing that is not happening — or whether a shield carried with a grenade out
+should pose some third way.
+
+**Watch for** the same class of bug anywhere else a frame hands on a reused scratch object. C6 checked
+its own fence and this is the only one; `ViewmodelHands` (C8) composes matrices of its own and was not
+in C6's.
+
+**Verify** `npm run check`, plus the BROWSER A/B C6 used: build a `ViewmodelAnim` with a shield *and* a
+grenade, run one frame, and compare the two `ViewmodelHands.update` arguments. They should be equal and
+today they are not.
 
 ### #56 — The landing thump inherits its distance curve from whatever played before it · `open` *(opened 2026-10-26 by C3)*
 **Files** `src/client/engine/ProceduralAudio.ts` — `playLanding`, the oscillator block. **Origin**

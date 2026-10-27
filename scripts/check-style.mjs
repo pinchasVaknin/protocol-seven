@@ -428,6 +428,16 @@ const FINISHED = {
     'src/client/characters/ThrowLayer.ts',
     'src/client/characters/WeaponSupportHandConstraint.ts',
   ],
+  C6: [
+    'src/client/weapons/GrenadeThrowPose.ts',
+    'src/client/weapons/KnifeSwingPose.ts',
+    'src/client/weapons/RecoilKick.ts',
+    'src/client/weapons/ReloadPose.ts',
+    'src/client/weapons/ViewmodelAnim.ts',
+    'src/client/weapons/ViewmodelDrive.ts',
+    'src/client/weapons/ViewmodelMotion.ts',
+    'src/client/weapons/WeaponBasePose.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

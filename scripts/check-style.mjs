@@ -438,6 +438,15 @@ const FINISHED = {
     'src/client/weapons/ViewmodelMotion.ts',
     'src/client/weapons/WeaponBasePose.ts',
   ],
+  C7: [
+    'src/client/weapons/HeldWeaponMesh.ts',
+    'src/client/weapons/WeaponAttachments.ts',
+    'src/client/weapons/WeaponCamo.ts',
+    'src/client/weapons/WeaponGeometry.ts',
+    'src/client/weapons/WeaponMesh.ts',
+    'src/client/weapons/WeaponMeshParts.ts',
+    'src/client/weapons/WeaponSurfaces.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

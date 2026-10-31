@@ -66,6 +66,7 @@ and belong in its Step 2 plan.
 | ~~C4~~ | `client/engine/` Decals, Fx, FxAssets, FlameFx, ProceduralTextures | **#33 declined with a reason** — its C4 half is conditional on a decision the entry says is **C11's** ("Decide inside C11 whether a per-target owner on a decal is worth it"), and C11 has not run; C4 cannot absorb half a task whose shape another unit has yet to choose, and building an unused API is what R2 refuses. C4 measured the cost of that API into #33 instead, so C11 can decide with a number. C4 noted `ProceduralTextures.smooth` in #54 and opened nothing |
 | ~~C5~~ | `client/characters/` ActorAvatar, AnimationSelector, AnimationVariant, CharacterAnimator, CharacterAssetImport, CharacterAssetRepository, CharacterAssetService, CharacterAvatar, CharacterAvatarFactory, CharacterAvatarProvider, CharacterCatalog, CharacterSkin, RandomCharacterSelector, ThrowLayer, WeaponSupportHandConstraint | **closed** — nothing was bound to its fifteen files: no §1 row, and not one of the fifteen names, nor `client/characters`, appears anywhere in this file. The broader sweep is empty too — *animator*, *avatar*, *skinned*, *bind pose*, *mixamo* and *clip* have no hits at all, every *character* hit is the phrase “character for character” or “characterization test”, and every *rig* hit is inside *forbids*, *original* or *right*. C5 opened nothing: its 109 characterization tests found no behaviour worth an entry — the one surprise, a crouch edge whose `pendingLocomotion` is still the *old* settled loop, is `LOOP_SETTLE_SECONDS` working as written, and is pinned in both halves |
 | ~~C6~~ | `client/weapons/ViewmodelAnim.ts` + the seven files it was split into | **closed** — nothing was bound to it: no §1 row, and *ViewmodelAnim*, *recoil*, *sway*, *charging handle* and *ViewmodelHands* have no hits anywhere in this file. #35 names viewmodels but is **C23's** and its edit is in `Game.ts`, outside R3's fence — declined with a reason. Every *bob* hit is #34's camera bob. **C6 opened #57**, which its own characterization tests found: the base matrix the arms are solved against is one shared scratch, and a grenade or a knife posed later in the frame overwrites it before the riot shield's glove reads it |
+| ~~C7~~ | `client/weapons/` WeaponMesh, WeaponMeshParts + the five files they were split into | **closed** — nothing was bound to it: no §1 row, and *WeaponMesh*, *WeaponMeshParts*, *suppressor*, *silhouette*, *held weapon* and *BoxPart* have no hits anywhere in this file. Every *camo* hit is **#29**, whose file is `shared/meta/`'s `sanitiseLoadout` (A19's), and the two *attachment* hits are inside it. **C7 opened #58**: the canvas-and-texture helper here is the same one `engine/ProceduralTextures.ts` carries, and that file is C4's and already in the ratchet |
 | C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
@@ -966,6 +967,55 @@ alpha idea the position path already uses, applied to the view angle, for well u
 latency instead of the full tick the position path pays. That changes the input contract and a
 documented design decision, so it needs the user's call and a session of its own; `Input.ts` is
 **C1**'s file and in the `check:style` ratchet, so no later unit can reach it under R3 either.
+
+### #58 — Two files paint a 128 px tile the same way · `open` *(opened 2026-10-31 by C7)*
+**Files** `src/client/weapons/WeaponSurfaces.ts` (`makeCanvas`, `finish`) and
+`src/client/engine/ProceduralTextures.ts` (`build`'s opening, `makeTexture`). **Origin** C7,
+reading its own texture block.
+
+Five lines each, and the same five:
+
+```
+WeaponSurfaces.makeCanvas()          ProceduralTextures.build()
+  createElement('canvas')              createElement('canvas')
+  width = height = TEX (128)           width = height = TEX_SIZE
+  getContext('2d')                     getContext('2d')
+  throw '2D canvas context             throw '2D canvas context
+    unavailable; cannot build            unavailable; cannot build
+    weapon textures.'                    textures.'
+```
+
+and then the wrapper around the result:
+
+```
+WeaponSurfaces.finish()              ProceduralTextures.makeTexture()
+  new CanvasTexture(ctx.canvas)        new CanvasTexture(canvas)
+  wrapS = wrapT = RepeatWrapping       wrapS = wrapT = RepeatWrapping
+  colorSpace = SRGBColorSpace          colorSpace = SRGBColorSpace
+  anisotropy = <given>                 anisotropy = this.maxAnisotropy
+  repeat.set(r, r)                     generateMipmaps = true
+  needsUpdate = true                   minFilter = LinearMipmapLinear
+```
+
+The two are not identical and should not be merged blind: the weapon's tiles set a `repeat`
+per surface and the world's set the mipmap chain. What is shared is the canvas, the sRGB
+tiling wrapper and the one error message, which is three or four lines either way.
+
+**Why C7 did not fold it.** §4.3 sends cross-unit duplication here rather than into a unit's
+own commit, and `ProceduralTextures.ts` is **C4's file and already in the `check:style`
+ratchet**, so R3's fence puts it out of reach. C7 moved its half into `WeaponSurfaces.ts`
+unchanged.
+
+**Decide** where a shared `paintedTile(size)` would live. `client/engine/` is the wrong
+direction (weapons would import from the renderer) and `shared/` is worse (it is a DOM call).
+The honest home is a small `client/engine/CanvasTile.ts` that both import, or nothing at all —
+five lines twice is a defensible price for two files with no dependency on each other.
+
+**Watch for** a third copy. `meta/CamoTextures.ts` paints tiles too, and it is C12's.
+
+**Verify** `npm run check`, plus the sixteen texture checksums C4 pinned in
+`ProceduralTextures.test.ts` and the three command logs C7 pinned in `WeaponMesh.test.ts`:
+whatever is shared, both sets of images have to come out unchanged.
 
 ### #57 — The riot shield's glove is solved against the grenade, not against the weapon · `open` *(opened 2026-10-27 by C6)*
 **Files** `src/client/weapons/ViewmodelAnim.ts` — `update` and `poseShield`; the shared matrix now lives

@@ -14,6 +14,21 @@
  * it after a rebuild that changes a file.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+export type ShieldSocketNode = (typeof SHIELD_SOCKET_NODES)[number];
+
+export type AttachmentPartId = (typeof ATTACHMENT_PARTS)[keyof typeof ATTACHMENT_PARTS];
+
+export type WeaponGroupNode = (typeof WEAPON_GROUP_NODES)[number];
+export type WeaponSocketNode = (typeof WEAPON_SOCKET_NODES)[number];
+
+export type EquipmentGroupNode = (typeof EQUIPMENT_GROUP_NODES)[number];
+export type EquipmentSocketNode = (typeof EQUIPMENT_SOCKET_NODES)[number];
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const WEAPON_ASSET_VERSION = '2026-09-28-lods';
 
 const WEAPON_ROOT = '/models/weapons';
@@ -49,28 +64,6 @@ export const WEAPON_ASSET_IDS: ReadonlySet<string> = new Set([
   'streak_shield',
 ]);
 
-export function hasWeaponAsset(weaponId: string): boolean {
-  return WEAPON_ASSET_IDS.has(weaponId);
-}
-
-/**
- * Whether a weapon id's file is a **firearm** template, which is not the same question.
- *
- * `streak_shield` has a file, and both the bodies' loader and the credits want it in the list
- * above — but a plate carries none of `WEAPON_SOCKET_NODES`, so asking `preload` for it would
- * fetch 0.4 MB and then throw in `validateTemplate`. It has its own loader (`preloadShield`),
- * and the LOD path is untouched: the bodies' file is a plain mesh with two hand points, which
- * is all `validateLod` ever asked for.
- */
-export function hasWeaponTemplate(weaponId: string): boolean {
-  return hasWeaponAsset(weaponId) && weaponId !== SHIELD_ASSET_ID;
-}
-
-/** The bodies' file for a weapon (stage 3): the same weapon joined per material under 10k triangles. */
-export function weaponLodUrl(weaponId: string): string {
-  return `${WEAPON_ROOT}/${weaponId}.lod1.glb?v=${encodeURIComponent(WEAPON_ASSET_VERSION)}`;
-}
-
 /** The knife's file (stage 3): a root and a `body`, no sockets, loaded beside the weapons. */
 export const KNIFE_ASSET_ID = 'knife';
 
@@ -95,11 +88,6 @@ export const HANDS_ASSET_ID = 'hands';
  */
 export const SHIELD_ASSET_ID = 'streak_shield';
 export const SHIELD_SOCKET_NODES = ['socket_grip', 'socket_support'] as const;
-export type ShieldSocketNode = (typeof SHIELD_SOCKET_NODES)[number];
-
-export function weaponAssetUrl(weaponId: string): string {
-  return `${WEAPON_ROOT}/${weaponId}.glb?v=${encodeURIComponent(WEAPON_ASSET_VERSION)}`;
-}
 
 /**
  * The attachment pack (stage 2): one part per attachment that is a thing on the gun, built
@@ -113,8 +101,6 @@ export const ATTACHMENT_PARTS = {
   grip_foregrip: 'att_grip',
   laser_tactical: 'att_laser',
 } as const;
-
-export type AttachmentPartId = (typeof ATTACHMENT_PARTS)[keyof typeof ATTACHMENT_PARTS];
 
 export const ATTACHMENT_PART_IDS: readonly AttachmentPartId[] = Object.values(ATTACHMENT_PARTS);
 
@@ -155,9 +141,6 @@ export const WEAPON_SOCKET_NODES = [
   'socket_mag_grip',
 ] as const;
 
-export type WeaponGroupNode = (typeof WEAPON_GROUP_NODES)[number];
-export type WeaponSocketNode = (typeof WEAPON_SOCKET_NODES)[number];
-
 /**
  * The equipment with a file (2026-09-24), by the id `EquipmentDefs` uses.
  *
@@ -177,18 +160,46 @@ export const EQUIPMENT_ASSET_IDS: Readonly<Record<string, string>> = {
   claymore: 'eq_claymore',
 };
 
-export function equipmentAssetId(equipmentId: string): string | null {
-  return EQUIPMENT_ASSET_IDS[equipmentId] ?? null;
-}
-
 /**
  * What a piece of equipment's file carries: a `body`, and on a thrown one the two parts that
  * come off it — the `pin` the hand pulls and the `lever` that flies at the release. A file in
  * the world draws neither, because a grenade in the air has neither.
  */
 export const EQUIPMENT_GROUP_NODES = ['body', 'pin', 'lever'] as const;
-export type EquipmentGroupNode = (typeof EQUIPMENT_GROUP_NODES)[number];
 
 /** Where the holding palm goes, and where the other hand's fingers take the ring. */
 export const EQUIPMENT_SOCKET_NODES = ['socket_grip', 'socket_pin'] as const;
-export type EquipmentSocketNode = (typeof EQUIPMENT_SOCKET_NODES)[number];
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function hasWeaponAsset(weaponId: string): boolean {
+  return WEAPON_ASSET_IDS.has(weaponId);
+}
+
+/**
+ * Whether a weapon id's file is a **firearm** template, which is not the same question.
+ *
+ * `streak_shield` has a file, and both the bodies' loader and the credits want it in the list
+ * above — but a plate carries none of `WEAPON_SOCKET_NODES`, so asking `preload` for it would
+ * fetch 0.4 MB and then throw in `validateTemplate`. It has its own loader (`preloadShield`),
+ * and the LOD path is untouched: the bodies' file is a plain mesh with two hand points, which
+ * is all `validateLod` ever asked for.
+ */
+export function hasWeaponTemplate(weaponId: string): boolean {
+  return hasWeaponAsset(weaponId) && weaponId !== SHIELD_ASSET_ID;
+}
+
+export function weaponAssetUrl(weaponId: string): string {
+  return `${WEAPON_ROOT}/${weaponId}.glb?v=${encodeURIComponent(WEAPON_ASSET_VERSION)}`;
+}
+
+/** The bodies' file for a weapon (stage 3): the same weapon joined per material under 10k triangles. */
+export function weaponLodUrl(weaponId: string): string {
+  return `${WEAPON_ROOT}/${weaponId}.lod1.glb?v=${encodeURIComponent(WEAPON_ASSET_VERSION)}`;
+}
+
+export function equipmentAssetId(equipmentId: string): string | null {
+  return EQUIPMENT_ASSET_IDS[equipmentId] ?? null;
+}
+//#endregion

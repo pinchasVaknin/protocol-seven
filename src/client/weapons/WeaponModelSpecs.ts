@@ -13,6 +13,8 @@
  * right corner of a screen, while both are moving.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 type StockKind = 'full' | 'folding' | 'skeleton' | 'none';
 type MagazineKind = 'curved' | 'box' | 'drum' | 'tube' | 'grip';
 type OpticKind = 'irons' | 'reddot' | 'scope';
@@ -69,7 +71,10 @@ export interface WeaponModelSpec {
    */
   readonly adsOffsetZ: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const AR_BASE: WeaponModelSpec = {
   receiverLength: 0.3,
   receiverHeight: 0.082,
@@ -390,8 +395,12 @@ const WEAPON_MODEL_SPECS: Readonly<Record<string, WeaponModelSpec>> = {
     scale: 1,
   },
 };
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** Falls back to the carbine so a weapon added without a spec still draws something. */
 export function modelSpecFor(weaponId: string): WeaponModelSpec {
   return WEAPON_MODEL_SPECS[weaponId] ?? AR_BASE;
 }
+//#endregion

@@ -1,9 +1,49 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { ReloadStep } from '../../shared/core/Events';
 import { Rng } from '../../shared/core/Rng';
+import type { NoiseSpec, OscSpec } from '../engine/AudioSpecs';
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
 import { surfaceAtIndex } from '../../shared/world/maps/materials';
 import type { WeaponVoice } from '../../shared/weapons/WeaponDefs';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+/** The five fields every positional weapon sound fills the same way: where it is, and on which bus. */
+type PositionalSpec = Pick<NoiseSpec, 'x' | 'y' | 'z' | 'positional' | 'bus'>;
+
+/** What one reload step changes about the shared handling burst. Everything else is common. */
+interface ReloadLayer {
+  readonly filter: BiquadFilterType;
+  readonly freq: number;
+  readonly freqEnd: number;
+  readonly q: number;
+  readonly level: number;
+  readonly decay: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * The five steps, as five rows. Each is a different piece of metal doing a different thing,
+ * and they have to be distinguishable with your eyes on the enemy.
+ */
+const RELOAD_LAYERS = {
+  // Cloth and a hand shifting grip: soft, low, short.
+  down: { filter: 'lowpass', freq: 900, freqEnd: 450, q: 0.7, level: 0.16, decay: 0.07 },
+  // Release catch, then the magazine leaving the well.
+  magOut: { filter: 'bandpass', freq: 3100, freqEnd: 1800, q: 4.5, level: 0.32, decay: 0.035 },
+  // Seating a magazine is the heaviest sound in the sequence.
+  magIn: { filter: 'bandpass', freq: 1500, freqEnd: 600, q: 2.2, level: 0.4, decay: 0.075 },
+  charge: { filter: 'bandpass', freq: 2300, freqEnd: 3600, q: 3.0, level: 0.36, decay: 0.09 },
+  raise: { filter: 'lowpass', freq: 1400, freqEnd: 700, q: 0.8, level: 0.14, decay: 0.06 },
+} satisfies Record<ReloadStep, ReloadLayer>;
+//#endregion
+
+// ===================================== CLASS WeaponAudio ====================================== \\
+//#region Class WeaponAudio
 /**
  * Weapon voices, layered out of the `ProceduralAudio` primitives (brief S6.7).
  *
@@ -22,10 +62,18 @@ import type { WeaponVoice } from '../../shared/weapons/WeaponDefs';
  * Nothing in this file creates a node graph.
  */
 export class WeaponAudio {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly rng = new Rng(0x4172_9a10);
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly audio: ProceduralAudio) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * The shot. Four layers, all scheduled at the same instant.
    *
@@ -37,79 +85,23 @@ export class WeaponAudio {
    */
   playGunshot(x: number, y: number, z: number, voice: WeaponVoice, gain = 1): void {
     const level = voice.level * gain;
+
     const noise = this.audio.noiseScratch;
+    placeOnSfxBus(noise, x, y, z);
+    this.shotTransient(noise, voice, level);
+    this.shotBody(noise, voice, level);
+    this.shotTail(noise, voice, level);
 
-    // 1. transient
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
-    noise.filter = 'highpass';
-    noise.freq = voice.clickFreq;
-    noise.freqEnd = voice.clickFreq * 0.75;
-    noise.q = 0.6;
-    noise.level = voice.clickLevel * level;
-    noise.attack = 0.001;
-    noise.decay = 0.013;
-    noise.wet = 0.05;
-    noise.roll = 'loud';
-    noise.rate = this.rng.range(0.96, 1.05);
-    this.audio.noiseBurst(noise);
-
-    // 2. body
-    noise.filter = 'bandpass';
-    noise.freq = voice.bodyFreq * this.rng.range(0.95, 1.06);
-    noise.freqEnd = noise.freq * 0.32;
-    noise.q = voice.bodyQ;
-    noise.level = level;
-    noise.attack = 0.0015;
-    noise.decay = voice.bodyDecay;
-    noise.wet = voice.wet * 0.5;
-    noise.rate = 1;
-    this.audio.noiseBurst(noise);
-
-    // 4. tail (scheduled before the thump only because both start now)
-    noise.filter = 'lowpass';
-    noise.freq = 2600;
-    noise.freqEnd = 420;
-    noise.q = 0.8;
-    noise.level = voice.tailLevel * level;
-    noise.attack = 0.006;
-    noise.decay = voice.tailDecay;
-    noise.wet = voice.wet;
-    noise.rate = 0.85;
-    this.audio.noiseBurst(noise);
-
-    // 3. thump
     const osc = this.audio.oscScratch;
-    osc.x = x;
-    osc.y = y;
-    osc.z = z;
-    osc.positional = true;
-    osc.bus = 'sfx';
-    osc.type = 'sine';
-    osc.freq = voice.thumpFreq * this.rng.range(0.94, 1.07);
-    osc.freqEnd = osc.freq * 0.42;
-    osc.level = voice.thumpLevel * level;
-    osc.attack = 0.002;
-    osc.decay = 0.115;
-    osc.wet = voice.wet * 0.3;
-    osc.filterFreq = 460;
-    osc.filterQ = 0.7;
-    osc.roll = 'loud';
-    this.audio.oscHit(osc);
+    placeOnSfxBus(osc, x, y, z);
+    this.shotThump(osc, voice, level);
   }
 
   /** The click of a hammer falling on nothing. */
   playDryFire(x: number, y: number, z: number): void {
     const noise = this.audio.noiseScratch;
     noise.roll = 'handling';
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
+    placeOnSfxBus(noise, x, y, z);
     noise.filter = 'bandpass';
     noise.freq = 2600;
     noise.freqEnd = 1400;
@@ -134,11 +126,7 @@ export class WeaponAudio {
   playMeleeSwing(x: number, y: number, z: number, connected: boolean): void {
     const noise = this.audio.noiseScratch;
     noise.roll = 'handling';
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
+    placeOnSfxBus(noise, x, y, z);
     noise.filter = 'bandpass';
     // Sweeping down rather than up: the blade is accelerating away from the ear, and a rising
     // sweep reads as something being drawn instead of something being swung.
@@ -154,82 +142,23 @@ export class WeaponAudio {
   }
 
   /**
-   * Reload mechanics. Each step is a different piece of metal doing a different thing,
-   * and they have to be distinguishable with your eyes on the enemy.
+   * Reload mechanics. One burst per step off `RELOAD_LAYERS`, and a second, lower layer under
+   * the magazine going home — the one step that is a weight arriving rather than a catch.
    */
   playReloadStep(x: number, y: number, z: number, step: ReloadStep): void {
     const noise = this.audio.noiseScratch;
     noise.roll = 'handling';
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
-    noise.filter = 'bandpass';
+    placeOnSfxBus(noise, x, y, z);
     noise.wet = 0.1;
     noise.attack = 0.001;
     noise.rate = 1;
-
-    switch (step) {
-      case 'down':
-        // Cloth and a hand shifting grip: soft, low, short.
-        noise.filter = 'lowpass';
-        noise.freq = 900;
-        noise.freqEnd = 450;
-        noise.q = 0.7;
-        noise.level = 0.16;
-        noise.decay = 0.07;
-        break;
-      case 'magOut':
-        // Release catch, then the magazine leaving the well.
-        noise.freq = 3100;
-        noise.freqEnd = 1800;
-        noise.q = 4.5;
-        noise.level = 0.32;
-        noise.decay = 0.035;
-        break;
-      case 'magIn':
-        // Seating a magazine is the heaviest sound in the sequence.
-        noise.freq = 1500;
-        noise.freqEnd = 600;
-        noise.q = 2.2;
-        noise.level = 0.4;
-        noise.decay = 0.075;
-        break;
-      case 'charge':
-        noise.freq = 2300;
-        noise.freqEnd = 3600;
-        noise.q = 3.0;
-        noise.level = 0.36;
-        noise.decay = 0.09;
-        break;
-      case 'raise':
-        noise.filter = 'lowpass';
-        noise.freq = 1400;
-        noise.freqEnd = 700;
-        noise.q = 0.8;
-        noise.level = 0.14;
-        noise.decay = 0.06;
-        break;
-    }
+    applyReloadLayer(noise, RELOAD_LAYERS[step]);
     this.audio.noiseBurst(noise);
 
     if (step !== 'magIn') return;
     const osc = this.audio.oscScratch;
-    osc.x = x;
-    osc.y = y;
-    osc.z = z;
-    osc.positional = true;
-    osc.bus = 'sfx';
-    osc.type = 'sine';
-    osc.freq = 190;
-    osc.freqEnd = 90;
-    osc.level = 0.24;
-    osc.attack = 0.002;
-    osc.decay = 0.08;
-    osc.wet = 0.08;
-    osc.filterFreq = 700;
-    osc.filterQ = 0.7;
+    placeOnSfxBus(osc, x, y, z);
+    magazineSeatThump(osc);
     this.audio.oscHit(osc);
   }
 
@@ -237,11 +166,7 @@ export class WeaponAudio {
   playAdsRustle(x: number, y: number, z: number, aiming: boolean): void {
     const noise = this.audio.noiseScratch;
     noise.roll = 'handling';
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
+    placeOnSfxBus(noise, x, y, z);
     noise.filter = 'bandpass';
     noise.freq = aiming ? 2200 : 1700;
     noise.freqEnd = aiming ? 1100 : 850;
@@ -293,11 +218,7 @@ export class WeaponAudio {
   playFleshImpact(x: number, y: number, z: number, headshot: boolean): void {
     const noise = this.audio.noiseScratch;
     noise.roll = 'impact';
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
+    placeOnSfxBus(noise, x, y, z);
     noise.filter = 'lowpass';
     noise.freq = headshot ? 1500 : 620;
     noise.freqEnd = headshot ? 500 : 190;
@@ -310,11 +231,7 @@ export class WeaponAudio {
     this.audio.noiseBurst(noise);
 
     const osc = this.audio.oscScratch;
-    osc.x = x;
-    osc.y = y;
-    osc.z = z;
-    osc.positional = true;
-    osc.bus = 'sfx';
+    placeOnSfxBus(osc, x, y, z);
     osc.type = 'sine';
     osc.freq = headshot ? 260 : 150;
     osc.freqEnd = osc.freq * 0.45;
@@ -334,11 +251,7 @@ export class WeaponAudio {
   playDeath(x: number, y: number, z: number): void {
     const osc = this.audio.oscScratch;
     osc.roll = 'world';
-    osc.x = x;
-    osc.y = y;
-    osc.z = z;
-    osc.positional = true;
-    osc.bus = 'sfx';
+    placeOnSfxBus(osc, x, y, z);
     osc.type = 'sine';
     osc.freq = 118;
     osc.freqEnd = 48;
@@ -352,11 +265,7 @@ export class WeaponAudio {
 
     // Gear and cloth going down with it.
     const noise = this.audio.noiseScratch;
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
+    placeOnSfxBus(noise, x, y, z);
     noise.filter = 'lowpass';
     noise.freq = 1250;
     noise.freqEnd = 300;
@@ -374,11 +283,7 @@ export class WeaponAudio {
     const surface = surfaceAtIndex(material);
     const noise = this.audio.noiseScratch;
     noise.roll = 'impact';
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
+    placeOnSfxBus(noise, x, y, z);
     noise.filter = 'bandpass';
     noise.freq = surface.impactFreq * this.rng.range(0.88, 1.14);
     noise.freqEnd = noise.freq * 0.45;
@@ -390,4 +295,102 @@ export class WeaponAudio {
     noise.rate = 1;
     this.audio.noiseBurst(noise);
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** 1. transient — 12 ms of high-passed noise. The crack. Almost all of the "punch". */
+  private shotTransient(noise: NoiseSpec, voice: WeaponVoice, level: number): void {
+    noise.filter = 'highpass';
+    noise.freq = voice.clickFreq;
+    noise.freqEnd = voice.clickFreq * 0.75;
+    noise.q = 0.6;
+    noise.level = voice.clickLevel * level;
+    noise.attack = 0.001;
+    noise.decay = 0.013;
+    noise.wet = 0.05;
+    noise.roll = 'loud';
+    noise.rate = this.rng.range(0.96, 1.05);
+    this.audio.noiseBurst(noise);
+  }
+
+  /** 2. body — the band-passed burst whose centre and Q separate an AR from an SMG. */
+  private shotBody(noise: NoiseSpec, voice: WeaponVoice, level: number): void {
+    noise.filter = 'bandpass';
+    noise.freq = voice.bodyFreq * this.rng.range(0.95, 1.06);
+    noise.freqEnd = noise.freq * 0.32;
+    noise.q = voice.bodyQ;
+    noise.level = level;
+    noise.attack = 0.0015;
+    noise.decay = voice.bodyDecay;
+    noise.wet = voice.wet * 0.5;
+    noise.rate = 1;
+    this.audio.noiseBurst(noise);
+  }
+
+  /** 4. tail — the room answering back. Scheduled before the thump only because both start now. */
+  private shotTail(noise: NoiseSpec, voice: WeaponVoice, level: number): void {
+    noise.filter = 'lowpass';
+    noise.freq = 2600;
+    noise.freqEnd = 420;
+    noise.q = 0.8;
+    noise.level = voice.tailLevel * level;
+    noise.attack = 0.006;
+    noise.decay = voice.tailDecay;
+    noise.wet = voice.wet;
+    noise.rate = 0.85;
+    this.audio.noiseBurst(noise);
+  }
+
+  /** 3. thump — a sine falling from ~90 Hz. Chest, not ears. */
+  private shotThump(osc: OscSpec, voice: WeaponVoice, level: number): void {
+    osc.type = 'sine';
+    osc.freq = voice.thumpFreq * this.rng.range(0.94, 1.07);
+    osc.freqEnd = osc.freq * 0.42;
+    osc.level = voice.thumpLevel * level;
+    osc.attack = 0.002;
+    osc.decay = 0.115;
+    osc.wet = voice.wet * 0.3;
+    osc.filterFreq = 460;
+    osc.filterQ = 0.7;
+    osc.roll = 'loud';
+    this.audio.oscHit(osc);
+  }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Put a sound at a point in the world, on the bus every weapon sound but the hitmarker uses. */
+function placeOnSfxBus(spec: PositionalSpec, x: number, y: number, z: number): void {
+  spec.x = x;
+  spec.y = y;
+  spec.z = z;
+  spec.positional = true;
+  spec.bus = 'sfx';
+}
+
+/** The six fields one reload step changes about the shared handling burst. */
+function applyReloadLayer(noise: NoiseSpec, layer: ReloadLayer): void {
+  noise.filter = layer.filter;
+  noise.freq = layer.freq;
+  noise.freqEnd = layer.freqEnd;
+  noise.q = layer.q;
+  noise.level = layer.level;
+  noise.decay = layer.decay;
+}
+
+/** The weight under a magazine going home. `roll` is not set here; see BACKLOG #60. */
+function magazineSeatThump(osc: OscSpec): void {
+  osc.type = 'sine';
+  osc.freq = 190;
+  osc.freqEnd = 90;
+  osc.level = 0.24;
+  osc.attack = 0.002;
+  osc.decay = 0.08;
+  osc.wet = 0.08;
+  osc.filterFreq = 700;
+  osc.filterQ = 0.7;
+}
+//#endregion

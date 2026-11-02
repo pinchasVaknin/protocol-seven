@@ -455,6 +455,12 @@ const FINISHED = {
     'src/client/weapons/ViewmodelHands.ts',
     'src/client/weapons/WeaponSilhouette.ts',
   ],
+  C9: [
+    'src/client/weapons/WeaponAssetCatalog.ts',
+    'src/client/weapons/WeaponAssetService.ts',
+    'src/client/weapons/WeaponAudio.ts',
+    'src/client/weapons/WeaponModelSpecs.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

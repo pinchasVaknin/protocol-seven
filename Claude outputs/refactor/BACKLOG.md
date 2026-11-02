@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**43 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**47 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -26,7 +26,11 @@ three of them in the harness §10 keeps out of reach. **B8 opened #53** on 2026-
 own Step 0: the NET oracle failed three different ways on an untouched tree when run behind the
 SIM ones, and passed both times it was run alone. **C2 reproduced #34** on 2026-10-25 — the
 first entry answered by measurement rather than by an edit — and left it open, rewritten with
-its numbers and pointed somewhere else; it opened **#55** from its own BROWSER check.
+its numbers and pointed somewhere else; it opened **#55** from its own BROWSER check. **C9 answered #56's watch-for on 2026-11-03** —
+the first entry a later unit closed a question for rather than opening a new question — and the
+answer made **#60**: the same shared-scratch slip, three times, in the file #56 pointed at. Its
+tests opened **#61**, **#62** and **#63** as well, which makes C9 the unit that filed the most
+and wrote none of the defects.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -68,6 +72,7 @@ and belong in its Step 2 plan.
 | ~~C6~~ | `client/weapons/ViewmodelAnim.ts` + the seven files it was split into | **closed** — nothing was bound to it: no §1 row, and *ViewmodelAnim*, *recoil*, *sway*, *charging handle* and *ViewmodelHands* have no hits anywhere in this file. #35 names viewmodels but is **C23's** and its edit is in `Game.ts`, outside R3's fence — declined with a reason. Every *bob* hit is #34's camera bob. **C6 opened #57**, which its own characterization tests found: the base matrix the arms are solved against is one shared scratch, and a grenade or a knife posed later in the frame overwrites it before the riot shield's glove reads it |
 | ~~C7~~ | `client/weapons/` WeaponMesh, WeaponMeshParts + the five files they were split into | **closed** — nothing was bound to it: no §1 row, and *WeaponMesh*, *WeaponMeshParts*, *suppressor*, *silhouette*, *held weapon* and *BoxPart* have no hits anywhere in this file. Every *camo* hit is **#29**, whose file is `shared/meta/`'s `sanitiseLoadout` (A19's), and the two *attachment* hits are inside it. **C7 opened #58**: the canvas-and-texture helper here is the same one `engine/ProceduralTextures.ts` carries, and that file is C4's and already in the ratchet |
 | ~~C8~~ | `client/weapons/` ViewmodelHands, HandPoses, KnifeMesh, GrenadeMesh, ShieldMesh, WeaponSilhouette | **closed** — nothing was bound to it: none of the six names appears anywhere in this file, and every *shield*, *grenade* and *arm* hit is inside #57 itself. **#57's watch-for is answered**: `ViewmodelHands` carries fourteen scratch objects and none of them escapes — `place` builds its result with `new THREE.Vector3()` and `new THREE.Quaternion()`, so the class does not have #57's defect. **C8 opened #59** |
+| ~~C9~~ | `client/weapons/` WeaponAssetService, WeaponAssetCatalog, WeaponModelSpecs, WeaponAudio | **closed** — nothing was bound to it: no §1 row, and none of the four names appears anywhere in this file except **#35**, which is **C23's** and whose edit is in `Game.ts` (`warmWeaponAssets`), outside R3's fence — declined with a reason, and the entry already says the service "already has every loader this needs". What C9 did close is **#56's watch-for**: `WeaponAudio` has the shared-scratch defect C3 found, three times, and it is now **#60**. C9 also opened **#61**, **#62** and **#63**, all three found by its own 104 characterization tests |
 | C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
@@ -969,6 +974,136 @@ latency instead of the full tick the position path pays. That changes the input 
 documented design decision, so it needs the user's call and a session of its own; `Input.ts` is
 **C1**'s file and in the `check:style` ratchet, so no later unit can reach it under R3 either.
 
+### #63 — Two per-weapon voice numbers the synthesiser has never read · `open` *(opened 2026-11-03 by C9)*
+**Files** `src/client/weapons/WeaponAudio.ts` (`shotBody`, `shotTail`) against
+`src/shared/weapons/WeaponDefs.ts`'s `WeaponVoice`. **Origin** C9's characterization tests,
+2026-11-03.
+
+`WeaponVoice` carries `bodyRatio` ("where the body sweeps down to, as a fraction of
+`bodyFreq`") and `tailFreq` ("tail low-pass starting cutoff, Hz"), and its own doc says why
+both exist:
+
+> `bodyRatio` and `tailFreq` were added in M5: with twelve weapons sharing one synthesis
+> path, a fixed sweep target and a fixed tail cutoff made the big guns and the small guns
+> converge on the same shape no matter what the other numbers said.
+
+The synthesiser still uses the fixed pair. The body sweeps to `noise.freq * 0.32` and every
+tail starts at a flat `2600`, which are exactly the **defaults** the two fields were given —
+so twelve defs carry a tuned number each that nothing reads, the weapon tuner has two live
+sliders (`voice.bodyRatio`, `voice.tailFreq`, both in `WeaponTuning.ts` with ranges and units)
+that move nothing, and the M5 fix landed in the data and in the tuner but never in the code
+that was the point of it. The two LMG entries are the clearest loss: `bodyRatio` 0.2 against
+the carbine's 0.32 is most of what should make a heavy weapon sweep further down.
+
+**Why C9 could not fix it.** R1. Reading `voice.bodyRatio` and `voice.tailFreq` changes what
+**every weapon in the game** sounds like, which is a tuning decision and not a refactor. C9
+pinned the current behaviour instead (`WeaponAudio.test.ts`, "ignores the voice for the body
+sweep target and the tail cutoff") and left the entry named on it, per §5.9.
+
+**Decide** wire both fields and then re-tune against the twelve defs — which is the change the
+M5 note asks for, and wants an ear on it — or delete the two fields from `WeaponVoice`, the
+twelve defs and `WeaponTuning`, and say in the voice's doc that the sweep and the cutoff are
+fixed. Either is defensible. Twelve rows of dead numbers and two sliders that do nothing is
+not.
+
+**Verify** `npm run check`, and then the ear: the twelve weapons have to stay distinguishable
+from each other. `WeaponAudio.test.ts`'s snapshots flip in the same commit and are the record
+of what moved.
+
+### #62 — `WeaponModelSpec.scale`'s doc names the wrong weapon · `open` *(opened 2026-11-03 by C9)*
+**Files** `src/client/weapons/WeaponModelSpecs.ts` (the `scale` field's doc comment).
+**Origin** C9's characterization tests, 2026-11-03.
+
+The field says *"Overall scale. The pistol is the only weapon that is genuinely a different
+size."* The pistol is at **1**, and it sets `scale: 1` explicitly, which reads as a leftover
+from when it was not. Six other weapons are not at 1: `smg_wasp` 0.94, `smg_meridian` 0.97,
+`lmg_bastion` 1.06, `lmg_monolith` 1.08, `sniper_kestrel` 1.04, `sniper_vantage` 1.02 — the
+SMGs under and the heavy weapons over, which is a deliberate and sensible pattern that the
+comment denies.
+
+**Why C9 did not fix it.** R8 lets a unit delete a comment its own refactor made false, and
+this one was false before C9 opened the file; rewriting it is a claim about what the numbers
+are *for*, which is the author's to make. The numbers themselves are pinned
+(`WeaponModelSpecs.test.ts`, "scales the two SMGs down and the four heavy weapons up").
+
+**Decide** the sentence. Most likely: the SMGs and the heavy weapons are scaled against each
+other and the pistol is drawn at 1 and corrected on Z instead (`adsOffsetZ: -0.13`), which is
+what the `adsOffsetZ` doc already describes. While there: the pistol's redundant `scale: 1`
+either goes or gets a line saying it is deliberate.
+
+**Verify** `npm run check`. No value changes, so the twelve rows pinned in
+`WeaponModelSpecs.test.ts` must not move.
+
+### #61 — A plain-object lookup answers for `Object.prototype`'s keys · `open` *(opened 2026-11-03 by C9)*
+**Files** `src/client/weapons/WeaponAssetCatalog.ts` (`equipmentAssetId`, `EQUIPMENT_ASSET_IDS`).
+**Origin** C9's characterization tests, 2026-11-03.
+
+`equipmentAssetId(id)` is `EQUIPMENT_ASSET_IDS[id] ?? null` over an object literal, so
+`equipmentAssetId('toString')` returns **`Object.prototype.toString`** — a function, where the
+signature says `string | null`. `preloadEquipment` would then build a url out of it and fetch
+it.
+
+**It is unreachable today, and that is the measurement rather than an excuse:** every caller
+passes an id from `ALL_EQUIPMENT`, and TypeScript types the return `string`, so nothing in the
+project can see it. It is recorded because the next piece of equipment named from a save file,
+a url flag or a console handle is the one that reaches it.
+
+**Why C9 did not fix it.** R1: `null` for `'toString'` is a different answer from the one the
+code gives today, and a refactor unit may not change an answer. Pinned instead
+(`WeaponAssetCatalog.test.ts`, "answers with a function for a key off the prototype chain").
+
+**Decide** `Object.hasOwn(EQUIPMENT_ASSET_IDS, id)`, a `Map`, or `Object.create(null)`. The
+first is one line and keeps the literal readable. While there: `ATTACHMENT_PART_SOCKETS` and
+`ATTACHMENT_PART_OWN_SOCKETS` are the same shape but keyed by a union type, so an arbitrary
+string cannot reach them and they are **not** the same defect.
+
+**Verify** `npm run check`; the pinning test flips to `toBeNull()` in the same commit.
+
+### #60 — Three weapon sounds leave the distance curve on whatever played before them · `open` *(opened 2026-11-03 by C9)*
+**Files** `src/client/weapons/WeaponAudio.ts` — `magazineSeatThump`, `playFleshImpact`'s
+oscillator block, `playDeath`'s noise block. **Origin** C9's characterization tests,
+2026-11-03; it is **#56's watch-for, and the answer is yes**.
+
+#56 found `ProceduralAudio.playLanding`'s thump setting fourteen of a `NoiseSpec`'s fifteen
+fields and leaving `roll` — the distance-falloff curve — on whatever the shared scratch
+carried. Its watch-for named this file as the other user of the same two module-level
+scratches, outside C3's fence. It has the defect three times:
+
+| sound | layer | sets `roll`? |
+|---|---|---|
+| `playReloadStep('magIn')` | the thump under the magazine | **no** — its own noise burst set `handling` |
+| `playFleshImpact` | the thump | **no** — its own noise burst set `impact` one block above |
+| `playDeath` | the gear-and-cloth layer | **no** — its own oscillator set `world` one block above |
+
+All three are `positional` on the `sfx` bus, so `AudioGraph.routeVoice` reads the leftover and
+picks `DISTANCE_PROFILES[roll]` off it. In practice each usually inherits something plausible
+from its own first layer — which is why nobody has heard it — but the scratches are
+**module-level and shared by every sound in the game**, so a UI blip, a footstep or another
+player's rifle can be the last writer just as easily. The first of each after a quiet moment
+is the reliable case.
+
+`playHitmarker` also leaves `roll` unset and is **not** a defect: it is non-positional on the
+`ui` bus, and `routeVoice` takes the flat route and never reads the field. That is pinned too.
+
+**Why C9 could not fix it.** R1, exactly as C3 could not fix #56: three lines, each of which
+changes what a listener hears at a real distance. Pinned instead — three tests under "the
+fields a sound does not set, on a scratch it shares with every other sound" — with
+`magazineSeatThump` carrying a comment naming this entry.
+
+**Decide** per sound, and then **set it explicitly**, as #56 says: the defect is the silence,
+not the value. The magazine thump wants `handling` to match its own burst; the flesh thump
+wants `impact`; the death's gear layer wants `world` to match the body it falls with. If those
+three are right the fix is three lines and the three tests flip with them.
+
+**Watch for** the same class of bug wherever a caller fills a shared scratch. Between #56 and
+this entry, `engine/ProceduralAudio.ts` and `weapons/WeaponAudio.ts` have both been read field
+by field; `streaks/StreakAudio.ts` and `equipment/EquipmentAudio.ts` use the same two
+scratches, they are **C12's**, and nobody has looked at them.
+
+**Verify** `npm run check`, plus the BROWSER counters: `__p7.game.audio` publishes `poolSize`,
+`voiceCount`, `sourcesStarted` and `voicesDropped`; a seated magazine is one noise burst and
+one oscillator hit, and a death is one of each.
+
 ### #59 — The knife merges its own parts, beside a helper that merges everything else's · `open` *(opened 2026-11-02 by C8)*
 **Files** `src/client/weapons/KnifeMesh.ts` (`mergeBySurface`) and
 `src/client/weapons/WeaponGeometry.ts` (`addMerged`). **Origin** C8, reading its own build.
@@ -1135,8 +1270,11 @@ and wants `'world'` or `'impact'` deliberately. Either way, **set it explicitly*
 the silence, not the value.
 
 **Watch for** the same class of bug anywhere else a caller fills a shared scratch. C3 checked this
-file and `playLanding`'s thump is the only one; `weapons/WeaponAudio.ts` (C10) uses the same two
-scratches and was not in C3's fence.
+file and `playLanding`'s thump is the only one; `weapons/WeaponAudio.ts` uses the same two
+scratches and was not in C3's fence. **C9 read it on 2026-11-03 and the answer is yes** — three
+sounds there leave `roll` where the last one left it, and all three are positional on the `sfx`
+bus. They are **#60**, pinned the same way this one is; whatever is decided here should be decided
+there in the same sitting, because it is one defect in two files. (The file is C9's, not C10's.)
 
 **Verify** `npm run check`, plus the BROWSER counters C3 used: `__p7.game.audio` publishes
 `poolSize`, `voiceCount`, `sourcesStarted` and `voicesDropped`, and a landing is one noise burst

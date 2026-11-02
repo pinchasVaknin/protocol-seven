@@ -1,9 +1,3 @@
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { sharedWeaponSurfaces } from './WeaponMesh';
-import type { SurfaceKey } from './WeaponMeshParts';
-import { ViewmodelHands } from './ViewmodelHands';
-
 /**
  * The knife viewmodel (round 2 playtest).
  *
@@ -35,6 +29,18 @@ import { ViewmodelHands } from './ViewmodelHands';
  * `z = -0.24`, which is a 168 mm blade — a fighting knife rather than a bayonet.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { sharedWeaponSurfaces } from './WeaponMesh';
+import type { SurfaceKey } from './WeaponMeshParts';
+import { boxGeometry } from './WeaponGeometry';
+import { ViewmodelHands } from './ViewmodelHands';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface KnifeModel {
   /** Blade, guard, grip and — without the arm rig — the fist. Posed as one rigid object. */
   readonly root: THREE.Group;
@@ -68,6 +74,15 @@ export interface KnifeModel {
   dispose(): void;
 }
 
+/** One piece of the knife, built and waiting to be merged with the others on its surface. */
+interface Part {
+  readonly surface: SurfaceKey;
+  readonly geometry: THREE.BufferGeometry;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * Viewmodel exaggeration (round 3).
  *
@@ -94,7 +109,10 @@ const FILE_KNIFE_FORWARD = 0.03;
 /** Forearm thickness at each end, metres. Not scaled by `KNIFE_SCALE` — see the build. */
 const ARM_WRIST_RADIUS = 0.048;
 const ARM_ELBOW_RADIUS = 0.062;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * `template` is the knife's file (M19, stage 3), cloned in place of the grip, guard and blade
  * boxes when it is there; null builds every box, as before.
@@ -113,6 +131,8 @@ export function buildKnifeModel(
   const root = new THREE.Group();
   root.name = 'viewmodel:knife';
   root.scale.setScalar(KNIFE_SCALE);
+  const disposables: Array<{ dispose(): void }> = [];
+
   if (template !== null) {
     const blade = template.clone(true);
     blade.name = 'viewmodel:knife:file';
@@ -122,132 +142,13 @@ export function buildKnifeModel(
     root.add(blade);
   }
 
-  const bySurface = new Map<SurfaceKey, THREE.BufferGeometry[]>();
-  const push = (key: SurfaceKey, geometry: THREE.BufferGeometry): void => {
-    const list = bySurface.get(key);
-    if (list === undefined) bySurface.set(key, [geometry]);
-    else list.push(geometry);
-  };
+  // The fist is the thing the rig replaces; the blade is the thing the file replaces. Both
+  // are built only while the file they are standing in for has not arrived.
+  const parts = [...(rig === null ? fistBoxes() : []), ...(template === null ? bladeBoxes() : [])];
+  mergeBySurface(root, parts, surfaces, disposables);
 
-  const box = (
-    key: SurfaceKey,
-    w: number,
-    h: number,
-    d: number,
-    x: number,
-    y: number,
-    z: number,
-    rx = 0,
-  ): void => {
-    const g = new THREE.BoxGeometry(w, h, d);
-    if (rx !== 0) g.rotateX(rx);
-    g.translate(x, y, z);
-    push(key, g);
-  };
-
-  /**
-   * A length of blade. `tip` makes it a point rather than a prism.
-   *
-   * Built along +Y because that is the axis `CylinderGeometry` uses, flattened in X while the
-   * section is still in the XZ plane, and only then swung down -Z — doing the squash after the
-   * rotation would thin the blade top to bottom instead of across it.
-   */
-  const blade = (length: number, z: number, tip: boolean): void => {
-    const g = new THREE.CylinderGeometry(tip ? 0 : BLADE_HALF, BLADE_HALF, length, 4, 1);
-    g.scale(BLADE_FLATTEN, 1, 1);
-    g.rotateX(-Math.PI / 2);
-    g.translate(0, LINE_Y, z);
-    push('gunmetal', g);
-  };
-
-  // The hand, and the cuff that covers the joint where the forearm meets it. The cuff is a
-  // little wider than the arm on purpose: the fist yaws with the blade and the arm does not,
-  // so without it the seam opens at the extremes of the swing.
-  // Slimmer than it was (playtest 3): 7.2 × 8.2 cm of glove hid the knife it held.
-  // Not built at all once the rig is there — it is the thing the rig replaces.
-  if (rig === null) {
-    box('glove', 0.060, 0.066, 0.092, 0, -0.004, 0.056);
-    box('glove', 0.064, 0.026, 0.046, 0, 0.026, 0.026);
-    box('glove', 0.084, 0.084, 0.046, 0, 0.000, 0.102);
-  }
-
-  if (template === null) {
-    // Grip, slightly nose-down so the blade sits along the natural line of a held knife.
-    box('polymer', 0.030, 0.038, 0.110, 0, LINE_Y - 0.002, -0.010, 0.06);
-    box('polymer', 0.034, 0.014, 0.026, 0, LINE_Y - 0.018, 0.040);
-
-    // Guard and ricasso: the two blocks that make a blade look attached to something.
-    box('gunmetal', 0.050, 0.020, 0.014, 0, LINE_Y + 0.002, -0.072);
-    box('gunmetal', 0.011, 0.034, 0.024, 0, LINE_Y, -0.090);
-
-    blade(0.104, -0.134, false);
-    blade(0.056, -0.213, true);
-  }
-
-  const disposables: Array<{ dispose(): void }> = [];
-  for (const [key, list] of bySurface) {
-    const merged = mergeGeometries(list, false);
-    for (const g of list) g.dispose();
-    if (merged === null) continue;
-    merged.computeBoundingSphere();
-    const material = surfaces.get(key);
-    if (material === undefined) continue;
-    const mesh = new THREE.Mesh(merged, material);
-    mesh.name = `viewmodel:knife:${key}`;
-    mesh.matrixAutoUpdate = false;
-    mesh.updateMatrix();
-    root.add(mesh);
-    disposables.push(merged);
-  }
-
-  /**
-   * The forearm: one unit long down -Z, so `lookAt` plus a Z scale spans any two points.
-   *
-   * Tapered from the elbow to the wrist, and deliberately *not* scaled by `KNIFE_SCALE` — the
-   * knife is exaggerated because it is a prop being read at a glance, an arm is exaggerated
-   * by being long, and scaling its radius with the blade would produce a forearm thicker than
-   * the fist on the end of it.
-   */
-  let arm: THREE.Group | null = null;
-  if (rig === null) {
-    arm = new THREE.Group();
-    arm.name = 'viewmodel:knife:arm';
-    const sleeve = new THREE.CylinderGeometry(ARM_WRIST_RADIUS, ARM_ELBOW_RADIUS, 1, 10, 1);
-    sleeve.rotateX(-Math.PI / 2);
-    sleeve.translate(0, 0, -0.5);
-    const gloveMaterial = surfaces.get('glove');
-    if (gloveMaterial !== undefined) {
-      const armMesh = new THREE.Mesh(sleeve, gloveMaterial);
-      armMesh.name = 'viewmodel:knife:forearm';
-      arm.add(armMesh);
-      disposables.push(sleeve);
-    } else {
-      sleeve.dispose();
-    }
-  }
-
-  /**
-   * The rig's right hand on the handle (stage 5).
-   *
-   * The knife file's origin **is** the middle of its handle — the recipe puts it there, where
-   * the box fist used to close — so the grip target is the root itself and there is no socket
-   * to measure: the one point the hand needs is the one the model is built around. The support
-   * target is the same node and never posed, because the left arm is hidden; it is passed
-   * because `ViewmodelHands` holds two arms and a knife is one.
-   *
-   * The scale is the root's (`KNIFE_SCALE`), and the frame's matrix is the inverse of the pose
-   * it is given, so the glove comes out at life size on a knife drawn at 1.3.
-   */
-  let hands: ViewmodelHands | null = null;
-  if (rig !== null) {
-    const grip = new THREE.Object3D();
-    grip.name = 'viewmodel:hand-target:grip';
-    root.add(grip);
-    hands = new ViewmodelHands(rig, root, { grip, support: grip, supportPose: 'wrap', gripPose: 'knife', magazine: null }, 'knife');
-    hands.showArm('L', false);
-    root.add(hands.frame);
-    disposables.push(hands);
-  }
+  const arm = rig === null ? buildForearm(surfaces, disposables) : null;
+  const hands = rig === null ? null : attachHand(root, rig, disposables);
 
   return {
     root,
@@ -263,3 +164,154 @@ export function buildKnifeModel(
     },
   };
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * The hand, and the cuff that covers the joint where the forearm meets it.
+ *
+ * The cuff is a little wider than the arm on purpose: the fist yaws with the blade and the arm
+ * does not, so without it the seam opens at the extremes of the swing. Slimmer than it was
+ * (playtest 3): 7.2 x 8.2 cm of glove hid the knife it held.
+ */
+function fistBoxes(): Part[] {
+  return [
+    box('glove', 0.060, 0.066, 0.092, 0, -0.004, 0.056),
+    box('glove', 0.064, 0.026, 0.046, 0, 0.026, 0.026),
+    box('glove', 0.084, 0.084, 0.046, 0, 0.000, 0.102),
+  ];
+}
+
+/** The grip, the guard, the ricasso and two lengths of blade: the knife without its file. */
+function bladeBoxes(): Part[] {
+  return [
+    // Grip, slightly nose-down so the blade sits along the natural line of a held knife.
+    box('polymer', 0.030, 0.038, 0.110, 0, LINE_Y - 0.002, -0.010, 0.06),
+    box('polymer', 0.034, 0.014, 0.026, 0, LINE_Y - 0.018, 0.040),
+    // Guard and ricasso: the two blocks that make a blade look attached to something.
+    box('gunmetal', 0.050, 0.020, 0.014, 0, LINE_Y + 0.002, -0.072),
+    box('gunmetal', 0.011, 0.034, 0.024, 0, LINE_Y, -0.090),
+    blade(0.104, -0.134, false),
+    blade(0.056, -0.213, true),
+  ];
+}
+
+/** One box of the knife, rotated and placed. */
+function box(
+  surface: SurfaceKey,
+  w: number,
+  h: number,
+  d: number,
+  x: number,
+  y: number,
+  z: number,
+  rx = 0,
+): Part {
+  return { surface, geometry: boxGeometry({ surface, w, h, d, x, y, z, rx }) };
+}
+
+/**
+ * A length of blade. `tip` makes it a point rather than a prism.
+ *
+ * Built along +Y because that is the axis `CylinderGeometry` uses, flattened in X while the
+ * section is still in the XZ plane, and only then swung down -Z — doing the squash after the
+ * rotation would thin the blade top to bottom instead of across it.
+ *
+ * It is not a `TubePart`, which is why this file merges its own parts rather than calling
+ * `addMerged`: a flattened, tapered four-gon is a shape `WeaponGeometry` has no name for.
+ * See BACKLOG #59.
+ */
+function blade(length: number, z: number, tip: boolean): Part {
+  const geometry = new THREE.CylinderGeometry(tip ? 0 : BLADE_HALF, BLADE_HALF, length, 4, 1);
+  geometry.scale(BLADE_FLATTEN, 1, 1);
+  geometry.rotateX(-Math.PI / 2);
+  geometry.translate(0, LINE_Y, z);
+  return { surface: 'gunmetal', geometry };
+}
+
+/** One mesh per surface, named as a weapon's are, with the merged geometry owned by the caller. */
+function mergeBySurface(
+  root: THREE.Object3D,
+  parts: readonly Part[],
+  surfaces: ReadonlyMap<SurfaceKey, THREE.Material>,
+  disposables: Array<{ dispose(): void }>,
+): void {
+  const bySurface = new Map<SurfaceKey, THREE.BufferGeometry[]>();
+  for (const part of parts) {
+    const list = bySurface.get(part.surface);
+    if (list === undefined) bySurface.set(part.surface, [part.geometry]);
+    else list.push(part.geometry);
+  }
+  for (const [key, list] of bySurface) {
+    const merged = mergeGeometries(list, false);
+    for (const g of list) g.dispose();
+    if (merged === null) continue;
+    merged.computeBoundingSphere();
+    const material = surfaces.get(key);
+    if (material === undefined) continue;
+    const mesh = new THREE.Mesh(merged, material);
+    mesh.name = `viewmodel:knife:${key}`;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
+    root.add(mesh);
+    disposables.push(merged);
+  }
+}
+
+/**
+ * The forearm: one unit long down -Z, so `lookAt` plus a Z scale spans any two points.
+ *
+ * Tapered from the elbow to the wrist, and deliberately *not* scaled by `KNIFE_SCALE` — the
+ * knife is exaggerated because it is a prop being read at a glance, an arm is exaggerated
+ * by being long, and scaling its radius with the blade would produce a forearm thicker than
+ * the fist on the end of it.
+ */
+function buildForearm(
+  surfaces: ReadonlyMap<SurfaceKey, THREE.Material>,
+  disposables: Array<{ dispose(): void }>,
+): THREE.Group {
+  const arm = new THREE.Group();
+  arm.name = 'viewmodel:knife:arm';
+  const sleeve = new THREE.CylinderGeometry(ARM_WRIST_RADIUS, ARM_ELBOW_RADIUS, 1, 10, 1);
+  sleeve.rotateX(-Math.PI / 2);
+  sleeve.translate(0, 0, -0.5);
+  const gloveMaterial = surfaces.get('glove');
+  if (gloveMaterial === undefined) {
+    sleeve.dispose();
+    return arm;
+  }
+  const armMesh = new THREE.Mesh(sleeve, gloveMaterial);
+  armMesh.name = 'viewmodel:knife:forearm';
+  arm.add(armMesh);
+  disposables.push(sleeve);
+  return arm;
+}
+
+/**
+ * The rig's right hand on the handle (stage 5).
+ *
+ * The knife file's origin **is** the middle of its handle — the recipe puts it there, where
+ * the box fist used to close — so the grip target is the root itself and there is no socket
+ * to measure: the one point the hand needs is the one the model is built around. The support
+ * target is the same node and never posed, because the left arm is hidden; it is passed
+ * because `ViewmodelHands` holds two arms and a knife is one.
+ *
+ * The scale is the root's (`KNIFE_SCALE`), and the frame's matrix is the inverse of the pose
+ * it is given, so the glove comes out at life size on a knife drawn at 1.3.
+ */
+function attachHand(
+  root: THREE.Object3D,
+  rig: THREE.Object3D,
+  disposables: Array<{ dispose(): void }>,
+): ViewmodelHands {
+  const grip = new THREE.Object3D();
+  grip.name = 'viewmodel:hand-target:grip';
+  root.add(grip);
+  const hands = new ViewmodelHands(rig, root, { grip, support: grip, supportPose: 'wrap', gripPose: 'knife', magazine: null }, 'knife');
+  hands.showArm('L', false);
+  root.add(hands.frame);
+  disposables.push(hands);
+  return hands;
+}
+//#endregion

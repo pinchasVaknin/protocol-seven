@@ -67,6 +67,7 @@ and belong in its Step 2 plan.
 | ~~C5~~ | `client/characters/` ActorAvatar, AnimationSelector, AnimationVariant, CharacterAnimator, CharacterAssetImport, CharacterAssetRepository, CharacterAssetService, CharacterAvatar, CharacterAvatarFactory, CharacterAvatarProvider, CharacterCatalog, CharacterSkin, RandomCharacterSelector, ThrowLayer, WeaponSupportHandConstraint | **closed** — nothing was bound to its fifteen files: no §1 row, and not one of the fifteen names, nor `client/characters`, appears anywhere in this file. The broader sweep is empty too — *animator*, *avatar*, *skinned*, *bind pose*, *mixamo* and *clip* have no hits at all, every *character* hit is the phrase “character for character” or “characterization test”, and every *rig* hit is inside *forbids*, *original* or *right*. C5 opened nothing: its 109 characterization tests found no behaviour worth an entry — the one surprise, a crouch edge whose `pendingLocomotion` is still the *old* settled loop, is `LOOP_SETTLE_SECONDS` working as written, and is pinned in both halves |
 | ~~C6~~ | `client/weapons/ViewmodelAnim.ts` + the seven files it was split into | **closed** — nothing was bound to it: no §1 row, and *ViewmodelAnim*, *recoil*, *sway*, *charging handle* and *ViewmodelHands* have no hits anywhere in this file. #35 names viewmodels but is **C23's** and its edit is in `Game.ts`, outside R3's fence — declined with a reason. Every *bob* hit is #34's camera bob. **C6 opened #57**, which its own characterization tests found: the base matrix the arms are solved against is one shared scratch, and a grenade or a knife posed later in the frame overwrites it before the riot shield's glove reads it |
 | ~~C7~~ | `client/weapons/` WeaponMesh, WeaponMeshParts + the five files they were split into | **closed** — nothing was bound to it: no §1 row, and *WeaponMesh*, *WeaponMeshParts*, *suppressor*, *silhouette*, *held weapon* and *BoxPart* have no hits anywhere in this file. Every *camo* hit is **#29**, whose file is `shared/meta/`'s `sanitiseLoadout` (A19's), and the two *attachment* hits are inside it. **C7 opened #58**: the canvas-and-texture helper here is the same one `engine/ProceduralTextures.ts` carries, and that file is C4's and already in the ratchet |
+| ~~C8~~ | `client/weapons/` ViewmodelHands, HandPoses, KnifeMesh, GrenadeMesh, ShieldMesh, WeaponSilhouette | **closed** — nothing was bound to it: none of the six names appears anywhere in this file, and every *shield*, *grenade* and *arm* hit is inside #57 itself. **#57's watch-for is answered**: `ViewmodelHands` carries fourteen scratch objects and none of them escapes — `place` builds its result with `new THREE.Vector3()` and `new THREE.Quaternion()`, so the class does not have #57's defect. **C8 opened #59** |
 | C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
@@ -968,6 +969,42 @@ latency instead of the full tick the position path pays. That changes the input 
 documented design decision, so it needs the user's call and a session of its own; `Input.ts` is
 **C1**'s file and in the `check:style` ratchet, so no later unit can reach it under R3 either.
 
+### #59 — The knife merges its own parts, beside a helper that merges everything else's · `open` *(opened 2026-11-02 by C8)*
+**Files** `src/client/weapons/KnifeMesh.ts` (`mergeBySurface`) and
+`src/client/weapons/WeaponGeometry.ts` (`addMerged`). **Origin** C8, reading its own build.
+
+Both group geometries by `SurfaceKey`, merge each group, compute a bounding sphere, make a mesh
+with the surface's material, freeze its matrix and push the merged geometry onto a disposables
+list. The loops are the same loop; the mesh names differ only by their label.
+
+**Why C8 did not fold it.** Not the fence — C8 may import from `WeaponGeometry` and does, for
+`boxGeometry`, which removed the duplicated rotate-and-translate. The blade is why:
+
+```
+  blade(length, z, tip)   CylinderGeometry(tip ? 0 : BLADE_HALF, BLADE_HALF, length, 4, 1)
+                          .scale(BLADE_FLATTEN, 1, 1)   <- flattened while still in XZ
+                          .rotateX(-PI / 2)             <- and only then swung down -Z
+```
+
+A four-sided cylinder, squashed across and tapered to a point, is a shape `WeaponGeometry` has
+no name for: `TubePart` carries one radius, no taper and no per-axis scale, and `addMerged`
+takes `BoxPart`s and `TubePart`s rather than geometries. Folding the loop therefore means
+either widening `TubePart` — and that lives in `WeaponMeshParts.ts`, which is **C7's and in the
+`check:style` ratchet** — or giving `addMerged` a third parameter for geometries somebody else
+built, which is a worse shape than two short loops.
+
+**Decide** which. Widening `TubePart` with an optional `flatten` and `tipRadius` would let the
+knife go through `addMerged` whole and would cost the other eleven weapons nothing, since both
+fields would be absent on every existing part. That is the tidy answer and it needs C7's file
+opened, which is a decision rather than a refactor.
+
+**Watch for** a third copy. `WeaponSilhouette` projects the same part lists without merging
+anything, so it is not one; nothing else in `client/weapons/` merges by surface today.
+
+**Verify** `npm run check`, plus the A/B C8 used: build the knife both ways and compare the
+mesh names, vertex counts and bounding boxes against the shipped build. `viewmodel:knife:gunmetal`
+and `viewmodel:knife:polymer` have to come out with the counts they have now.
+
 ### #58 — Two files paint a 128 px tile the same way · `open` *(opened 2026-10-31 by C7)*
 **Files** `src/client/weapons/WeaponSurfaces.ts` (`makeCanvas`, `finish`) and
 `src/client/engine/ProceduralTextures.ts` (`build`'s opening, `makeTexture`). **Origin** C7,
@@ -1054,7 +1091,12 @@ should pose some third way.
 
 **Watch for** the same class of bug anywhere else a frame hands on a reused scratch object. C6 checked
 its own fence and this is the only one; `ViewmodelHands` (C8) composes matrices of its own and was not
-in C6's.
+in C6's. **C8 checked it on 2026-11-02 and it is clean**: the class carries fourteen scratch objects
+and none of them leaves it — `place` builds the `Placement` it returns with `new THREE.Vector3()` and
+`new THREE.Quaternion()`, and the scratch is read only inside `place` and `poseArm`. What C8 did find
+there is the opposite trade: those fresh objects are **sixteen allocations per frame per rig**, and
+thirty-two while a reload runs. R7 is do-no-harm and C8 left them, because turning three allocated
+placements into one shared scratch is exactly the shape that produced this entry.
 
 **Verify** `npm run check`, plus the BROWSER A/B C6 used: build a `ViewmodelAnim` with a shield *and* a
 grenade, run one frame, and compare the two `ViewmodelHands.update` arguments. They should be equal and

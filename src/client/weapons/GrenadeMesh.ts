@@ -1,8 +1,3 @@
-import * as THREE from 'three';
-import { equipmentAssetId } from './WeaponAssetCatalog';
-import type { EquipmentAssetTemplate } from './WeaponAssetService';
-import { ViewmodelHands } from './ViewmodelHands';
-
 /**
  * The grenade in the hand (2026-09-24), and the pin that comes out of it.
  *
@@ -34,26 +29,16 @@ import { ViewmodelHands } from './ViewmodelHands';
  * middle. Everything about where it sits in frame is `ViewmodelAnim`'s.
  */
 
-/**
- * Viewmodel exaggeration, as `KNIFE_SCALE` is for the blade — and for the same reason the
- * knife needed one (playtest, 2026-09-24: *"it looks really small in his hand"*).
- *
- * A grenade is the worst case for life size in a viewmodel, worse than the knife: an M26's body
- * is **5.7 cm across** and the rig's hand is **10.3 cm** long, so at 1 the whole object fits
- * inside the fist holding it and the player sees a glove with a fuze poking out of it. A knife
- * at least has a blade sticking out.
- *
- * 1.6 puts the body at 9.1 cm across and 15 cm tall — about the hand's own width, which is what
- * the human asked for, and what every shooter does with a grenade for the same reason. The arms
- * stay life size: `ViewmodelAnim` hands the rig the grenade's own pose including this scale, and
- * the frame's inverse takes it back out.
- *
- * **The world's grenade is not scaled by this.** `EquipmentFx` draws the file at life size,
- * exactly as the bodies carry a life-size knife while the viewmodel's is at 1.3: an exaggeration
- * is for the corner of the screen, not for an object lying on the floor four metres away.
- */
-const GRENADE_SCALE = 1.6;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { equipmentAssetId } from './WeaponAssetCatalog';
+import type { EquipmentAssetTemplate } from './WeaponAssetService';
+import { ViewmodelHands } from './ViewmodelHands';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface GrenadeModel {
   readonly equipmentId: string;
   /**
@@ -74,7 +59,33 @@ export interface GrenadeModel {
   setHeld(held: boolean): void;
   dispose(): void;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * Viewmodel exaggeration, as `KNIFE_SCALE` is for the blade — and for the same reason the
+ * knife needed one (playtest, 2026-09-24: *"it looks really small in his hand"*).
+ *
+ * A grenade is the worst case for life size in a viewmodel, worse than the knife: an M26's body
+ * is **5.7 cm across** and the rig's hand is **10.3 cm** long, so at 1 the whole object fits
+ * inside the fist holding it and the player sees a glove with a fuze poking out of it. A knife
+ * at least has a blade sticking out.
+ *
+ * 1.6 puts the body at 9.1 cm across and 15 cm tall — about the hand's own width, which is what
+ * the human asked for, and what every shooter does with a grenade for the same reason. The arms
+ * stay life size: `ViewmodelAnim` hands the rig the grenade's own pose including this scale, and
+ * the frame's inverse takes it back out.
+ *
+ * **The world's grenade is not scaled by this.** `EquipmentFx` draws the file at life size,
+ * exactly as the bodies carry a life-size knife while the viewmodel's is at 1.3: an exaggeration
+ * is for the corner of the screen, not for an object lying on the floor four metres away.
+ */
+const GRENADE_SCALE = 1.6;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Build the held model for one piece of equipment.
  *
@@ -95,34 +106,9 @@ export function buildGrenadeModel(
   model.name = 'viewmodel:grenade:file';
   root.add(model);
 
-  /**
-   * The carrier the pull moves: the pin group, and the hand target sitting on its ring.
-   *
-   * It is added at the root rather than replacing the pin's own node so the pin keeps the
-   * place the build measured; the carrier starts at the identity and the pull writes it.
-   */
-  const pinCarrier = new THREE.Group();
-  pinCarrier.name = 'viewmodel:grenade:pin-carrier';
-  root.add(pinCarrier);
-  const pin = model.getObjectByName('pin');
-  if (pin !== undefined) pinCarrier.add(pin);
-
+  const pinCarrier = carryThePin(root, model);
   const lever = model.getObjectByName('lever') ?? null;
-
-  const grip = new THREE.Object3D();
-  grip.name = 'viewmodel:hand-target:grip';
-  grip.position.copy(template.sockets.socket_grip ?? new THREE.Vector3());
-  root.add(grip);
-
-  /**
-   * The pulling hand's target, **inside the carrier**: it is where the ring is, and it goes
-   * where the ring goes. A claymore has no `socket_pin`, so it falls back to the grip's point
-   * and the left arm is hidden — there is nothing to pull.
-   */
-  const pinTarget = new THREE.Object3D();
-  pinTarget.name = 'viewmodel:hand-target:pin';
-  pinTarget.position.copy(template.sockets.socket_pin ?? grip.position);
-  pinCarrier.add(pinTarget);
+  const { grip, pinTarget } = handTargets(root, pinCarrier, template);
 
   // `HAND_POSES` keys on the **file's** id, as it does for every weapon and for the knife:
   // `eq_frag`, not `frag`. The two differ only for equipment, and the file is what a pose
@@ -137,6 +123,7 @@ export function buildGrenadeModel(
       { grip, support: pinTarget, supportPose: 'pinch', gripPose: 'grenade', magazine: null },
       poseId,
     );
+    // Nothing to pull, nothing for the other hand to do: a claymore is carried, not primed.
     if (template.sockets.socket_pin === undefined) hands.showArm('L', false);
     root.add(hands.frame);
   }
@@ -159,3 +146,46 @@ export function buildGrenadeModel(
     },
   };
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * The carrier the pull moves: the pin group, under a node of its own.
+ *
+ * It is added at the root rather than replacing the pin's own node so the pin keeps the place
+ * the build measured; the carrier starts at the identity and the pull writes it.
+ */
+function carryThePin(root: THREE.Object3D, model: THREE.Object3D): THREE.Group {
+  const pinCarrier = new THREE.Group();
+  pinCarrier.name = 'viewmodel:grenade:pin-carrier';
+  root.add(pinCarrier);
+  const pin = model.getObjectByName('pin');
+  if (pin !== undefined) pinCarrier.add(pin);
+  return pinCarrier;
+}
+
+/**
+ * The two points a grenade is held by: the body, and the ring.
+ *
+ * The pulling hand's target sits **inside the carrier** — it is where the ring is, and it goes
+ * where the ring goes. A claymore has no `socket_pin`, so it falls back to the grip's point
+ * and the left arm is hidden; there is nothing to pull.
+ */
+function handTargets(
+  root: THREE.Object3D,
+  pinCarrier: THREE.Object3D,
+  template: EquipmentAssetTemplate,
+): { grip: THREE.Object3D; pinTarget: THREE.Object3D } {
+  const grip = new THREE.Object3D();
+  grip.name = 'viewmodel:hand-target:grip';
+  grip.position.copy(template.sockets.socket_grip ?? new THREE.Vector3());
+  root.add(grip);
+
+  const pinTarget = new THREE.Object3D();
+  pinTarget.name = 'viewmodel:hand-target:pin';
+  pinTarget.position.copy(template.sockets.socket_pin ?? grip.position);
+  pinCarrier.add(pinTarget);
+  return { grip, pinTarget };
+}
+//#endregion

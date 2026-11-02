@@ -20,6 +20,8 @@
  * with the defaults.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type HandSide = 'grip' | 'support' | 'reload';
 
 export interface HandPose {
@@ -28,6 +30,52 @@ export interface HandPose {
   readonly curl: number;
 }
 
+/**
+ * One finger's three segments from straight, knuckle first, in degrees — the same shape
+ * `ViewmodelHands.FingerCurl` is, declared here so the wrap table below needs no import from
+ * the module that reads it.
+ */
+export type FingerWrap = readonly [number, number, number];
+export type HandWrap = Readonly<Record<'thumb' | 'index' | 'middle' | 'ring' | 'pink', FingerWrap>>;
+
+/**
+ * Where a weapon sits **on screen**, per weapon (2026-09-27).
+ *
+ * ## Why this exists
+ *
+ * `ViewmodelConfig`'s `hipX/Y/Z` and `hipPitch/Yaw/Roll` are one pose for the whole arsenal,
+ * and that held for as long as the arsenal was rifles: twelve guns of roughly one size, held
+ * roughly one way, and every difference between them absorbed by where their hand sockets sit
+ * on the model. The minigun broke it. It is 0.91 m of barrel cluster carried at chest height,
+ * and on the shared hip pose it sat across the middle of the screen — the player could not see
+ * what they were shooting at. That is not a hand-pose problem: moving the hands moves the hands,
+ * and the gun is where the gun is.
+ *
+ * So: one correction per weapon, added to the hip pose, in viewmodel space. Zero for every
+ * weapon that does not name itself here, which is all of them but the ones below — this is a
+ * correction table, not a placement table, and a row in it means "this weapon is unlike the
+ * others" rather than "this weapon has been positioned".
+ *
+ * ## Why it fades out into ADS
+ *
+ * ADS is not a pose, it is a constraint: the weapon's own sight point is landed on the camera
+ * axis, which is what makes irons and optics agree with the crosshair (playtest 3, findings 5
+ * and 6). A constant added there would push the sight off the axis by exactly that constant.
+ * So `ViewmodelAnim` scales this by `1 - adsFraction`: it is entirely a hip-fire correction,
+ * and a weapon whose ADS is wrong needs its sight socket fixed in the recipe instead.
+ *
+ * Written by the hand tuner, like the two tables above it.
+ */
+export interface ViewmodelOffset {
+  /** Metres added to the hip pose, in viewmodel space: +X right, +Y up, +Z toward the eye. */
+  readonly position: readonly [number, number, number];
+  /** Degrees added to the hip pose: pitch, yaw, roll. */
+  readonly rotation: readonly [number, number, number];
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 export const NEUTRAL_HAND_POSE: HandPose = { position: [0, 0, 0], rotation: [0, 0, 0], curl: 1 };
 
 /**
@@ -175,19 +223,6 @@ export const HAND_POSES: Readonly<Record<string, Partial<Record<HandSide, HandPo
   },
 };
 
-/** A weapon's pose for one hand: its entry, or the neutral pose. */
-export function handPoseFor(weaponId: string, side: HandSide): HandPose {
-  return HAND_POSES[weaponId]?.[side] ?? NEUTRAL_HAND_POSE;
-}
-
-/**
- * One finger's three segments from straight, knuckle first, in degrees — the same shape
- * `ViewmodelHands.FingerCurl` is, declared here so the wrap table below needs no import from
- * the module that reads it.
- */
-export type FingerWrap = readonly [number, number, number];
-export type HandWrap = Readonly<Record<'thumb' | 'index' | 'middle' | 'ring' | 'pink', FingerWrap>>;
-
 /**
  * How far each finger closes, per hand, **per thing held** (2026-09-24).
  *
@@ -246,74 +281,6 @@ export const HAND_WRAPS: Readonly<Record<string, Partial<Record<'grip' | 'suppor
   },
 };
 
-/** This thing's wrap for one hand, or null: the hold's own shape stands. */
-export function handWrapFor(weaponId: string, side: 'grip' | 'support'): HandWrap | null {
-  return HAND_WRAPS[weaponId]?.[side] ?? null;
-}
-
-/** A wrap as source, in `HAND_WRAPS`' own shape: what the tuner prints. */
-export function handWrapSource(weaponId: string, wraps: Partial<Record<'grip' | 'support', HandWrap>>): string {
-  const fingers = ['thumb', 'index', 'middle', 'ring', 'pink'] as const;
-  const one = (w: HandWrap): string => `{ ${fingers.map((f) => `${f}: [${w[f].map((v) => Math.round(v)).join(', ')}]`).join(', ')} }`;
-  const rows = (['grip', 'support'] as const)
-    .filter((side) => wraps[side] !== undefined)
-    .map((side) => `    ${side}: ${one(wraps[side]!)},`)
-    .join('\n');
-  return `  ${weaponId}: {\n${rows}\n  },`;
-}
-
-/** One weapon's entry as source, in `HAND_POSES`' own shape: what the tuner prints. */
-export function handPoseSource(
-  weaponId: string,
-  poses: Readonly<Record<HandSide, HandPose>>,
-  /** Which hands to print. The knife holds with one, and the other two would be noise. */
-  sides: readonly HandSide[] = ['grip', 'support', 'reload'],
-): string {
-  const n = (v: number, digits: number): string => {
-    const s = v.toFixed(digits);
-    return s === `-${(0).toFixed(digits)}` ? (0).toFixed(digits) : s;
-  };
-  const one = (p: HandPose): string =>
-    `{ position: [${p.position.map((v) => n(v, 3)).join(', ')}], rotation: [${p.rotation.map((v) => n(v, 1)).join(', ')}], curl: ${n(p.curl, 2)} }`;
-  const rows = sides.map((side) => `    ${side}: ${one(poses[side])},`).join('\n');
-  return `  ${weaponId}: {\n${rows}\n  },`;
-}
-
-/**
- * Where a weapon sits **on screen**, per weapon (2026-09-27).
- *
- * ## Why this exists
- *
- * `ViewmodelConfig`'s `hipX/Y/Z` and `hipPitch/Yaw/Roll` are one pose for the whole arsenal,
- * and that held for as long as the arsenal was rifles: twelve guns of roughly one size, held
- * roughly one way, and every difference between them absorbed by where their hand sockets sit
- * on the model. The minigun broke it. It is 0.91 m of barrel cluster carried at chest height,
- * and on the shared hip pose it sat across the middle of the screen — the player could not see
- * what they were shooting at. That is not a hand-pose problem: moving the hands moves the hands,
- * and the gun is where the gun is.
- *
- * So: one correction per weapon, added to the hip pose, in viewmodel space. Zero for every
- * weapon that does not name itself here, which is all of them but the ones below — this is a
- * correction table, not a placement table, and a row in it means "this weapon is unlike the
- * others" rather than "this weapon has been positioned".
- *
- * ## Why it fades out into ADS
- *
- * ADS is not a pose, it is a constraint: the weapon's own sight point is landed on the camera
- * axis, which is what makes irons and optics agree with the crosshair (playtest 3, findings 5
- * and 6). A constant added there would push the sight off the axis by exactly that constant.
- * So `ViewmodelAnim` scales this by `1 - adsFraction`: it is entirely a hip-fire correction,
- * and a weapon whose ADS is wrong needs its sight socket fixed in the recipe instead.
- *
- * Written by the hand tuner, like the two tables above it.
- */
-export interface ViewmodelOffset {
-  /** Metres added to the hip pose, in viewmodel space: +X right, +Y up, +Z toward the eye. */
-  readonly position: readonly [number, number, number];
-  /** Degrees added to the hip pose: pitch, yaw, roll. */
-  readonly rotation: readonly [number, number, number];
-}
-
 export const ZERO_VIEWMODEL_OFFSET: ViewmodelOffset = { position: [0, 0, 0], rotation: [0, 0, 0] };
 
 /**
@@ -364,6 +331,47 @@ export const VIEWMODEL_OFFSETS: Readonly<Record<string, ViewmodelOffset>> = {
    */
   [SHIELD_PLATE_OFFSET_ID]: { position: [-0.182, -0.176, 0.058], rotation: [0.0, 1.0, 0.0] },
 };
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** A weapon's pose for one hand: its entry, or the neutral pose. */
+export function handPoseFor(weaponId: string, side: HandSide): HandPose {
+  return HAND_POSES[weaponId]?.[side] ?? NEUTRAL_HAND_POSE;
+}
+
+/** This thing's wrap for one hand, or null: the hold's own shape stands. */
+export function handWrapFor(weaponId: string, side: 'grip' | 'support'): HandWrap | null {
+  return HAND_WRAPS[weaponId]?.[side] ?? null;
+}
+
+/** A wrap as source, in `HAND_WRAPS`' own shape: what the tuner prints. */
+export function handWrapSource(weaponId: string, wraps: Partial<Record<'grip' | 'support', HandWrap>>): string {
+  const fingers = ['thumb', 'index', 'middle', 'ring', 'pink'] as const;
+  const one = (w: HandWrap): string => `{ ${fingers.map((f) => `${f}: [${w[f].map((v) => Math.round(v)).join(', ')}]`).join(', ')} }`;
+  const rows = (['grip', 'support'] as const)
+    .filter((side) => wraps[side] !== undefined)
+    .map((side) => `    ${side}: ${one(wraps[side]!)},`)
+    .join('\n');
+  return `  ${weaponId}: {\n${rows}\n  },`;
+}
+
+/** One weapon's entry as source, in `HAND_POSES`' own shape: what the tuner prints. */
+export function handPoseSource(
+  weaponId: string,
+  poses: Readonly<Record<HandSide, HandPose>>,
+  /** Which hands to print. The knife holds with one, and the other two would be noise. */
+  sides: readonly HandSide[] = ['grip', 'support', 'reload'],
+): string {
+  const n = (v: number, digits: number): string => {
+    const s = v.toFixed(digits);
+    return s === `-${(0).toFixed(digits)}` ? (0).toFixed(digits) : s;
+  };
+  const one = (p: HandPose): string =>
+    `{ position: [${p.position.map((v) => n(v, 3)).join(', ')}], rotation: [${p.rotation.map((v) => n(v, 1)).join(', ')}], curl: ${n(p.curl, 2)} }`;
+  const rows = sides.map((side) => `    ${side}: ${one(poses[side])},`).join('\n');
+  return `  ${weaponId}: {\n${rows}\n  },`;
+}
 
 export function viewmodelOffsetFor(weaponId: string): ViewmodelOffset {
   return VIEWMODEL_OFFSETS[weaponId] ?? ZERO_VIEWMODEL_OFFSET;
@@ -380,3 +388,4 @@ export function viewmodelOffsetSource(weaponId: string, offset: ViewmodelOffset)
     `rotation: [${offset.rotation.map((v) => n(v, 1)).join(', ')}] },`
   );
 }
+//#endregion

@@ -1,7 +1,3 @@
-import * as THREE from 'three';
-import type { ShieldAssetTemplate } from './WeaponAssetService';
-import { ViewmodelHands } from './ViewmodelHands';
-
 /**
  * The riot shield as a held first-person object (2026-09-27).
  *
@@ -26,6 +22,26 @@ import { ViewmodelHands } from './ViewmodelHands';
  * shield's forearm cuff is; both come from the recipe in `scripts/weapon-build.mjs`, so
  * nothing here measures the mesh.
  */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import type { ShieldAssetTemplate } from './WeaponAssetService';
+import { ViewmodelHands } from './ViewmodelHands';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+export interface ShieldModel {
+  readonly root: THREE.Object3D;
+  /** The rig, when the arms' file has arrived; null while it has not and the plate is bare. */
+  readonly hands: ViewmodelHands | null;
+  dispose(): void;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * How much of the ballistic glass you can see through.
  *
@@ -34,48 +50,10 @@ import { ViewmodelHands } from './ViewmodelHands';
  * moving behind it is unmistakable — the whole reason the viewport had to stop being paint.
  */
 const GLASS_OPACITY = 0.34;
+//#endregion
 
-/**
- * Make the `glass` group glass.
- *
- * The file's viewport is a separate node because `scripts/weapon-build.mjs` cut it out of the
- * plate (the recipe says why), but it still carries the **one material the whole shield
- * shares** — so the material is cloned here rather than edited, or the plate, the light board
- * and the handle would all turn to glass with it.
- *
- * `depthWrite` off and a later `renderOrder` because the pane sits in a hole in an object that
- * is drawn in one pass: writing depth would let the near face of the glass hide the far one,
- * and the hole would read as a mirror rather than a window.
- */
-function dressGlass(plate: THREE.Object3D, disposables: Array<{ dispose(): void }>): void {
-  const glass = plate.getObjectByName('glass');
-  if (glass === undefined) return;
-  glass.traverse((node) => {
-    const mesh = node as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    const source = mesh.material;
-    if (Array.isArray(source) || !(source instanceof THREE.MeshStandardMaterial)) return;
-    const pane = source.clone();
-    pane.transparent = true;
-    pane.opacity = GLASS_OPACITY;
-    pane.depthWrite = false;
-    pane.side = THREE.DoubleSide;
-    // Laminated armour glass is polished and not a metal, whatever the plate around it is.
-    pane.roughness = 0.12;
-    pane.metalness = 0;
-    mesh.material = pane;
-    mesh.renderOrder = 1;
-    disposables.push(pane);
-  });
-}
-
-export interface ShieldModel {
-  readonly root: THREE.Object3D;
-  /** The rig, when the arms' file has arrived; null while it has not and the plate is bare. */
-  readonly hands: ViewmodelHands | null;
-  dispose(): void;
-}
-
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Build the shield.
  *
@@ -128,3 +106,41 @@ export function buildShieldModel(
     },
   };
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Make the `glass` group glass.
+ *
+ * The file's viewport is a separate node because `scripts/weapon-build.mjs` cut it out of the
+ * plate (the recipe says why), but it still carries the **one material the whole shield
+ * shares** — so the material is cloned here rather than edited, or the plate, the light board
+ * and the handle would all turn to glass with it.
+ *
+ * `depthWrite` off and a later `renderOrder` because the pane sits in a hole in an object that
+ * is drawn in one pass: writing depth would let the near face of the glass hide the far one,
+ * and the hole would read as a mirror rather than a window.
+ */
+function dressGlass(plate: THREE.Object3D, disposables: Array<{ dispose(): void }>): void {
+  const glass = plate.getObjectByName('glass');
+  if (glass === undefined) return;
+  glass.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const source = mesh.material;
+    if (Array.isArray(source) || !(source instanceof THREE.MeshStandardMaterial)) return;
+    const pane = source.clone();
+    pane.transparent = true;
+    pane.opacity = GLASS_OPACITY;
+    pane.depthWrite = false;
+    pane.side = THREE.DoubleSide;
+    // Laminated armour glass is polished and not a metal, whatever the plate around it is.
+    pane.roughness = 0.12;
+    pane.metalness = 0;
+    mesh.material = pane;
+    mesh.renderOrder = 1;
+    disposables.push(pane);
+  });
+}
+//#endregion

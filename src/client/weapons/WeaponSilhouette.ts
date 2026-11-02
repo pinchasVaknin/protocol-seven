@@ -1,14 +1,3 @@
-import {
-  bodyBoxes,
-  bodyTubes,
-  chargingBoxes,
-  magazineBoxes,
-  magazineTubes,
-  type BoxPart,
-  type TubePart,
-} from './WeaponMeshParts';
-import { modelSpecFor } from './WeaponModelSpecs';
-
 /**
  * A weapon's side profile, as SVG path data, from the model it is a profile of.
  *
@@ -43,19 +32,41 @@ import { modelSpecFor } from './WeaponModelSpecs';
  * filled red-dot window would close the aperture that M7 opened.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import {
+  bodyBoxes,
+  bodyTubes,
+  chargingBoxes,
+  magazineBoxes,
+  magazineTubes,
+  type BoxPart,
+  type TubePart,
+} from './WeaponMeshParts';
+import { modelSpecFor } from './WeaponModelSpecs';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+/** One projected quad, in model units, before it is fitted to the viewBox. */
+interface Quad {
+  readonly points: readonly [number, number][];
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** The viewBox `WeaponIcons` publishes, and what the killfeed's CSS sizes against. */
 const VIEW_W = 48;
 const VIEW_H = 16;
 /** Kept clear on every side, so a muzzle brake does not touch the edge of the box. */
 const MARGIN = 0.5;
 
-/** One projected quad, in model units, before it is fitted to the viewBox. */
-interface Quad {
-  readonly points: readonly [number, number][];
-}
-
 const cache = new Map<string, string>();
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * SVG path data for a weapon's outline, in a 48 x 16 viewBox with the barrel pointing right.
  *
@@ -69,7 +80,10 @@ export function weaponSilhouettePath(weaponId: string): string {
   cache.set(weaponId, built);
   return built;
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function build(weaponId: string): string {
   const spec = modelSpecFor(weaponId);
   const quads: Quad[] = [];
@@ -136,18 +150,7 @@ function tubeQuad(part: TubePart): Quad | null {
  * the shape is meant to be recognisable at a glance.
  */
 function fit(quads: readonly Quad[]): string {
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const quad of quads) {
-    for (const [x, y] of quad.points) {
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
-    }
-  }
+  const { minX, maxX, minY, maxY } = boundsOf(quads);
   const spanX = Math.max(maxX - minX, 1e-6);
   const spanY = Math.max(maxY - minY, 1e-6);
   const scale = Math.min((VIEW_W - MARGIN * 2) / spanX, (VIEW_H - MARGIN * 2) / spanY);
@@ -165,3 +168,21 @@ function fit(quads: readonly Quad[]): string {
   }
   return parts.join('');
 }
+
+/** The box every quad fits inside, in model units. */
+function boundsOf(quads: readonly Quad[]): { minX: number; maxX: number; minY: number; maxY: number } {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const quad of quads) {
+    for (const [x, y] of quad.points) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  return { minX, maxX, minY, maxY };
+}
+//#endregion

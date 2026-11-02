@@ -447,6 +447,14 @@ const FINISHED = {
     'src/client/weapons/WeaponMeshParts.ts',
     'src/client/weapons/WeaponSurfaces.ts',
   ],
+  C8: [
+    'src/client/weapons/GrenadeMesh.ts',
+    'src/client/weapons/HandPoses.ts',
+    'src/client/weapons/KnifeMesh.ts',
+    'src/client/weapons/ShieldMesh.ts',
+    'src/client/weapons/ViewmodelHands.ts',
+    'src/client/weapons/WeaponSilhouette.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

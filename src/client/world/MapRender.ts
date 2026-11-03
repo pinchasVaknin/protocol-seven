@@ -1,20 +1,3 @@
-import * as THREE from 'three';
-import type { ProceduralTextures } from '../engine/ProceduralTextures';
-import { rememberShadowAuthoring, SHADOW_TIERS } from '../engine/Renderer';
-import type { ShadowQuality } from '../../shared/meta/SaveData';
-import { writeBasis } from '../../shared/world/ColliderSet';
-import type { CollisionWorld } from '../../shared/world/CollisionWorld';
-import {
-    loadMapCollision,
-    type CollisionStats,
-    type LoadedCollision,
-} from '../../shared/world/MapLoader';
-import { PROP_SHAPES } from '../../shared/world/maps/props';
-import { MODELLED_PROP_SHAPES } from './PropModels';
-import type { Box, MapDef, MaterialKey, SpawnZone } from '../../shared/world/maps/types';
-import { buildBoxGeometry, type BoxSpec } from './MapMesher';
-import { SkyDome } from './SkyDome';
-
 /**
  * The render half of the map loader (M9 split — see `shared/world/MapLoader.ts`).
  *
@@ -28,6 +11,28 @@ import { SkyDome } from './SkyDome';
  * Nothing else in the codebase is allowed to place a mesh in the world by hand.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import type { ProceduralTextures } from '../engine/ProceduralTextures';
+import { rememberShadowAuthoring, SHADOW_TIERS } from '../engine/Renderer';
+import type { ShadowQuality } from '../../shared/meta/SaveData';
+import { writeBasis } from '../../shared/world/ColliderSet';
+import type { CollisionWorld } from '../../shared/world/CollisionWorld';
+import {
+    loadMapCollision,
+    type CollisionStats,
+    type LoadedCollision,
+} from '../../shared/world/MapLoader';
+import { PROP_SHAPES } from '../../shared/world/maps/props';
+import { MODELLED_PROP_SHAPES } from './PropModels';
+import type { Box, LightDef, MapDef, MaterialKey, PropDef, SpawnZone } from '../../shared/world/maps/types';
+import { buildBoxGeometry, type BoxSpec } from './MapMesher';
+import { SkyDome } from './SkyDome';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface LoadedMap {
     readonly def: MapDef;
     readonly root: THREE.Group;
@@ -47,37 +52,63 @@ export interface MapStats extends CollisionStats {
     chunks: number;
 }
 
-/**
- * Shape-parts this map will mesh, counted before any are built.
- *
- * Only so the chunk total is known up front and progress is a real fraction. Counted rather
- * than estimated because the alternative is a progress bar that jumps backwards.
- */
-function countPropParts(def: MapDef): number {
-    const shapes = new Set(def.props.map((p) => p.shape));
-    let parts = 0;
-    // `drawn` and not `parts.length`: a modelled prop's boxes are collision and are not meshed,
-    // and counting them would make the progress bar promise chunks that never arrive.
-    for (const shape of shapes) parts += PROP_SHAPES[shape].parts.filter(drawn).length;
-    return parts;
+/** Progress out of the chunked build, for a caller that wants to show or measure it. */
+export interface MapBuildProgress {
+    readonly done: number;
+    readonly total: number;
+    readonly label: string;
 }
 
 /**
- * Whether a prop part is meshed (2026-09-27).
+ * Everything the build accumulates, as one object the chunks write into.
  *
- * A `hidden` part is a collider the renderer does not draw — the resupply station's boxes,
- * with `PropModels` standing the pile over them. The flag is only honoured for a shape that
- * actually has a model: a shape that lost its geometry and gained nothing would be an invisible
- * wall, and this is the line that makes that impossible rather than merely unlikely.
+ * The chunks are sub-generators rather than plain functions, because a chunk boundary *is* a
+ * `yield`; what they share is this. `disposables` is the half-built map a cancelled build has
+ * to free, and it is the one field whose contents outlive the build either way — into
+ * `LoadedMap.dispose` on the normal path, and into the `finally` on the cancelled one.
  */
-function drawn(part: { hidden?: boolean }, _i?: number, _a?: unknown): boolean {
-    return part.hidden !== true;
+interface MapBuild {
+    readonly root: THREE.Group;
+    readonly textures: ProceduralTextures;
+    readonly disposables: Array<{ dispose(): void }>;
+    drawCalls: number;
+    triangles: number;
+    aoMs: number;
+    done: number;
+    total: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Tessellation target for brush faces, metres. Smaller = better AO, more vertices. */
 const BRUSH_FACE_SPACING = 1.6;
 const PROP_FACE_SPACING = 0.6;
 
+/**
+ * Materials the maps use for *decorative overlays* rather than for structure (post-M8).
+ *
+ * Trim lips, floor stripes, lane markers, hazard chevrons and ledge edges are all authored
+ * as thin brushes laid a centimetre or two proud of the surface they mark. Every map does
+ * this and every map states the rule in its own header — "no two coplanar faces" — but a
+ * rule enforced by hand across four maps and several hundred brushes is a rule that will be
+ * broken, and it had been: the range's bullseye plates were spaced exactly their own
+ * thickness apart, so consecutive faces were *precisely* coincident. Coincident faces are
+ * the textbook depth-fight, and a depth-fight at close range is the violent per-frame
+ * flicker reported post-M8 as models that "jitter and shake as you approach them".
+ *
+ * The authoring bug is fixed where it was (see `maps/greybox.ts`). This is the guard that
+ * stops the next one shipping: a decorative surface is pulled toward the viewer in depth by
+ * a fixed offset, so it wins against whatever it is decorating no matter how flush the
+ * author left it. It costs nothing — `polygonOffset` is fixed-function — and it is applied
+ * by *material* rather than per brush because the brush geometry is merged per material
+ * before it ever becomes a mesh.
+ */
+const TRIM_MATERIALS: ReadonlySet<MaterialKey> = new Set<MaterialKey>(['accent', 'hazard']);
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Build a map's meshes, all at once.
  *
@@ -94,13 +125,6 @@ export function loadMap(
     let step = steps.next();
     while (step.done !== true) step = steps.next();
     return step.value;
-}
-
-/** Progress out of the chunked build, for a caller that wants to show or measure it. */
-export interface MapBuildProgress {
-    readonly done: number;
-    readonly total: number;
-    readonly label: string;
 }
 
 /**
@@ -138,11 +162,132 @@ export function* buildMapChunked(
     const loaded: LoadedCollision = loadMapCollision(def);
     const collision = loaded.collision;
 
-    // ---- 2. brush meshes, one chunk per material ----------------------------
-    //
-    // Grouped before meshing rather than after, so each `buildBoxGeometry` call is one chunk
-    // producing one geometry. The alternative — one call over every brush — is a single
-    // uninterruptible unit of work and is exactly the frame stall §6.5 forbids.
+    const byMaterial = groupBrushesByMaterial(def, textures);
+    // Chunk count is known up front, so a progress bar is a real fraction rather than a guess.
+    // + 2: the lights chunk and the sky chunk, neither of which is per material or per prop.
+    const build = newMapBuild(root, textures, byMaterial.size + countPropParts(def) + 2);
+    let completed = false;
+
+    /**
+     * A cancelled build must not leak its GPU memory.
+     *
+     * Calling `.return()` on a suspended generator runs this `finally`, which is the only hook
+     * there is for cleaning up work a half-finished build has already done. Without it, a build
+     * abandoned mid-flight — a player disconnecting, an allocation failing after the `Prepare`
+     * went out — drops its geometries and materials on the floor, and those live on the GPU for
+     * the life of the page rather than being collected.
+     *
+     * Guarded on `completed` so the normal path does not dispose the map it just built.
+     */
+    try {
+        yield* meshBrushes(build, byMaterial, collision);
+        yield* meshProps(build, def);
+
+        addLights(build, def, shadowQuality);
+        build.done++;
+        yield { done: build.done, total: build.total, label: 'lights' };
+
+        addSky(build, def);
+        freezeMatrices(root);
+        build.done++;
+        yield { done: build.done, total: build.total, label: 'sky' };
+
+        // The build succeeded; the `finally` below must not dispose what we are handing back.
+        completed = true;
+        const disposables = build.disposables;
+        return {
+            def,
+            root,
+            collision,
+            spawns: loaded.spawns,
+            navBounds: loaded.navBounds,
+            stats: mapStats(build, loaded, t0),
+            dispose(): void {
+                for (const d of disposables) d.dispose();
+                root.clear();
+            },
+        };
+    } finally {
+        if (!completed) {
+            for (const d of build.disposables) d.dispose();
+            root.clear();
+        }
+    }
+}
+
+/**
+ * Apply a map's ambient block to the scene. Kept here so maps own their look.
+ *
+ * **`scene.background` is no longer the sky** (round 5, F2). `SkyDome` covers every direction
+ * from the far plane, so nothing that reaches a pixel comes from here any more; the line stays
+ * because it is still the *clear* colour, and a frame that started on `Renderer`'s fixed
+ * `0x0c0e11` would flash the wrong dark grey on any frame the dome did not cover — a resize
+ * between the clear and the draw, or a pass that skips the sky layer. Keeping it at `fogColor`
+ * means the fallback is the same colour as the horizon rather than a colour from nowhere.
+ *
+ * The report is what it used to be: *"`scene.background` is the fog colour and that is the
+ * whole sky."* It was, and now it is only the floor under one.
+ */
+export function applyAmbient(scene: THREE.Scene, def: MapDef): void {
+    scene.background = new THREE.Color(def.ambient.fogColor);
+    scene.fog = new THREE.Fog(def.ambient.fogColor, def.ambient.fogNear, def.ambient.fogFar);
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Shape-parts this map will mesh, counted before any are built.
+ *
+ * Only so the chunk total is known up front and progress is a real fraction. Counted rather
+ * than estimated because the alternative is a progress bar that jumps backwards.
+ */
+function countPropParts(def: MapDef): number {
+    const shapes = new Set(def.props.map((p) => p.shape));
+    let parts = 0;
+    // `isDrawnPart` and not `parts.length`: a modelled prop's boxes are collision and are not
+    // meshed, and counting them would make the progress bar promise chunks that never arrive.
+    for (const shape of shapes) parts += PROP_SHAPES[shape].parts.filter(isDrawnPart).length;
+    return parts;
+}
+
+/**
+ * Whether a prop part is meshed (2026-09-27).
+ *
+ * A `hidden` part is a collider the renderer does not draw — the resupply station's boxes,
+ * with `PropModels` standing the pile over them. The flag is only honoured for a shape that
+ * actually has a model: a shape that lost its geometry and gained nothing would be an invisible
+ * wall, and this is the line that makes that impossible rather than merely unlikely.
+ */
+function isDrawnPart(part: { hidden?: boolean }): boolean {
+    return part.hidden !== true;
+}
+
+/** The build's running totals, with the chunk count it already knows. */
+function newMapBuild(root: THREE.Group, textures: ProceduralTextures, total: number): MapBuild {
+    return { root, textures, disposables: [], drawCalls: 0, triangles: 0, aoMs: 0, done: 0, total };
+}
+
+/** What the build counted, on top of what the shared loader counted. */
+function mapStats(build: MapBuild, loaded: LoadedCollision, t0: number): MapStats {
+    return {
+        ...loaded.stats,
+        drawCalls: build.drawCalls,
+        triangles: Math.round(build.triangles),
+        buildMs: performance.now() - t0,
+        aoMs: build.aoMs,
+        chunks: build.total,
+    };
+}
+
+/**
+ * The brushes as mesher input.
+ *
+ * Grouped before meshing rather than after, so each `buildBoxGeometry` call is one chunk
+ * producing one geometry. The alternative — one call over every brush — is a single
+ * uninterruptible unit of work and is exactly the frame stall §6.5 forbids.
+ */
+function groupBrushesByMaterial(def: MapDef, textures: ProceduralTextures): Map<MaterialKey, BoxSpec[]> {
     const byMaterial = new Map<MaterialKey, BoxSpec[]>();
     const basisScratch = new Float32Array(9);
     for (const brush of def.brushes) {
@@ -164,278 +309,257 @@ export function* buildMapChunked(
         if (list === undefined) byMaterial.set(brush.material, [spec]);
         else list.push(spec);
     }
+    return byMaterial;
+}
 
-    // Chunk count is known up front, so a progress bar is a real fraction rather than a guess.
-    const propParts = countPropParts(def);
-    // + 2: the lights chunk and the sky chunk, neither of which is per material or per prop.
-    const total = byMaterial.size + propParts + 2;
-    let done = 0;
+/** ---- 2. brush meshes, one chunk per material ---------------------------- */
+function* meshBrushes(
+    build: MapBuild,
+    byMaterial: ReadonlyMap<MaterialKey, BoxSpec[]>,
+    collision: CollisionWorld,
+): Generator<MapBuildProgress, void> {
+    for (const [material, specs] of byMaterial) {
+        const aoStart = performance.now();
+        const built = buildBoxGeometry(specs, collision, BRUSH_FACE_SPACING);
+        build.aoMs += performance.now() - aoStart;
 
-    const disposables: Array<{ dispose(): void }> = [];
-    let drawCalls = 0;
-    let triangles = 0;
-    let aoMs = 0;
-    let completed = false;
-
-    /**
-     * A cancelled build must not leak its GPU memory.
-     *
-     * Calling `.return()` on a suspended generator runs this `finally`, which is the only hook
-     * there is for cleaning up work a half-finished build has already done. Without it, a build
-     * abandoned mid-flight — a player disconnecting, an allocation failing after the `Prepare`
-     * went out — drops its geometries and materials on the floor, and those live on the GPU for
-     * the life of the page rather than being collected.
-     *
-     * Guarded on `completed` so the normal path does not dispose the map it just built.
-     */
-    try {
-        for (const [material, specs] of byMaterial) {
-            const aoStart = performance.now();
-            const built = buildBoxGeometry(specs, collision, BRUSH_FACE_SPACING);
-            aoMs += performance.now() - aoStart;
-
-            for (const [key, geometry] of built) {
-                const mesh = new THREE.Mesh(geometry, makeMaterial(textures, key));
-                mesh.name = `brushes:${key}`;
-                mesh.castShadow = true;
-                mesh.receiveShadow = true;
-                mesh.matrixAutoUpdate = false;
-                mesh.updateMatrix();
-                root.add(mesh);
-                disposables.push(geometry);
-                disposables.push(mesh.material as THREE.Material);
-                drawCalls++;
-                triangles += (geometry.getIndex()?.count ?? 0) / 3;
-            }
-
-            done++;
-            yield { done, total, label: `brushes:${material}` };
+        for (const [key, geometry] of built) {
+            const mesh = new THREE.Mesh(geometry, makeMaterial(build.textures, key));
+            mesh.name = `brushes:${key}`;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.matrixAutoUpdate = false;
+            mesh.updateMatrix();
+            adoptMesh(build, mesh, geometry, (geometry.getIndex()?.count ?? 0) / 3);
         }
 
-        // ---- 3. props, instanced ------------------------------------------------
-        const byShape = new Map<string, typeof def.props>();
-        for (const p of def.props) {
-            const list = byShape.get(p.shape);
-            if (list === undefined) byShape.set(p.shape, [p]);
-            else list.push(p);
-        }
+        build.done++;
+        yield { done: build.done, total: build.total, label: `brushes:${material}` };
+    }
+}
 
-        const instanceMatrix = new THREE.Matrix4();
-        const instanceQuat = new THREE.Quaternion();
-        const instancePos = new THREE.Vector3();
-        const instanceScale = new THREE.Vector3(1, 1, 1);
-        const yAxis = new THREE.Vector3(0, 1, 0);
+/** ---- 3. props, instanced ------------------------------------------------ */
+function* meshProps(build: MapBuild, def: MapDef): Generator<MapBuildProgress, void> {
+    const byShape = new Map<string, PropDef[]>();
+    for (const p of def.props) {
+        const list = byShape.get(p.shape);
+        if (list === undefined) byShape.set(p.shape, [p]);
+        else list.push(p);
+    }
 
-        for (const [shapeId, placements] of byShape) {
-            const shape = PROP_SHAPES[shapeId as keyof typeof PROP_SHAPES];
-            const modelled = MODELLED_PROP_SHAPES.has(shapeId);
-            for (let partIndex = 0; partIndex < shape.parts.length; partIndex++) {
-                const part = shape.parts[partIndex];
-                if (part === undefined) continue;
-                // Hidden means "collides, is not drawn" — and only where a model is going to cover it.
-                if (modelled && !drawn(part)) continue;
-                const identity = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
-                const geometries = buildBoxGeometry(
-                    [
-                        {
-                            cx: part.offset.x,
-                            cy: part.offset.y,
-                            cz: part.offset.z,
-                            hx: part.size.x * 0.5,
-                            hy: part.size.y * 0.5,
-                            hz: part.size.z * 0.5,
-                            basis: identity,
-                            material: part.material,
-                            uvScale: textures.get(part.material).worldScale,
-                        },
-                    ],
-                    null,
-                    PROP_FACE_SPACING,
-                );
-                const geometry = geometries.get(part.material);
-                if (geometry === undefined) continue;
+    for (const [shapeId, placements] of byShape) {
+        yield* meshPropShape(build, shapeId, placements);
+    }
+}
 
-                const mesh = new THREE.InstancedMesh(geometry, makeMaterial(textures, part.material), placements.length);
-                mesh.name = `prop:${shapeId}:${partIndex}`;
-                mesh.castShadow = true;
-                mesh.receiveShadow = true;
-                mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-                for (let i = 0; i < placements.length; i++) {
-                    const p = placements[i];
-                    if (p === undefined) continue;
-                    instancePos.set(p.position.x, p.position.y, p.position.z);
-                    instanceQuat.setFromAxisAngle(yAxis, p.rotationY);
-                    instanceMatrix.compose(instancePos, instanceQuat, instanceScale);
-                    mesh.setMatrixAt(i, instanceMatrix);
-                }
-                mesh.instanceMatrix.needsUpdate = true;
-                mesh.computeBoundingSphere();
-                mesh.matrixAutoUpdate = false;
-                mesh.updateMatrix();
-                root.add(mesh);
-                disposables.push(geometry);
-                disposables.push(mesh.material as THREE.Material);
-                drawCalls++;
-                triangles += ((geometry.getIndex()?.count ?? 0) / 3) * placements.length;
+/** Every drawn part of one shape, as one chunk each. */
+function* meshPropShape(
+    build: MapBuild,
+    shapeId: string,
+    placements: readonly PropDef[],
+): Generator<MapBuildProgress, void> {
+    const shape = PROP_SHAPES[shapeId as keyof typeof PROP_SHAPES];
+    const modelled = MODELLED_PROP_SHAPES.has(shapeId);
+    for (let partIndex = 0; partIndex < shape.parts.length; partIndex++) {
+        const part = shape.parts[partIndex];
+        if (part === undefined) continue;
+        // Hidden means "collides, is not drawn" — and only where a model is going to cover it.
+        if (modelled && !isDrawnPart(part)) continue;
+        const name = `prop:${shapeId}:${partIndex}`;
+        if (!addPropPart(build, name, part, placements)) continue;
 
-                done++;
-                yield { done, total, label: `prop:${shapeId}:${partIndex}` };
-            }
-        }
+        build.done++;
+        yield { done: build.done, total: build.total, label: name };
+    }
+}
 
-        // ---- 4. lights ----------------------------------------------------------
-        for (const light of def.lights) {
-            switch (light.kind) {
-                case 'hemisphere': {
-                    const l = new THREE.HemisphereLight(light.skyColor, light.groundColor, light.intensity);
-                    root.add(l);
-                    break;
-                }
-                case 'directional': {
-                    const l = new THREE.DirectionalLight(light.color, light.intensity);
-                    const dir = new THREE.Vector3(light.direction.x, light.direction.y, light.direction.z).normalize();
-                    const center = new THREE.Vector3(
-                        (def.navBounds.min.x + def.navBounds.max.x) * 0.5,
-                        (def.navBounds.min.y + def.navBounds.max.y) * 0.5,
-                        (def.navBounds.min.z + def.navBounds.max.z) * 0.5,
-                    );
-                    l.position.copy(center).addScaledVector(dir, -60);
-                    l.target.position.copy(center);
-                    root.add(l.target);
-                    l.castShadow = light.castShadow;
-                    if (light.castShadow) {
-                        const e = light.shadowExtent;
-                        // M8: the tier the player chose, not a constant. `SHADOW_TIERS` scales the map's
-                        // own softness rather than replacing it, so Dunes stays harder than Foundry at
-                        // every quality level.
-                        const tier = SHADOW_TIERS[shadowQuality];
-                        const size = tier.size === 0 ? 1024 : tier.size;
-                        l.castShadow = tier.size > 0;
-                        l.shadow.mapSize.set(size, size);
-                        l.shadow.camera.left = -e;
-                        l.shadow.camera.right = e;
-                        l.shadow.camera.top = e;
-                        l.shadow.camera.bottom = -e;
-                        l.shadow.camera.near = 1;
-                        l.shadow.camera.far = 160;
-                        // Constant bias handles the depth quantisation; normalBias handles the
-                        // grazing-angle acne that a pure constant bias would need to be huge for.
-                        // Both are per-map overridable from M8: Depot's night key is weak enough that
-                        // the acne Foundry never shows is the brightest thing in the frame.
-                        l.shadow.bias = light.shadowBias ?? -0.0004;
-                        // Round 3: scaled by the tier, because the distance this has to cover is one
-                        // shadow texel and a texel is a function of the map size. See `SHADOW_TIERS`.
-                        const authoredNormalBias = light.shadowNormalBias ?? 0.035;
-                        l.shadow.normalBias = authoredNormalBias * tier.biasScale;
-                        // PCF taps are spread by this radius; it is where shadow softness comes from
-                        // now that PCFSoftShadowMap is gone. Midday sun wants a much smaller number
-                        // than an industrial skylight does.
-                        const authoredRadius = light.shadowRadius ?? 2.5;
-                        l.shadow.radius = authoredRadius * (tier.radiusScale === 0 ? 1 : tier.radiusScale);
-                        // Remember what the map asked for, so a later quality change scales the intent
-                        // rather than compounding on the previous scaling.
-                        rememberShadowAuthoring(l.shadow, authoredRadius, light.castShadow, authoredNormalBias);
-                        l.shadow.camera.updateProjectionMatrix();
-                    }
-                    root.add(l);
-                    /**
-                     * The light is disposed with the map (M15, A3 — found by the backdrop's build/dispose
-                     * cycle). `root.clear()` takes the light out of the scene but never frees its shadow
-                     * map: `DirectionalLight.dispose` is what releases the render target the first
-                     * shadow pass allocated, and without it every map build left one behind —
-                     * `renderer.info.memory.textures` rose by the shadow map's two textures on every
-                     * MENU ↔ MATCH cycle, on a tree that built a map only when a match started.
-                     */
-                    disposables.push(l);
-                    break;
-                }
-                case 'point': {
-                    const l = new THREE.PointLight(light.color, light.intensity, light.distance, light.decay);
-                    l.position.set(light.position.x, light.position.y, light.position.z);
-                    root.add(l);
-                    break;
-                }
-            }
-        }
-
-        done++;
-        yield { done, total, label: 'lights' };
-
-        /**
-         * The sky, built after the lights because it reads one of them (round 5, F2).
-         *
-         * In the map's own root rather than added to the scene beside `applyAmbient`, for the
-         * reason the particulate is: `dispose` walks one list and clears one group, and a second
-         * thing hanging off the scene is a second thing to forget on a map change.
-         */
-        const sky = new SkyDome(def);
-        sky.mesh.matrixAutoUpdate = false;
-        sky.mesh.updateMatrix();
-        root.add(sky.mesh);
-        disposables.push(sky);
-        drawCalls++;
-        triangles += sky.triangleCount;
-
-        root.updateMatrixWorld(true);
-        root.traverse((obj) => {
-            obj.matrixAutoUpdate = false;
-            obj.matrixWorldAutoUpdate = false;
-        });
-
-        done++;
-        yield { done, total, label: 'sky' };
-
-        const stats: MapStats = {
-            ...loaded.stats,
-            drawCalls,
-            triangles: Math.round(triangles),
-            buildMs: performance.now() - t0,
-            aoMs,
-            chunks: total,
-        };
-
-        // The build succeeded; the `finally` below must not dispose what we are handing back.
-        completed = true;
-        return {
-            def,
-            root,
-            collision,
-            spawns: loaded.spawns,
-            navBounds: loaded.navBounds,
-            stats,
-            dispose(): void {
-                for (const d of disposables) d.dispose();
-                root.clear();
+/** One shape-part as an instanced mesh, or false when the part meshed to nothing. */
+function addPropPart(
+    build: MapBuild,
+    name: string,
+    part: (typeof PROP_SHAPES)[keyof typeof PROP_SHAPES]['parts'][number],
+    placements: readonly PropDef[],
+): boolean {
+    const identity = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    const geometries = buildBoxGeometry(
+        [
+            {
+                cx: part.offset.x,
+                cy: part.offset.y,
+                cz: part.offset.z,
+                hx: part.size.x * 0.5,
+                hy: part.size.y * 0.5,
+                hz: part.size.z * 0.5,
+                basis: identity,
+                material: part.material,
+                uvScale: build.textures.get(part.material).worldScale,
             },
-        };
-    } finally {
-        if (!completed) {
-            for (const d of disposables) d.dispose();
-            root.clear();
+        ],
+        null,
+        PROP_FACE_SPACING,
+    );
+    const geometry = geometries.get(part.material);
+    if (geometry === undefined) return false;
+
+    const mesh = new THREE.InstancedMesh(geometry, makeMaterial(build.textures, part.material), placements.length);
+    mesh.name = name;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    writeInstanceMatrices(mesh, placements);
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
+    adoptMesh(build, mesh, geometry, ((geometry.getIndex()?.count ?? 0) / 3) * placements.length);
+    return true;
+}
+
+/** Each placement's position and heading, composed straight into the instance buffer. */
+function writeInstanceMatrices(mesh: THREE.InstancedMesh, placements: readonly PropDef[]): void {
+    const instanceMatrix = new THREE.Matrix4();
+    const instanceQuat = new THREE.Quaternion();
+    const instancePos = new THREE.Vector3();
+    const instanceScale = new THREE.Vector3(1, 1, 1);
+    const yAxis = new THREE.Vector3(0, 1, 0);
+    for (let i = 0; i < placements.length; i++) {
+        const p = placements[i];
+        if (p === undefined) continue;
+        instancePos.set(p.position.x, p.position.y, p.position.z);
+        instanceQuat.setFromAxisAngle(yAxis, p.rotationY);
+        instanceMatrix.compose(instancePos, instanceQuat, instanceScale);
+        mesh.setMatrixAt(i, instanceMatrix);
+    }
+}
+
+/** Into the root, onto the dispose list, and onto the two counters `MapStats` reports. */
+function adoptMesh(build: MapBuild, mesh: THREE.Mesh, geometry: THREE.BufferGeometry, triangles: number): void {
+    build.root.add(mesh);
+    build.disposables.push(geometry);
+    build.disposables.push(mesh.material as THREE.Material);
+    build.drawCalls++;
+    build.triangles += triangles;
+}
+
+/** ---- 4. lights ---------------------------------------------------------- */
+function addLights(build: MapBuild, def: MapDef, shadowQuality: ShadowQuality): void {
+    for (const light of def.lights) {
+        switch (light.kind) {
+            case 'hemisphere': {
+                const l = new THREE.HemisphereLight(light.skyColor, light.groundColor, light.intensity);
+                build.root.add(l);
+                break;
+            }
+            case 'directional': {
+                addDirectionalLight(build, light, def, shadowQuality);
+                break;
+            }
+            case 'point': {
+                const l = new THREE.PointLight(light.color, light.intensity, light.distance, light.decay);
+                l.position.set(light.position.x, light.position.y, light.position.z);
+                build.root.add(l);
+                break;
+            }
         }
     }
 }
 
+/** The key light, stood sixty metres back along its own direction and aimed at the map. */
+function addDirectionalLight(
+    build: MapBuild,
+    light: Extract<LightDef, { kind: 'directional' }>,
+    def: MapDef,
+    shadowQuality: ShadowQuality,
+): void {
+    const l = new THREE.DirectionalLight(light.color, light.intensity);
+    const dir = new THREE.Vector3(light.direction.x, light.direction.y, light.direction.z).normalize();
+    const center = new THREE.Vector3(
+        (def.navBounds.min.x + def.navBounds.max.x) * 0.5,
+        (def.navBounds.min.y + def.navBounds.max.y) * 0.5,
+        (def.navBounds.min.z + def.navBounds.max.z) * 0.5,
+    );
+    l.position.copy(center).addScaledVector(dir, -60);
+    l.target.position.copy(center);
+    build.root.add(l.target);
+    l.castShadow = light.castShadow;
+    if (light.castShadow) configureShadow(l, light, shadowQuality);
+    build.root.add(l);
+    /**
+     * The light is disposed with the map (M15, A3 — found by the backdrop's build/dispose
+     * cycle). `root.clear()` takes the light out of the scene but never frees its shadow
+     * map: `DirectionalLight.dispose` is what releases the render target the first
+     * shadow pass allocated, and without it every map build left one behind —
+     * `renderer.info.memory.textures` rose by the shadow map's two textures on every
+     * MENU ↔ MATCH cycle, on a tree that built a map only when a match started.
+     */
+    build.disposables.push(l);
+}
+
+/** The tier the player chose, applied to what the map authored. */
+function configureShadow(
+    l: THREE.DirectionalLight,
+    light: Extract<LightDef, { kind: 'directional' }>,
+    shadowQuality: ShadowQuality,
+): void {
+    const e = light.shadowExtent;
+    // M8: the tier the player chose, not a constant. `SHADOW_TIERS` scales the map's
+    // own softness rather than replacing it, so Dunes stays harder than Foundry at
+    // every quality level.
+    const tier = SHADOW_TIERS[shadowQuality];
+    const size = tier.size === 0 ? 1024 : tier.size;
+    l.castShadow = tier.size > 0;
+    l.shadow.mapSize.set(size, size);
+    l.shadow.camera.left = -e;
+    l.shadow.camera.right = e;
+    l.shadow.camera.top = e;
+    l.shadow.camera.bottom = -e;
+    l.shadow.camera.near = 1;
+    l.shadow.camera.far = 160;
+    // Constant bias handles the depth quantisation; normalBias handles the
+    // grazing-angle acne that a pure constant bias would need to be huge for.
+    // Both are per-map overridable from M8: Depot's night key is weak enough that
+    // the acne Foundry never shows is the brightest thing in the frame.
+    l.shadow.bias = light.shadowBias ?? -0.0004;
+    // Round 3: scaled by the tier, because the distance this has to cover is one
+    // shadow texel and a texel is a function of the map size. See `SHADOW_TIERS`.
+    const authoredNormalBias = light.shadowNormalBias ?? 0.035;
+    l.shadow.normalBias = authoredNormalBias * tier.biasScale;
+    // PCF taps are spread by this radius; it is where shadow softness comes from
+    // now that PCFSoftShadowMap is gone. Midday sun wants a much smaller number
+    // than an industrial skylight does.
+    const authoredRadius = light.shadowRadius ?? 2.5;
+    l.shadow.radius = authoredRadius * (tier.radiusScale === 0 ? 1 : tier.radiusScale);
+    // Remember what the map asked for, so a later quality change scales the intent
+    // rather than compounding on the previous scaling.
+    rememberShadowAuthoring(l.shadow, authoredRadius, light.castShadow, authoredNormalBias);
+    l.shadow.camera.updateProjectionMatrix();
+}
+
 /**
- * Materials the maps use for *decorative overlays* rather than for structure (post-M8).
+ * The sky, built after the lights because it reads one of them (round 5, F2).
  *
- * Trim lips, floor stripes, lane markers, hazard chevrons and ledge edges are all authored
- * as thin brushes laid a centimetre or two proud of the surface they mark. Every map does
- * this and every map states the rule in its own header — "no two coplanar faces" — but a
- * rule enforced by hand across four maps and several hundred brushes is a rule that will be
- * broken, and it had been: the range's bullseye plates were spaced exactly their own
- * thickness apart, so consecutive faces were *precisely* coincident. Coincident faces are
- * the textbook depth-fight, and a depth-fight at close range is the violent per-frame
- * flicker reported post-M8 as models that "jitter and shake as you approach them".
- *
- * The authoring bug is fixed where it was (see `maps/greybox.ts`). This is the guard that
- * stops the next one shipping: a decorative surface is pulled toward the viewer in depth by
- * a fixed offset, so it wins against whatever it is decorating no matter how flush the
- * author left it. It costs nothing — `polygonOffset` is fixed-function — and it is applied
- * by *material* rather than per brush because the brush geometry is merged per material
- * before it ever becomes a mesh.
+ * In the map's own root rather than added to the scene beside `applyAmbient`, for the
+ * reason the particulate is: `dispose` walks one list and clears one group, and a second
+ * thing hanging off the scene is a second thing to forget on a map change.
  */
-const TRIM_MATERIALS: ReadonlySet<MaterialKey> = new Set<MaterialKey>(['accent', 'hazard']);
+function addSky(build: MapBuild, def: MapDef): void {
+    const sky = new SkyDome(def);
+    sky.mesh.matrixAutoUpdate = false;
+    sky.mesh.updateMatrix();
+    build.root.add(sky.mesh);
+    build.disposables.push(sky);
+    build.drawCalls++;
+    build.triangles += sky.triangleCount;
+}
+
+/** A map does not move, so nothing under its root recomposes a matrix on a frame. */
+function freezeMatrices(root: THREE.Group): void {
+    root.updateMatrixWorld(true);
+    root.traverse((obj) => {
+        obj.matrixAutoUpdate = false;
+        obj.matrixWorldAutoUpdate = false;
+    });
+}
 
 function makeMaterial(textures: ProceduralTextures, key: MaterialKey): THREE.Material {
     const profile = textures.get(key);
@@ -453,21 +577,4 @@ function makeMaterial(textures: ProceduralTextures, key: MaterialKey): THREE.Mat
         polygonOffsetUnits: trim ? -2 : 0,
     });
 }
-
-/**
- * Apply a map's ambient block to the scene. Kept here so maps own their look.
- *
- * **`scene.background` is no longer the sky** (round 5, F2). `SkyDome` covers every direction
- * from the far plane, so nothing that reaches a pixel comes from here any more; the line stays
- * because it is still the *clear* colour, and a frame that started on `Renderer`'s fixed
- * `0x0c0e11` would flash the wrong dark grey on any frame the dome did not cover — a resize
- * between the clear and the draw, or a pass that skips the sky layer. Keeping it at `fogColor`
- * means the fallback is the same colour as the horizon rather than a colour from nowhere.
- *
- * The report is what it used to be: *"`scene.background` is the fog colour and that is the
- * whole sky."* It was, and now it is only the floor under one.
- */
-export function applyAmbient(scene: THREE.Scene, def: MapDef): void {
-    scene.background = new THREE.Color(def.ambient.fogColor);
-    scene.fog = new THREE.Fog(def.ambient.fogColor, def.ambient.fogNear, def.ambient.fogFar);
-}
+//#endregion

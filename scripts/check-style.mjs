@@ -461,6 +461,16 @@ const FINISHED = {
     'src/client/weapons/WeaponAudio.ts',
     'src/client/weapons/WeaponModelSpecs.ts',
   ],
+  C10: [
+    'src/client/world/MapBuildQueue.ts',
+    'src/client/world/MapMesher.ts',
+    'src/client/world/MapRender.ts',
+    'src/client/world/MenuBackdrop.ts',
+    'src/client/world/MenuSkirmish.ts',
+    'src/client/world/Particulate.ts',
+    'src/client/world/PropModels.ts',
+    'src/client/world/SkyDome.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

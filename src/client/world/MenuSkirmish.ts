@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import { DEFAULT_SCHEDULER } from '../../shared/ai/AiScheduler';
 import { BotDirector } from '../../shared/ai/BotDirector';
@@ -14,7 +16,7 @@ import { logger } from '../../shared/core/Log';
 import { Rng } from '../../shared/core/Rng';
 import type { GameMode } from '../../shared/modes/GameMode';
 import { MatchFlow } from '../../shared/modes/MatchFlow';
-import { findMode, type MapEntry } from '../../shared/modes/ModeRegistry';
+import { findMode, type MapEntry, type ModeEntry } from '../../shared/modes/ModeRegistry';
 import { DEFAULT_HEALTH_CONFIG, Health } from '../../shared/player/Health';
 import { DEFAULT_MOVEMENT_CONFIG } from '../../shared/player/MovementConfig';
 import type { ViewerContext } from '../../shared/ui/TeamColour';
@@ -27,9 +29,73 @@ import { characterDefinition } from '../characters/CharacterCatalog';
 import { RandomCharacterSelector } from '../characters/RandomCharacterSelector';
 import { Fx } from '../engine/Fx';
 import type { LoadedMap } from './MapRender';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
+export interface MenuSkirmishDeps {
+  readonly scene: THREE.Scene;
+  readonly map: LoadedMap;
+  readonly mapEntry: MapEntry;
+  readonly characterAssets: CharacterAssetService;
+  readonly anisotropy: () => number;
+  readonly seed: number;
+  /** A navmesh baked for this map already, so the second skirmish on it does not bake again. */
+  readonly nav?: NavGrid;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const log = logger('skirmish');
 
+/** Sim steps per loop step while the round-one freeze runs. See the header. */
+const WARMUP_STEPS_PER_TICK = 8;
+/** The mode. Deathmatch hunts continuously and ends on kills; nothing waits on an objective. */
+const MODE_ID = 'TDM';
+/** The side the empty seat nominally belongs to. It never participates, so it never matters. */
+const SEAT_TEAM: BotTeam = 'A';
+//#endregion
+
+// ====================================== CLASS EmptySeat ======================================= \\
+//#region Class EmptySeat
+/**
+ * The empty player seat, as the server's `Spectator` fills it: a combatant that is never
+ * `participating`, so no bot hunts it, no spawn is scored against it and perception skips it.
+ * It is not registered with the damage system, so nothing can address it. `server/` cannot
+ * be imported here, and thirty lines restated is the price of the boundary.
+ */
+class EmptySeat implements Combatant {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
+  readonly entityId = PLAYER_ENTITY_ID;
+  readonly displayName = 'SPECTATOR';
+  readonly rig = new HitboxRig(HUMANOID_RIG);
+  readonly health = new Health({ ...DEFAULT_HEALTH_CONFIG });
+  readonly team = SEAT_TEAM;
+  readonly px = 0;
+  readonly py = 0;
+  readonly pz = 0;
+  readonly yaw = 0;
+  readonly vx = 0;
+  readonly vz = 0;
+  readonly eyeHeight = 1.65;
+  readonly aimHeight = 1.26;
+  readonly quiet = true;
+  readonly glinting = false;
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  get participating(): boolean {
+    return false;
+  }
+  //#endregion
+}
+//#endregion
+
+// ===================================== CLASS MenuSkirmish ===================================== \\
+//#region Class MenuSkirmish
 /**
  * The fight behind the menu (M15, Phase E): a bots-only Team Deathmatch on the backdrop map,
  * simulated on the frame loop's fixed step and drawn through the dolly's camera.
@@ -73,54 +139,9 @@ const log = logger('skirmish');
  * the backdrop disposes this one and builds the next with the next seed and the navmesh it
  * already baked. The bodies cut to new spawns — it is a backdrop.
  */
-
-export interface MenuSkirmishDeps {
-  readonly scene: THREE.Scene;
-  readonly map: LoadedMap;
-  readonly mapEntry: MapEntry;
-  readonly characterAssets: CharacterAssetService;
-  readonly anisotropy: () => number;
-  readonly seed: number;
-  /** A navmesh baked for this map already, so the second skirmish on it does not bake again. */
-  readonly nav?: NavGrid;
-}
-
-/** Sim steps per loop step while the round-one freeze runs. See the header. */
-const WARMUP_STEPS_PER_TICK = 8;
-/** The mode. Deathmatch hunts continuously and ends on kills; nothing waits on an objective. */
-const MODE_ID = 'TDM';
-/** The side the empty seat nominally belongs to. It never participates, so it never matters. */
-const SEAT_TEAM: BotTeam = 'A';
-
-/**
- * The empty player seat, as the server's `Spectator` fills it: a combatant that is never
- * `participating`, so no bot hunts it, no spawn is scored against it and perception skips it.
- * It is not registered with the damage system, so nothing can address it. `server/` cannot
- * be imported here, and thirty lines restated is the price of the boundary.
- */
-class EmptySeat implements Combatant {
-  readonly entityId = PLAYER_ENTITY_ID;
-  readonly displayName = 'SPECTATOR';
-  readonly rig = new HitboxRig(HUMANOID_RIG);
-  readonly health = new Health({ ...DEFAULT_HEALTH_CONFIG });
-  readonly team = SEAT_TEAM;
-  readonly px = 0;
-  readonly py = 0;
-  readonly pz = 0;
-  readonly yaw = 0;
-  readonly vx = 0;
-  readonly vz = 0;
-  readonly eyeHeight = 1.65;
-  readonly aimHeight = 1.26;
-  readonly quiet = true;
-  readonly glinting = false;
-
-  get participating(): boolean {
-    return false;
-  }
-}
-
 export class MenuSkirmish extends Disposable {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly bus: GameBus = createGameBus();
   readonly bots: BotDirector;
   readonly score: ScoreSystem;
@@ -133,32 +154,18 @@ export class MenuSkirmish extends Disposable {
   private readonly fx: Fx;
   private readonly viewer: ViewerContext = { team: SEAT_TEAM, freeForAll: false };
   private tick = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MenuSkirmishDeps) {
     super();
     this.deps = deps;
-    const { map, mapEntry } = deps;
     const modeEntry = findMode(MODE_ID);
-    const movement = DEFAULT_MOVEMENT_CONFIG;
-    const healthConfig = { ...DEFAULT_HEALTH_CONFIG };
 
     // ---- the firefight, as the server wires it ------------------------------------
     this.damage = new DamageSystem(this.bus);
-    this.bots = new BotDirector({
-      world: map.collision,
-      mapDef: map.def,
-      bus: this.bus,
-      damage: this.damage,
-      movement,
-      healthConfig,
-      viewmodelConfig: DEFAULT_VIEWMODEL_CONFIG,
-      tiers: DEFAULT_TIERS,
-      perceptionConfig: DEFAULT_PERCEPTION,
-      scheduler: DEFAULT_SCHEDULER,
-      player: new EmptySeat(),
-      seed: deps.seed,
-      nav: deps.nav,
-    });
+    this.bots = this.createDirector(deps);
     this.bots.freeForAll = false;
     this.damage.freeForAll = false;
 
@@ -169,73 +176,25 @@ export class MenuSkirmish extends Disposable {
       bus: this.bus,
       score: this.score,
       roster: this.bots.roster,
-      mapDef: map.def,
+      mapDef: deps.map.def,
     });
-    this.flow = new MatchFlow({
-      bus: this.bus,
-      score: this.score,
-      roster: this.bots.roster,
-      mode: this.mode,
-      mapId: mapEntry.id,
-      mapName: mapEntry.name,
-      localTeam: SEAT_TEAM,
-      // No `matchStartSeconds`: nobody watches an intro behind the menu, and the default
-      // ten-second freeze is the one the fast-forward below is sized for.
-      onSidesSwapped: (swapped) => this.bots.spawns.setSideSwap(swapped),
-    });
-    this.bots.respawnPolicy = {
-      allowed: (id) => this.flow.respawnAllowed(id),
-      noted: (id) => this.flow.noteRespawn(id),
-    };
-    this.bots.objectives = isObjectiveProvider(this.mode) ? this.mode : null;
-    this.bots.pushAggressionScale = modeEntry.pushAggressionScale ?? 1;
-
-    // A full roster: the map's team size a side, and nobody's seat held back for a human.
-    const size = mapEntry.teamSize;
-    this.bots.populate(size, size, tiersFor('MIX', mapEntry.tierMix));
-    for (const bot of this.bots.bots) this.score.register(bot.entityId, bot.displayName, bot.team);
-    this.flow.start();
+    this.flow = this.createFlow(deps.mapEntry);
+    this.wireBotPolicies(modeEntry);
+    this.populateRoster(deps.mapEntry);
 
     // ---- the picture ------------------------------------------------------------------
-    // Its own deck, seeded from the skirmish's seed, so the menu shows the roster of skins and
-    // consecutive menus deal it differently. Skins load through the same service the match
-    // draws from and stay cached for it.
-    const selector = new RandomCharacterSelector(new Rng(deps.seed ^ 0x5a17_c0de));
-    this.renderer = new BotRenderer(
-      () => this.bots.bots,
-      () => this.viewer,
-      deps.anisotropy(),
-      // Bots only, so `characterId` is always null and this is the deal — but written as the
-      // fallback so the one authority rule holds here too (M16, B6).
-      (actor) =>
-        deps.characterAssets.avatarProvider(
-          characterDefinition(actor.characterId ?? selector.characterIdFor(actor.entityId)),
-        ),
-    );
-    // No nameplates, no health bars, no pads: a backdrop is a picture, not a HUD.
-    this.renderer.setIndicatorsVisible(false);
-    deps.scene.add(this.renderer.group);
-
+    this.renderer = this.createBotRenderer(deps);
     this.fx = new Fx(deps.anisotropy());
     deps.scene.add(this.fx.group);
-    this.own(
-      this.bus.on(EV.WeaponFired, (p) => {
-        const def = WEAPON_DEFS[p.weaponId];
-        if (def === undefined) return;
-        // The world light only: the flash mesh belongs to a viewmodel, and there is none.
-        this.fx.fireMuzzleFlash(p.x, p.y, p.z, def.muzzleFlashScale, false);
-        if (p.tracer) this.fx.spawnTracer(p.x, p.y, p.z, p.endX, p.endY, p.endZ);
-      }),
-    );
-    this.own(
-      this.bus.on(EV.BulletImpact, (p) => {
-        this.fx.spawnImpact(p.x, p.y, p.z, p.nx, p.ny, p.nz, p.material, p.penetrated);
-      }),
-    );
+    this.subscribeToEffects();
 
-    log.info(`${modeEntry.name} on ${mapEntry.name} behind the menu: ${size} vs ${size} bots, seed ${deps.seed}.`);
+    const size = deps.mapEntry.teamSize;
+    log.info(`${modeEntry.name} on ${deps.mapEntry.name} behind the menu: ${size} vs ${size} bots, seed ${deps.seed}.`);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** The navmesh this skirmish walks, for the next one on the same map. */
   get nav(): NavGrid {
     return this.bots.nav;
@@ -279,4 +238,105 @@ export class MenuSkirmish extends Disposable {
     this.deps.scene.remove(this.fx.group);
     this.fx.dispose();
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** The bots, over the map's own collision world and the navmesh the backdrop already baked. */
+  private createDirector(deps: MenuSkirmishDeps): BotDirector {
+    return new BotDirector({
+      world: deps.map.collision,
+      mapDef: deps.map.def,
+      bus: this.bus,
+      damage: this.damage,
+      movement: DEFAULT_MOVEMENT_CONFIG,
+      healthConfig: { ...DEFAULT_HEALTH_CONFIG },
+      viewmodelConfig: DEFAULT_VIEWMODEL_CONFIG,
+      tiers: DEFAULT_TIERS,
+      perceptionConfig: DEFAULT_PERCEPTION,
+      scheduler: DEFAULT_SCHEDULER,
+      player: new EmptySeat(),
+      seed: deps.seed,
+      nav: deps.nav,
+    });
+  }
+
+  private createFlow(mapEntry: MapEntry): MatchFlow {
+    return new MatchFlow({
+      bus: this.bus,
+      score: this.score,
+      roster: this.bots.roster,
+      mode: this.mode,
+      mapId: mapEntry.id,
+      mapName: mapEntry.name,
+      localTeam: SEAT_TEAM,
+      // No `matchStartSeconds`: nobody watches an intro behind the menu, and the default
+      // ten-second freeze is the one the fast-forward below is sized for.
+      onSidesSwapped: (swapped) => this.bots.spawns.setSideSwap(swapped),
+    });
+  }
+
+  /** What the director asks the flow and the mode, once both exist. */
+  private wireBotPolicies(modeEntry: ModeEntry): void {
+    this.bots.respawnPolicy = {
+      allowed: (id) => this.flow.respawnAllowed(id),
+      noted: (id) => this.flow.noteRespawn(id),
+    };
+    this.bots.objectives = isObjectiveProvider(this.mode) ? this.mode : null;
+    this.bots.pushAggressionScale = modeEntry.pushAggressionScale ?? 1;
+  }
+
+  /** A full roster: the map's team size a side, and nobody's seat held back for a human. */
+  private populateRoster(mapEntry: MapEntry): void {
+    const size = mapEntry.teamSize;
+    this.bots.populate(size, size, tiersFor('MIX', mapEntry.tierMix));
+    for (const bot of this.bots.bots) this.score.register(bot.entityId, bot.displayName, bot.team);
+    this.flow.start();
+  }
+
+  /**
+   * The bodies.
+   *
+   * Its own deck, seeded from the skirmish's seed, so the menu shows the roster of skins and
+   * consecutive menus deal it differently. Skins load through the same service the match
+   * draws from and stay cached for it.
+   */
+  private createBotRenderer(deps: MenuSkirmishDeps): BotRenderer {
+    const selector = new RandomCharacterSelector(new Rng(deps.seed ^ 0x5a17_c0de));
+    const renderer = new BotRenderer(
+      () => this.bots.bots,
+      () => this.viewer,
+      deps.anisotropy(),
+      // Bots only, so `characterId` is always null and this is the deal — but written as the
+      // fallback so the one authority rule holds here too (M16, B6).
+      (actor) =>
+        deps.characterAssets.avatarProvider(
+          characterDefinition(actor.characterId ?? selector.characterIdFor(actor.entityId)),
+        ),
+    );
+    // No nameplates, no health bars, no pads: a backdrop is a picture, not a HUD.
+    renderer.setIndicatorsVisible(false);
+    deps.scene.add(renderer.group);
+    return renderer;
+  }
+
+  /** The muzzle lights, the tracers and the impacts, on this skirmish's own bus. */
+  private subscribeToEffects(): void {
+    this.own(
+      this.bus.on(EV.WeaponFired, (p) => {
+        const def = WEAPON_DEFS[p.weaponId];
+        if (def === undefined) return;
+        // The world light only: the flash mesh belongs to a viewmodel, and there is none.
+        this.fx.fireMuzzleFlash(p.x, p.y, p.z, def.muzzleFlashScale, false);
+        if (p.tracer) this.fx.spawnTracer(p.x, p.y, p.z, p.endX, p.endY, p.endZ);
+      }),
+    );
+    this.own(
+      this.bus.on(EV.BulletImpact, (p) => {
+        this.fx.spawnImpact(p.x, p.y, p.z, p.nx, p.ny, p.nz, p.material, p.penetrated);
+      }),
+    );
+  }
+  //#endregion
 }
+//#endregion

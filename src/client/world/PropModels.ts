@@ -1,11 +1,3 @@
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { logger } from '../../shared/core/Log';
-import { gpuWarmup } from '../engine/GpuWarmup';
-import type { MapDef } from '../../shared/world/maps/types';
-
-const log = logger('PropModels');
-
 /**
  * Map props drawn from a model instead of from boxes (2026-09-27).
  *
@@ -28,6 +20,20 @@ const log = logger('PropModels');
  * resupplies, which is a worse picture and an identical game. A map with no station never
  * fetches it.
  */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { logger } from '../../shared/core/Log';
+import { gpuWarmup } from '../engine/GpuWarmup';
+import type { MapDef } from '../../shared/world/maps/types';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('PropModels');
+
 const STATION_URL = '/models/props/station_ammo.glb';
 
 /** The shape whose boxes this model stands over. Held to `PROP_SHAPES` by `check:props`. */
@@ -52,41 +58,18 @@ export const MODELLED_PROP_SHAPES: ReadonlySet<string> = new Set([STATION_SHAPE]
  */
 let stationTemplate: THREE.Object3D | null = null;
 let stationTask: Promise<void> | null = null;
+//#endregion
 
-/**
- * Fetch the station, once per page. Resolves either way: a station that fails to download leaves
- * the boxes standing invisible, which resupplies exactly as it did and simply cannot be seen.
- * Cleared on a failure so a later world tries again.
- */
-export function preloadStation(): Promise<void> {
-  if (stationTemplate !== null) return Promise.resolve();
-  if (stationTask !== null) return stationTask;
-  const task = new GLTFLoader()
-    .loadAsync(STATION_URL)
-    .then((gltf) => {
-      // Shadows set as `addStations` sets them on every copy, so the programs compiled here are
-      // the ones a placed station draws with. See `GpuWarmup.adopt`.
-      gltf.scene.traverse((node) => {
-        const mesh = node as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-      });
-      stationTemplate = gltf.scene;
-      void gpuWarmup.adopt(gltf.scene);
-      log.info('the resupply station is ready.');
-    })
-    .catch((error: unknown) => {
-      log.warn(`the resupply station did not load; its boxes stay invisible. ${String(error)}`);
-      stationTask = null;
-    });
-  stationTask = task;
-  return task;
-}
-
+// ====================================== CLASS PropModels ====================================== \\
+//#region Class PropModels
 export class PropModels {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private disposed = false;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** The station's template, or null while it has not arrived. */
   stationModel(): THREE.Object3D | null {
     return this.disposed ? null : stationTemplate;
@@ -110,37 +93,7 @@ export class PropModels {
     let n = 0;
     for (const p of def.props) {
       if (p.shape !== STATION_SHAPE) continue;
-      const clone = template.clone(true);
-      clone.name = `prop:${STATION_SHAPE}:model`;
-      clone.position.set(p.position.x, p.position.y, p.position.z);
-      clone.rotation.y = p.rotationY;
-      clone.traverse((node) => {
-        const mesh = node as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-      });
-      root.add(clone);
-      /**
-       * Frozen like everything else the map root holds (2026-10-18).
-       *
-       * `MapRender` ends its build by walking its root and turning `matrixAutoUpdate` and
-       * `matrixWorldAutoUpdate` off on all of it, because a map does not move. A station is
-       * added *after* that walk — the model is fetched over the network and arrives whenever
-       * it arrives — so it missed the freeze and recomposed every node's matrix every frame
-       * for the life of the match: measured at 136 of the scene's 1,236 auto-updating
-       * objects, the two stations Foundry places.
-       *
-       * Worth about six microseconds a frame, so this is the invariant and not the clock:
-       * "everything under the map root is static" is either true or it is not worth stating,
-       * and the next prop that arrives late should land in a root where it already holds.
-       * `updateMatrixWorld` first, or the clone keeps the identity matrix it was added with.
-       */
-      clone.updateMatrixWorld(true);
-      clone.traverse((node) => {
-        node.matrixAutoUpdate = false;
-        node.matrixWorldAutoUpdate = false;
-      });
+      root.add(this.placeStation(template, p));
       n += 1;
     }
     return n;
@@ -150,4 +103,81 @@ export class PropModels {
   dispose(): void {
     this.disposed = true;
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** One copy of the pile, stood where the map put it and frozen where it stands. */
+  private placeStation(template: THREE.Object3D, p: MapDef['props'][number]): THREE.Object3D {
+    const clone = template.clone(true);
+    clone.name = `prop:${STATION_SHAPE}:model`;
+    clone.position.set(p.position.x, p.position.y, p.position.z);
+    clone.rotation.y = p.rotationY;
+    castAndReceiveShadows(clone);
+    /**
+     * Frozen like everything else the map root holds (2026-10-18).
+     *
+     * `MapRender` ends its build by walking its root and turning `matrixAutoUpdate` and
+     * `matrixWorldAutoUpdate` off on all of it, because a map does not move. A station is
+     * added *after* that walk — the model is fetched over the network and arrives whenever
+     * it arrives — so it missed the freeze and recomposed every node's matrix every frame
+     * for the life of the match: measured at 136 of the scene's 1,236 auto-updating
+     * objects, the two stations Foundry places.
+     *
+     * Worth about six microseconds a frame, so this is the invariant and not the clock:
+     * "everything under the map root is static" is either true or it is not worth stating,
+     * and the next prop that arrives late should land in a root where it already holds.
+     * `updateMatrixWorld` first, or the clone keeps the identity matrix it was added with.
+     */
+    clone.updateMatrixWorld(true);
+    clone.traverse((node) => {
+      node.matrixAutoUpdate = false;
+      node.matrixWorldAutoUpdate = false;
+    });
+    return clone;
+  }
+  //#endregion
 }
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/**
+ * Fetch the station, once per page. Resolves either way: a station that fails to download leaves
+ * the boxes standing invisible, which resupplies exactly as it did and simply cannot be seen.
+ * Cleared on a failure so a later world tries again.
+ */
+export function preloadStation(): Promise<void> {
+  if (stationTemplate !== null) return Promise.resolve();
+  if (stationTask !== null) return stationTask;
+  const task = new GLTFLoader()
+    .loadAsync(STATION_URL)
+    .then((gltf) => {
+      // Shadows set as `addStations` sets them on every copy, so the programs compiled here are
+      // the ones a placed station draws with. See `GpuWarmup.adopt`.
+      castAndReceiveShadows(gltf.scene);
+      stationTemplate = gltf.scene;
+      void gpuWarmup.adopt(gltf.scene);
+      log.info('the resupply station is ready.');
+    })
+    .catch((error: unknown) => {
+      log.warn(`the resupply station did not load; its boxes stay invisible. ${String(error)}`);
+      stationTask = null;
+    });
+  stationTask = task;
+  return task;
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Every mesh under `root` both casts and receives, which is what a prop on a floor needs. */
+function castAndReceiveShadows(root: THREE.Object3D): void {
+  root.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+  });
+}
+//#endregion

@@ -1,7 +1,23 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import { Rng } from '../../shared/core/Rng';
 import type { ParticulateDef } from '../../shared/world/maps/types';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * Wrapping is done against the position the cloud was last *recentred* on, not the live
+ * camera, and it only recentres when the camera has moved this far. Recentring every frame
+ * would wrap motes continuously and make the cloud appear to be dragged along, which is
+ * exactly the artefact that gives a camera-locked particle system away.
+ */
+const RECENTRE_DISTANCE = 4;
+//#endregion
+
+// ===================================== CLASS Particulate ====================================== \\
+//#region Class Particulate
 /**
  * Airborne particulate: Dunes' dust, Depot's cold haze (brief S6.1, S6.2).
  *
@@ -27,16 +43,9 @@ import type { ParticulateDef } from '../../shared/world/maps/types';
  * mote across the yard is smaller than one at your eye — without which the cloud reads as
  * a screen-space overlay rather than as air.
  */
-
-/**
- * Wrapping is done against the position the cloud was last *recentred* on, not the live
- * camera, and it only recentres when the camera has moved this far. Recentring every frame
- * would wrap motes continuously and make the cloud appear to be dragged along, which is
- * exactly the artefact that gives a camera-locked particle system away.
- */
-const RECENTRE_DISTANCE = 4;
-
 export class Particulate {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly points: THREE.Points;
 
   private readonly def: ParticulateDef;
@@ -50,25 +59,16 @@ export class Particulate {
   private centreY = 0;
   private centreZ = 0;
   private elapsed = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(def: ParticulateDef) {
     this.def = def;
     const count = Math.max(1, Math.floor(def.count));
     this.positions = new Float32Array(count * 3);
     this.wobble = new Float32Array(count * 2);
-
-    // Seeded, so the same map always produces the same cloud. Decoration must not depend
-    // on Math.random any more than geometry does.
-    const rng = new Rng(0x0d05_7a11 ^ count);
-    for (let i = 0; i < count; i++) {
-      this.positions[i * 3] = rng.spread() * def.radius;
-      // Biased low: dust hangs nearer the ground than the sky, and motes above the roofs
-      // are motes nobody ever sees.
-      this.positions[i * 3 + 1] = rng.float() * def.radius * 0.55;
-      this.positions[i * 3 + 2] = rng.spread() * def.radius;
-      this.wobble[i * 2] = rng.range(0.4, 1.8);
-      this.wobble[i * 2 + 1] = rng.float() * Math.PI * 2;
-    }
+    this.scatter(count);
 
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
@@ -93,7 +93,10 @@ export class Particulate {
     this.points.frustumCulled = false;
     this.points.renderOrder = 2;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Advance the cloud and keep it around the camera.
    *
@@ -103,25 +106,62 @@ export class Particulate {
    * values, and no gameplay value is computed here).
    */
   update(cameraX: number, cameraY: number, cameraZ: number, dt: number): void {
+    this.recentre(cameraX, cameraY, cameraZ);
+    this.elapsed += dt;
+    this.drift(dt);
+
+    const attribute = this.geometry.attributes['position'];
+    if (attribute !== undefined) attribute.needsUpdate = true;
+  }
+
+  dispose(): void {
+    this.geometry.dispose();
+    this.material.dispose();
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Seeded, so the same map always produces the same cloud. Decoration must not depend
+   * on Math.random any more than geometry does.
+   */
+  private scatter(count: number): void {
+    const def = this.def;
+    const rng = new Rng(0x0d05_7a11 ^ count);
+    for (let i = 0; i < count; i++) {
+      this.positions[i * 3] = rng.spread() * def.radius;
+      // Biased low: dust hangs nearer the ground than the sky, and motes above the roofs
+      // are motes nobody ever sees.
+      this.positions[i * 3 + 1] = rng.float() * def.radius * 0.55;
+      this.positions[i * 3 + 2] = rng.spread() * def.radius;
+      this.wobble[i * 2] = rng.range(0.4, 1.8);
+      this.wobble[i * 2 + 1] = rng.float() * Math.PI * 2;
+    }
+  }
+
+  /** Recentre in whole steps so motes stay put in world space between recentres. */
+  private recentre(cameraX: number, cameraY: number, cameraZ: number): void {
+    if (
+      Math.abs(cameraX - this.centreX) <= RECENTRE_DISTANCE &&
+      Math.abs(cameraY - this.centreY) <= RECENTRE_DISTANCE &&
+      Math.abs(cameraZ - this.centreZ) <= RECENTRE_DISTANCE
+    ) {
+      return;
+    }
+    this.centreX = cameraX;
+    this.centreY = cameraY;
+    this.centreZ = cameraZ;
+    this.points.position.set(cameraX, cameraY - this.def.radius * 0.2, cameraZ);
+  }
+
+  /** Move every mote by the map's drift plus its own sway, wrapping it back into the box. */
+  private drift(dt: number): void {
     const def = this.def;
     const pos = this.positions;
     const n = pos.length / 3;
     const r = def.radius;
     const span = r * 2;
-
-    // Recentre in whole steps so motes stay put in world space between recentres.
-    if (
-      Math.abs(cameraX - this.centreX) > RECENTRE_DISTANCE ||
-      Math.abs(cameraY - this.centreY) > RECENTRE_DISTANCE ||
-      Math.abs(cameraZ - this.centreZ) > RECENTRE_DISTANCE
-    ) {
-      this.centreX = cameraX;
-      this.centreY = cameraY;
-      this.centreZ = cameraZ;
-      this.points.position.set(cameraX, cameraY - r * 0.2, cameraZ);
-    }
-
-    this.elapsed += dt;
     const dx = def.drift.x * dt;
     const dy = def.drift.y * dt;
     const dz = def.drift.z * dt;
@@ -136,17 +176,13 @@ export class Particulate {
       pos[p + 1] = wrapUp((pos[p + 1] ?? 0) + dy + Math.cos(t * rate * 0.7 + phase) * dt * 0.18, r);
       pos[p + 2] = wrap((pos[p + 2] ?? 0) + dz + Math.cos(t * rate + phase) * dt * 0.35, r, span);
     }
-
-    const attribute = this.geometry.attributes['position'];
-    if (attribute !== undefined) attribute.needsUpdate = true;
   }
-
-  dispose(): void {
-    this.geometry.dispose();
-    this.material.dispose();
-  }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /** Wrap a coordinate into `[-r, r)`. */
 function wrap(v: number, r: number, span: number): number {
   if (v >= r) return v - span;
@@ -161,3 +197,4 @@ function wrapUp(v: number, r: number): number {
   if (v < 0) return v + top;
   return v;
 }
+//#endregion

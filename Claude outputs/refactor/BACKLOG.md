@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**47 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**49 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -73,6 +73,7 @@ and belong in its Step 2 plan.
 | ~~C7~~ | `client/weapons/` WeaponMesh, WeaponMeshParts + the five files they were split into | **closed** — nothing was bound to it: no §1 row, and *WeaponMesh*, *WeaponMeshParts*, *suppressor*, *silhouette*, *held weapon* and *BoxPart* have no hits anywhere in this file. Every *camo* hit is **#29**, whose file is `shared/meta/`'s `sanitiseLoadout` (A19's), and the two *attachment* hits are inside it. **C7 opened #58**: the canvas-and-texture helper here is the same one `engine/ProceduralTextures.ts` carries, and that file is C4's and already in the ratchet |
 | ~~C8~~ | `client/weapons/` ViewmodelHands, HandPoses, KnifeMesh, GrenadeMesh, ShieldMesh, WeaponSilhouette | **closed** — nothing was bound to it: none of the six names appears anywhere in this file, and every *shield*, *grenade* and *arm* hit is inside #57 itself. **#57's watch-for is answered**: `ViewmodelHands` carries fourteen scratch objects and none of them escapes — `place` builds its result with `new THREE.Vector3()` and `new THREE.Quaternion()`, so the class does not have #57's defect. **C8 opened #59** |
 | ~~C9~~ | `client/weapons/` WeaponAssetService, WeaponAssetCatalog, WeaponModelSpecs, WeaponAudio | **closed** — nothing was bound to it: no §1 row, and none of the four names appears anywhere in this file except **#35**, which is **C23's** and whose edit is in `Game.ts` (`warmWeaponAssets`), outside R3's fence — declined with a reason, and the entry already says the service "already has every loader this needs". What C9 did close is **#56's watch-for**: `WeaponAudio` has the shared-scratch defect C3 found, three times, and it is now **#60**. C9 also opened **#61**, **#62** and **#63**, all three found by its own 104 characterization tests |
+| ~~C10~~ | `client/world/` MapBuildQueue, MapMesher, MapRender, MenuBackdrop, MenuSkirmish, Particulate, PropModels, SkyDome | **closed** — nothing was bound to it: no §1 row, and none of the eight names appears anywhere in this file except one parenthesis in #56 that says so itself — *"(The file is C9's, not C10's.)"*. The broader sweep is empty too: *particulate*, *dust*, *backdrop*, *mesher*, *map build*, *client/world*, *thumbnail* and *terrain* have no hits at all, every *sky* hit is #55's `SKY_LAYER` note, every *skirmish* hit is the NET harness, and every *prop* hit is #4's `props.ts` generator. **C10 opened #64 and #65**, both from its own 204 characterization tests and its own skeleton work |
 | C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
@@ -1343,6 +1344,29 @@ primitive.
 
 ## 6. Documentation and housekeeping
 
+### #65 — `MapMesher`'s ray bundle is built at load by a hoist nothing writes down · `open` *(opened 2026-11-03 by C10)*
+
+**Files** `src/client/world/MapMesher.ts` (`AO_DIRECTIONS`, `buildHemisphere`). **Origin** C10.
+
+`const AO_DIRECTIONS = buildHemisphere(16)` runs at module load and calls a function declared
+*below* it in the file. That is legal only because `buildHemisphere` is a `function` declaration
+and therefore hoisted; had anyone written it as `const buildHemisphere = (n) => …`, the module
+would throw on import with a temporal-dead-zone error, and it would throw for every importer of
+`MapRender`, which is most of the client.
+
+C10 put the constant under a `DERIVED CONSTANTS` section, which is what §3.2 asks for a value
+that reads a later declaration at load time, and said so in its comment. That records *where* it
+sits. It does not record that the arrangement is load-bearing.
+
+**Decide** whether to leave it with the note C10 added, or to remove the dependency on hoisting
+altogether — the bundle is 48 floats and nothing reads it before the first bake, so a lazily
+built module-level cache would make the order irrelevant. The second costs one branch per
+`bakeAo` call, which is once per material per map.
+
+**Verify** `npm run check`, plus C10's BROWSER checksum A: every `== AO` line in it is this
+bundle, and the bake is bit-exact against four maps at four settings.
+
+
 ### #43 — The harness's "background build" warning tells you to set a variable that is already set · `open` *(opened 2026-10-19)*
 **Files** `src/server/skirmishHarness.ts` (~line 1451, the `background build` warning). **Origin**
 the session that closed #40, on 2026-10-19.
@@ -1464,6 +1488,37 @@ immune, because its figures go through `toFixed(3)`/`toFixed(4)`.
 ---
 
 ## 6b. Duplication that spans units — opened by A16
+
+### #64 — The map root's matrix freeze is written twice, and the two files cannot share it · `open` *(opened 2026-11-03 by C10)*
+
+**Files** `src/client/world/MapRender.ts` (`freezeMatrices`) and
+`src/client/world/PropModels.ts` (`placeStation`'s closing walk). **Origin** C10.
+
+Both walk a subtree and turn `matrixAutoUpdate` and `matrixWorldAutoUpdate` off on every node,
+for the same reason and with the same two lines:
+
+```
+MapRender.freezeMatrices(root)    root.updateMatrixWorld(true); root.traverse(off)
+PropModels.placeStation(...)      clone.updateMatrixWorld(true); clone.traverse(off)
+```
+
+They are not two copies by accident — the second exists *because* of the first. `MapRender`
+freezes its root at the end of the build; a station arrives over the network minutes later and
+has to freeze itself, which is the whole of the comment on it (2026-10-18, measured at 136 of
+1,236 auto-updating objects).
+
+**Why C10 could not merge them.** `MapRender` imports `MODELLED_PROP_SHAPES` from `PropModels`,
+so the reverse import is a cycle, and the only other home is a third file in the same directory
+— a new source file, which R3 allows only in a unit marked **design**. C10 is not one. Both
+copies are now named functions with the reason on them, which is the most a fenced unit can do.
+
+**Decide** whether `client/world/` should carry a small shared module for "what the map root
+holds is static" (it would also be the home for the invariant the next late-arriving prop needs
+to honour), or whether two three-line walks with one comment between them are simply fine. Either
+is defensible; what is not is a third copy appearing without anyone noticing the first two.
+
+**Verify** `npm run check`, plus C10's BROWSER checksum A, whose `auto=` field on every node of
+every map root is exactly what this is about.
 
 ### #54 — `IntroPlan.ease` is the last private copy of `smoothstep` · `open` *(opened 2026-10-25 by C1)*
 

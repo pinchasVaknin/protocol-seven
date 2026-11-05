@@ -471,6 +471,13 @@ const FINISHED = {
     'src/client/world/PropModels.ts',
     'src/client/world/SkyDome.ts',
   ],
+  C11: [
+    'src/client/ai/ActorIndicator.ts',
+    'src/client/ai/BotMesh.ts',
+    'src/client/ai/BotRenderer.ts',
+    'src/client/combat/TargetDummy.ts',
+    'src/client/combat/TargetRange.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

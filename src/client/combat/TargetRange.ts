@@ -1,10 +1,3 @@
-import * as THREE from 'three';
-import { EV, type GameBus } from '../../shared/core/Events';
-import type { HealthConfig } from '../../shared/player/Health';
-import { makeGroundProbe, type CollisionWorld } from '../../shared/world/CollisionWorld';
-import type { DamageSystem } from '../../shared/combat/DamageSystem';
-import { buildDummyMaterials, TargetDummy, type DummyMaterials, type DummySpec } from './TargetDummy';
-
 /**
  * The M2 firing range (brief S6.8).
  *
@@ -18,6 +11,18 @@ import { buildDummyMaterials, TargetDummy, type DummyMaterials, type DummySpec }
  * other and half the range becomes unusable.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { EV, type GameBus } from '../../shared/core/Events';
+import type { HealthConfig } from '../../shared/player/Health';
+import { makeGroundProbe, type CollisionWorld } from '../../shared/world/CollisionWorld';
+import type { DamageSystem } from '../../shared/combat/DamageSystem';
+import { buildDummyMaterials, TargetDummy, type DummyMaterials, type DummySpec } from './TargetDummy';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * Where the range's entity ids live (M11 Gate B playtest).
  *
@@ -97,18 +102,6 @@ const MEASURED: readonly Readonly<{ id: number; range: number; lateral: number }
   { id: DUMMY_IDS.r25, range: 25, lateral: 1.2 },
   { id: DUMMY_IDS.r40, range: 40, lateral: 8.0 },
 ];
-
-function measuredSpecs(): DummySpec[] {
-  return MEASURED.map((m) => ({
-    id: m.id,
-    name: `${m.range} M`,
-    behaviour: 'static' as const,
-    x: FIRING_LINE.x + Math.sqrt(Math.max(0, m.range * m.range - m.lateral * m.lateral)),
-    y: 0,
-    z: FIRING_LINE.z + m.lateral,
-    yaw: FACING_WEST,
-  }));
-}
 
 /**
  * Three bays, from the M7 playtest (S3 of the fix list).
@@ -227,36 +220,26 @@ const SPECS: readonly DummySpec[] = [
   },
 ];
 
-/**
- * Where a dummy's feet actually land, given the geometry under its authored position.
- *
- * A thin probe capsule dropped from head height. `CollisionWorld.probeGround` only reports
- * *walkable* contacts, which is the right filter: a dummy should stand on a floor, a step or
- * a ramp, and should not perch on the sloped side of a barricade it happens to overlap.
- *
- * Falls back to the authored `y` when nothing is found — an authored position over the pit
- * is a map error, and silently teleporting the dummy to the pit floor would hide it.
- */
+/** The scratch the ground probe writes its hit into. One per module; it is read at once. */
 const groundProbe = makeGroundProbe();
 const PROBE_FROM = 2.2;
 const PROBE_DEPTH = 5;
+//#endregion
 
-function groundedSpec(spec: DummySpec, world: CollisionWorld): DummySpec {
-  const from = spec.y + PROBE_FROM;
-  if (!world.probeGround(spec.x, from, spec.z, 0.2, 0.4, PROBE_DEPTH, groundProbe)) return spec;
-  const y = from - groundProbe.distance;
-  // Only report a change worth making; a millimetre of probe noise is not a relocation.
-  if (Math.abs(y - spec.y) < 0.02) return spec;
-  return { ...spec, y };
-}
-
+// ===================================== CLASS TargetRange ====================================== \\
+//#region Class TargetRange
 export class TargetRange {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly group = new THREE.Group();
   readonly dummies: TargetDummy[] = [];
 
   private readonly byId = new Map<number, TargetDummy>();
   private readonly materials: DummyMaterials & { dispose(): void };
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   /**
    * `world` is post-M8 and is only used at construction, to put each dummy on the floor.
    *
@@ -295,7 +278,10 @@ export class TargetRange {
       dummy.noteHit(p.amount, p.zone, p.distance);
     });
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get(id: number): TargetDummy | undefined {
     return this.byId.get(id);
   }
@@ -324,4 +310,44 @@ export class TargetRange {
     this.materials.dispose();
     this.group.clear();
   }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * The four measurement targets, each solved so its *straight-line* distance from the firing
+ * line is exactly the stated range rather than approximately it.
+ */
+function measuredSpecs(): DummySpec[] {
+  return MEASURED.map((m) => ({
+    id: m.id,
+    name: `${m.range} M`,
+    behaviour: 'static' as const,
+    x: FIRING_LINE.x + Math.sqrt(Math.max(0, m.range * m.range - m.lateral * m.lateral)),
+    y: 0,
+    z: FIRING_LINE.z + m.lateral,
+    yaw: FACING_WEST,
+  }));
+}
+
+/**
+ * Where a dummy's feet actually land, given the geometry under its authored position.
+ *
+ * A thin probe capsule dropped from head height. `CollisionWorld.probeGround` only reports
+ * *walkable* contacts, which is the right filter: a dummy should stand on a floor, a step or
+ * a ramp, and should not perch on the sloped side of a barricade it happens to overlap.
+ *
+ * Falls back to the authored `y` when nothing is found — an authored position over the pit
+ * is a map error, and silently teleporting the dummy to the pit floor would hide it.
+ */
+function groundedSpec(spec: DummySpec, world: CollisionWorld): DummySpec {
+  const from = spec.y + PROBE_FROM;
+  if (!world.probeGround(spec.x, from, spec.z, 0.2, 0.4, PROBE_DEPTH, groundProbe)) return spec;
+  const y = from - groundProbe.distance;
+  // Only report a change worth making; a millimetre of probe noise is not a relocation.
+  if (Math.abs(y - spec.y) < 0.02) return spec;
+  return { ...spec, y };
+}
+//#endregion

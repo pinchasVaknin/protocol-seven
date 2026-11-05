@@ -1,25 +1,3 @@
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { clamp01, lerp } from '../../shared/core/MathUtil';
-import { HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
-import {
-  AMPLITUDE_RESPONSE,
-  ARM_PITCH,
-  advanceGaitPhase,
-  gaitAmplitude,
-  gaitAt,
-  LEG_PIVOT_Y,
-} from '../../shared/ai/Gait';
-import { DEATH_VARIANTS, type ActorAnimationInput } from '../../shared/ai/BotVisualState';
-import {
-  stockShift,
-  type ActorAvatar,
-  type ActorIndicatorAnchor,
-  type ActorIndicatorFrameAnchor,
-  type HeldEquipmentAsset,
-  type HeldWeaponAsset,
-} from '../characters/ActorAvatar';
-
 /**
  * A bot's body, and the way it dies (brief S6.8; playtest round 5, F4).
  *
@@ -73,26 +51,33 @@ import {
  * Flinch is the same trick at 1/20th the scale on a 0.18 s decay.
  */
 
-/** Seconds the fall takes to settle. The body stays put afterwards until respawn. */
-const FALL_SECONDS = 1.05;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { clamp01, lerp } from '../../shared/core/MathUtil';
+import { HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
+import {
+  AMPLITUDE_RESPONSE,
+  ARM_PITCH,
+  advanceGaitPhase,
+  gaitAmplitude,
+  gaitAt,
+  LEG_PIVOT_Y,
+} from '../../shared/ai/Gait';
+import { DEATH_VARIANTS, type ActorAnimationInput } from '../../shared/ai/BotVisualState';
+import {
+  stockShift,
+  type ActorAvatar,
+  type ActorIndicatorAnchor,
+  type ActorIndicatorFrameAnchor,
+  type HeldEquipmentAsset,
+  type HeldWeaponAsset,
+} from '../characters/ActorAvatar';
+//#endregion
 
-/** How far a killing hit can shove a body along its own direction, metres. */
-const MAX_SHOVE = 0.55;
-
-const FLINCH_SECONDS = 0.18;
-const FLINCH_ANGLE = 0.075;
-
-/**
- * Where the weapon sits, in rig-local metres, and it is authored against the arm pose above.
- *
- * The hands end up near (0, 0.94, -0.32) at `ARM_PITCH`; the weapon's origin is the centre of
- * its receiver, so it sits a little above and behind them. Held **level** rather than dipped
- * into a low ready: a bot spends much of a match shooting, `WeaponSystem` gives this file no
- * firing pose to switch to, and a muzzle pointing at the floor during a firefight is a worse
- * lie than one pointing where the body is facing.
- */
-const WEAPON_OFFSET = { x: 0.04, y: 1.02, z: -0.3 } as const;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * Everything every body on the map shares: four materials and four geometries.
  *
@@ -126,40 +111,52 @@ export interface BotAssets {
 
   dispose(): void;
 }
+//#endregion
 
-export function buildBotAssets(): BotAssets {
-  // A fallback may be visible while a GLB loads or after an asset error. It must not carry a
-  // broad team colour, or its brief appearance would still hide the author's skin/IFF design.
-  const body = new THREE.MeshLambertMaterial({ color: 0x59616e });
-  const head = new THREE.MeshLambertMaterial({ color: 0x8a6a3c });
-  const gear = new THREE.MeshLambertMaterial({ color: 0x1d2026 });
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Seconds the fall takes to settle. The body stays put afterwards until respawn. */
+const FALL_SECONDS = 1.05;
 
-  const bodyGeometry = buildBodyGeometry();
-  const headGeometry = buildZoneGeometry(['head']);
-  const gearGeometry = buildGearGeometry();
-  const legGeometry = buildLegGeometry();
+/** How far a killing hit can shove a body along its own direction, metres. */
+const MAX_SHOVE = 0.55;
 
-  return {
-    body,
-    head,
-    gear,
-    bodyGeometry,
-    headGeometry,
-    gearGeometry,
-    legGeometry,
-    dispose(): void {
-      body.dispose();
-      head.dispose();
-      gear.dispose();
-      bodyGeometry.dispose();
-      headGeometry.dispose();
-      gearGeometry.dispose();
-      legGeometry.dispose();
-    },
-  };
-}
+const FLINCH_SECONDS = 0.18;
+const FLINCH_ANGLE = 0.075;
 
+/**
+ * Where the weapon sits, in rig-local metres, and it is authored against the arm pose above.
+ *
+ * The hands end up near (0, 0.94, -0.32) at `ARM_PITCH`; the weapon's origin is the centre of
+ * its receiver, so it sits a little above and behind them. Held **level** rather than dipped
+ * into a low ready: a bot spends much of a match shooting, `WeaponSystem` gives this file no
+ * firing pose to switch to, and a muzzle pointing at the floor during a firefight is a worse
+ * lie than one pointing where the body is facing.
+ */
+const WEAPON_OFFSET = { x: 0.04, y: 1.02, z: -0.3 } as const;
+
+/**
+ * The x offset of a leg box, so the hip nodes sit where the hitboxes do.
+ *
+ * Read off the rig rather than typed, for the same reason `LEG_PIVOT_Y` is: two numbers
+ * describing one hip is one number too many.
+ */
+const LEG_OFFSET_X = Math.abs(HUMANOID_RIG.boxes.find((b) => b.name === 'legL')?.ox ?? 0.11);
+
+/** How far down the arm box from the shoulder the pad sits — the skin's calibration, in metres. */
+const SHOULDER_PAD_DROP = 0.04;
+//#endregion
+
+// ======================================= CLASS BotMesh ======================================== \\
+//#region Class BotMesh
 export class BotMesh implements ActorAvatar {
+  // ========================================== STATIC ========================================== \\
+  //#region Static
+  private static readonly upAxis = new THREE.Vector3(0, 1, 0);
+  //#endregion
+
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly group = new THREE.Group();
 
   private readonly body: THREE.Mesh;
@@ -180,7 +177,6 @@ export class BotMesh implements ActorAvatar {
   private readonly quat = new THREE.Quaternion();
   private readonly axis = new THREE.Vector3();
   private readonly spinQuat = new THREE.Quaternion();
-  private static readonly upAxis = new THREE.Vector3(0, 1, 0);
 
   private dying = false;
   private deathTime = 0;
@@ -204,7 +200,10 @@ export class BotMesh implements ActorAvatar {
   private lastX = 0;
   private lastZ = 0;
   private seeded = false;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(assets: BotAssets) {
     this.body = new THREE.Mesh(assets.bodyGeometry, assets.body);
     this.head = new THREE.Mesh(assets.headGeometry, assets.head);
@@ -250,6 +249,13 @@ export class BotMesh implements ActorAvatar {
       this.shoulderFrames.rightShoulder,
     );
   }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  get isDying(): boolean {
+    return this.dying;
+  }
 
   /**
    * Put a weapon in this body's hands, or take it away.
@@ -290,10 +296,6 @@ export class BotMesh implements ActorAvatar {
     if (weaponAway === this.weaponAway) return;
     this.weaponAway = weaponAway;
     if (this.weapon !== null) this.weapon.visible = !weaponAway;
-  }
-
-  get isDying(): boolean {
-    return this.dying;
   }
 
   /** Start the fall. `dx/dz` is the direction the killing round was travelling. */
@@ -434,7 +436,10 @@ export class BotMesh implements ActorAvatar {
   dispose(): void {
     this.group.clear();
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * Advance the walk cycle from the ground this body was drawn to cover.
    *
@@ -472,24 +477,52 @@ export class BotMesh implements ActorAvatar {
     this.spinQuat.setFromAxisAngle(this.axis, angle);
     this.group.quaternion.premultiply(this.spinQuat);
   }
+  //#endregion
 }
+//#endregion
 
-/**
- * The x offset of a leg box, so the hip nodes sit where the hitboxes do.
- *
- * Read off the rig rather than typed, for the same reason `LEG_PIVOT_Y` is: two numbers
- * describing one hip is one number too many.
- */
-const LEG_OFFSET_X = Math.abs(HUMANOID_RIG.boxes.find((b) => b.name === 'legL')?.ox ?? 0.11);
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function buildBotAssets(): BotAssets {
+  // A fallback may be visible while a GLB loads or after an asset error. It must not carry a
+  // broad team colour, or its brief appearance would still hide the author's skin/IFF design.
+  const body = new THREE.MeshLambertMaterial({ color: 0x59616e });
+  const head = new THREE.MeshLambertMaterial({ color: 0x8a6a3c });
+  const gear = new THREE.MeshLambertMaterial({ color: 0x1d2026 });
 
+  const bodyGeometry = buildBodyGeometry();
+  const headGeometry = buildZoneGeometry(['head']);
+  const gearGeometry = buildGearGeometry();
+  const legGeometry = buildLegGeometry();
+
+  return {
+    body,
+    head,
+    gear,
+    bodyGeometry,
+    headGeometry,
+    gearGeometry,
+    legGeometry,
+    dispose(): void {
+      body.dispose();
+      head.dispose();
+      gear.dispose();
+      bodyGeometry.dispose();
+      headGeometry.dispose();
+      gearGeometry.dispose();
+      legGeometry.dispose();
+    },
+  };
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function requiredRigBox(name: string): (typeof HUMANOID_RIG.boxes)[number] {
   const box = HUMANOID_RIG.boxes.find((candidate) => candidate.name === name);
   if (box === undefined) throw new Error(`HUMANOID_RIG has no "${name}" box for an indicator anchor.`);
   return box;
 }
-
-/** How far down the arm box from the shoulder the pad sits — the skin's calibration, in metres. */
-const SHOULDER_PAD_DROP = 0.04;
 
 /**
  * A pad's frame on the outer face of an arm box, in the pad convention (+Z out of the arm,
@@ -524,11 +557,7 @@ function buildZoneGeometry(zones: readonly HitZone[]): THREE.BufferGeometry {
     g.translate(box.ox, box.oy, box.oz);
     parts.push(g);
   }
-  const merged = mergeGeometries(parts, false);
-  for (const p of parts) p.dispose();
-  if (merged === null) throw new Error('Failed to merge bot body geometry');
-  merged.computeBoundingSphere();
-  return merged;
+  return mergeParts(parts, 'bot body');
 }
 
 /**
@@ -559,11 +588,7 @@ function buildBodyGeometry(): THREE.BufferGeometry {
     }
     parts.push(g);
   }
-  const merged = mergeGeometries(parts, false);
-  for (const p of parts) p.dispose();
-  if (merged === null) throw new Error('Failed to merge bot body geometry');
-  merged.computeBoundingSphere();
-  return merged;
+  return mergeParts(parts, 'bot body');
 }
 
 /**
@@ -600,9 +625,21 @@ function buildGearGeometry(): THREE.BufferGeometry {
   put(0.4, 0.24, 0.06, 0, 1.24, -0.15);
   put(0.15, 0.09, 0.03, 0, 1.68, -0.12);
 
-  const merged = mergeGeometries(parts, false);
+  return mergeParts(parts, 'bot gear');
+}
+
+/**
+ * Weld the boxes into one buffer and release the parts.
+ *
+ * `mergeGeometries` returns null rather than throwing when the parts disagree about their
+ * attributes, and a body silently missing its torso is worse than a boot that stops, so every
+ * caller checks — which is the whole reason this is one function and not three copies.
+ */
+function mergeParts(parts: readonly THREE.BufferGeometry[], what: string): THREE.BufferGeometry {
+  const merged = mergeGeometries(parts as THREE.BufferGeometry[], false);
   for (const p of parts) p.dispose();
-  if (merged === null) throw new Error('Failed to merge bot gear geometry');
+  if (merged === null) throw new Error(`Failed to merge ${what} geometry`);
   merged.computeBoundingSphere();
   return merged;
 }
+//#endregion

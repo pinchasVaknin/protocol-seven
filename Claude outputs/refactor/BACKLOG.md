@@ -30,7 +30,12 @@ its numbers and pointed somewhere else; it opened **#55** from its own BROWSER c
 the first entry a later unit closed a question for rather than opening a new question — and the
 answer made **#60**: the same shared-scratch slip, three times, in the file #56 pointed at. Its
 tests opened **#61**, **#62** and **#63** as well, which makes C9 the unit that filed the most
-and wrote none of the defects.
+and wrote none of the defects. **C11 answered #33's own question on 2026-11-05** and the answer
+was *neither half, from inside a refactor unit*: the owner API is in C4's finished files and the
+cheap alternative deletes what the range exists to read. It measured the orphaned window instead
+— bounded at 2.5 s, on exactly one dummy of twelve — so #33 stays open, re-scoped to a session of
+its own with a number in hand. C11 opened **#66** (which its own oracle found), **#67**, and
+**#68**, the first entry about the test suite's own running time rather than about the game.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -74,7 +79,7 @@ and belong in its Step 2 plan.
 | ~~C8~~ | `client/weapons/` ViewmodelHands, HandPoses, KnifeMesh, GrenadeMesh, ShieldMesh, WeaponSilhouette | **closed** — nothing was bound to it: none of the six names appears anywhere in this file, and every *shield*, *grenade* and *arm* hit is inside #57 itself. **#57's watch-for is answered**: `ViewmodelHands` carries fourteen scratch objects and none of them escapes — `place` builds its result with `new THREE.Vector3()` and `new THREE.Quaternion()`, so the class does not have #57's defect. **C8 opened #59** |
 | ~~C9~~ | `client/weapons/` WeaponAssetService, WeaponAssetCatalog, WeaponModelSpecs, WeaponAudio | **closed** — nothing was bound to it: no §1 row, and none of the four names appears anywhere in this file except **#35**, which is **C23's** and whose edit is in `Game.ts` (`warmWeaponAssets`), outside R3's fence — declined with a reason, and the entry already says the service "already has every loader this needs". What C9 did close is **#56's watch-for**: `WeaponAudio` has the shared-scratch defect C3 found, three times, and it is now **#60**. C9 also opened **#61**, **#62** and **#63**, all three found by its own 104 characterization tests |
 | ~~C10~~ | `client/world/` MapBuildQueue, MapMesher, MapRender, MenuBackdrop, MenuSkirmish, Particulate, PropModels, SkyDome | **closed** — nothing was bound to it: no §1 row, and none of the eight names appears anywhere in this file except one parenthesis in #56 that says so itself — *"(The file is C9's, not C10's.)"*. The broader sweep is empty too: *particulate*, *dust*, *backdrop*, *mesher*, *map build*, *client/world*, *thumbnail* and *terrain* have no hits at all, every *sky* hit is #55's `SKY_LAYER` note, every *skirmish* hit is the NET harness, and every *prop* hit is #4's `props.ts` generator. **C10 opened #64 and #65**, both from its own 204 characterization tests and its own skeleton work |
-| C11 | `client/combat/TargetDummy.ts` | #33 (a killed dummy's holes left hanging) |
+| ~~C11~~ | `client/ai/` ActorIndicator, BotMesh, BotRenderer; `client/combat/` TargetDummy, TargetRange | **#33 declined with a reason** — the fix that keeps the range's holes needs per-target ownership on a decal, which lives in `engine/Decals.ts`/`Fx.ts`: **C4's files**, finished, in the `check:style` ratchet and outside R3's fence — exactly why C4 declined it too. The cheap half C11 *could* do inside its own file (drop `'static'` from `TargetDummy.decals`) is a behaviour change that deletes the holes from the four measurement targets and the DPS dummy, which is what the range exists to read. C11 measured the window instead (see #33, rewritten): it is bounded at `RESPAWN_SECONDS` = **2.5 s**, on exactly one dummy. C11 opened #66, #67 and #68 |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
@@ -616,6 +621,50 @@ rather than fixed** under §5.9 of the prompt — the test carries
 `// Pins current behaviour; suspected bug: <title>`. Fixing one means updating its pinning test in
 the same commit, with the reason.
 
+### #66 — A retired actor's nameplate is emptied but never unparented · `open` *(opened 2026-11-05 by C11)*
+
+**Files** `src/client/ai/BotRenderer.ts` (`retireAbsent`), and `ActorIndicator.dispose` as the
+other half of the pair. **Origin** C11, found by its own BROWSER checksum B on its first run.
+
+`retireAbsent` takes an actor that has left the roster and releases everything it owns. The body
+is removed from the scene properly:
+
+```
+mesh.group.removeFromParent();   mesh.dispose();
+```
+
+The indicator is not:
+
+```
+const indicator = this.indicators.get(id);
+indicator?.dispose();            // ActorIndicator.dispose is `group.clear()` — it empties the
+this.indicators.delete(id);      // group and leaves the group itself in `indicatorGroup`
+```
+
+So `indicatorGroup` keeps one **empty `THREE.Group`** for every actor that has ever left, for the
+life of the renderer. Measured over six roster turnovers of two bodies each: the bodies stay at
+2 while the indicator layer goes 2 → 4 → 6 → 8 → 10 → **12**, of which 2 are live.
+
+**Nothing is drawn wrong** — an empty group renders nothing — so this is a scene-graph and
+`updateMatrixWorld` cost that grows with how many actors have come and gone, not a visual defect.
+That is also why no oracle caught it before one went looking: C11's checksum B now records the
+count explicitly.
+
+**Why C11 could not fix it.** R1. Removing the group changes `indicatorGroup.children.length`,
+which is observable output and is exactly what C11's own oracle pins; §5.9 says to pin the
+current behaviour, comment it and open an entry, never to fix it inside the refactor. It is
+pinned in `BotRenderer.test.ts` by two tests that both carry the
+`// Pins current behaviour; suspected bug:` comment.
+
+**The fix** is one line — `indicator.group.removeFromParent()` beside `indicator?.dispose()`, or
+the same line inside `ActorIndicator.dispose` so it matches what the body half already does.
+Prefer the second: `BotRenderer.dispose` reaches the same end today only because
+`this.group.clear()` happens to drop the whole layer.
+
+**Verify** `npm run check`, then C11's BROWSER checksum B, whose `indicatorNodes=` and `empty=`
+lines are the record of today's behaviour and are expected to change — deliberately, and with
+the two pinned tests updated in the same commit.
+
 ### #8 — `NavBakeStats.stacked` is not recounted after pruning · `open`
 **Files** `src/shared/world/NavBake.ts`. **Origin** A5. The `stacked` figure — columns carrying
 more than one surface — keeps the raw count from the first pass while `walkable` and `links` are
@@ -710,7 +759,7 @@ what happens today and no oracle will notice when it changes. All three are clie
 three land in division C files, so each is bound to the unit that owns them (§1) and is done under
 that unit's approval, not here.
 
-### #33 — A killed target dummy leaves its bullet holes hanging in the air · `bound to C11`
+### #33 — A killed target dummy leaves its bullet holes hanging in the air · `needs a decision from the user` · *needs a session of its own (C4 and C11 both declined it)* *(rewritten 2026-11-05 by C11, with the window measured)*
 **Files** `src/client/combat/TargetDummy.ts`; `src/client/engine/Decals.ts` / `Fx.ts` (C4) only if
 the clear needs an API they do not have. **Origin** reported from play, 2026-10-19.
 
@@ -752,7 +801,38 @@ a cursor, a count, and no notion of who placed what. Adding ownership is:
 
 So the cost is small and the awkward part is the ninth-plus parameter, not the memory or the scan.
 The cheap alternative the entry offers — dropping `static` from `TargetDummy.decals` — costs
-nothing in this file and loses the holes on the range, which is the trade C11 is choosing between.
+nothing in this file and loses the holes on the range.
+
+**C11 ran on 2026-11-05 and declined both halves, with a measurement.** The decision this entry
+asked C11 for is made: *neither*, from inside a refactor unit.
+
+- The owner API is in `Decals.ts` / `Fx.ts`, which are **C4's** — finished, in the `check:style`
+  ratchet, outside R3's fence. C11 is no freer to reach into them than C4 was to pre-build for
+  C11. A task bound to a unit may change behaviour where its entry says so; it does not thereby
+  gain the right to edit another unit's finished files.
+- The cheap half is inside `TargetDummy.ts` and C11 could have done it — but it is a behaviour
+  change that removes bullet holes from the four measurement targets *and* the DPS dummy, which
+  are the only targets a group is ever read off. Trading the feedback the range exists to give
+  for the removal of an artefact is the user's call, not a unit's, and this entry is already
+  marked `needs a decision from the user`.
+
+**What C11 measured, which this entry did not have: the orphaned window is bounded, and short.**
+`step` runs `advanceRespawn`, which calls `reset()` once `respawnTimer >= RESPAWN_SECONDS`, and
+`RESPAWN_SECONDS` is **2.5**. So a `static` dummy is dead, with its holes unowned, for two and a
+half seconds — and then the body comes back *behind the very same holes*, because a static dummy
+has not moved and `DecalField` placed them in world space. The report is a 2.5-second artefact on
+a target that puts itself back, not a permanent one. `infinite` never dies and so never
+reproduces it at all, which leaves **exactly one dummy in the whole range** that shows this.
+
+C11 pinned both halves in `TargetDummy.test.ts`: `decals` is true for `static` and `infinite` and
+false for the other three, and `updateVisual` drives `body.visible`/`head.visible` off
+`health.alive`, with the 2.5 s respawn measured either side. Neither can move now without a test
+going red.
+
+**Still open, and now correctly scoped: this needs a session of its own**, not a refactor unit —
+one free to touch `engine/Decals.ts` and `combat/TargetDummy.ts` together. Decide there, with the
+2.5 s in hand, whether a 1.5 KB owner array and an O(CAPACITY) `clearOwner` are worth removing a
+two-and-a-half-second artefact on one target.
 
 ### #34 — The camera trembles while walking the arena · `open` · *every candidate reached so far is measured clean; nothing is confirmed against the reporter's own machine* *(rewritten 2026-10-25, extended and corrected 2026-10-26, by C2)*
 **Files** **not** `src/client/engine/CameraRig.ts` or `FrameLoop.ts` — those are measured clean
@@ -1344,6 +1424,45 @@ primitive.
 
 ## 6. Documentation and housekeeping
 
+### #68 — The suite's heaviest test has no headroom left, and the next unit will trip it · `open` *(opened 2026-11-05 by C11)*
+
+**Files** `src/client/world/MenuSkirmish.test.ts` (C10's), and `vitest.config.ts` if the answer
+is a global one. **Origin** C11, which hit it the moment it added its own five test files.
+
+`MenuSkirmish wiring > deals a different fight for a different seed` builds **two** full 5v5 menu
+skirmishes on Foundry in one test. Measured on 2026-11-05:
+
+| condition | that test |
+|---|---|
+| the file run alone | **2,233 ms** |
+| the whole suite, before C11's test files | passes, 3 runs of 3 |
+| the whole suite, with C11's five test files added | **5,979 / 6,062 / 6,233 ms — over the 5,000 ms default, failing 3 runs of 6** |
+
+So the test is **2.7× slower under suite contention** than it is alone, and Vitest's default
+`testTimeout` is 5,000 ms. That is 2.2× headroom on an idle machine and none on a busy one. The
+suite runs `isolate: true`, which the runner itself reports as *"251 workers spawned · ~906 ms
+startup each"* — five more files is five more spawns competing with the one test that cannot
+afford them.
+
+**C11 got the gate green without touching C10's file**, by making its own tests cheaper: the
+testbed collision world is baked once per file rather than per test, and the read-only
+`TargetRange` groups share two ranges instead of building twenty. Gate green 3 runs of 3 after
+that, and twice more under `npm run check`. **But the headroom it bought is small, and it is not
+C11's to keep spending** — C12 adds twelve more files, C13 six, and each takes some of it.
+
+**Why C11 could not fix it properly.** `MenuSkirmish.test.ts` is **C10's**, outside R3's fence,
+and `vitest.config.ts` is one of the files R4 names explicitly. Both doors are shut to a unit.
+
+**Decide**, in a session of its own: give that one test an explicit timeout (Vitest takes a
+number as the third argument to `it`, which is local and needs no config change), or seed the two
+skirmishes with fewer bots, or turn `isolate: false` on for the suite — the runner claims *"at
+least ~19.77 s faster"* and it would cut the contention at its source, but it is a config change
+that every test in the project would then be sharing a worker under, which is a real decision and
+not a tweak.
+
+**Verify** run `npm run check` five times and count. The honest acceptance here is a pass rate,
+not a single green run.
+
 ### #65 — `MapMesher`'s ray bundle is built at load by a hoist nothing writes down · `open` *(opened 2026-11-03 by C10)*
 
 **Files** `src/client/world/MapMesher.ts` (`AO_DIRECTIONS`, `buildHemisphere`). **Origin** C10.
@@ -1488,6 +1607,41 @@ immune, because its figures go through `toFixed(3)`/`toFixed(4)`.
 ---
 
 ## 6b. Duplication that spans units — opened by A16
+
+### #67 — Two files build the rig's boxes the same way, and hold the same two colours · `open` *(opened 2026-11-05 by C11)*
+
+**Files** `src/client/ai/BotMesh.ts` (`buildZoneGeometry`, `buildBotAssets`) and
+`src/client/combat/TargetDummy.ts` (`buildZoneGeometry`, `buildDummyMaterials`). **Origin** C11.
+
+Two duplications, both **inside one unit** — which is what makes this unusual, because R4.3
+normally sends only *cross-unit* duplication here.
+
+**The geometry.** The two `buildZoneGeometry` functions are the same function: same signature,
+same filter on `box.zone`, same `BoxGeometry` + `translate` + merge, same
+`computeBoundingSphere`. Before C11 they differed in exactly one token — the error string
+(`'Failed to merge bot body geometry'` against `'Failed to merge dummy geometry'`).
+
+**The colours.** `buildBotAssets` and `buildDummyMaterials` each build a `MeshLambertMaterial`
+pair at **`0x59616e`** and **`0x8a6a3c`** — the same two hexes, written twice, for the same
+reason (a grey-box body and a head). Neither names the other. Both are now pinned by number in
+C11's tests, so a change to one is a visible disagreement rather than a silent drift.
+
+**Why C11 could not merge them.** Both copies are **non-exported**. Sharing needs one of:
+exporting one of them (a public-API change under R2, which Step 2 would have had to list and the
+user approve — for a helper whose only new caller is in another directory); importing
+`client/combat` → `client/ai`, which is the wrong direction for a firing range to depend on bot
+rendering; or a third file in a shared directory, which R3 allows only in a unit marked
+**design**, and C11 is not one.
+
+**Decide** whether `shared/combat/HitboxRig.ts` should offer "the merged geometry of these zones"
+beside the rig it already owns — both callers already import `HUMANOID_RIG` from it, so it is the
+one place neither of them has to reach sideways to — or whether two eleven-line functions over
+the same table are simply fine. Note that the grey-box colour pair is a separable decision: it
+could move with the geometry or stay where it is.
+
+**Verify** `npm run check`, plus C11's BROWSER checksum A, which hashes the attribute buffers,
+the index and the bounding sphere of every geometry both files build, and the colour of every
+material — so a merge that moved a single vertex or a single hex shows up as a diff.
 
 ### #64 — The map root's matrix freeze is written twice, and the two files cannot share it · `open` *(opened 2026-11-03 by C10)*
 

@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import type { RenderableActor } from '../../shared/ai/BotVisualState';
 import type { BotTeam } from '../../shared/ai/Combatant';
@@ -14,7 +16,10 @@ import type {
     CharacterAvatarProvider,
     CharacterAvatarProviderResolver,
 } from '../characters/CharacterAvatarProvider';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 // Skeleton cloning and material setup are intentionally amortized. A finished preload can make
 // an entire roster eligible in one frame, and replacing every fallback at once is a visible hitch.
 const MAX_GLTF_AVATAR_CREATIONS_PER_FRAME = 2;
@@ -41,7 +46,10 @@ const SPECTATOR_BODY_CLEARANCE = 0.55;
  * the camera is on would disappear for being in the same column of air.
  */
 const BODY_REACH = 2.1;
+//#endregion
 
+// ===================================== CLASS BotRenderer ====================================== \\
+//#region Class BotRenderer
 /**
  * Draws the bots (M9).
  *
@@ -74,6 +82,8 @@ const BODY_REACH = 2.1;
  * for the process would mean holding geometry across map changes for a saving nobody measured.
  */
 export class BotRenderer {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
     /** Everything this renderer owns, as one node. Added to the scene by `ClientMatch`. */
     readonly group = new THREE.Group();
 
@@ -124,7 +134,10 @@ export class BotRenderer {
      */
     private hidden = new Set<number>();
     private hiddenNext = new Set<number>();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
     /**
      * `actors` is a supplier rather than an array so the caller can decide per frame what is
      * drawable — the bot director's roster in single-player, the snapshot's remote set when
@@ -148,7 +161,10 @@ export class BotRenderer {
         this.indicatorGroup.name = 'actor-indicators';
         this.group.add(this.groupA, this.groupB, this.indicatorGroup);
     }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
     /**
      * Whether the nameplates, health bars and pads are drawn at all (M15, E). The fight behind
      * the menu is a picture, not a HUD; the markers are one layer, so it is one flag.
@@ -214,30 +230,70 @@ export class BotRenderer {
                 dt,
                 camera,
             );
-            // The bodies in the spectator camera's lap are not drawn — after `applyEvents`, whose
-            // respawn edge sets the avatar visible, and after the indicator's own update, so this is
-            // the last word on the frame. Only *those* bodies: the indicator hides itself on a death,
-            // and a first version that wrote `visible = true` to every other actor here put a
-            // nameplate and a health bar back over every corpse in the match.
             // Dormant (protocol 28): the server is not saying where this body is, so neither it nor its
             // nameplate is drawn — through the same switch as the spectator's lap, which keeps the
             // avatar, so a body that comes back into view is not rebuilt from its asset.
-            if (actor.dormant === true || this.hiddenFromSpectator(actor, x, y, z, camera)) {
-                mesh.setVisible(false);
-                indicator.group.visible = false;
-                this.hiddenNext.add(actor.entityId);
-            } else if (this.hidden.has(actor.entityId)) {
-                // Out of the camera's lap: the avatar comes back; the indicator decides for itself
-                // next frame.
-                mesh.setVisible(true);
-            }
+            const away = actor.dormant === true || this.hiddenFromSpectator(actor, x, y, z, camera);
+            this.applyVisibility(actor, mesh, indicator, away);
         }
+        this.swapHiddenSets();
+
+        if (this.avatars.size !== this.present.size) this.retireAbsent();
+    }
+
+    dispose(): void {
+        for (const mesh of this.avatars.values()) {
+            mesh.group.removeFromParent();
+            mesh.dispose();
+        }
+        this.avatars.clear();
+        for (const indicator of this.indicators.values()) indicator.dispose();
+        this.indicators.clear();
+        for (const provider of this.characterProviders.values()) provider.dispose();
+        this.characterProviders.clear();
+        this.seen.clear();
+        this.group.removeFromParent();
+        this.group.clear();
+        // The bodies reference these and are already gone; the weapon material is the viewmodel's
+        // and lives for the process in `WeaponMesh`'s shared caches; a page teardown, if one is ever
+        // built, releases it there.
+        for (const weapon of this.weapons.values()) weapon.geometry.dispose();
+        this.weapons.clear();
+        // The grenades are the asset service's templates, held by reference; nothing here to free.
+        this.grenades.clear();
+        this.indicatorAssets.dispose();
+        this.assets.dispose();
+    }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+    /**
+     * The last word on whether this body is drawn this frame.
+     *
+     * After `applyEvents`, whose respawn edge sets the avatar visible, and after the indicator's
+     * own update. Only *those* bodies: the indicator hides itself on a death, and a first version
+     * that wrote `visible = true` to every other actor here put a nameplate and a health bar back
+     * over every corpse in the match.
+     */
+    private applyVisibility(actor: RenderableActor, mesh: ActorAvatar, indicator: ActorIndicator, away: boolean): void {
+        if (away) {
+            mesh.setVisible(false);
+            indicator.group.visible = false;
+            this.hiddenNext.add(actor.entityId);
+        } else if (this.hidden.has(actor.entityId)) {
+            // Out of the camera's lap: the avatar comes back; the indicator decides for itself
+            // next frame.
+            mesh.setVisible(true);
+        }
+    }
+
+    /** This frame's hidden set becomes last frame's; the old one is cleared and reused. */
+    private swapHiddenSets(): void {
         const recycled = this.hidden;
         recycled.clear();
         this.hidden = this.hiddenNext;
         this.hiddenNext = recycled;
-
-        if (this.avatars.size !== this.present.size) this.retireAbsent();
     }
 
     /**
@@ -337,24 +393,33 @@ export class BotRenderer {
             mesh.flinch(v.flinchDirX, v.flinchDirZ);
         }
 
-        /**
-         * The authoritative bit has the last word.
-         *
-         * Both branches above are edge-triggered, and over the network **both edges routinely
-         * arrive in the same frame**: snapshots are delta-compressed at 20 Hz against a 60 Hz sim,
-         * so a body that died and respawned between two snapshots presents a changed death serial
-         * *and* a changed spawn serial at once. With the death check second the mesh ends up
-         * face-down on a player who is alive, running around and shooting.
-         *
-         * Reordering cannot fix it — spawn-then-die inside one frame is equally possible and would
-         * leave a corpse standing up. The serials carry no ordering relative to *each other*, so no
-         * order is right. `participating` — `EFlag.Alive` off the newest snapshot — does.
-         *
-         * The animations stay edge-triggered for their *effects* (fall direction, variant) and the
-         * final state is reconciled against the fact. Single-player reaches this with the same
-         * `Combatant.participating` it always had, so the two paths agree by construction rather
-         * than by coincidence.
-         */
+        this.reconcileAgainstTheAuthoritativeBit(bot, mesh, animation);
+    }
+
+    /**
+     * The authoritative bit has the last word.
+     *
+     * Both branches in `applyEvents` are edge-triggered, and over the network **both edges
+     * routinely arrive in the same frame**: snapshots are delta-compressed at 20 Hz against a
+     * 60 Hz sim, so a body that died and respawned between two snapshots presents a changed
+     * death serial *and* a changed spawn serial at once. With the death check second the mesh
+     * ends up face-down on a player who is alive, running around and shooting.
+     *
+     * Reordering cannot fix it — spawn-then-die inside one frame is equally possible and would
+     * leave a corpse standing up. The serials carry no ordering relative to *each other*, so no
+     * order is right. `participating` — `EFlag.Alive` off the newest snapshot — does.
+     *
+     * The animations stay edge-triggered for their *effects* (fall direction, variant) and the
+     * final state is reconciled against the fact. Single-player reaches this with the same
+     * `Combatant.participating` it always had, so the two paths agree by construction rather
+     * than by coincidence.
+     */
+    private reconcileAgainstTheAuthoritativeBit(
+        bot: RenderableActor,
+        mesh: ActorAvatar,
+        animation: RenderableActor['animation'],
+    ): void {
+        const v = bot.visual;
         if (bot.participating && mesh.isDying) {
             mesh.endDeath();
             mesh.setVisible(true);
@@ -486,28 +551,6 @@ export class BotRenderer {
             this.characterProviders.delete(id);
         }
     }
-
-    dispose(): void {
-        for (const mesh of this.avatars.values()) {
-            mesh.group.removeFromParent();
-            mesh.dispose();
-        }
-        this.avatars.clear();
-        for (const indicator of this.indicators.values()) indicator.dispose();
-        this.indicators.clear();
-        for (const provider of this.characterProviders.values()) provider.dispose();
-        this.characterProviders.clear();
-        this.seen.clear();
-        this.group.removeFromParent();
-        this.group.clear();
-        // The bodies reference these and are already gone; the weapon material is the viewmodel's
-        // and lives for the process in `WeaponMesh`'s shared caches; a page teardown, if one is ever
-        // built, releases it there.
-        for (const weapon of this.weapons.values()) weapon.geometry.dispose();
-        this.weapons.clear();
-        // The grenades are the asset service's templates, held by reference; nothing here to free.
-        this.grenades.clear();
-        this.indicatorAssets.dispose();
-        this.assets.dispose();
-    }
+  //#endregion
 }
+//#endregion

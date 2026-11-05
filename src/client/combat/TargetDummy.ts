@@ -1,11 +1,3 @@
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { DT } from '../../shared/core/Loop';
-import { clamp01, smoothstep } from '../../shared/core/MathUtil';
-import { Health, type HealthConfig } from '../../shared/player/Health';
-import type { Damageable } from '../../shared/combat/DamageSystem';
-import { HitboxRig, HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
-
 /**
  * Range dummies (brief S6.8): a static target, one that pops up on a timer, and one that
  * strafes a fixed path.
@@ -19,6 +11,19 @@ import { HitboxRig, HUMANOID_RIG, type HitZone } from '../../shared/combat/Hitbo
  * console, so it is legible while you are still holding the trigger.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { DT } from '../../shared/core/Loop';
+import { clamp01, smoothstep } from '../../shared/core/MathUtil';
+import { Health, type HealthConfig } from '../../shared/player/Health';
+import type { Damageable } from '../../shared/combat/DamageSystem';
+import { HitboxRig, HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * M7 adds two, from the M6 playtest notes.
  *
@@ -47,6 +52,14 @@ export interface DummySpec {
   readonly standTime?: number;
 }
 
+export interface DummyMaterials {
+  readonly body: THREE.Material;
+  readonly head: THREE.Material;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Seconds a downed dummy stays down before it resets. */
 const RESPAWN_SECONDS = 2.5;
 /** How far a popup target sinks, metres. Below the rig height, so it fully hides. */
@@ -59,7 +72,15 @@ const DPS_IDLE_RESET = 1.5;
 const LABEL_W = 256;
 const LABEL_H = 96;
 
+/** The one type face the read-out is drawn in, top line and figures alike. */
+const LABEL_FONT_FAMILY = 'ui-sans-serif, system-ui, Segoe UI, Roboto, Arial, sans-serif';
+//#endregion
+
+// ===================================== CLASS TargetDummy ====================================== \\
+//#region Class TargetDummy
 export class TargetDummy implements Damageable {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly entityId: number;
   readonly displayName: string;
   readonly health: Health;
@@ -142,7 +163,10 @@ export class TargetDummy implements Damageable {
   private currX = 0;
   private currY = 0;
   private currZ = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(spec: DummySpec, healthConfig: HealthConfig, materials: DummyMaterials) {
     this.spec = spec;
     this.entityId = spec.id;
@@ -192,7 +216,10 @@ export class TargetDummy implements Damageable {
     this.rig.setTransform(spec.x, spec.y, spec.z, spec.yaw);
     this.drawLabel();
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** True for a dummy that must never die. Read by the damage read-out and by `step`. */
   get isInfinite(): boolean {
     return this.spec.behaviour === 'infinite';
@@ -215,6 +242,11 @@ export class TargetDummy implements Damageable {
     return this.spec.behaviour === 'static' || this.spec.behaviour === 'infinite';
   }
 
+  /** True when the target is standing and shootable. */
+  get exposed(): boolean {
+    return this.health.alive && this.currY > this.baseY - POPUP_DEPTH * 0.75;
+  }
+
   /**
    * Move the target. Snaps: there is no interpolation across a teleport, and pretending
    * otherwise would draw a dummy sliding across the map between balance-table cells.
@@ -232,11 +264,6 @@ export class TargetDummy implements Damageable {
     this.prevZ = z;
     this.group.position.set(x, y, z);
     this.rig.setTransform(x, y, z, this.spec.yaw);
-  }
-
-  /** True when the target is standing and shootable. */
-  get exposed(): boolean {
-    return this.health.alive && this.currY > this.baseY - POPUP_DEPTH * 0.75;
   }
 
   /**
@@ -289,98 +316,12 @@ export class TargetDummy implements Damageable {
 
     // An infinite dummy is topped up before anything else looks at it, so it can never
     // enter the death path and the read-out stays a damage meter (M7).
-    if (this.isInfinite) {
-      this.health.reset();
-      this.sinceHit += DT;
-      if (this.sinceHit > DPS_IDLE_RESET) {
-        this.dpsDamage = 0;
-        this.dpsSeconds = 0;
-        this.dps = 0;
-      } else if (this.dpsSeconds > 0) {
-        this.dps = this.dpsDamage / this.dpsSeconds;
-      }
-      if (this.dpsDamage > 0) this.dpsSeconds += DT;
-      if (this.sinceHit < DPS_IDLE_RESET) this.labelDirty = true;
-    }
+    if (this.isInfinite) this.meterSustainedDamage();
     this.health.step();
-
-    // The TTK clock counts sim ticks, so the figure cannot vary with frame rate (S4.1).
-    if (this.ttkRunning) {
-      this.ttkTicks++;
-      // Health back to full without a kill means the burst failed; stop the clock rather
-      // than letting the next shot inherit a stale start time.
-      if (this.health.current >= this.health.max) this.ttkRunning = false;
-    }
-
-    if (!this.health.alive) {
-      this.respawnTimer += DT;
-      if (this.respawnTimer >= RESPAWN_SECONDS) this.reset();
-    }
-
-    const hp = Math.round(this.health.current);
-    if (hp !== this.shownHealth || this.health.alive !== this.shownAlive) {
-      this.shownHealth = hp;
-      this.shownAlive = this.health.alive;
-      this.labelDirty = true;
-    }
-
-    const spec = this.spec;
-    let x = this.baseX;
-    let y = this.baseY;
-    let z = this.baseZ;
-
-    switch (spec.behaviour) {
-      case 'static':
-      // An infinite dummy never moves: it exists to stand still and absorb a magazine.
-      case 'infinite':
-        break;
-      case 'faller': {
-        // Flat on its face while dead, upright otherwise. `RESPAWN_SECONDS` already stands
-        // it back up, so this only has to express *falling* rather than own a timer.
-        const down = this.health.alive ? 0 : 1;
-        this.fallAmount += (down - this.fallAmount) * Math.min(1, DT * 7);
-        this.group.rotation.x = -this.fallAmount * (Math.PI / 2);
-        y = this.baseY - this.fallAmount * 0.05;
-        break;
-      }
-      case 'popup': {
-        const up = spec.upTime ?? 3;
-        const down = spec.downTime ?? 2;
-        const cycle = up + down;
-        this.phase = (this.phase + DT) % cycle;
-        // Rise, hold, drop. Downed targets stay down until they respawn.
-        const raised = this.health.alive
-          ? this.phase < up
-            ? smoothstep(0, POPUP_TRANSITION, this.phase)
-            : 1 - smoothstep(up, up + POPUP_TRANSITION, this.phase)
-          : 0;
-        y = this.baseY - POPUP_DEPTH * (1 - clamp01(raised));
-        break;
-      }
-      case 'strafe': {
-        const travel = spec.travel ?? 3;
-        const speed = spec.speed ?? 2.6;
-        this.strafeOffset += this.strafeDir * speed * DT;
-        if (this.strafeOffset > travel) {
-          this.strafeOffset = travel;
-          this.strafeDir = -1;
-        } else if (this.strafeOffset < -travel) {
-          this.strafeOffset = -travel;
-          this.strafeDir = 1;
-        }
-        // The path is fixed in world space along the target's own right vector.
-        x = this.baseX + Math.cos(spec.yaw) * this.strafeOffset;
-        z = this.baseZ - Math.sin(spec.yaw) * this.strafeOffset;
-        break;
-      }
-    }
-
-    this.currX = x;
-    this.currY = y;
-    this.currZ = z;
-    // The rig tracks the *simulation* pose, not the interpolated render pose: a shot is
-    // resolved on a tick, so it must be resolved against where the target is on that tick.
-    this.rig.setTransform(x, y, z, this.spec.yaw);
+    this.advanceTtkClock();
+    this.advanceRespawn();
+    this.markLabelOnHealthChange();
+    this.moveToBehaviourPose();
   }
 
   /** Render pass: interpolate the pose and billboard the read-out. */
@@ -415,76 +356,209 @@ export class TargetDummy implements Damageable {
     this.group.clear();
   }
 
+  /** Called by the range when health changed without a hit (regeneration). */
+  markLabelDirty(): void {
+    this.labelDirty = true;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Keep the infinite dummy at full health and measure what is being poured into it.
+   *
+   * The window is the burst's, not the dummy's life: `DPS_IDLE_RESET` of quiet clears it, and
+   * the seconds only accumulate once damage has actually started landing.
+   */
+  private meterSustainedDamage(): void {
+    this.health.reset();
+    this.sinceHit += DT;
+    if (this.sinceHit > DPS_IDLE_RESET) {
+      this.dpsDamage = 0;
+      this.dpsSeconds = 0;
+      this.dps = 0;
+    } else if (this.dpsSeconds > 0) {
+      this.dps = this.dpsDamage / this.dpsSeconds;
+    }
+    if (this.dpsDamage > 0) this.dpsSeconds += DT;
+    if (this.sinceHit < DPS_IDLE_RESET) this.labelDirty = true;
+  }
+
+  /** The TTK clock counts sim ticks, so the figure cannot vary with frame rate (S4.1). */
+  private advanceTtkClock(): void {
+    if (!this.ttkRunning) return;
+    this.ttkTicks++;
+    // Health back to full without a kill means the burst failed; stop the clock rather
+    // than letting the next shot inherit a stale start time.
+    if (this.health.current >= this.health.max) this.ttkRunning = false;
+  }
+
+  private advanceRespawn(): void {
+    if (this.health.alive) return;
+    this.respawnTimer += DT;
+    if (this.respawnTimer >= RESPAWN_SECONDS) this.reset();
+  }
+
+  /** A whole printed HP, or life itself, is the only health change the board can show. */
+  private markLabelOnHealthChange(): void {
+    const hp = Math.round(this.health.current);
+    if (hp !== this.shownHealth || this.health.alive !== this.shownAlive) {
+      this.shownHealth = hp;
+      this.shownAlive = this.health.alive;
+      this.labelDirty = true;
+    }
+  }
+
+  /**
+   * Put the target where its behaviour says it should be this tick, and take the rig with it.
+   *
+   * The rig tracks the *simulation* pose, not the interpolated render pose: a shot is
+   * resolved on a tick, so it must be resolved against where the target is on that tick.
+   */
+  private moveToBehaviourPose(): void {
+    const spec = this.spec;
+    let x = this.baseX;
+    let y = this.baseY;
+    let z = this.baseZ;
+
+    switch (spec.behaviour) {
+      case 'static':
+      // An infinite dummy never moves: it exists to stand still and absorb a magazine.
+      case 'infinite':
+        break;
+      case 'faller':
+        y = this.tipOver();
+        break;
+      case 'popup':
+        y = this.popupHeight(spec);
+        break;
+      case 'strafe':
+        this.advanceStrafe(spec);
+        // The path is fixed in world space along the target's own right vector.
+        x = this.baseX + Math.cos(spec.yaw) * this.strafeOffset;
+        z = this.baseZ - Math.sin(spec.yaw) * this.strafeOffset;
+        break;
+    }
+
+    this.currX = x;
+    this.currY = y;
+    this.currZ = z;
+    this.rig.setTransform(x, y, z, this.spec.yaw);
+  }
+
+  /**
+   * Flat on its face while dead, upright otherwise. `RESPAWN_SECONDS` already stands
+   * it back up, so this only has to express *falling* rather than own a timer.
+   */
+  private tipOver(): number {
+    const down = this.health.alive ? 0 : 1;
+    this.fallAmount += (down - this.fallAmount) * Math.min(1, DT * 7);
+    this.group.rotation.x = -this.fallAmount * (Math.PI / 2);
+    return this.baseY - this.fallAmount * 0.05;
+  }
+
+  /** Rise, hold, drop. Downed targets stay down until they respawn. */
+  private popupHeight(spec: DummySpec): number {
+    const up = spec.upTime ?? 3;
+    const down = spec.downTime ?? 2;
+    const cycle = up + down;
+    this.phase = (this.phase + DT) % cycle;
+    const raised = this.health.alive
+      ? this.phase < up
+        ? smoothstep(0, POPUP_TRANSITION, this.phase)
+        : 1 - smoothstep(up, up + POPUP_TRANSITION, this.phase)
+      : 0;
+    return this.baseY - POPUP_DEPTH * (1 - clamp01(raised));
+  }
+
+  /** Walk the offset along the fixed path and turn round at either limit. */
+  private advanceStrafe(spec: DummySpec): void {
+    const travel = spec.travel ?? 3;
+    const speed = spec.speed ?? 2.6;
+    this.strafeOffset += this.strafeDir * speed * DT;
+    if (this.strafeOffset > travel) {
+      this.strafeOffset = travel;
+      this.strafeDir = -1;
+    } else if (this.strafeOffset < -travel) {
+      this.strafeOffset = -travel;
+      this.strafeDir = 1;
+    }
+  }
+
   private drawLabel(): void {
     const ctx = this.labelCtx;
+    this.drawLabelPlate(ctx);
+
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#626a77';
+    ctx.font = `800 15px ${LABEL_FONT_FAMILY}`;
+    ctx.fillText(this.displayName.toUpperCase(), 12, 18);
+
+    if (!this.health.alive) this.drawDownReadout(ctx);
+    else this.drawLiveReadout(ctx);
+
+    this.labelTexture.needsUpdate = true;
+  }
+
+  /** The backing panel and its border; the border turns red the moment the target is down. */
+  private drawLabelPlate(ctx: CanvasRenderingContext2D): void {
     ctx.clearRect(0, 0, LABEL_W, LABEL_H);
     ctx.fillStyle = 'rgba(7,8,10,0.82)';
     ctx.fillRect(0, 0, LABEL_W, LABEL_H);
     ctx.strokeStyle = this.health.alive ? 'rgba(38,43,51,1)' : 'rgba(232,96,76,0.9)';
     ctx.lineWidth = 3;
     ctx.strokeRect(1.5, 1.5, LABEL_W - 3, LABEL_H - 3);
+  }
 
-    const family = 'ui-sans-serif, system-ui, Segoe UI, Roboto, Arial, sans-serif';
-
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#626a77';
-    ctx.font = `800 15px ${family}`;
-    ctx.fillText(this.displayName.toUpperCase(), 12, 18);
-
-    if (!this.health.alive) {
-      ctx.fillStyle = '#e8604c';
-      ctx.font = `800 34px ${family}`;
-      ctx.fillText('DOWN', 12, 56);
-      ctx.fillStyle = '#9aa1ad';
-      ctx.font = `500 15px ${family}`;
-      ctx.fillText(`TOTAL ${this.totalDamage.toFixed(1)}`, 12, 82);
-      if (this.lastTtkSeconds >= 0) {
-        ctx.fillStyle = '#ffb340';
-        ctx.font = `800 15px ${family}`;
-        ctx.fillText(`TTK ${this.lastTtkSeconds.toFixed(3)}s / ${this.lastShotsToKill}`, 108, 82);
-      }
-    } else {
-      ctx.fillStyle = this.lastZone === 'head' ? '#ffb340' : '#e8eaee';
-      ctx.font = `800 34px ${family}`;
-      ctx.fillText(this.lastDamage > 0 ? this.lastDamage.toFixed(1) : '—', 12, 54);
-
-      ctx.fillStyle = '#9aa1ad';
-      ctx.font = `800 14px ${family}`;
-      const zoneText = this.lastDamage > 0 ? this.lastZone.toUpperCase() : 'NO HITS';
-      ctx.fillText(zoneText, 108, 48);
-      ctx.fillStyle = '#626a77';
-      ctx.font = `500 13px ${family}`;
-      if (this.lastDamage > 0) ctx.fillText(`${this.lastDistance.toFixed(1)} m`, 108, 66);
-
-      ctx.fillStyle = '#6fd08c';
-      ctx.font = `800 15px ${family}`;
-      // The infinite dummy reports sustained damage instead of a health bar it can never
-      // lose — that is the whole reason it exists (M7).
-      if (this.isInfinite) ctx.fillText(`DPS ${this.dps.toFixed(0)}`, 12, 82);
-      else ctx.fillText(`HP ${Math.round(this.health.current)}`, 12, 82);
-      ctx.fillStyle = '#626a77';
-      ctx.font = `500 13px ${family}`;
-      if (this.lastTtkSeconds >= 0) {
-        ctx.fillText(`TTK ${this.lastTtkSeconds.toFixed(3)}s / ${this.lastShotsToKill}`, 92, 82);
-      } else {
-        ctx.fillText(`TOTAL ${this.totalDamage.toFixed(1)}`, 92, 82);
-      }
+  /** What a dead target shows: that it is down, what it took, and the measured kill. */
+  private drawDownReadout(ctx: CanvasRenderingContext2D): void {
+    ctx.fillStyle = '#e8604c';
+    ctx.font = `800 34px ${LABEL_FONT_FAMILY}`;
+    ctx.fillText('DOWN', 12, 56);
+    ctx.fillStyle = '#9aa1ad';
+    ctx.font = `500 15px ${LABEL_FONT_FAMILY}`;
+    ctx.fillText(`TOTAL ${this.totalDamage.toFixed(1)}`, 12, 82);
+    if (this.lastTtkSeconds >= 0) {
+      ctx.fillStyle = '#ffb340';
+      ctx.font = `800 15px ${LABEL_FONT_FAMILY}`;
+      ctx.fillText(`TTK ${this.lastTtkSeconds.toFixed(3)}s / ${this.lastShotsToKill}`, 108, 82);
     }
-
-    this.labelTexture.needsUpdate = true;
   }
 
-  /** Called by the range when health changed without a hit (regeneration). */
-  markLabelDirty(): void {
-    this.labelDirty = true;
+  /** What a standing target shows: the last round that landed, and what it has left. */
+  private drawLiveReadout(ctx: CanvasRenderingContext2D): void {
+    ctx.fillStyle = this.lastZone === 'head' ? '#ffb340' : '#e8eaee';
+    ctx.font = `800 34px ${LABEL_FONT_FAMILY}`;
+    ctx.fillText(this.lastDamage > 0 ? this.lastDamage.toFixed(1) : '—', 12, 54);
+
+    ctx.fillStyle = '#9aa1ad';
+    ctx.font = `800 14px ${LABEL_FONT_FAMILY}`;
+    const zoneText = this.lastDamage > 0 ? this.lastZone.toUpperCase() : 'NO HITS';
+    ctx.fillText(zoneText, 108, 48);
+    ctx.fillStyle = '#626a77';
+    ctx.font = `500 13px ${LABEL_FONT_FAMILY}`;
+    if (this.lastDamage > 0) ctx.fillText(`${this.lastDistance.toFixed(1)} m`, 108, 66);
+
+    ctx.fillStyle = '#6fd08c';
+    ctx.font = `800 15px ${LABEL_FONT_FAMILY}`;
+    // The infinite dummy reports sustained damage instead of a health bar it can never
+    // lose — that is the whole reason it exists (M7).
+    if (this.isInfinite) ctx.fillText(`DPS ${this.dps.toFixed(0)}`, 12, 82);
+    else ctx.fillText(`HP ${Math.round(this.health.current)}`, 12, 82);
+    ctx.fillStyle = '#626a77';
+    ctx.font = `500 13px ${LABEL_FONT_FAMILY}`;
+    if (this.lastTtkSeconds >= 0) {
+      ctx.fillText(`TTK ${this.lastTtkSeconds.toFixed(3)}s / ${this.lastShotsToKill}`, 92, 82);
+    } else {
+      ctx.fillText(`TOTAL ${this.totalDamage.toFixed(1)}`, 92, 82);
+    }
   }
+  //#endregion
 }
+//#endregion
 
-export interface DummyMaterials {
-  readonly body: THREE.Material;
-  readonly head: THREE.Material;
-}
-
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 export function buildDummyMaterials(): DummyMaterials & { dispose(): void } {
   const body = new THREE.MeshLambertMaterial({ color: 0x59616e });
   const head = new THREE.MeshLambertMaterial({ color: 0x8a6a3c });
@@ -497,7 +571,10 @@ export function buildDummyMaterials(): DummyMaterials & { dispose(): void } {
     },
   };
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /** The mesh IS the rig: same boxes, same offsets, no separate art to drift out of sync. */
 function buildZoneGeometry(zones: readonly HitZone[]): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
@@ -513,3 +590,4 @@ function buildZoneGeometry(zones: readonly HitZone[]): THREE.BufferGeometry {
   merged.computeBoundingSphere();
   return merged;
 }
+//#endregion

@@ -1,12 +1,3 @@
-import * as THREE from 'three';
-import { clamp01, lerp } from '../../shared/core/MathUtil';
-import { Rng } from '../../shared/core/Rng';
-import type { EquipmentDef } from '../../shared/equipment/EquipmentDefs';
-import type { Projectile, ProjectilePool } from '../../shared/equipment/Projectile';
-import type { SmokeField, SmokeVolume } from '../../shared/equipment/SmokeField';
-import { equipmentAssetId } from '../weapons/WeaponAssetCatalog';
-import type { WeaponAssetService } from '../weapons/WeaponAssetService';
-
 /**
  * Everything equipment draws.
  *
@@ -29,6 +20,82 @@ import type { WeaponAssetService } from '../weapons/WeaponAssetService';
  * between sim ticks like everything else.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { clamp01, lerp } from '../../shared/core/MathUtil';
+import { Rng } from '../../shared/core/Rng';
+import type { EquipmentDef } from '../../shared/equipment/EquipmentDefs';
+import type { Projectile, ProjectilePool } from '../../shared/equipment/Projectile';
+import type { SmokeField, SmokeVolume } from '../../shared/equipment/SmokeField';
+import { equipmentAssetId } from '../weapons/WeaponAssetCatalog';
+import type { WeaponAssetService } from '../weapons/WeaponAssetService';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+interface Blast {
+  mesh: THREE.Mesh;
+  age: number;
+  life: number;
+  radius: number;
+  active: boolean;
+}
+
+/**
+ * One puff's fixed place in its cloud, as a fraction of the cloud's radius.
+ *
+ * Four named fields rather than four slots of a `Float32Array`: with
+ * `noUncheckedIndexedAccess` on, every read of the array needed a `?? 0` that is dead code and
+ * costs a branch in `measure.mjs`'s reckoning, for a saving of a few hundred bytes across the
+ * whole pool.
+ */
+interface PuffOffset {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly scale: number;
+}
+
+interface SmokeCloud {
+  group: THREE.Group;
+  puffs: THREE.Mesh[];
+  offsets: PuffOffset[];
+  volume: SmokeVolume | null;
+}
+
+/**
+ * One drawn projectile: the slot that is placed and turned, and the things it can show.
+ *
+ * `models` is per slot rather than per id because a clone is bound to one parent, and a slot
+ * is what the frame hands a projectile. A clone shares its template's geometry and materials,
+ * so the pool's worst case — every slot having drawn every kind — is a few hundred empty
+ * `Object3D`s and not a byte of GPU memory.
+ */
+interface Body {
+  readonly group: THREE.Group;
+  readonly primitive: THREE.Mesh;
+  readonly models: Map<string, DrawnModel>;
+  shown: THREE.Object3D;
+}
+
+interface DrawnModel {
+  readonly object: THREE.Object3D;
+  /**
+   * How far to lower it when the projectile is at rest, metres.
+   *
+   * A projectile's position is its centre and it comes to rest one collision `radius` above
+   * the ground — 0.11 m for a claymore whose file is 0.143 m tall, so a planted mine drawn on
+   * its centre floats 3.8 cm. The difference is measured off the clone's own bounds and never
+   * goes below zero: a model taller than twice its collision radius is left where the sim put
+   * it rather than pushed through the floor.
+   */
+  readonly rest: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * Billboards per cloud.
  *
@@ -61,52 +128,13 @@ const BLAST_POOL = 6;
  * picture cannot disagree, because only one of them is being culled.
  */
 const SMOKE_DRAW_DISTANCE = 38;
+//#endregion
 
-interface Blast {
-  mesh: THREE.Mesh;
-  age: number;
-  life: number;
-  radius: number;
-  active: boolean;
-}
-
-interface SmokeCloud {
-  group: THREE.Group;
-  puffs: THREE.Mesh[];
-  offsets: Float32Array;
-  volume: SmokeVolume | null;
-}
-
-/**
- * One drawn projectile: the slot that is placed and turned, and the things it can show.
- *
- * `models` is per slot rather than per id because a clone is bound to one parent, and a slot
- * is what the frame hands a projectile. A clone shares its template's geometry and materials,
- * so the pool's worst case — every slot having drawn every kind — is a few hundred empty
- * `Object3D`s and not a byte of GPU memory.
- */
-interface Body {
-  readonly group: THREE.Group;
-  readonly primitive: THREE.Mesh;
-  readonly models: Map<string, DrawnModel>;
-  shown: THREE.Object3D;
-}
-
-interface DrawnModel {
-  readonly object: THREE.Object3D;
-  /**
-   * How far to lower it when the projectile is at rest, metres.
-   *
-   * A projectile's position is its centre and it comes to rest one collision `radius` above
-   * the ground — 0.11 m for a claymore whose file is 0.143 m tall, so a planted mine drawn on
-   * its centre floats 3.8 cm. The difference is measured off the clone's own bounds and never
-   * goes below zero: a model taller than twice its collision radius is left where the sim put
-   * it rather than pushed through the floor.
-   */
-  readonly rest: number;
-}
-
+// ===================================== CLASS EquipmentFx ====================================== \\
+//#region Class EquipmentFx
 export class EquipmentFx {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly group = new THREE.Group();
 
   private readonly bodies: Body[] = [];
@@ -122,6 +150,16 @@ export class EquipmentFx {
   /** Equipment ids this instance has already asked the service for, so it asks once. */
   private readonly requested = new Set<string>();
 
+  /** Held so the swap in `update` can reach them without a second lookup table. */
+  private readonly materials: {
+    metal: THREE.MeshStandardMaterial;
+    sticky: THREE.MeshStandardMaterial;
+    tactical: THREE.MeshStandardMaterial;
+  };
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     projectileCapacity: number,
     smokeCapacity: number,
@@ -129,88 +167,13 @@ export class EquipmentFx {
   ) {
     this.group.name = 'equipment-fx';
 
-    const metal = new THREE.MeshStandardMaterial({ color: 0x4d5a4a, roughness: 0.62, metalness: 0.35 });
-    const sticky = new THREE.MeshStandardMaterial({ color: 0x8a6a2a, roughness: 0.85, metalness: 0.1 });
-    const tactical = new THREE.MeshStandardMaterial({ color: 0x9aa2ac, roughness: 0.5, metalness: 0.45 });
-    this.disposables.push(metal, sticky, tactical);
-
-    this.bodyGeometries.set('frag', new THREE.IcosahedronGeometry(0.075, 1));
-    this.bodyGeometries.set('semtex', new THREE.BoxGeometry(0.13, 0.05, 0.09));
-    this.bodyGeometries.set('flashbang', new THREE.CylinderGeometry(0.045, 0.045, 0.15, 8));
-    this.bodyGeometries.set('smoke', new THREE.CylinderGeometry(0.05, 0.05, 0.17, 8));
-    this.bodyGeometries.set('claymore', new THREE.BoxGeometry(0.24, 0.13, 0.06));
-    for (const g of this.bodyGeometries.values()) this.disposables.push(g);
-
-    const fragGeometry = this.bodyGeometries.get('frag');
-    if (fragGeometry === undefined) throw new Error('frag geometry missing');
-    for (let i = 0; i < projectileCapacity; i++) {
-      const group = new THREE.Group();
-      group.name = `equipment:body:${i}`;
-      group.visible = false;
-      const mesh = new THREE.Mesh(fragGeometry, metal);
-      mesh.castShadow = true;
-      group.add(mesh);
-      this.group.add(group);
-      this.bodies.push({ group, primitive: mesh, models: new Map(), shown: mesh });
-    }
-    // Held so the swap in `update` can reach them without a second lookup table.
-    this.materials = { metal, sticky, tactical };
-
-    const puffTexture = buildPuffTexture();
-    const puffMaterial = new THREE.MeshBasicMaterial({
-      map: puffTexture,
-      transparent: true,
-      depthWrite: false,
-      opacity: 0,
-      color: 0xb9bcc0,
-    });
-    this.disposables.push(puffTexture, puffMaterial);
-    const puffGeometry = new THREE.PlaneGeometry(1, 1);
-    this.disposables.push(puffGeometry);
-
-    for (let i = 0; i < smokeCapacity; i++) {
-      const cloudGroup = new THREE.Group();
-      cloudGroup.visible = false;
-      const puffs: THREE.Mesh[] = [];
-      const offsets = new Float32Array(SMOKE_PUFFS * 4);
-      for (let p = 0; p < SMOKE_PUFFS; p++) {
-        // Each puff gets its own material instance so opacity can differ across the
-        // cloud — a single shared material would make the whole thing fade as one flat
-        // sheet, which is exactly what stops billboards reading as volume.
-        const mat = puffMaterial.clone();
-        this.disposables.push(mat);
-        const mesh = new THREE.Mesh(puffGeometry, mat);
-        mesh.renderOrder = 3;
-        cloudGroup.add(mesh);
-        puffs.push(mesh);
-        // The first third sit near the middle, so the cloud has a core rather than a hollow
-        // shell of billboards with a hole to shoot through. Costs nothing: the same quads,
-        // redistributed.
-        const spread = p < SMOKE_PUFFS / 3 ? 0.34 : 0.75;
-        offsets[p * 4] = this.rng.range(-spread, spread);
-        offsets[p * 4 + 1] = this.rng.range(-0.55, 0.7);
-        offsets[p * 4 + 2] = this.rng.range(-spread, spread);
-        offsets[p * 4 + 3] = this.rng.range(0.7, 1.35);
-      }
-      this.group.add(cloudGroup);
-      this.clouds.push({ group: cloudGroup, puffs, offsets, volume: null });
-    }
-
-    const blastGeometry = new THREE.IcosahedronGeometry(1, 2);
-    this.disposables.push(blastGeometry);
-    for (let i = 0; i < BLAST_POOL; i++) {
-      const mat = new THREE.MeshBasicMaterial({
-        color: 0xffb469,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-      });
-      this.disposables.push(mat);
-      const mesh = new THREE.Mesh(blastGeometry, mat);
-      mesh.visible = false;
-      this.group.add(mesh);
-      this.blasts.push({ mesh, age: 0, life: 0.5, radius: 1, active: false });
-    }
+    // The push order into `disposables` is the release order, and it is the build order:
+    // materials, then the primitives' geometries, then the smoke, then the blasts.
+    this.materials = this.createMaterials();
+    this.fillBodyGeometries();
+    this.buildBodyPool(projectileCapacity);
+    this.buildSmokePool(smokeCapacity);
+    this.buildBlastPool();
 
     /**
      * Left in the scene and dimmed to nothing, never hidden (2026-10-18).
@@ -230,12 +193,112 @@ export class EquipmentFx {
     this.group.add(this.light);
   }
 
-  private readonly materials: {
-    metal: THREE.MeshStandardMaterial;
-    sticky: THREE.MeshStandardMaterial;
-    tactical: THREE.MeshStandardMaterial;
-  };
+  /** The three surfaces a primitive body can wear, held so `update`'s swap can reach them. */
+  private createMaterials(): { metal: THREE.MeshStandardMaterial; sticky: THREE.MeshStandardMaterial; tactical: THREE.MeshStandardMaterial } {
+    const metal = new THREE.MeshStandardMaterial({ color: 0x4d5a4a, roughness: 0.62, metalness: 0.35 });
+    const sticky = new THREE.MeshStandardMaterial({ color: 0x8a6a2a, roughness: 0.85, metalness: 0.1 });
+    const tactical = new THREE.MeshStandardMaterial({ color: 0x9aa2ac, roughness: 0.5, metalness: 0.45 });
+    this.disposables.push(metal, sticky, tactical);
+    return { metal, sticky, tactical };
+  }
 
+  /** One primitive per kind: a faceted ball, a flat slab, two canisters and a box. */
+  private fillBodyGeometries(): void {
+    this.bodyGeometries.set('frag', new THREE.IcosahedronGeometry(0.075, 1));
+    this.bodyGeometries.set('semtex', new THREE.BoxGeometry(0.13, 0.05, 0.09));
+    this.bodyGeometries.set('flashbang', new THREE.CylinderGeometry(0.045, 0.045, 0.15, 8));
+    this.bodyGeometries.set('smoke', new THREE.CylinderGeometry(0.05, 0.05, 0.17, 8));
+    this.bodyGeometries.set('claymore', new THREE.BoxGeometry(0.24, 0.13, 0.06));
+    for (const g of this.bodyGeometries.values()) this.disposables.push(g);
+  }
+
+  /** One hidden slot per live projectile, each starting on the frag primitive. */
+  private buildBodyPool(projectileCapacity: number): void {
+    const fragGeometry = this.bodyGeometries.get('frag');
+    if (fragGeometry === undefined) throw new Error('frag geometry missing');
+    for (let i = 0; i < projectileCapacity; i++) {
+      const group = new THREE.Group();
+      group.name = `equipment:body:${i}`;
+      group.visible = false;
+      const mesh = new THREE.Mesh(fragGeometry, this.materials.metal);
+      mesh.castShadow = true;
+      group.add(mesh);
+      this.group.add(group);
+      this.bodies.push({ group, primitive: mesh, models: new Map(), shown: mesh });
+    }
+  }
+
+  /** A fan of camera-facing quads per volume, on their own seeded offsets. */
+  private buildSmokePool(smokeCapacity: number): void {
+    const puffTexture = buildPuffTexture();
+    const puffMaterial = new THREE.MeshBasicMaterial({
+      map: puffTexture,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0,
+      color: 0xb9bcc0,
+    });
+    this.disposables.push(puffTexture, puffMaterial);
+    const puffGeometry = new THREE.PlaneGeometry(1, 1);
+    this.disposables.push(puffGeometry);
+
+    for (let i = 0; i < smokeCapacity; i++) {
+      const cloudGroup = new THREE.Group();
+      cloudGroup.visible = false;
+      const puffs: THREE.Mesh[] = [];
+      const offsets: PuffOffset[] = [];
+      for (let p = 0; p < SMOKE_PUFFS; p++) {
+        // Each puff gets its own material instance so opacity can differ across the
+        // cloud — a single shared material would make the whole thing fade as one flat
+        // sheet, which is exactly what stops billboards reading as volume.
+        const mat = puffMaterial.clone();
+        this.disposables.push(mat);
+        const mesh = new THREE.Mesh(puffGeometry, mat);
+        mesh.renderOrder = 3;
+        cloudGroup.add(mesh);
+        puffs.push(mesh);
+        // The first third sit near the middle, so the cloud has a core rather than a hollow
+        // shell of billboards with a hole to shoot through. Costs nothing: the same quads,
+        // redistributed.
+        const spread = p < SMOKE_PUFFS / 3 ? 0.34 : 0.75;
+        // `Math.fround` because these lived in a `Float32Array` until 2026-11-07 and the
+        // narrowing was part of the picture: a double here moves every puff by a few ulps,
+        // which the BROWSER checksum sees as a different scene. The storage changed; the
+        // numbers must not.
+        offsets.push({
+          x: Math.fround(this.rng.range(-spread, spread)),
+          y: Math.fround(this.rng.range(-0.55, 0.7)),
+          z: Math.fround(this.rng.range(-spread, spread)),
+          scale: Math.fround(this.rng.range(0.7, 1.35)),
+        });
+      }
+      this.group.add(cloudGroup);
+      this.clouds.push({ group: cloudGroup, puffs, offsets, volume: null });
+    }
+  }
+
+  /** Six expanding shells, shared by every detonation in the match. */
+  private buildBlastPool(): void {
+    const blastGeometry = new THREE.IcosahedronGeometry(1, 2);
+    this.disposables.push(blastGeometry);
+    for (let i = 0; i < BLAST_POOL; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xffb469,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      this.disposables.push(mat);
+      const mesh = new THREE.Mesh(blastGeometry, mat);
+      mesh.visible = false;
+      this.group.add(mesh);
+      this.blasts.push({ mesh, age: 0, life: 0.5, radius: 1, active: false });
+    }
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Fire the visual half of a detonation. */
   spawnBlast(x: number, y: number, z: number, radius: number, bright: boolean): void {
     for (const blast of this.blasts) {
@@ -289,9 +352,10 @@ export class EquipmentFx {
     this.disposables.length = 0;
     this.group.clear();
   }
+  //#endregion
 
-  // -- internals -------------------------------------------------------------
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private poseBody(body: Body, p: Projectile, alpha: number, elapsed: number): void {
     const drawn = this.drawnFor(body, p);
     if (body.shown !== drawn.object) {
@@ -370,27 +434,41 @@ export class EquipmentFx {
 
       const density = smoke.density(volume);
       const radius = smoke.currentRadius(volume);
-      const cam = camera.position;
-      const distance = Math.hypot(cam.x - volume.x, cam.y - volume.y, cam.z - volume.z);
-      cloud.group.visible = density > 0.02 && distance < SMOKE_DRAW_DISTANCE;
+      cloud.group.visible = density > 0.02 && withinDrawDistance(volume, camera);
       cloud.group.position.set(volume.x, volume.y, volume.z);
       if (!cloud.group.visible) continue;
 
-      for (let p = 0; p < cloud.puffs.length; p++) {
-        const puff = cloud.puffs[p];
-        if (puff === undefined) continue;
-        const ox = cloud.offsets[p * 4] ?? 0;
-        const oy = cloud.offsets[p * 4 + 1] ?? 0;
-        const oz = cloud.offsets[p * 4 + 2] ?? 0;
-        const scale = cloud.offsets[p * 4 + 3] ?? 1;
-        // A slow churn so a settled cloud is not a frozen still life.
-        const drift = Math.sin(elapsed * 0.35 + p) * 0.12;
-        puff.position.set(ox * radius, oy * radius * 0.55 + drift, oz * radius);
-        puff.scale.setScalar(radius * scale);
-        puff.quaternion.copy(camera.quaternion);
-        const mat = puff.material;
-        if (mat instanceof THREE.MeshBasicMaterial) mat.opacity = clamp01(density * 0.5);
-      }
+      this.posePuffs(cloud, radius, clamp01(density * 0.5), camera, elapsed);
+    }
+  }
+
+  /**
+   * Fan the billboards out around the cloud's centre, facing the camera.
+   *
+   * Five arguments rather than four, which section 4.1 would normally call a sign that the
+   * split line is wrong. It is not, here: a cloud's puffs need the cloud, how big it is, how
+   * solid it is, where the eye is and what time it is, and the alternative to passing them is
+   * an object allocated per cloud per frame, which R7 forbids on this path. Listed as an
+   * exception in C12's report.
+   */
+  private posePuffs(
+    cloud: SmokeCloud,
+    radius: number,
+    opacity: number,
+    camera: THREE.Camera,
+    elapsed: number,
+  ): void {
+    for (let p = 0; p < cloud.puffs.length; p++) {
+      const puff = cloud.puffs[p];
+      const offset = cloud.offsets[p];
+      if (puff === undefined || offset === undefined) continue;
+      // A slow churn so a settled cloud is not a frozen still life.
+      const drift = Math.sin(elapsed * 0.35 + p) * 0.12;
+      puff.position.set(offset.x * radius, offset.y * radius * 0.55 + drift, offset.z * radius);
+      puff.scale.setScalar(radius * offset.scale);
+      puff.quaternion.copy(camera.quaternion);
+      const mat = puff.material;
+      if (mat instanceof THREE.MeshBasicMaterial) mat.opacity = opacity;
     }
   }
 
@@ -420,8 +498,12 @@ export class EquipmentFx {
     this.light.intensity = Math.max(0, this.lightTimer) * 160;
     if (this.lightTimer <= 0) this.light.intensity = 0;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function materialFor(
   def: EquipmentDef,
   materials: {
@@ -461,3 +543,15 @@ function buildPuffTexture(): THREE.Texture {
   texture.needsUpdate = true;
   return texture;
 }
+
+/**
+ * Whether a cloud is near enough to draw. See `SMOKE_DRAW_DISTANCE`.
+ *
+ * A render cull only: `SmokeField.blocksSight` knows nothing about it, so a cloud you cannot
+ * see still blocks the line of sight through it.
+ */
+function withinDrawDistance(volume: SmokeVolume, camera: THREE.Camera): boolean {
+  const cam = camera.position;
+  return Math.hypot(cam.x - volume.x, cam.y - volume.y, cam.z - volume.z) < SMOKE_DRAW_DISTANCE;
+}
+//#endregion

@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { SaveStore } from './SaveStore';
 import { DEFAULT_CHARACTER_ID, type CharacterId } from '../characters/CharacterCatalog';
 import type { AttachmentId } from '../../shared/weapons/Attachments';
@@ -28,58 +30,36 @@ import {
 } from '../../shared/meta/SaveData';
 import type { ProgressionStore } from '../../shared/meta/ProgressionStore';
 import { sanitiseLoadout, UnlockState, WEAPON_MASTERY_XP, weaponLevelForXp } from '../../shared/meta/Unlocks';
+//#endregion
 
-/**
- * Read the M1-M5 settings blob (M9).
- *
- * The `localStorage` call lives here rather than in `shared/meta/SaveData.ts`, which now
- * takes the raw string. Parsing and validating the blob is a rule; fetching it is a
- * browser detail. Storage being unavailable is not an error — a browser in private mode
- * simply has no legacy settings to carry over.
- */
-function readLegacyBlob(): string | null {
-  try {
-    return window.localStorage.getItem(LEGACY_SETTINGS_KEY);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The one owner of the save file.
- *
- * Everything that reads or writes progression goes through this object, which is what
- * makes S6.6's "never every frame" a checkable property rather than a hope: every mutator
- * below ends in a single `touch()`, `SaveStore` coalesces bursts into one write 250 ms
- * later, and `writeCount` reports what actually happened. Nothing in the sim path calls
- * any of it — `MatchProgression` accumulates a match in memory and banks it once, at the
- * end.
- *
- * Loading is three stages and each one is separately reportable:
- *
- *   1. `SaveStore` parses, and calls `migrateSave` if the version differs.
- *   2. `normaliseSave` repairs anything structurally wrong at the current version.
- *   3. `sanitiseLoadout` removes anything the profile has not earned.
- *
- * Stages 2 and 3 both return lines, and `loadReport` keeps them for the console and for
- * the save inspector. A save is never discarded because one field was bad.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface ProfileDeps {
   /** Used only when there is nothing to load. */
   readonly fallbackSettings: SettingsV1;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Slot index reported for the range class. Outside the five, so nothing collides. */
 const RANGE_SLOT_INDEX = 99;
+//#endregion
 
+// ======================================= CLASS Profile ======================================== \\
+//#region Class Profile
 export class Profile implements ProgressionStore {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly store: SaveStore<SaveV2>;
   /** Every repair and reversion the last load produced, oldest first. */
   readonly loadReport: string[] = [];
 
   private unlockCache: UnlockState;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: ProfileDeps) {
     // Read the M1-M5 settings blob *before* the store loads, so a profile that has never
     // existed still starts with the player's FOV and sensitivity rather than the defaults.
@@ -100,7 +80,10 @@ export class Profile implements ProgressionStore {
     this.sanitiseAll();
     this.report();
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get save(): SaveV2 {
     return this.store.value as SaveV2;
   }
@@ -500,7 +483,10 @@ export class Profile implements ProgressionStore {
     }
     return out;
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private sanitiseAll(into: string[] = this.loadReport): void {
     for (const slot of this.save.loadouts) sanitiseLoadout(slot, this.unlockCache, into);
   }
@@ -516,4 +502,45 @@ export class Profile implements ProgressionStore {
     console.warn(`[Profile] recovered a damaged save; ${this.loadReport.length} field(s) repaired:`);
     for (const line of this.loadReport) console.warn(`[Profile]   ${line}`);
   }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * Read the M1-M5 settings blob (M9).
+ *
+ * The `localStorage` call lives here rather than in `shared/meta/SaveData.ts`, which now
+ * takes the raw string. Parsing and validating the blob is a rule; fetching it is a
+ * browser detail. Storage being unavailable is not an error — a browser in private mode
+ * simply has no legacy settings to carry over.
+ */
+function readLegacyBlob(): string | null {
+  try {
+    return window.localStorage.getItem(LEGACY_SETTINGS_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The one owner of the save file.
+ *
+ * Everything that reads or writes progression goes through this object, which is what
+ * makes S6.6's "never every frame" a checkable property rather than a hope: every mutator
+ * below ends in a single `touch()`, `SaveStore` coalesces bursts into one write 250 ms
+ * later, and `writeCount` reports what actually happened. Nothing in the sim path calls
+ * any of it — `MatchProgression` accumulates a match in memory and banks it once, at the
+ * end.
+ *
+ * Loading is three stages and each one is separately reportable:
+ *
+ *   1. `SaveStore` parses, and calls `migrateSave` if the version differs.
+ *   2. `normaliseSave` repairs anything structurally wrong at the current version.
+ *   3. `sanitiseLoadout` removes anything the profile has not earned.
+ *
+ * Stages 2 and 3 both return lines, and `loadReport` keeps them for the console and for
+ * the save inspector. A save is never discarded because one field was bad.
+ */
+//#endregion

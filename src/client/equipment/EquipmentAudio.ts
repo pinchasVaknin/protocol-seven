@@ -1,7 +1,13 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { Rng } from '../../shared/core/Rng';
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
+import type { NoiseSpec, OscSpec } from '../engine/AudioSpecs';
 import { surfaceAtIndex } from '../../shared/world/maps/materials';
+//#endregion
 
+// ==================================== CLASS EquipmentAudio ==================================== \\
+//#region Class EquipmentAudio
 /**
  * Equipment voices, built from the same two `ProceduralAudio` primitives everything else
  * uses (brief S2, S4.5). Nothing here constructs a node graph and nothing creates a
@@ -13,18 +19,21 @@ import { surfaceAtIndex } from '../../shared/world/maps/materials';
  * and a sub thump under all of it.
  */
 export class EquipmentAudio {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly rng = new Rng(0x2b7c_5e01);
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly audio: ProceduralAudio) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** The pin, then the throw. Quiet, close, and entirely about telling you it happened. */
   playThrow(x: number, y: number, z: number): void {
-    const noise = this.audio.noiseScratch;
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
+    const noise = this.placeNoise(x, y, z);
     noise.filter = 'bandpass';
     noise.freq = 3800;
     noise.freqEnd = 2200;
@@ -40,12 +49,7 @@ export class EquipmentAudio {
   /** Metal on concrete. Coloured by what it landed on, like every other impact (S6.7). */
   playBounce(x: number, y: number, z: number, speed: number, material: number, stuck: boolean): void {
     const surface = surfaceAtIndex(material);
-    const noise = this.audio.noiseScratch;
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
+    const noise = this.placeNoise(x, y, z);
     noise.filter = stuck ? 'lowpass' : 'bandpass';
     noise.freq = stuck ? 900 : surface.impactFreq * this.rng.range(0.9, 1.15);
     noise.freqEnd = noise.freq * (stuck ? 0.3 : 0.4);
@@ -77,66 +81,11 @@ export class EquipmentAudio {
 
   /** Four layers. The tail is what makes it a building rather than a firework. */
   playExplosion(x: number, y: number, z: number, scale: number): void {
-    const noise = this.audio.noiseScratch;
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
-
-    // 1. crack
-    noise.filter = 'highpass';
-    noise.freq = 3400;
-    noise.freqEnd = 1600;
-    noise.q = 0.7;
-    noise.level = 0.5 * scale;
-    noise.attack = 0.001;
-    noise.decay = 0.05;
-    noise.wet = 0.15;
-    noise.rate = this.rng.range(0.94, 1.06);
-    this.audio.noiseBurst(noise);
-
-    // 2. body
-    noise.filter = 'bandpass';
-    noise.freq = 260 * this.rng.range(0.9, 1.12);
-    noise.freqEnd = 60;
-    noise.q = 0.7;
-    noise.level = 0.95 * scale;
-    noise.attack = 0.003;
-    noise.decay = 0.42;
-    noise.wet = 0.45;
-    noise.rate = 1;
-    this.audio.noiseBurst(noise);
-
-    // 3. tail
-    noise.filter = 'lowpass';
-    noise.freq = 1400;
-    noise.freqEnd = 200;
-    noise.q = 0.8;
-    noise.level = 0.5 * scale;
-    noise.attack = 0.02;
-    noise.decay = 1.15;
-    noise.wet = 0.75;
-    noise.rate = 0.7;
-    this.audio.noiseBurst(noise);
-
-    // 4. sub
-    const osc = this.audio.oscScratch;
-    osc.x = x;
-    osc.y = y;
-    osc.z = z;
-    osc.positional = true;
-    osc.bus = 'sfx';
-    osc.type = 'sine';
-    osc.freq = 62;
-    osc.freqEnd = 22;
-    osc.level = 1.0 * scale;
-    osc.attack = 0.004;
-    osc.decay = 0.5;
-    osc.wet = 0.4;
-    osc.filterFreq = 220;
-    osc.filterQ = 0.7;
-    this.audio.oscHit(osc);
+    const noise = this.placeNoise(x, y, z);
+    this.explosionCrack(noise, scale);
+    this.explosionBody(noise, scale);
+    this.explosionTail(noise, scale);
+    this.explosionSub(x, y, z, scale);
   }
 
   /**
@@ -147,12 +96,7 @@ export class EquipmentAudio {
    * the world would put it behind the low-pass the flash itself just installed.
    */
   playFlashbang(x: number, y: number, z: number, intensity: number): void {
-    const noise = this.audio.noiseScratch;
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
+    const noise = this.placeNoise(x, y, z);
     noise.filter = 'highpass';
     noise.freq = 5200;
     noise.freqEnd = 2600;
@@ -170,12 +114,7 @@ export class EquipmentAudio {
 
   /** The soft rush of a smoke canister venting. Long, quiet, and unmistakable. */
   playSmoke(x: number, y: number, z: number): void {
-    const noise = this.audio.noiseScratch;
-    noise.x = x;
-    noise.y = y;
-    noise.z = z;
-    noise.positional = true;
-    noise.bus = 'sfx';
+    const noise = this.placeNoise(x, y, z);
     noise.filter = 'bandpass';
     noise.freq = 2600;
     noise.freqEnd = 1200;
@@ -187,14 +126,97 @@ export class EquipmentAudio {
     noise.rate = 1;
     this.audio.noiseBurst(noise);
   }
+  //#endregion
 
-  private pip(x: number, y: number, z: number, freq: number, level: number, decay: number): void {
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Point the shared noise scratch at a place in the world.
+   *
+   * Seven sounds in this file opened with these five lines. They are the graph's scratches,
+   * not this class's, so what is set here is set for every sound that follows until the next
+   * caller overwrites it — see BACKLOG #60 for the field this does *not* set.
+   */
+  private placeNoise(x: number, y: number, z: number): NoiseSpec {
     const noise = this.audio.noiseScratch;
     noise.x = x;
     noise.y = y;
     noise.z = z;
     noise.positional = true;
     noise.bus = 'sfx';
+    return noise;
+  }
+
+  /** The same, for the oscillator scratch. */
+  private placeOsc(x: number, y: number, z: number): OscSpec {
+    const osc = this.audio.oscScratch;
+    osc.x = x;
+    osc.y = y;
+    osc.z = z;
+    osc.positional = true;
+    osc.bus = 'sfx';
+    return osc;
+  }
+
+  /** The crack: the leading edge, high and gone in fifty milliseconds. */
+  private explosionCrack(noise: NoiseSpec, scale: number): void {
+    noise.filter = 'highpass';
+    noise.freq = 3400;
+    noise.freqEnd = 1600;
+    noise.q = 0.7;
+    noise.level = 0.5 * scale;
+    noise.attack = 0.001;
+    noise.decay = 0.05;
+    noise.wet = 0.15;
+    noise.rate = this.rng.range(0.94, 1.06);
+    this.audio.noiseBurst(noise);
+  }
+
+  /** The body: the loudest layer, sweeping a long way down. */
+  private explosionBody(noise: NoiseSpec, scale: number): void {
+    noise.filter = 'bandpass';
+    noise.freq = 260 * this.rng.range(0.9, 1.12);
+    noise.freqEnd = 60;
+    noise.q = 0.7;
+    noise.level = 0.95 * scale;
+    noise.attack = 0.003;
+    noise.decay = 0.42;
+    noise.wet = 0.45;
+    noise.rate = 1;
+    this.audio.noiseBurst(noise);
+  }
+
+  /** The tail: long, wet and slow, and the reason it reads as a building rather than a firework. */
+  private explosionTail(noise: NoiseSpec, scale: number): void {
+    noise.filter = 'lowpass';
+    noise.freq = 1400;
+    noise.freqEnd = 200;
+    noise.q = 0.8;
+    noise.level = 0.5 * scale;
+    noise.attack = 0.02;
+    noise.decay = 1.15;
+    noise.wet = 0.75;
+    noise.rate = 0.7;
+    this.audio.noiseBurst(noise);
+  }
+
+  /** The sub: the thump under all of it, on the oscillator rather than the noise. */
+  private explosionSub(x: number, y: number, z: number, scale: number): void {
+    const osc = this.placeOsc(x, y, z);
+    osc.type = 'sine';
+    osc.freq = 62;
+    osc.freqEnd = 22;
+    osc.level = 1.0 * scale;
+    osc.attack = 0.004;
+    osc.decay = 0.5;
+    osc.wet = 0.4;
+    osc.filterFreq = 220;
+    osc.filterQ = 0.7;
+    this.audio.oscHit(osc);
+  }
+
+  private pip(x: number, y: number, z: number, freq: number, level: number, decay: number): void {
+    const noise = this.placeNoise(x, y, z);
     noise.filter = 'bandpass';
     noise.freq = freq;
     noise.freqEnd = freq * 0.7;
@@ -206,4 +228,6 @@ export class EquipmentAudio {
     noise.rate = 1;
     this.audio.noiseBurst(noise);
   }
+  //#endregion
 }
+//#endregion

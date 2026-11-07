@@ -1,8 +1,13 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { CameraRig } from '../engine/CameraRig';
 import type { Fx } from '../engine/Fx';
 import type { StreakPresentation } from '../../shared/streaks/StreakPresentation';
 import type { StreakAudio } from './StreakAudio';
+//#endregion
 
+// =============================== CLASS ClientStreakPresentation =============================== \\
+//#region Class ClientStreakPresentation
 /**
  * The browser's answer to `StreakPresentation` (M9).
  *
@@ -18,13 +23,18 @@ import type { StreakAudio } from './StreakAudio';
  * equipment Fx, and `streaks/` has never depended on `equipment/` for a puff of light.
  */
 export class ClientStreakPresentation implements StreakPresentation {
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     private readonly audio: StreakAudio,
     private readonly fx: Fx,
     private readonly cameraRig: CameraRig,
     private readonly blastFn: (x: number, y: number, z: number, radius: number, bright: boolean) => void,
   ) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   sentryDeploy(x: number, y: number, z: number): void {
     this.audio.sentryDeploy(x, y, z);
   }
@@ -84,4 +94,6 @@ export class ClientStreakPresentation implements StreakPresentation {
   shake(amount: number): void {
     this.cameraRig.shake.add(amount);
   }
+  //#endregion
 }
+//#endregion

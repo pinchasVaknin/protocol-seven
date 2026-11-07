@@ -1,8 +1,3 @@
-import * as THREE from 'three';
-import type { TeamRelation } from '../../shared/ui/TeamColour';
-import { palette, type GameplayPalette } from '../ui/Palette';
-import { SENTRY_IFF_MATERIAL, SENTRY_NODES, sentryModel } from './SentryModel';
-
 /**
  * The bodies killstreaks used to build for themselves (M9).
  *
@@ -18,32 +13,16 @@ import { SENTRY_IFF_MATERIAL, SENTRY_NODES, sentryModel } from './SentryModel';
  * leave something standing.
  */
 
-/** Team colour at full strength: this is a lamp, and a lamp is the one thing allowed to be loud. */
-function iffColour(p: GameplayPalette, relation: TeamRelation): number {
-  return relation === 'FRIENDLY' ? p.friendly : relation === 'HOSTILE' ? p.hostile : p.neutral;
-}
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import type { TeamRelation } from '../../shared/ui/TeamColour';
+import { palette, type GameplayPalette } from '../ui/Palette';
+import { SENTRY_IFF_MATERIAL, SENTRY_NODES, sentryModel } from './SentryModel';
+//#endregion
 
-/**
- * The tint of the fallback sentry's body, from the palette and the relation (M13 Phase A).
- *
- * Was `team === 'A' ? 0x2f5d7c : 0x7c3a2f` — the last absolute team colour in `client/`, and
- * the same defect B12 removed from three HUD surfaces: from a team-B seat your own sentry was
- * the red one. It is a relation now, and the two hex literals are gone with it: the tint is
- * the palette's friendly or hostile colour at half brightness, which under the base palette
- * lands within a few units of the two values that were here (0x2b547f / 0x743026 against
- * 0x2f5d7c / 0x7c3a2f) and under a colourblind palette moves with everything else.
- *
- * Half brightness because this is a painted turret, not a marker: the emissive points on a
- * body are the IFF tell, and a sentry lit like one would read as a fifth marker. On the model
- * that argument is finally carried out properly — the armour is neutral gunmetal and the band
- * round the mount is the only thing wearing the team's colour. A box has nowhere to put a
- * band, so the box keeps painting itself.
- */
-function sentryTint(p: GameplayPalette, relation: TeamRelation): number {
-  const base = iffColour(p, relation);
-  return new THREE.Color(base).multiplyScalar(0.5).getHex();
-}
-
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * The health bar over a sentry (2026-09-28): metres, in the world, because it belongs to the
  * turret rather than to the screen — it shrinks with distance and a wall hides it, so it tells
@@ -55,8 +34,13 @@ const BAR_WIDTH_M = 0.7;
 const BAR_THICK_M = 0.07;
 /** The dark frame around the fill, each side. */
 const BAR_BORDER_M = 0.025;
+//#endregion
 
+// ====================================== CLASS SentryMesh ====================================== \\
+//#region Class SentryMesh
 export class SentryMesh {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly group = new THREE.Group();
   /** Turned about Y by `aim`. The model's own yaw node, or the box turret's one group. */
   private readonly yawNode: THREE.Object3D;
@@ -65,7 +49,10 @@ export class SentryMesh {
   private readonly barFill: THREE.Sprite;
   private shownHealth = -1;
   private readonly disposables: Array<{ dispose(): void }> = [];
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(x: number, y: number, z: number, restYaw: number, relation: TeamRelation) {
     const model = sentryModel();
     if (model === null) {
@@ -83,7 +70,10 @@ export class SentryMesh {
     this.group.position.set(x, y, z);
     this.group.rotation.y = restYaw;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * What is left of it, 0..1. Both runtimes feed it: the solo simulation's `Health.fraction`, and
    * the replicated record's share-of-full byte on a networked client.
@@ -103,6 +93,22 @@ export class SentryMesh {
     fill.center.set(0.5 / f, 0.5);
   }
 
+  /** Both angles are relative to the base's placed facing. See `SentryGun.turretYaw`. */
+  aim(turretYaw: number, turretPitch: number): void {
+    this.yawNode.rotation.y = turretYaw;
+    this.pitchNode.rotation.x = turretPitch;
+  }
+
+  dispose(): void {
+    this.group.removeFromParent();
+    this.group.clear();
+    for (const d of this.disposables) d.dispose();
+    this.disposables.length = 0;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * The frame and the fill, as sprites so they always face the viewer. The fill wears the IFF
    * colour the band does, so a bar reads as *whose* before it reads as how much. `depthWrite` is
@@ -212,25 +218,21 @@ export class SentryMesh {
 
     return turret;
   }
-
-  /** Both angles are relative to the base's placed facing. See `SentryGun.turretYaw`. */
-  aim(turretYaw: number, turretPitch: number): void {
-    this.yawNode.rotation.y = turretYaw;
-    this.pitchNode.rotation.x = turretPitch;
-  }
-
-  dispose(): void {
-    this.group.removeFromParent();
-    this.group.clear();
-    for (const d of this.disposables) d.dispose();
-    this.disposables.length = 0;
-  }
+  //#endregion
 }
+//#endregion
 
+// =================================== CLASS CarePackageMesh ==================================== \\
+//#region Class CarePackageMesh
 export class CarePackageMesh {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly group = new THREE.Group();
   private readonly disposables: Array<{ dispose(): void }> = [];
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(x: number, y: number, z: number) {
     const geometry = new THREE.BoxGeometry(0.9, 0.72, 0.9);
     const material = new THREE.MeshStandardMaterial({ color: 0x3d4a3a, roughness: 0.78, metalness: 0.08 });
@@ -250,7 +252,10 @@ export class CarePackageMesh {
 
     this.group.position.set(x, y, z);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** The crate falls; x and z never change after the drop. */
   setHeight(y: number): void {
     this.group.position.y = y;
@@ -262,4 +267,35 @@ export class CarePackageMesh {
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;
   }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Team colour at full strength: this is a lamp, and a lamp is the one thing allowed to be loud. */
+function iffColour(p: GameplayPalette, relation: TeamRelation): number {
+  return relation === 'FRIENDLY' ? p.friendly : relation === 'HOSTILE' ? p.hostile : p.neutral;
+}
+
+/**
+ * The tint of the fallback sentry's body, from the palette and the relation (M13 Phase A).
+ *
+ * Was `team === 'A' ? 0x2f5d7c : 0x7c3a2f` — the last absolute team colour in `client/`, and
+ * the same defect B12 removed from three HUD surfaces: from a team-B seat your own sentry was
+ * the red one. It is a relation now, and the two hex literals are gone with it: the tint is
+ * the palette's friendly or hostile colour at half brightness, which under the base palette
+ * lands within a few units of the two values that were here (0x2b547f / 0x743026 against
+ * 0x2f5d7c / 0x7c3a2f) and under a colourblind palette moves with everything else.
+ *
+ * Half brightness because this is a painted turret, not a marker: the emissive points on a
+ * body are the IFF tell, and a sentry lit like one would read as a fifth marker. On the model
+ * that argument is finally carried out properly — the armour is neutral gunmetal and the band
+ * round the mount is the only thing wearing the team's colour. A box has nowhere to put a
+ * band, so the box keeps painting itself.
+ */
+function sentryTint(p: GameplayPalette, relation: TeamRelation): number {
+  const base = iffColour(p, relation);
+  return new THREE.Color(base).multiplyScalar(0.5).getHex();
+}
+//#endregion

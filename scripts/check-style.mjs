@@ -478,6 +478,20 @@ const FINISHED = {
     'src/client/combat/TargetDummy.ts',
     'src/client/combat/TargetRange.ts',
   ],
+  C12: [
+    'src/client/equipment/EquipmentAudio.ts',
+    'src/client/equipment/EquipmentFx.ts',
+    'src/client/meta/CamoTextures.ts',
+    'src/client/meta/Profile.ts',
+    'src/client/meta/SaveStore.ts',
+    'src/client/streaks/ChopperCamera.ts',
+    'src/client/streaks/ClientStreakPresentation.ts',
+    'src/client/streaks/ReplicatedStreaks.ts',
+    'src/client/streaks/SentryModel.ts',
+    'src/client/streaks/StreakAudio.ts',
+    'src/client/streaks/StreakMeshes.ts',
+    'src/client/streaks/StreakRenderer.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

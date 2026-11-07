@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import {
   STREAK_DEFS,
   streakDef,
@@ -7,7 +9,10 @@ import {
 import type { StreakEntityState, StreakView, UavContactState } from '../../shared/net/Skirmish';
 import { carriedStreakWeapon } from '../../shared/streaks/StreakWeapons';
 import type { WeaponDef } from '../../shared/weapons/WeaponDefs';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** One of this player's keys, as the server prices and gates it. Shaped like `StreakPrice`. */
 export interface ReplicatedOffer {
   readonly id: StreakId;
@@ -22,7 +27,10 @@ export interface ReplicatedOffer {
    */
   readonly lockoutSeconds: number;
 }
+//#endregion
 
+// ================================== CLASS ReplicatedStreaks =================================== \\
+//#region Class ReplicatedStreaks
 /**
  * The server's answer to every streak question a networked client used to answer itself
  * (M11 Gate B, §6.8, §8.22).
@@ -50,6 +58,8 @@ export interface ReplicatedOffer {
  * server recorded against it.
  */
 export class ReplicatedStreaks {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** The class's streaks, priced and gated. Empty until the first frame arrives. */
   private offers_: readonly ReplicatedOffer[] = [];
   private balance_ = 0;
@@ -62,7 +72,10 @@ export class ReplicatedStreaks {
 
   /** Whether a frame has ever arrived. Distinguishes "nothing yet" from "nothing to report". */
   private seen = false;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   apply(view: StreakView): void {
     // Resolved to ids here rather than at every read, because the wire's kind index is a
     // detail of the wire and three of this class's four readers ask by streak id.
@@ -146,10 +159,6 @@ export class ReplicatedStreaks {
     return this.balance_;
   }
 
-  private offerFor(id: StreakId): ReplicatedOffer | undefined {
-    for (const offer of this.offers_) if (offer.id === id) return offer;
-    return undefined;
-  }
 
   get scrambled(): boolean {
     return this.scrambled_;
@@ -190,4 +199,14 @@ export class ReplicatedStreaks {
     }
     return null;
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private offerFor(id: StreakId): ReplicatedOffer | undefined {
+    for (const offer of this.offers_) if (offer.id === id) return offer;
+    return undefined;
+  }
+  //#endregion
 }
+//#endregion

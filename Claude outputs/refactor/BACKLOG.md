@@ -84,6 +84,7 @@ and belong in its Step 2 plan.
 | ~~C9~~ | `client/weapons/` WeaponAssetService, WeaponAssetCatalog, WeaponModelSpecs, WeaponAudio | **closed** — nothing was bound to it: no §1 row, and none of the four names appears anywhere in this file except **#35**, which is **C23's** and whose edit is in `Game.ts` (`warmWeaponAssets`), outside R3's fence — declined with a reason, and the entry already says the service "already has every loader this needs". What C9 did close is **#56's watch-for**: `WeaponAudio` has the shared-scratch defect C3 found, three times, and it is now **#60**. C9 also opened **#61**, **#62** and **#63**, all three found by its own 104 characterization tests |
 | ~~C10~~ | `client/world/` MapBuildQueue, MapMesher, MapRender, MenuBackdrop, MenuSkirmish, Particulate, PropModels, SkyDome | **closed** — nothing was bound to it: no §1 row, and none of the eight names appears anywhere in this file except one parenthesis in #56 that says so itself — *"(The file is C9's, not C10's.)"*. The broader sweep is empty too: *particulate*, *dust*, *backdrop*, *mesher*, *map build*, *client/world*, *thumbnail* and *terrain* have no hits at all, every *sky* hit is #55's `SKY_LAYER` note, every *skirmish* hit is the NET harness, and every *prop* hit is #4's `props.ts` generator. **C10 opened #64 and #65**, both from its own 204 characterization tests and its own skeleton work |
 | ~~C11~~ | `client/ai/` ActorIndicator, BotMesh, BotRenderer; `client/combat/` TargetDummy, TargetRange | **#33 declined with a reason** — the fix that keeps the range's holes needs per-target ownership on a decal, which lives in `engine/Decals.ts`/`Fx.ts`: **C4's files**, finished, in the `check:style` ratchet and outside R3's fence — exactly why C4 declined it too. The cheap half C11 *could* do inside its own file (drop `'static'` from `TargetDummy.decals`) is a behaviour change that deletes the holes from the four measurement targets and the DPS dummy, which is what the range exists to read. C11 measured the window instead (see #33, rewritten): it is bounded at `RESPAWN_SECONDS` = **2.5 s**, on exactly one dummy. C11 opened #66, #67 and #68 |
+| ~~C12~~ | `client/equipment/` EquipmentAudio, EquipmentFx; `client/streaks/` ChopperCamera, ClientStreakPresentation, ReplicatedStreaks, SentryModel, StreakAudio, StreakMeshes, StreakRenderer; `client/meta/` CamoTextures, Profile, SaveStore | **closed** — nothing was bound to it: no §1 row, and none of the twelve names appears anywhere in this file except the three *watch-fors* aimed at it, and **C12 answered all three**. **#60**: of the two files it named, only `EquipmentAudio` has the defect — it writes the shared scratches and never sets `roll`, verified at runtime; `StreakAudio` holds its own specs and is clean, which is also the fix's shape. **#58**: confirmed, `CamoTextures` is the third copy. **#29**: answered, and not in the entry's favour — the load path sanitises **once**. C12 opened nothing: its 240 characterization tests found no new defect, and the two surprises they did find (`mortarInbound` whistles 18 m up, `SaveStore` hands an array to the migrator but not a number) are both working as written and are pinned in both halves |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
@@ -1182,8 +1183,30 @@ three are right the fix is three lines and the three tests flip with them.
 
 **Watch for** the same class of bug wherever a caller fills a shared scratch. Between #56 and
 this entry, `engine/ProceduralAudio.ts` and `weapons/WeaponAudio.ts` have both been read field
-by field; `streaks/StreakAudio.ts` and `equipment/EquipmentAudio.ts` use the same two
-scratches, they are **C12's**, and nobody has looked at them.
+by field.
+
+**C12 read the last two on 2026-11-07, and they are not alike** — which is the useful part,
+because one of them is the shape the fix should take:
+
+| | the spec it fills | sets `roll`? | |
+|---|---|---|---|
+| `equipment/EquipmentAudio.ts` | `audio.noiseScratch` / `oscScratch` — the **shared** pair, written 7 times | never | **has this defect** |
+| `streaks/StreakAudio.ts` | its **own** `makeNoiseSpec()` / `makeOscSpec()`, one pair per instance | never, but the factory defaults `roll: 'world'` | **clean** |
+
+Verified at runtime rather than by reading: a probe fed `playExplosion` a recording
+`ProceduralAudio` and all four layers arrived **with no `roll` field at all**. So every
+equipment sound — explosion, bounce, armed, flashbang, smoke — plays on whatever distance
+profile the previous sound in the game happened to leave behind. `StreakAudio` cannot, because
+nothing else can reach its specs.
+
+That makes the scope of this entry larger than it read: not three sounds in one file, but
+**every positional sound in `EquipmentAudio`**. It also makes the fix cheaper to argue for —
+`StreakAudio` already demonstrates the alternative, in the same unit, and it costs one pair of
+spec objects per instance.
+
+C12 pinned both halves rather than fixing either (R1): `EquipmentAudio.test.ts` has two tests
+carrying the `// Pins current behaviour; suspected bug` comment, and `StreakAudio.test.ts` has
+two asserting that the shared scratches are never touched at all.
 
 **Verify** `npm run check`, plus the BROWSER counters: `__p7.game.audio` publishes `poolSize`,
 `voiceCount`, `sourcesStarted` and `voicesDropped`; a seated magazine is one noise burst and
@@ -1268,7 +1291,28 @@ direction (weapons would import from the renderer) and `shared/` is worse (it is
 The honest home is a small `client/engine/CanvasTile.ts` that both import, or nothing at all —
 five lines twice is a defensible price for two files with no dependency on each other.
 
-**Watch for** a third copy. `meta/CamoTextures.ts` paints tiles too, and it is C12's.
+**Watch for** a third copy — **and there is one.** C12 confirmed on 2026-11-07 that
+`meta/CamoTextures.ts` is the third, and it is the closest of the three to the weapon's:
+
+```
+CamoTextures.makeCanvas()            WeaponSurfaces / ProceduralTextures
+  document.createElement('canvas')     the same, with its own error message
+CamoTextures.finish(ctx, aniso)      WeaponSurfaces.finish()
+  new CanvasTexture(ctx.canvas)        new CanvasTexture(ctx.canvas)
+  wrapS = wrapT = RepeatWrapping       the same
+  colorSpace = SRGBColorSpace          the same
+  anisotropy = <given>                 the same
+  repeat.set(2, 2)                     repeat.set(r, r)   <- the only difference
+  needsUpdate = true                   the same
+```
+
+Five properties, in the same order, differing in one fixed argument. So the decision below is
+now about three files in three finished units rather than two, which strengthens the case for a
+shared `paintedTile(size)` rather than weakening it.
+
+C12 did not fold it: `ProceduralTextures.ts` is C4's and `WeaponSurfaces.ts` is C7's, both
+finished and in the ratchet, and a new `client/engine/CanvasTile.ts` is a new source file,
+which R3 allows only in a design unit.
 
 **Verify** `npm run check`, plus the sixteen texture checksums C4 pinned in
 `ProceduralTextures.test.ts` and the three command logs C7 pinned in `WeaponMesh.test.ts`:
@@ -1830,9 +1874,14 @@ too.
 
 **How much it matters.** Acceptance criterion 5 says editing `localStorage` cannot put a locked
 item in the player's hands, and a camo is an item. Whether a player ever sees it depends on how
-many times the load path sanitises before drawing — worth checking `client/meta/Profile`'s
-`sanitiseAll` while fixing, because if it already runs twice the leak never surfaces and the
-entry can be closed as a tidy-up rather than a defect.
+many times the load path sanitises before drawing.
+
+**C12 checked, on 2026-11-07, and the answer is once.** `Profile`'s constructor runs
+`normaliseSave` and then exactly one `sanitiseAll()`; the only other two call sites are
+`doPrestige` and `importSave`, neither of which is on the load path. So the hoped-for second
+pass does not exist, the leak does surface, and **this entry stays a defect rather than becoming
+a tidy-up**. C12 pinned the single pass in `Profile.test.ts` ("sanitises exactly once on load")
+so that a future change to the load path has to notice this entry.
 
 **Verify** `npm run check` + SIM snapshot/compare. The oracles cannot see this — no oracle loads
 a hand-edited save — so the test above is the proof, and it will need its expectation inverted

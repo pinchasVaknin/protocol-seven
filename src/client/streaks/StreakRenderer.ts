@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import { CarePackage } from '../../shared/streaks/CarePackage';
 import { SentryGun } from '../../shared/streaks/SentryGun';
@@ -11,7 +13,10 @@ import {
   type ViewerContext,
 } from '../../shared/ui/TeamColour';
 import { CarePackageMesh, SentryMesh } from './StreakMeshes';
+//#endregion
 
+// ==================================== CLASS StreakRenderer ==================================== \\
+//#region Class StreakRenderer
 /**
  * Draws the killstreaks that have a body (M9).
  *
@@ -28,12 +33,17 @@ import { CarePackageMesh, SentryMesh } from './StreakMeshes';
  * just applies to this class now, which is the thing that made the mesh.
  */
 export class StreakRenderer {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly group = new THREE.Group();
 
   private readonly sentries = new Map<number, SentryMesh>();
   private readonly packages = new Map<number, CarePackageMesh>();
   private readonly present = new Set<number>();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   /**
    * `viewer` and `isLocal` are the two halves of "what is this sentry to me" (M13 Phase A):
    * the side it is on is a relation to the viewer's seat, and in Free-for-All — where every
@@ -47,7 +57,10 @@ export class StreakRenderer {
   ) {
     this.group.name = 'streaks';
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** The local simulation's streaks. Single-player, and the arena before a migration. */
   update(): void {
     this.present.clear();
@@ -112,6 +125,18 @@ export class StreakRenderer {
     this.sweep();
   }
 
+  dispose(): void {
+    for (const mesh of this.sentries.values()) mesh.dispose();
+    for (const mesh of this.packages.values()) mesh.dispose();
+    this.sentries.clear();
+    this.packages.clear();
+    this.group.removeFromParent();
+    this.group.clear();
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /** What a sentry is to this viewer. Yours is friendly in every mode, FFA included. */
   private relationOf(ownerId: number, team: 'A' | 'B'): TeamRelation {
     return this.isLocal(ownerId) ? relationToSelf() : relationTo(this.viewer(), team);
@@ -166,13 +191,6 @@ export class StreakRenderer {
       this.packages.delete(id);
     }
   }
-
-  dispose(): void {
-    for (const mesh of this.sentries.values()) mesh.dispose();
-    for (const mesh of this.packages.values()) mesh.dispose();
-    this.sentries.clear();
-    this.packages.clear();
-    this.group.removeFromParent();
-    this.group.clear();
-  }
+  //#endregion
 }
+//#endregion

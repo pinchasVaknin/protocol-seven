@@ -1,6 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { makeNoiseSpec, makeOscSpec, type NoiseSpec, type OscSpec } from '../engine/AudioSpecs';
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
+//#endregion
 
+// ===================================== CLASS StreakAudio ====================================== \\
+//#region Class StreakAudio
 /**
  * The killstreak vocabulary, synthesised (M7).
  *
@@ -24,15 +29,24 @@ import type { ProceduralAudio } from '../engine/ProceduralAudio';
  * low body plus a bright crack. The whistle is the warning the strike is fair.
  */
 export class StreakAudio {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly audio: ProceduralAudio;
   private readonly noise: NoiseSpec = makeNoiseSpec();
   private readonly osc: OscSpec = makeOscSpec();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(audio: ProceduralAudio) {
     this.audio = audio;
   }
 
   /** One radar revolution. `phase` only varies the pitch a little so it does not machine-gun. */
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   uavSweep(phase: number): void {
     const o = this.osc;
     o.positional = false;
@@ -241,7 +255,10 @@ export class StreakAudio {
     n.rate = 0.95;
     this.audio.noiseBurst(n);
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private placeNoise(x: number, y: number, z: number): void {
     const n = this.noise;
     n.positional = true;
@@ -259,4 +276,6 @@ export class StreakAudio {
     o.y = y;
     o.z = z;
   }
+  //#endregion
 }
+//#endregion

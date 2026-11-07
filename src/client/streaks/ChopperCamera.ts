@@ -1,6 +1,11 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import { makeChopperView, type ChopperGunner } from '../../shared/streaks/ChopperGunner';
+//#endregion
 
+// ==================================== CLASS ChopperCamera ===================================== \\
+//#region Class ChopperCamera
 /**
  * The camera a Chopper Gunner takeover renders through (M9).
  *
@@ -12,9 +17,14 @@ import { makeChopperView, type ChopperGunner } from '../../shared/streaks/Choppe
  * `updateProjectionMatrix` is not free and must not run on a frame where nothing moved.
  */
 export class ChopperCamera {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly camera = new THREE.PerspectiveCamera(55, 1, 0.5, 400);
   private readonly view = makeChopperView();
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * The camera to render this frame, or null when no takeover owns the view.
    *
@@ -35,4 +45,6 @@ export class ChopperCamera {
     this.camera.rotation.set(v.pitch, v.yaw, 0, 'YXZ');
     return this.camera;
   }
+  //#endregion
 }
+//#endregion

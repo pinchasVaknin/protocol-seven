@@ -12,17 +12,28 @@
  * its migrations live in `shared/meta/SaveData.ts`, because the server awards progression
  * from M10 and has to agree about what a save contains.
  */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { Versioned } from '../../shared/meta/SaveData';
 
 export type { Versioned };
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * Convert persisted data from an older schema. Return `null` to reject the payload
  * and fall back to defaults. Called once, at construction, before any read.
  */
 export type Migrator<T extends Versioned> = (raw: unknown, fromVersion: number) => T | null;
+//#endregion
 
+// ====================================== CLASS SaveStore ======================================= \\
+//#region Class SaveStore
 export class SaveStore<T extends Versioned> {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /**
    * How many times this store has actually written to storage.
    *
@@ -38,7 +49,10 @@ export class SaveStore<T extends Versioned> {
   private storage: Storage | null;
   private dirty = false;
   private flushHandle = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     private readonly key: string,
     private readonly version: number,
@@ -50,6 +64,10 @@ export class SaveStore<T extends Versioned> {
   }
 
   /** The live document. Mutate through `patch`, not directly. */
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get value(): Readonly<T> {
     return this.data;
   }
@@ -129,7 +147,10 @@ export class SaveStore<T extends Versioned> {
     this.data.version = this.version;
     this.scheduleFlush();
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private scheduleFlush(): void {
     this.dirty = true;
     if (this.flushHandle !== 0) return;
@@ -188,8 +209,12 @@ export class SaveStore<T extends Versioned> {
     this.scheduleFlush();
     return migrated;
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function probeStorage(): Storage | null {
   try {
     const s = window.localStorage;
@@ -201,3 +226,4 @@ function probeStorage(): Storage | null {
     return null;
   }
 }
+//#endregion

@@ -1,8 +1,13 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { logger } from '../../shared/core/Log';
 import { gpuWarmup } from '../engine/GpuWarmup';
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const log = logger('SentryModel');
 
 /** Built by `scripts/sentry-build.mjs`; the names below are that script's contract. */
@@ -25,7 +30,10 @@ export const SENTRY_IFF_MATERIAL = 'iff';
 
 let template: THREE.Object3D | null = null;
 let task: Promise<void> | null = null;
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * The turret's model, or null while it has not arrived.
  *
@@ -77,3 +85,4 @@ export function preloadSentry(): Promise<void> {
   task = started;
   return started;
 }
+//#endregion

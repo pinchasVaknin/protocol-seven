@@ -1,8 +1,4 @@
-﻿import * as THREE from 'three';
-import { Rng } from '../../shared/core/Rng';
-import type { CamoId } from '../../shared/meta/Camos';
-
-/**
+﻿/**
  * Camo texture generation (M9 split — see `shared/meta/Camos.ts` for the definitions).
  *
  * Zero external assets (S2), so every one of these is drawn with 2D canvas calls from a
@@ -26,8 +22,26 @@ import type { CamoId } from '../../shared/meta/Camos';
  * Which camo a weapon *wears* is progression state and lives in `shared/`. What it looks
  * like is this file, and the server never loads it.
  */
-// -- generation ---------------------------------------------------------------
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import { Rng } from '../../shared/core/Rng';
+import type { CamoId } from '../../shared/meta/Camos';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+/** One Voronoi site of the obsidian pattern: where it is, and how brightly it is lit. */
+interface Site {
+  readonly x: number;
+  readonly y: number;
+  readonly shade: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const TEX = 256;
 
 /**
@@ -39,14 +53,6 @@ const TEX = 256;
  */
 const cache = new Map<CamoId, THREE.Texture>();
 
-export function camoTexture(id: CamoId, anisotropy: number): THREE.Texture {
-  const existing = cache.get(id);
-  if (existing !== undefined) return existing;
-  const texture = finish(draw(id), anisotropy);
-  cache.set(id, texture);
-  return texture;
-}
-
 /**
  * The same pattern as a data URL, for the editor's camo bars (playtest round 3, R4.5): the
  * texture's own canvas read back once per camo per process — six of them, about 40 kB each,
@@ -55,6 +61,17 @@ export function camoTexture(id: CamoId, anisotropy: number): THREE.Texture {
  */
 const pictures = new Map<CamoId, string>();
 export let camoPicturesBuilt = 0;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function camoTexture(id: CamoId, anisotropy: number): THREE.Texture {
+  const existing = cache.get(id);
+  if (existing !== undefined) return existing;
+  const texture = finish(draw(id), anisotropy);
+  cache.set(id, texture);
+  return texture;
+}
 
 export function camoPicture(id: CamoId, anisotropy: number): string {
   const existing = pictures.get(id);
@@ -65,7 +82,10 @@ export function camoPicture(id: CamoId, anisotropy: number): string {
   camoPicturesBuilt++;
   return url;
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function makeCanvas(): CanvasRenderingContext2D {
   const canvas = document.createElement('canvas');
   canvas.width = TEX;
@@ -124,8 +144,7 @@ function drawDigital(): CanvasRenderingContext2D {
       const fy = Math.floor(y / cell / coarse);
       const base = field[fy * stride + fx] ?? 0.5;
       const jitter = base + rng.range(-0.3, 0.3);
-      const index = jitter < 0.2 ? 3 : jitter < 0.45 ? 0 : jitter < 0.78 ? 1 : 2;
-      ctx.fillStyle = tones[index] ?? '#5c6350';
+      ctx.fillStyle = tones[digitalTone(jitter)] ?? '#5c6350';
       ctx.fillRect(x, y, cell, cell);
     }
   }
@@ -216,18 +235,7 @@ function drawFractal(): CanvasRenderingContext2D {
 
   for (let y = 0; y < TEX; y++) {
     for (let x = 0; x < TEX; x++) {
-      let value = 0;
-      let amplitude = 1;
-      let total = 0;
-      for (let o = 0; o < octaves.length; o++) {
-        const size = octaves[o] ?? 4;
-        const field = fields[o];
-        if (field === undefined) continue;
-        value += sampleField(field, size, (x / TEX) * size, (y / TEX) * size) * amplitude;
-        total += amplitude;
-        amplitude *= 0.5;
-      }
-      value /= total;
+      const value = summedOctaves(fields, octaves, x / TEX, y / TEX);
       const band = bands[Math.min(bands.length - 1, Math.floor(value * bands.length))] ?? bands[0];
       const i = (y * TEX + x) * 4;
       image.data[i] = band?.[0] ?? 0;
@@ -296,7 +304,7 @@ function drawObsidian(): CanvasRenderingContext2D {
   ctx.fillRect(0, 0, TEX, TEX);
 
   const count = 44;
-  const sites: Array<{ x: number; y: number; shade: number }> = [];
+  const sites: Site[] = [];
   for (let i = 0; i < count; i++) {
     sites.push({ x: rng.float() * TEX, y: rng.float() * TEX, shade: rng.float() });
   }
@@ -304,25 +312,7 @@ function drawObsidian(): CanvasRenderingContext2D {
   const image = ctx.getImageData(0, 0, TEX, TEX);
   for (let y = 0; y < TEX; y++) {
     for (let x = 0; x < TEX; x++) {
-      let best = Infinity;
-      let second = Infinity;
-      let shade = 0;
-      for (const s of sites) {
-        // Toroidal distance, so the pattern tiles without a visible seam.
-        const dx = Math.min(Math.abs(s.x - x), TEX - Math.abs(s.x - x));
-        const dy = Math.min(Math.abs(s.y - y), TEX - Math.abs(s.y - y));
-        const d = dx * dx + dy * dy;
-        if (d < best) {
-          second = best;
-          best = d;
-          shade = s.shade;
-        } else if (d < second) {
-          second = d;
-        }
-      }
-      // Distance to the facet boundary, as a bright edge.
-      const edge = Math.sqrt(second) - Math.sqrt(best);
-      const lit = 14 + shade * 34 + Math.max(0, 26 - edge * 5);
+      const lit = facetLight(sites, x, y);
       const i = (y * TEX + x) * 4;
       image.data[i] = Math.min(255, lit * 0.82);
       image.data[i + 1] = Math.min(255, lit * 0.88);
@@ -333,3 +323,69 @@ function drawObsidian(): CanvasRenderingContext2D {
   ctx.putImageData(image, 0, 0);
   return ctx;
 }
+
+/**
+ * Which of the four tones a block takes, from its jittered value.
+ *
+ * The thresholds are uneven on purpose: the darkest tone is the rarest and the two mid tones
+ * carry most of the area, which is what makes the pattern read as a camo rather than as noise.
+ */
+function digitalTone(jitter: number): number {
+  if (jitter < 0.2) return 3;
+  if (jitter < 0.45) return 0;
+  if (jitter < 0.78) return 1;
+  return 2;
+}
+
+/**
+ * Four octaves of value noise at one point, normalised to 0..1.
+ *
+ * Each octave is half the amplitude of the one before, and the running total is what the sum
+ * is divided by — so the result does not depend on how many octaves there happen to be.
+ */
+function summedOctaves(
+  fields: readonly Float32Array[],
+  octaves: readonly number[],
+  u: number,
+  v: number,
+): number {
+  let value = 0;
+  let amplitude = 1;
+  let total = 0;
+  for (let o = 0; o < octaves.length; o++) {
+    const size = octaves[o] ?? 4;
+    const field = fields[o];
+    if (field === undefined) continue;
+    value += sampleField(field, size, u * size, v * size) * amplitude;
+    total += amplitude;
+    amplitude *= 0.5;
+  }
+  return value / total;
+}
+
+/**
+ * How bright one pixel of the obsidian facets is: the nearest site's shade, plus a bright rim
+ * where the two nearest sites are nearly equidistant — which is the facet boundary.
+ */
+function facetLight(sites: readonly Site[], x: number, y: number): number {
+  let best = Infinity;
+  let second = Infinity;
+  let shade = 0;
+  for (const s of sites) {
+    // Toroidal distance, so the pattern tiles without a visible seam.
+    const dx = Math.min(Math.abs(s.x - x), TEX - Math.abs(s.x - x));
+    const dy = Math.min(Math.abs(s.y - y), TEX - Math.abs(s.y - y));
+    const d = dx * dx + dy * dy;
+    if (d < best) {
+      second = best;
+      best = d;
+      shade = s.shade;
+    } else if (d < second) {
+      second = d;
+    }
+  }
+  // Distance to the facet boundary, as a bright edge.
+  const edge = Math.sqrt(second) - Math.sqrt(best);
+  return 14 + shade * 34 + Math.max(0, 26 - edge * 5);
+}
+//#endregion

@@ -28,5 +28,41 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     environment: 'node',
     globals: false,
+    /**
+     * Thirty seconds, against Vitest's own default of five (BACKLOG #68, 2026-11-07).
+     *
+     * A per-test timeout is a **hang detector**, not a performance budget — nothing here
+     * asserts on how long a test took. At five seconds it had stopped being the first and
+     * become the second, and it was failing tests that were working correctly.
+     *
+     * The numbers it was recalibrated from. The suite runs one worker per file — the runner
+     * reports *"251 workers spawned · ~906 ms startup each"* — so every test's wall clock is
+     * mostly contention, and contention is whatever else the machine is doing:
+     *
+     *   the slowest test in the suite, run alone                            2,253 ms
+     *   the same test, whole suite, machine otherwise idle                  ~2,900 ms
+     *   the same test, whole suite, a browser and a game client also open   6,819 ms
+     *
+     * The second-slowest four land between 2.4 s and 3.7 s under that load and the rest of
+     * the 4,990 are under 1.3 s, so the suite is four tests with no headroom and a very long
+     * tail with plenty. On 2026-11-07 that cost four false failures on an untouched tree —
+     * every one a timeout, not one a failed assertion — which is the worst way for a suite to
+     * fail, because the fix is to run it again and the lesson is to stop believing it.
+     *
+     * Thirty is about eight times the slowest honest test at its worst measured contention. A
+     * real hang still stops in thirty seconds, which is plain against a suite that finishes in
+     * twenty to sixty.
+     *
+     * **Not `isolate: false`**, which the runner itself advertises underneath that line as
+     * *"at least ~19.77 s faster"*. It reuses a worker's module registry across files, and a
+     * dozen test files here install a global `document` or an `installClock` that would then
+     * outlive the file that set it. Trading four honest timeouts for a class of
+     * order-dependent failures across 256 files is the wrong trade; the speed is real and the
+     * risk is why it stays off.
+     */
+    testTimeout: 30_000,
+    // The same argument: a `beforeAll` that bakes a map is as exposed to contention as the
+    // test it prepares, and Vitest's 10 s default is the same cliff one step earlier.
+    hookTimeout: 30_000,
   },
 });

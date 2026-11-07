@@ -9,9 +9,9 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**49 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**48 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
-nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Thirteen numbers are gone and
+nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
 A13 and **#25** by A15, both on 2026-10-12, and **#40**, **#44** and **#47** on 2026-10-19, with **#39**, **#41** and **#46** closed together the same day — the leaked snapshot, the write-only field and the guard that cannot fire, all three in files B1 and B2 had already finished and no later unit could touch — and **#31** by B3, in the one file it owned. **#32** and **#48** went together on 2026-10-19 — five comments naming two things that had moved or gone, in files §10 and R3 keep out of every unit's reach; #32's own count was one short, and the fourth was in `skirmishHarness.ts`. **#49** followed on
 the same day: the arena's boot log and the README promised an `instant respawn` that playtest
@@ -35,7 +35,11 @@ was *neither half, from inside a refactor unit*: the owner API is in C4's finish
 cheap alternative deletes what the range exists to read. It measured the orphaned window instead
 — bounded at 2.5 s, on exactly one dummy of twelve — so #33 stays open, re-scoped to a session of
 its own with a number in hand. C11 opened **#66** (which its own oracle found), **#67**, and
-**#68**, the first entry about the test suite's own running time rather than about the game.
+**#68**, the first entry about the test suite's own running time rather than about the game —
+and **#68 was closed on 2026-11-07**, two days later, when it stopped being a warning and went
+red on an untouched tree: the per-test timeout was a hang detector being used as a performance
+budget, and it is now thirty seconds instead of five. The reasoning lives in `vitest.config.ts`,
+beside the number.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -1423,45 +1427,6 @@ primitive.
 ---
 
 ## 6. Documentation and housekeeping
-
-### #68 — The suite's heaviest test has no headroom left, and the next unit will trip it · `open` *(opened 2026-11-05 by C11)*
-
-**Files** `src/client/world/MenuSkirmish.test.ts` (C10's), and `vitest.config.ts` if the answer
-is a global one. **Origin** C11, which hit it the moment it added its own five test files.
-
-`MenuSkirmish wiring > deals a different fight for a different seed` builds **two** full 5v5 menu
-skirmishes on Foundry in one test. Measured on 2026-11-05:
-
-| condition | that test |
-|---|---|
-| the file run alone | **2,233 ms** |
-| the whole suite, before C11's test files | passes, 3 runs of 3 |
-| the whole suite, with C11's five test files added | **5,979 / 6,062 / 6,233 ms — over the 5,000 ms default, failing 3 runs of 6** |
-
-So the test is **2.7× slower under suite contention** than it is alone, and Vitest's default
-`testTimeout` is 5,000 ms. That is 2.2× headroom on an idle machine and none on a busy one. The
-suite runs `isolate: true`, which the runner itself reports as *"251 workers spawned · ~906 ms
-startup each"* — five more files is five more spawns competing with the one test that cannot
-afford them.
-
-**C11 got the gate green without touching C10's file**, by making its own tests cheaper: the
-testbed collision world is baked once per file rather than per test, and the read-only
-`TargetRange` groups share two ranges instead of building twenty. Gate green 3 runs of 3 after
-that, and twice more under `npm run check`. **But the headroom it bought is small, and it is not
-C11's to keep spending** — C12 adds twelve more files, C13 six, and each takes some of it.
-
-**Why C11 could not fix it properly.** `MenuSkirmish.test.ts` is **C10's**, outside R3's fence,
-and `vitest.config.ts` is one of the files R4 names explicitly. Both doors are shut to a unit.
-
-**Decide**, in a session of its own: give that one test an explicit timeout (Vitest takes a
-number as the third argument to `it`, which is local and needs no config change), or seed the two
-skirmishes with fewer bots, or turn `isolate: false` on for the suite — the runner claims *"at
-least ~19.77 s faster"* and it would cut the contention at its source, but it is a config change
-that every test in the project would then be sharing a worker under, which is a real decision and
-not a tweak.
-
-**Verify** run `npm run check` five times and count. The honest acceptance here is a pass rate,
-not a single green run.
 
 ### #65 — `MapMesher`'s ray bundle is built at load by a hoist nothing writes down · `open` *(opened 2026-11-03 by C10)*
 

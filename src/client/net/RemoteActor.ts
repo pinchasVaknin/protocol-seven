@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import {
   makeBotVisualState,
   type ActorAnimationInput,
@@ -7,6 +9,7 @@ import {
 import type { BotTeam } from '../../shared/ai/Combatant';
 import { DEATH_VARIANTS, deathVariantFor } from '../../shared/ai/BotVisualState';
 import { HitboxRig, HUMANOID_RIG, rigLayoutFor } from '../../shared/combat/HitboxRig';
+import { angleDelta } from '../../shared/core/MathUtil';
 import {
   makeInterpolatedPose,
   type EntityInterpolator,
@@ -19,7 +22,10 @@ import { skinIdAt, type SkinId } from '../../shared/meta/Skins';
 import type { StanceId } from '../../shared/player/Stance';
 import type { RoundBlocker } from '../../shared/weapons/Ballistics';
 import { WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
+//#endregion
 
+// ===================================== CLASS RemoteActor ====================================== \\
+//#region Class RemoteActor
 /**
  * Another player, drawn from snapshots (M10, S6.5).
  *
@@ -45,6 +51,8 @@ import { WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
  * comes from the server's `damage.dealt` like every other thing a hit announces.
  */
 export class RemoteActor implements RenderableActor, RoundBlocker {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly rig = new HitboxRig(HUMANOID_RIG);
   readonly visual: BotVisualState = makeBotVisualState();
 
@@ -94,7 +102,10 @@ export class RemoteActor implements RenderableActor, RoundBlocker {
    * sighting counts as a spawn.
    */
   private spawnSnapped = -1;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     readonly entityId: number,
     /**
@@ -106,6 +117,39 @@ export class RemoteActor implements RenderableActor, RoundBlocker {
      */
     private readonly healthMax: () => number,
   ) {}
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  /**
+   * Pull this frame's pose out of the buffer.
+   *
+   * `renderMs` is server time minus the interpolation delay. Called once per rendered frame,
+   * before the renderer reads any of the accessors below.
+   */
+  update(interp: EntityInterpolator, renderMs: number): void {
+    this.snapOnRespawn(interp, renderMs);
+    this.rememberPose();
+
+    interp.sample(renderMs, this.pose);
+    this.extrapolated = this.pose.extrapolated;
+    this.frozen = this.pose.frozen;
+
+    if (!this.seeded) {
+      // First frame: collapse the blend so a new body does not fly in from wherever the
+      // previous pose happened to be zero-initialised.
+      this.rememberPose();
+      this.seeded = true;
+    }
+
+    this.applyLatest(interp.latest);
+
+    // The same layout rule as the server's (`rigLayoutFor`), from the replicated stance,
+    // velocity and weapon: this rig is what the hitbox overlay draws, so it has to wear what the
+    // authority wears. The weapon is `weaponIndex`, which has been on the wire since M10.
+    this.rig.setLayout(rigLayoutFor(this.pose.stance, interp.latest.vx, interp.latest.vz, this.pistol));
+    this.rig.setTransform(this.pose.x, this.pose.y, this.pose.z, this.pose.yaw);
+  }
 
   get participating(): boolean {
     return (this.flags & EFlag.Alive) !== 0;
@@ -229,64 +273,62 @@ export class RemoteActor implements RenderableActor, RoundBlocker {
     return this.pose.pitch;
   }
 
+  // -- RenderableActor --------------------------------------------------------
+
+  renderX(alpha: number): number {
+    return this.prevX + (this.pose.x - this.prevX) * alpha;
+  }
+  renderY(alpha: number): number {
+    return this.prevY + (this.pose.y - this.prevY) * alpha;
+  }
+  renderZ(alpha: number): number {
+    return this.prevZ + (this.pose.z - this.prevZ) * alpha;
+  }
+  renderYaw(alpha: number): number {
+    return this.prevYaw + angleDelta(this.prevYaw, this.pose.yaw) * alpha;
+  }
+  renderScale(alpha: number): number {
+    return this.prevScale + (this.pose.heightScale - this.prevScale) * alpha;
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
-   * Pull this frame's pose out of the buffer.
+   * A respawn is a cut, not a move.
    *
-   * `renderMs` is server time minus the interpolation delay. Called once per rendered frame,
-   * before the renderer reads any of the accessors below.
+   * Detected **before** sampling, which is the whole point: `applyLatest` below already
+   * notices the spawn serial, but it runs *after* `interp.sample` has drawn this frame's pose
+   * out of a buffer still holding samples from where the body died. Collapsing the render
+   * blend there hides the last few milliseconds of the slide and none of the rest of it —
+   * reported as "their model is rapidly pulled across the map from their death position to
+   * their new spawn location".
+   *
+   * The first sighting counts as a spawn too, so a body that has just joined appears where it
+   * is rather than travelling there from the origin.
    */
-  update(interp: EntityInterpolator, renderMs: number): void {
-    /**
-     * A respawn is a cut, not a move.
-     *
-     * Detected **before** sampling, which is the whole point: `applyLatest` below already
-     * notices the spawn serial, but it runs *after* `interp.sample` has drawn this frame's pose
-     * out of a buffer still holding samples from where the body died. Collapsing the render
-     * blend there hides the last few milliseconds of the slide and none of the rest of it —
-     * reported as "their model is rapidly pulled across the map from their death position to
-     * their new spawn location".
-     *
-     * The first sighting counts as a spawn too, so a body that has just joined appears where it
-     * is rather than travelling there from the origin.
-     */
+  private snapOnRespawn(interp: EntityInterpolator, renderMs: number): void {
     const spawnSerial = interp.latest.spawnSerial;
     if (spawnSerial !== this.spawnSnapped) {
       this.spawnSnapped = spawnSerial;
       interp.snapTo(renderMs);
       this.seeded = false;
     }
+  }
 
-    // The previous pose is kept so the renderer's own `alpha` blend has two states to work
-    // between. It is a second, much shorter interpolation on top of the buffer's — the buffer
-    // places the body on the server's timeline, this smooths across the display's refresh.
+  /**
+   * Keep the drawn pose as the one the next frame blends out of.
+   *
+   * The previous pose is kept so the renderer's own `alpha` blend has two states to work
+   * between. It is a second, much shorter interpolation on top of the buffer's — the buffer
+   * places the body on the server's timeline, this smooths across the display's refresh.
+   */
+  private rememberPose(): void {
     this.prevX = this.pose.x;
     this.prevY = this.pose.y;
     this.prevZ = this.pose.z;
     this.prevYaw = this.pose.yaw;
     this.prevScale = this.pose.heightScale;
-
-    interp.sample(renderMs, this.pose);
-    this.extrapolated = this.pose.extrapolated;
-    this.frozen = this.pose.frozen;
-
-    if (!this.seeded) {
-      // First frame: collapse the blend so a new body does not fly in from wherever the
-      // previous pose happened to be zero-initialised.
-      this.prevX = this.pose.x;
-      this.prevY = this.pose.y;
-      this.prevZ = this.pose.z;
-      this.prevYaw = this.pose.yaw;
-      this.prevScale = this.pose.heightScale;
-      this.seeded = true;
-    }
-
-    this.applyLatest(interp.latest);
-
-    // The same layout rule as the server's (`rigLayoutFor`), from the replicated stance,
-    // velocity and weapon: this rig is what the hitbox overlay draws, so it has to wear what the
-    // authority wears. The weapon is `weaponIndex`, which has been on the wire since M10.
-    this.rig.setLayout(rigLayoutFor(this.pose.stance, interp.latest.vx, interp.latest.vz, this.pistol));
-    this.rig.setTransform(this.pose.x, this.pose.y, this.pose.z, this.pose.yaw);
   }
 
   /**
@@ -328,25 +370,6 @@ export class RemoteActor implements RenderableActor, RoundBlocker {
       v.flinchDirZ = Math.cos(latest.flinchAngle);
     }
   }
-
-  // -- RenderableActor --------------------------------------------------------
-
-  renderX(alpha: number): number {
-    return this.prevX + (this.pose.x - this.prevX) * alpha;
-  }
-  renderY(alpha: number): number {
-    return this.prevY + (this.pose.y - this.prevY) * alpha;
-  }
-  renderZ(alpha: number): number {
-    return this.prevZ + (this.pose.z - this.prevZ) * alpha;
-  }
-  renderYaw(alpha: number): number {
-    let d = (this.pose.yaw - this.prevYaw) % (Math.PI * 2);
-    if (d > Math.PI) d -= Math.PI * 2;
-    if (d <= -Math.PI) d += Math.PI * 2;
-    return this.prevYaw + d * alpha;
-  }
-  renderScale(alpha: number): number {
-    return this.prevScale + (this.pose.heightScale - this.prevScale) * alpha;
-  }
+  //#endregion
 }
+//#endregion

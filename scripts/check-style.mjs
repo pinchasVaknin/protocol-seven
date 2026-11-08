@@ -492,6 +492,14 @@ const FINISHED = {
     'src/client/streaks/StreakMeshes.ts',
     'src/client/streaks/StreakRenderer.ts',
   ],
+  C13: [
+    'src/client/net/BrowserLink.ts',
+    'src/client/net/Handshake.ts',
+    'src/client/net/JoinOptions.ts',
+    'src/client/net/NetSession.ts',
+    'src/client/net/RemoteActor.ts',
+    'src/client/net/WakeWait.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import type { RenderableActor } from '../../shared/ai/BotVisualState';
 import type { CombatantDirectory } from '../../shared/combat/Killfeed';
 import type { HitZone } from '../../shared/combat/HitboxRig';
@@ -15,11 +17,19 @@ import { NetClient, type SkirmishSink, type NetClientState } from '../../shared/
 import {
   phaseAt,
   SFlag,
+  type DamageEvent,
+  type EventSink,
+  type FiredEvent,
+  type FootstepEvent,
+  type ImpactEvent,
+  type KilledEvent,
+  type PoseEvent,
   type SnapshotHeader,
   type VoteInfo,
   type WelcomeInfo,
 } from '../../shared/net/Messages';
 import { EFlag, weaponIdAt } from '../../shared/net/Snapshot';
+import type { WeaponDef } from '../../shared/weapons/WeaponDefs';
 import type { PlayerController } from '../../shared/player/PlayerController';
 import {
   makeReplicatedMatchState,
@@ -28,32 +38,10 @@ import {
 import { anyWeaponDef } from '../../shared/weapons/AnyWeapon';
 import type { BrowserLink } from './BrowserLink';
 import { RemoteActor } from './RemoteActor';
+//#endregion
 
-const log = logger('net');
-
-/**
- * The client's networked match (M10).
- *
- * ## What this is, in one sentence
- *
- * It turns a socket into things the rest of the client already knows how to draw.
- *
- * ## The event bridge, which is the whole trick
- *
- * S3 sets the requirement: *"Gameplay events still go through the `EventBus`. On the server
- * it drives authority; on the client it drives presentation. **A networked event and a local
- * one must be indistinguishable to the client.**"*
- *
- * So this takes the replicated events off the wire and re-emits them onto the client's own
- * `GameBus` with the same payload shapes M1-M8 already emit. Nothing downstream changes or
- * even knows: the hitmarker, the damage numbers, the killfeed, the impact decals, the tracers,
- * the positional gunfire, the footsteps and the low-health muffle are all wired to those bus
- * entries and keep working with no networking code in them at all.
- *
- * That is why this file is a few hundred lines instead of a rewrite of the presentation
- * layer. The seam M1 built is being cashed in.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface NetSessionDeps {
   /**
    * The link, already open and already past the handshake.
@@ -113,8 +101,122 @@ export interface NetSessionDeps {
    */
   readonly reconnectToken?: Uint8Array | null;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('net');
+
+/**
+ * Refilled per snapshot and handed straight to `MatchFlow`.
+ *
+ * The same "payloads are transient" contract the bus has used since M1: the callee reads it
+ * during the call and never retains it.
+ */
+const replicatedState: ReplicatedMatchState = makeReplicatedMatchState();
+
+// Event payload singletons. The bus contract since M1 is that payloads are transient and
+// never retained, which is what makes reusing one record per event type safe.
+const evFired = {
+  weaponId: '',
+  sourceId: 0,
+  x: 0,
+  y: 0,
+  z: 0,
+  dx: 0,
+  dy: 0,
+  dz: -1,
+  endX: 0,
+  endY: 0,
+  endZ: 0,
+  distance: 0,
+  shotIndex: 0,
+  spreadDeg: 0,
+  tracer: false,
+  hitTarget: false,
+  ammoInMag: 0,
+  pellets: 1,
+  pelletsHit: 0,
+  minimapPing: true,
+};
+
+const evImpact = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0, material: 0, penetrated: false };
+
+const evDamage = {
+  sourceId: 0,
+  targetId: 0,
+  weaponId: '',
+  zone: 'torso' as HitZone,
+  amount: 0,
+  x: 0,
+  y: 0,
+  z: 0,
+  distance: 0,
+  falloffLoss: 0,
+  penetrationLoss: 0,
+  lethal: false,
+  autonomous: false,
+};
+
+const evKilled = { targetId: 0, sourceId: 0, weaponId: '', zone: 'torso' as HitZone, killerHealth: 0 };
+
+const evStep = {
+  entityId: 0,
+  x: 0,
+  y: 0,
+  z: 0,
+  speed: 0,
+  heavy: false,
+  quiet: false,
+  material: 0,
+};
+
+const evLand = {
+  entityId: 0,
+  x: 0,
+  y: 0,
+  z: 0,
+  impactSpeed: 0,
+  stance: 'STAND' as const,
+  material: 0,
+};
+
+const evJump = { entityId: 0, x: 0, y: 0, z: 0, horizontalSpeed: 0 };
+
+/**
+ * `limit` is left at zero: the score limit is a mode rule the client already holds, and the
+ * HUD only redraws it when a `ScoreChanged` carries a non-zero one.
+ */
+const evScore = { teamA: 0, teamB: 0, limit: 0 };
+//#endregion
+
+// ====================================== CLASS NetSession ====================================== \\
+//#region Class NetSession
+/**
+ * The client's networked match (M10).
+ *
+ * ## What this is, in one sentence
+ *
+ * It turns a socket into things the rest of the client already knows how to draw.
+ *
+ * ## The event bridge, which is the whole trick
+ *
+ * S3 sets the requirement: *"Gameplay events still go through the `EventBus`. On the server
+ * it drives authority; on the client it drives presentation. **A networked event and a local
+ * one must be indistinguishable to the client.**"*
+ *
+ * So this takes the replicated events off the wire and re-emits them onto the client's own
+ * `GameBus` with the same payload shapes M1-M8 already emit. Nothing downstream changes or
+ * even knows: the hitmarker, the damage numbers, the killfeed, the impact decals, the tracers,
+ * the positional gunfire, the footsteps and the low-health muffle are all wired to those bus
+ * entries and keep working with no networking code in them at all.
+ *
+ * That is why this file is a few hundred lines instead of a rewrite of the presentation
+ * layer. The seam M1 built is being cashed in.
+ */
 export class NetSession {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly client: NetClient;
   readonly link: BrowserLink;
 
@@ -234,7 +336,10 @@ export class NetSession {
    * allocation free. The instance never changes, so whoever holds it holds the live set.
    */
   private readonly blockers: RemoteActor[] = [];
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: NetSessionDeps) {
     this.deps = deps;
     this.interpolationDelayMs = deps.interpolationDelayMs ?? DEFAULT_INTERPOLATION_DELAY_MS;
@@ -250,272 +355,12 @@ export class NetSession {
      */
     deps.identity.adopt(deps.welcome.entityId);
 
-    this.client = new NetClient({
-      link: this.link,
-      controller: deps.controller,
-      sample: deps.sample,
-      applyNonReplayed: deps.applyWeapon,
-      moveScale: deps.moveScale,
-      displayName: deps.displayName,
-      loadout: deps.loadout ?? null,
-      skinIndex: deps.skinIndex,
-      wantRewindDebug: deps.wantRewindDebug,
-      onNewMatch: (welcome) => {
-        // A rotation reassigns entity ids, so the identity has to move with it or every
-        // filter downstream starts testing against the seat we held in the previous match.
-        deps.identity.adopt(welcome.entityId);
-        this.retire();
-        deps.onNewMatch?.(welcome);
-      },
-      skirmish: {
-        ...deps.skirmish,
-        onVoteState: (info) => {
-          this.lastVote = info;
-          deps.skirmish?.onVoteState?.(info);
-        },
-        onObjectives: (states) => {
-          this.onObjectives?.(states);
-          deps.skirmish?.onObjectives?.(states);
-        },
-        onTags: (tags) => {
-          this.onTags?.(tags);
-          deps.skirmish?.onTags?.(tags);
-        },
-        onBomb: (info) => {
-          this.onBomb?.(info);
-          deps.skirmish?.onBomb?.(info);
-        },
-        onStreaks: (view) => {
-          this.onStreaks?.(view);
-          deps.skirmish?.onStreaks?.(view);
-        },
-        onScoreboard: (rows) => {
-          this.onScoreboard?.(rows);
-          deps.skirmish?.onScoreboard?.(rows);
-        },
-        onStateHash: (tick, hash, sections) => {
-          /*
-           * Held, not compared. The comparison happens in `update()` — see `pendingHash`.
-           *
-           * This is the ordering the check depends on and the place this client breaks it. The
-           * instance sends the hash **last** in its tick so that a client has applied every
-           * channel describing tick N before it is asked what tick N looked like; but this
-           * client does not apply the header here. It applies it in `update()`, once, from the
-           * latest snapshot — so a burst of buffered frames fires this callback several times
-           * before `applyReplicated` runs even once, and every one of those comparisons is
-           * against a `MatchFlow` still holding whatever it was constructed with.
-           *
-           * Measured, on a real client against a real server: three confirmed `modeStateHash`
-           * records on every join, all of them the same pair — a client in `WARMUP` against a
-           * server in `LIVE` — and none after the first half-second. A checker that reports on
-           * every join is the flaky probe standing lesson 6 warns about, and it would have been
-           * the second thing in this session to cry wolf about a value nothing had written yet.
-           */
-          this.pendingHash = { tick, hash, sections };
-          deps.skirmish?.onStateHash?.(tick, hash, sections);
-        },
-        onMigrated: (welcome) => {
-          // Same reason as `onNewMatch` above, and it has to happen here as well: a migration
-          // is the other way this client's entity id changes, and an identity left pointing at
-          // the seat we held in the arena makes every "was that me?" test in the presentation
-          // layer wrong for the whole live match.
-          deps.identity.adopt(welcome.entityId);
-          this.retire();
-          deps.skirmish?.onMigrated?.(welcome);
-        },
-      },
-      events: {
-        // ---- the bridge (S3) ------------------------------------------------
-        onFired: (e) => {
-          // Never re-emit our own shots: the local weapon already emitted `weapon.fired` on
-          // the tick it was predicted, and playing it again from the server would double
-          // every muzzle flash and every gunshot the player hears from their own rifle.
-          if (e.sourceId === this.client.entityId) return;
-          const weaponId = weaponIdAt(e.weaponIndex);
-          const def = weaponId === null ? undefined : anyWeaponDef(weaponId);
-          if (def === undefined) return;
-          evFired.weaponId = def.id;
-          evFired.sourceId = e.sourceId;
-          evFired.x = e.x;
-          evFired.y = e.y;
-          evFired.z = e.z;
-          evFired.endX = e.endX;
-          evFired.endY = e.endY;
-          evFired.endZ = e.endZ;
-          const dx = e.endX - e.x;
-          const dy = e.endY - e.y;
-          const dz = e.endZ - e.z;
-          const len = Math.hypot(dx, dy, dz) || 1;
-          evFired.dx = dx / len;
-          evFired.dy = dy / len;
-          evFired.dz = dz / len;
-          evFired.distance = len;
-          evFired.shotIndex = 0;
-          evFired.spreadDeg = 0;
-          evFired.tracer = e.tracer;
-          evFired.ammoInMag = 0;
-          /**
-           * The shot's two accuracy numbers (round 5, B5).
-           *
-           * `pellets` is not on the wire and must not be: it is a property of the weapon the
-           * index already named, and both sides compile against the same table. `pelletsHit` is,
-           * because how many of eight rays connected is not derivable from anything the client
-           * holds. `hitTarget` is the old bit, derived here rather than replicated beside the
-           * count it duplicates — a tracer and an impact only care whether anything landed.
-           */
-          evFired.pellets = def.pellets;
-          evFired.pelletsHit = e.pelletsHit;
-          evFired.hitTarget = hitsFrom(evFired) > 0;
-          // The server's answer for the gun as fitted, not the base def's (protocol v27): a
-          // suppressor is an attachment, and the base def has never had one.
-          evFired.minimapPing = e.minimapPing;
-          this.deps.bus.emit(EV.WeaponFired, evFired);
-
-          /**
-           * The impact, synthesised from the shot's terminus.
-           *
-           * Impacts are not replicated — see `EventCollector` for why — so the decal, the
-           * debris and the surface click are produced here from the endpoint and material the
-           * shot carried. The normal is the reverse of the travel direction, which is right
-           * for a flat wall and slightly wrong for a glancing hit; the alternative is four
-           * more bytes per shot to make a spark point differently.
-           *
-           * **Never for a round that stopped in a body** (2026-10-18). A terminus on a body is
-           * not a surface, and the sim has said so since M8: `Ballistics` emits no
-           * `bullet.impact` for a rig that does not ask for holes, which is every person —
-           * see `Damageable.decals` for why people do not. This synthesis was the one place
-           * that overrode that rule, and only online, which is why it read as a netcode
-           * mystery: the hole was stamped in *world* space where the body stood, so it hung in
-           * mid-air the moment they walked on or were killed. The click that came with it was
-           * wrong too — a body hit leaves `EventCollector`'s `lastImpactMaterial` holding
-           * whatever wall preceded it this tick, so flesh arrived with the last surface's
-           * voice. What a body hit *should* present is already presented from `damage.dealt`:
-           * the flesh impact for anyone near enough to hear it, and the hitmarker, the debris
-           * and the number for the client that fired it.
-           *
-           * `hitTarget` is the gate, and it is one bit short of exact: `endX` is the *first*
-           * pellet's terminus while the count behind this bit is of all eight, so a shotgun
-           * pull that put one pellet in a body and the rest in a wall loses that wall's decal.
-           * The exact answer is a bit on the wire saying what the first pellet stopped in, and
-           * it is not worth a protocol version: a decal that is missing is a hole nobody
-           * notices, and a decal that is wrong is a hole hanging in the air.
-           */
-          if (evFired.hitTarget) return;
-
-          evImpact.x = e.endX;
-          evImpact.y = e.endY;
-          evImpact.z = e.endZ;
-          evImpact.nx = -evFired.dx;
-          evImpact.ny = -evFired.dy;
-          evImpact.nz = -evFired.dz;
-          evImpact.material = e.material;
-          evImpact.penetrated = false;
-          this.deps.bus.emit(EV.BulletImpact, evImpact);
-        },
-
-        /**
-         * A round landed, from a shooter this client is not told about (protocol v29, D2): a
-         * suppressed shot from a dormant body arrives as its terminus alone. The spark, the decal
-         * and the click, and no gunshot, tracer or flash — and no direction, which the server
-         * leaves out because it would point back at the muzzle. The spark faces this player
-         * instead: right for whoever is near enough to see it, and it says nothing.
-         */
-        onImpact: (e) => {
-          const sim = this.deps.controller.sim;
-          const dx = sim.x - e.x;
-          const dy = sim.y + sim.eyeHeight - e.y;
-          const dz = sim.z - e.z;
-          const len = Math.hypot(dx, dy, dz) || 1;
-          evImpact.x = e.x;
-          evImpact.y = e.y;
-          evImpact.z = e.z;
-          evImpact.nx = dx / len;
-          evImpact.ny = dy / len;
-          evImpact.nz = dz / len;
-          evImpact.material = e.material;
-          evImpact.penetrated = false;
-          this.deps.bus.emit(EV.BulletImpact, evImpact);
-        },
-
-        onDamage: (e) => {
-          evDamage.sourceId = e.sourceId;
-          evDamage.targetId = e.targetId;
-          evDamage.weaponId = '';
-          evDamage.zone = e.zone;
-          evDamage.amount = e.amount;
-          evDamage.x = e.x;
-          evDamage.y = e.y;
-          evDamage.z = e.z;
-          evDamage.distance = 0;
-          evDamage.falloffLoss = 0;
-          evDamage.penetrationLoss = 0;
-          evDamage.lethal = e.lethal;
-          evDamage.autonomous = e.autonomous;
-          this.deps.bus.emit(EV.DamageDealt, evDamage);
-        },
-
-        onKilled: (e) => {
-          evKilled.targetId = e.targetId;
-          evKilled.sourceId = e.sourceId;
-          evKilled.weaponId = weaponIdAt(e.weaponIndex) ?? '';
-          evKilled.zone = e.zone;
-          evKilled.killerHealth = e.killerHealth;
-          this.deps.bus.emit(EV.EntityKilled, evKilled);
-        },
-
-        onFootstep: (e) => {
-          // Our own footsteps are produced by our own predicted `PlayerController`. Playing
-          // the server's copy too would double every step the player takes.
-          if (e.entityId === this.client.entityId) return;
-          evStep.entityId = e.entityId;
-          evStep.x = e.x;
-          evStep.y = e.y;
-          evStep.z = e.z;
-          evStep.speed = 0;
-          evStep.heavy = e.heavy;
-          evStep.quiet = e.quiet;
-          evStep.material = e.material;
-          this.deps.bus.emit(EV.PlayerFootstep, evStep);
-        },
-
-        onLand: (e) => {
-          if (e.entityId === this.client.entityId) return;
-          evLand.entityId = e.entityId;
-          evLand.x = e.x;
-          evLand.y = e.y;
-          evLand.z = e.z;
-          evLand.impactSpeed = e.speed;
-          evLand.stance = 'STAND';
-          evLand.material = e.material;
-          this.deps.bus.emit(EV.PlayerLanded, evLand);
-        },
-
-        onJump: (e) => {
-          if (e.entityId === this.client.entityId) return;
-          evJump.entityId = e.entityId;
-          evJump.x = e.x;
-          evJump.y = e.y;
-          evJump.z = e.z;
-          evJump.horizontalSpeed = e.speed;
-          this.deps.bus.emit(EV.PlayerJumped, evJump);
-        },
-      },
-    });
+    this.client = this.createClient(deps);
   }
+  //#endregion
 
-  get state(): NetClientState {
-    return this.client.state;
-  }
-
-  /** What the server said it was running when this session joined. */
-  get welcome(): WelcomeInfo {
-    return this.deps.welcome;
-  }
-
-  get connected(): boolean {
-    return this.client.state === 'joined';
-  }
-
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Take up the connection the handshake already made.
    *
@@ -535,14 +380,45 @@ export class NetSession {
     log.info(`joined ${this.link.remoteAddress} as ${this.deps.displayName}`);
   }
 
-  disconnect(reason = 'left'): void {
-    this.client.disconnect(reason);
+  /**
+   * One update. Called once per rendered frame, before the world is drawn.
+   *
+   * Returns the number of simulation steps run, which the caller uses for the same purposes
+   * the local loop uses its own step count.
+   */
+  update(): number {
+    const steps = this.client.update();
+
+    const h = this.client.header;
+    this.scoreA = h.scoreA;
+    this.scoreB = h.scoreB;
+    this.timeLeft = h.timeLeft;
+    this.frozen = (h.flags & SFlag.InputFrozen) !== 0;
+    this.matchOver = (h.flags & SFlag.MatchOver) !== 0;
+
+    if (this.client.state === 'joined') this.applyReplicatedFlow(h);
+    this.emitScoreIfMoved(h);
+    this.applyLocalState();
+
+    this.syncActors();
+    return steps;
   }
 
-  /** Stop answering for state from an instance this world is not in. See `retired`. */
-  private retire(): void {
-    this.retired = true;
-    this.pendingHash = null;
+  get state(): NetClientState {
+    return this.client.state;
+  }
+
+  /** What the server said it was running when this session joined. */
+  get welcome(): WelcomeInfo {
+    return this.deps.welcome;
+  }
+
+  get connected(): boolean {
+    return this.client.state === 'joined';
+  }
+
+  disconnect(reason = 'left'): void {
+    this.client.disconnect(reason);
   }
 
   /**
@@ -570,142 +446,6 @@ export class NetSession {
     this.actors.clear();
     this.renderable.length = 0;
     this.blockers.length = 0;
-  }
-
-  /**
-   * One update. Called once per rendered frame, before the world is drawn.
-   *
-   * Returns the number of simulation steps run, which the caller uses for the same purposes
-   * the local loop uses its own step count.
-   */
-  update(): number {
-    const steps = this.client.update();
-
-    const h = this.client.header;
-    this.scoreA = h.scoreA;
-    this.scoreB = h.scoreB;
-    this.timeLeft = h.timeLeft;
-    this.frozen = (h.flags & SFlag.InputFrozen) !== 0;
-    this.matchOver = (h.flags & SFlag.MatchOver) !== 0;
-
-    /**
-     * Push the replicated match clock into the client's own inert `MatchFlow`.
-     *
-     * The HUD reads phase, round and both clocks straight off that object, and on a dedicated
-     * server nothing ticks it. Without this the banner sat on "GET READY - 3" and the match
-     * clock on 10:00 for the whole game.
-     */
-    if (this.client.state === 'joined') {
-      replicatedState.phase = phaseAt(h.phase);
-      replicatedState.secondsRemaining = Math.max(0, h.timeLeft);
-      replicatedState.phaseSeconds = h.phaseSeconds;
-      replicatedState.round = h.round;
-      replicatedState.scoreA = h.scoreA;
-      replicatedState.scoreB = h.scoreB;
-      replicatedState.serverTick = h.serverTick;
-      this.onMatchState?.(replicatedState);
-      // §7's divergence checker, sampled once per applied snapshot. Both of these run *after*
-      // `onMatchState` and that is the whole of their correctness: the client's answer to
-      // "what did this tick look like" is only its answer once the tick has been applied.
-      // Neither runs once the server has moved us on — see `retired`.
-      if (!this.retired) this.onAuthoritativeState?.(h);
-      const hash = this.pendingHash;
-      if (hash !== null && this.client.synchronised && !this.retired) {
-        this.pendingHash = null;
-        this.onStateHash?.(hash.tick, hash.hash, hash.sections);
-      }
-    }
-
-    /**
-     * The score, as the event the HUD already listens for.
-     *
-     * Re-emitted rather than poked into the banner, so it travels the identical path a local
-     * score change does (S3). Edge-triggered, because the HUD's handler is a subscription and
-     * firing it twenty times a second with an unchanged value is work for nothing.
-     */
-    if (h.scoreA !== this.lastScoreA || h.scoreB !== this.lastScoreB) {
-      this.lastScoreA = h.scoreA;
-      this.lastScoreB = h.scoreB;
-      evScore.teamA = h.scoreA;
-      evScore.teamB = h.scoreB;
-      this.deps.bus.emit(EV.ScoreChanged, evScore);
-    }
-
-    /**
-     * The local player's own health and liveness, from our own entity in the snapshot.
-     *
-     * Applied on **every** snapshot rather than only when the replicated value changes (M11
-     * Gate B playtest). The change guard was an optimisation with a sharp edge: it made the
-     * server's answer authoritative over *its own previous answer* rather than over the client,
-     * so anything that moved the local `Health` behind the server's back was never corrected —
-     * a networked client does not step its own health, so nothing else would put it back.
-     *
-     * That is precisely how the self-inflicted damage from the entity-id bug (see
-     * `PlayerCombatant.entityId`) turned into a bar stuck at zero and a permanently red screen:
-     * the server thought the player was on 100 and kept saying 100, which is not a change, so
-     * the client's 0 stood until somebody actually shot them. The id bug is fixed; this is the
-     * property that should have contained it, and it is worth having on its own merits — S4.15
-     * puts health on the replicated side of the table, and "the server's value wins" should not
-     * be conditional on the server having changed its mind.
-     *
-     * Cheap: three field reads and one call at the snapshot rate. `applyReplicatedSelf` is
-     * idempotent — the death and respawn branches are edge-guarded on `playerDead`.
-     */
-    const own = this.client.remotes.get(this.client.entityId);
-    if (own !== undefined) {
-      const alive = (own.latest.flags & EFlag.Alive) !== 0;
-      const health = own.latest.health;
-      /**
-       * The spawn serial rides along, because it is the other half of "what am I now".
-       *
-       * Health and liveness say what state the body is in; the serial says whether it is the
-       * *same body*. A life that starts without a death moves the serial and nothing else, so
-       * sending only the first two describes such a life as no event at all — which is the
-       * grenade refill that never ran (playtest round 4, B3).
-       */
-      this.onLocalState?.(health, alive, this.client.localSpawnSerial);
-    }
-
-    this.syncActors();
-    return steps;
-  }
-
-  /**
-   * Reconcile the actor set against the snapshot, and pull this frame's poses.
-   *
-   * The local player is deliberately excluded: they are predicted, drawn from the first
-   * person, and have no body in the scene. Including them would put a second, ~100 ms stale
-   * copy of the player inside their own camera.
-   */
-  private syncActors(): void {
-    const renderMs = this.client.renderTimeMs(this.interpolationDelayMs);
-
-    for (const [id, interp] of this.client.remotes) {
-      if (id === this.client.entityId) continue;
-      let actor = this.actors.get(id);
-      if (actor === undefined) {
-        actor = new RemoteActor(id, this.deps.healthMax);
-        this.actors.set(id, actor);
-      }
-      actor.update(interp, renderMs);
-    }
-
-    // Anything the server has stopped sending is gone. `NetClient` already removes the
-    // interpolator on an explicit removal, so this is the one place a body actually leaves
-    // the scene — and it is why a disconnect does not leave a ghost (S8.11).
-    if (this.actors.size !== this.client.remotes.size) {
-      for (const id of this.actors.keys()) {
-        if (!this.client.remotes.has(id)) this.actors.delete(id);
-      }
-    }
-
-    // Refilled after the removals and after every pose is current, so the array the shot path
-    // reads this frame holds exactly the bodies that are in the scene with the rigs they are
-    // drawn at. The filter is in `RoundBlocker.stopsRounds`, which the trace asks per body:
-    // liveness and dormancy change between frames, and a set that pre-filtered them would be
-    // the client's own copy of a fact that is one field away.
-    this.blockers.length = 0;
-    for (const actor of this.actors.values()) this.blockers.push(actor);
   }
 
   /**
@@ -752,87 +492,456 @@ export class NetSession {
       },
     };
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** The netcode under this session, wired to the two sinks below. */
+  private createClient(deps: NetSessionDeps): NetClient {
+    return new NetClient({
+      link: this.link,
+      controller: deps.controller,
+      sample: deps.sample,
+      applyNonReplayed: deps.applyWeapon,
+      moveScale: deps.moveScale,
+      displayName: deps.displayName,
+      loadout: deps.loadout ?? null,
+      skinIndex: deps.skinIndex,
+      wantRewindDebug: deps.wantRewindDebug,
+      onNewMatch: (welcome) => {
+        // A rotation reassigns entity ids, so the identity has to move with it or every
+        // filter downstream starts testing against the seat we held in the previous match.
+        deps.identity.adopt(welcome.entityId);
+        this.retire();
+        deps.onNewMatch?.(welcome);
+      },
+      skirmish: this.createSkirmishSink(deps),
+      events: this.createEventBridge(),
+    });
+  }
+
+  /**
+   * The skirmish channels, delivered to this world and to whoever opened the connection.
+   *
+   * Two readers per channel and neither can be dropped: `MatchWorld` sets the `onX` fields
+   * because it owns the objects the state lands in, and `deps.skirmish` belongs to the caller
+   * that decided to connect at all. The spread keeps every channel this class says nothing
+   * about — `onPrepare`, `onSummary`, `onNotice`, `onCheats` — going straight through.
+   */
+  private createSkirmishSink(deps: NetSessionDeps): SkirmishSink {
+    return {
+      ...deps.skirmish,
+      onVoteState: (info) => {
+        this.lastVote = info;
+        deps.skirmish?.onVoteState?.(info);
+      },
+      onObjectives: (states) => {
+        this.onObjectives?.(states);
+        deps.skirmish?.onObjectives?.(states);
+      },
+      onTags: (tags) => {
+        this.onTags?.(tags);
+        deps.skirmish?.onTags?.(tags);
+      },
+      onBomb: (info) => {
+        this.onBomb?.(info);
+        deps.skirmish?.onBomb?.(info);
+      },
+      onStreaks: (view) => {
+        this.onStreaks?.(view);
+        deps.skirmish?.onStreaks?.(view);
+      },
+      onScoreboard: (rows) => {
+        this.onScoreboard?.(rows);
+        deps.skirmish?.onScoreboard?.(rows);
+      },
+      onStateHash: (tick, hash, sections) => {
+        this.holdStateHash(tick, hash, sections);
+        deps.skirmish?.onStateHash?.(tick, hash, sections);
+      },
+      onMigrated: (welcome) => {
+        // Same reason as `onNewMatch` above, and it has to happen here as well: a migration
+        // is the other way this client's entity id changes, and an identity left pointing at
+        // the seat we held in the arena makes every "was that me?" test in the presentation
+        // layer wrong for the whole live match.
+        deps.identity.adopt(welcome.entityId);
+        this.retire();
+        deps.skirmish?.onMigrated?.(welcome);
+      },
+    };
+  }
+
+  /*
+   * Held, not compared. The comparison happens in `update()` — see `pendingHash`.
+   *
+   * This is the ordering the check depends on and the place this client breaks it. The
+   * instance sends the hash **last** in its tick so that a client has applied every
+   * channel describing tick N before it is asked what tick N looked like; but this
+   * client does not apply the header here. It applies it in `update()`, once, from the
+   * latest snapshot — so a burst of buffered frames fires this callback several times
+   * before `applyReplicated` runs even once, and every one of those comparisons is
+   * against a `MatchFlow` still holding whatever it was constructed with.
+   *
+   * Measured, on a real client against a real server: three confirmed `modeStateHash`
+   * records on every join, all of them the same pair — a client in `WARMUP` against a
+   * server in `LIVE` — and none after the first half-second. A checker that reports on
+   * every join is the flaky probe standing lesson 6 warns about, and it would have been
+   * the second thing in this session to cry wolf about a value nothing had written yet.
+   */
+  private holdStateHash(tick: number, hash: number, sections: readonly number[]): void {
+    this.pendingHash = { tick, hash, sections };
+  }
+
+  // ---- the bridge (S3) ------------------------------------------------
+  /**
+   * The replicated events, each on its way to the bus entry M1-M8 already emit.
+   *
+   * One adapter per channel and nothing else here: the decision each one makes is in the
+   * named method it calls, which is where the reasoning for that decision lives too.
+   */
+  private createEventBridge(): EventSink {
+    return {
+      onFired: (e) => {
+        this.presentRemoteShot(e);
+      },
+      onImpact: (e) => {
+        this.presentStrayImpact(e);
+      },
+      onDamage: (e) => {
+        this.presentDamage(e);
+      },
+      onKilled: (e) => {
+        this.presentKill(e);
+      },
+      onFootstep: (e) => {
+        this.presentFootstep(e);
+      },
+      onLand: (e) => {
+        this.presentLanding(e);
+      },
+      onJump: (e) => {
+        this.presentJump(e);
+      },
+    };
+  }
+
+  /** Somebody else's shot: the gunfire, the tracer and — unless it landed in a body — a hole. */
+  private presentRemoteShot(e: FiredEvent): void {
+    // Never re-emit our own shots: the local weapon already emitted `weapon.fired` on
+    // the tick it was predicted, and playing it again from the server would double
+    // every muzzle flash and every gunshot the player hears from their own rifle.
+    if (e.sourceId === this.client.entityId) return;
+    const weaponId = weaponIdAt(e.weaponIndex);
+    const def = weaponId === null ? undefined : anyWeaponDef(weaponId);
+    if (def === undefined) return;
+
+    fillShotPayload(e, def);
+    this.deps.bus.emit(EV.WeaponFired, evFired);
+
+    /**
+     * **Never for a round that stopped in a body** (2026-10-18). A terminus on a body is
+     * not a surface, and the sim has said so since M8: `Ballistics` emits no
+     * `bullet.impact` for a rig that does not ask for holes, which is every person —
+     * see `Damageable.decals` for why people do not. This synthesis was the one place
+     * that overrode that rule, and only online, which is why it read as a netcode
+     * mystery: the hole was stamped in *world* space where the body stood, so it hung in
+     * mid-air the moment they walked on or were killed. The click that came with it was
+     * wrong too — a body hit leaves `EventCollector`'s `lastImpactMaterial` holding
+     * whatever wall preceded it this tick, so flesh arrived with the last surface's
+     * voice. What a body hit *should* present is already presented from `damage.dealt`:
+     * the flesh impact for anyone near enough to hear it, and the hitmarker, the debris
+     * and the number for the client that fired it.
+     *
+     * `hitTarget` is the gate, and it is one bit short of exact: `endX` is the *first*
+     * pellet's terminus while the count behind this bit is of all eight, so a shotgun
+     * pull that put one pellet in a body and the rest in a wall loses that wall's decal.
+     * The exact answer is a bit on the wire saying what the first pellet stopped in, and
+     * it is not worth a protocol version: a decal that is missing is a hole nobody
+     * notices, and a decal that is wrong is a hole hanging in the air.
+     */
+    if (evFired.hitTarget) return;
+    this.emitShotImpact(e);
+  }
+
+  /**
+   * The impact, synthesised from the shot's terminus.
+   *
+   * Impacts are not replicated — see `EventCollector` for why — so the decal, the
+   * debris and the surface click are produced here from the endpoint and material the
+   * shot carried. The normal is the reverse of the travel direction, which is right
+   * for a flat wall and slightly wrong for a glancing hit; the alternative is four
+   * more bytes per shot to make a spark point differently.
+   */
+  private emitShotImpact(e: FiredEvent): void {
+    evImpact.x = e.endX;
+    evImpact.y = e.endY;
+    evImpact.z = e.endZ;
+    evImpact.nx = -evFired.dx;
+    evImpact.ny = -evFired.dy;
+    evImpact.nz = -evFired.dz;
+    evImpact.material = e.material;
+    evImpact.penetrated = false;
+    this.deps.bus.emit(EV.BulletImpact, evImpact);
+  }
+
+  /**
+   * A round landed, from a shooter this client is not told about (protocol v29, D2): a
+   * suppressed shot from a dormant body arrives as its terminus alone. The spark, the decal
+   * and the click, and no gunshot, tracer or flash — and no direction, which the server
+   * leaves out because it would point back at the muzzle. The spark faces this player
+   * instead: right for whoever is near enough to see it, and it says nothing.
+   */
+  private presentStrayImpact(e: ImpactEvent): void {
+    const sim = this.deps.controller.sim;
+    const dx = sim.x - e.x;
+    const dy = sim.y + sim.eyeHeight - e.y;
+    const dz = sim.z - e.z;
+    const len = Math.hypot(dx, dy, dz) || 1;
+    evImpact.x = e.x;
+    evImpact.y = e.y;
+    evImpact.z = e.z;
+    evImpact.nx = dx / len;
+    evImpact.ny = dy / len;
+    evImpact.nz = dz / len;
+    evImpact.material = e.material;
+    evImpact.penetrated = false;
+    this.deps.bus.emit(EV.BulletImpact, evImpact);
+  }
+
+  private presentDamage(e: DamageEvent): void {
+    evDamage.sourceId = e.sourceId;
+    evDamage.targetId = e.targetId;
+    evDamage.weaponId = '';
+    evDamage.zone = e.zone;
+    evDamage.amount = e.amount;
+    evDamage.x = e.x;
+    evDamage.y = e.y;
+    evDamage.z = e.z;
+    evDamage.distance = 0;
+    evDamage.falloffLoss = 0;
+    evDamage.penetrationLoss = 0;
+    evDamage.lethal = e.lethal;
+    evDamage.autonomous = e.autonomous;
+    this.deps.bus.emit(EV.DamageDealt, evDamage);
+  }
+
+  private presentKill(e: KilledEvent): void {
+    evKilled.targetId = e.targetId;
+    evKilled.sourceId = e.sourceId;
+    evKilled.weaponId = weaponIdAt(e.weaponIndex) ?? '';
+    evKilled.zone = e.zone;
+    evKilled.killerHealth = e.killerHealth;
+    this.deps.bus.emit(EV.EntityKilled, evKilled);
+  }
+
+  private presentFootstep(e: FootstepEvent): void {
+    // Our own footsteps are produced by our own predicted `PlayerController`. Playing
+    // the server's copy too would double every step the player takes.
+    if (e.entityId === this.client.entityId) return;
+    evStep.entityId = e.entityId;
+    evStep.x = e.x;
+    evStep.y = e.y;
+    evStep.z = e.z;
+    evStep.speed = 0;
+    evStep.heavy = e.heavy;
+    evStep.quiet = e.quiet;
+    evStep.material = e.material;
+    this.deps.bus.emit(EV.PlayerFootstep, evStep);
+  }
+
+  private presentLanding(e: PoseEvent): void {
+    if (e.entityId === this.client.entityId) return;
+    evLand.entityId = e.entityId;
+    evLand.x = e.x;
+    evLand.y = e.y;
+    evLand.z = e.z;
+    evLand.impactSpeed = e.speed;
+    evLand.stance = 'STAND';
+    evLand.material = e.material;
+    this.deps.bus.emit(EV.PlayerLanded, evLand);
+  }
+
+  private presentJump(e: PoseEvent): void {
+    if (e.entityId === this.client.entityId) return;
+    evJump.entityId = e.entityId;
+    evJump.x = e.x;
+    evJump.y = e.y;
+    evJump.z = e.z;
+    evJump.horizontalSpeed = e.speed;
+    this.deps.bus.emit(EV.PlayerJumped, evJump);
+  }
+
+  /**
+   * Push the replicated match clock into the client's own inert `MatchFlow`.
+   *
+   * The HUD reads phase, round and both clocks straight off that object, and on a dedicated
+   * server nothing ticks it. Without this the banner sat on "GET READY - 3" and the match
+   * clock on 10:00 for the whole game.
+   */
+  private applyReplicatedFlow(h: SnapshotHeader): void {
+    replicatedState.phase = phaseAt(h.phase);
+    replicatedState.secondsRemaining = Math.max(0, h.timeLeft);
+    replicatedState.phaseSeconds = h.phaseSeconds;
+    replicatedState.round = h.round;
+    replicatedState.scoreA = h.scoreA;
+    replicatedState.scoreB = h.scoreB;
+    replicatedState.serverTick = h.serverTick;
+    this.onMatchState?.(replicatedState);
+    // §7's divergence checker, sampled once per applied snapshot. Both of these run *after*
+    // `onMatchState` and that is the whole of their correctness: the client's answer to
+    // "what did this tick look like" is only its answer once the tick has been applied.
+    // Neither runs once the server has moved us on — see `retired`.
+    if (!this.retired) this.onAuthoritativeState?.(h);
+    const hash = this.pendingHash;
+    if (hash !== null && this.client.synchronised && !this.retired) {
+      this.pendingHash = null;
+      this.onStateHash?.(hash.tick, hash.hash, hash.sections);
+    }
+  }
+
+  /**
+   * The score, as the event the HUD already listens for.
+   *
+   * Re-emitted rather than poked into the banner, so it travels the identical path a local
+   * score change does (S3). Edge-triggered, because the HUD's handler is a subscription and
+   * firing it twenty times a second with an unchanged value is work for nothing.
+   */
+  private emitScoreIfMoved(h: SnapshotHeader): void {
+    if (h.scoreA === this.lastScoreA && h.scoreB === this.lastScoreB) return;
+    this.lastScoreA = h.scoreA;
+    this.lastScoreB = h.scoreB;
+    evScore.teamA = h.scoreA;
+    evScore.teamB = h.scoreB;
+    this.deps.bus.emit(EV.ScoreChanged, evScore);
+  }
+
+  /**
+   * The local player's own health and liveness, from our own entity in the snapshot.
+   *
+   * Applied on **every** snapshot rather than only when the replicated value changes (M11
+   * Gate B playtest). The change guard was an optimisation with a sharp edge: it made the
+   * server's answer authoritative over *its own previous answer* rather than over the client,
+   * so anything that moved the local `Health` behind the server's back was never corrected —
+   * a networked client does not step its own health, so nothing else would put it back.
+   *
+   * That is precisely how the self-inflicted damage from the entity-id bug (see
+   * `PlayerCombatant.entityId`) turned into a bar stuck at zero and a permanently red screen:
+   * the server thought the player was on 100 and kept saying 100, which is not a change, so
+   * the client's 0 stood until somebody actually shot them. The id bug is fixed; this is the
+   * property that should have contained it, and it is worth having on its own merits — S4.15
+   * puts health on the replicated side of the table, and "the server's value wins" should not
+   * be conditional on the server having changed its mind.
+   *
+   * Cheap: three field reads and one call at the snapshot rate. `applyReplicatedSelf` is
+   * idempotent — the death and respawn branches are edge-guarded on `playerDead`.
+   */
+  private applyLocalState(): void {
+    const own = this.client.remotes.get(this.client.entityId);
+    if (own === undefined) return;
+    const alive = (own.latest.flags & EFlag.Alive) !== 0;
+    const health = own.latest.health;
+    /**
+     * The spawn serial rides along, because it is the other half of "what am I now".
+     *
+     * Health and liveness say what state the body is in; the serial says whether it is the
+     * *same body*. A life that starts without a death moves the serial and nothing else, so
+     * sending only the first two describes such a life as no event at all — which is the
+     * grenade refill that never ran (playtest round 4, B3).
+     */
+    this.onLocalState?.(health, alive, this.client.localSpawnSerial);
+  }
+
+  /**
+   * Reconcile the actor set against the snapshot, and pull this frame's poses.
+   *
+   * The local player is deliberately excluded: they are predicted, drawn from the first
+   * person, and have no body in the scene. Including them would put a second, ~100 ms stale
+   * copy of the player inside their own camera.
+   */
+  private syncActors(): void {
+    const renderMs = this.client.renderTimeMs(this.interpolationDelayMs);
+
+    for (const [id, interp] of this.client.remotes) {
+      if (id === this.client.entityId) continue;
+      let actor = this.actors.get(id);
+      if (actor === undefined) {
+        actor = new RemoteActor(id, this.deps.healthMax);
+        this.actors.set(id, actor);
+      }
+      actor.update(interp, renderMs);
+    }
+
+    // Anything the server has stopped sending is gone. `NetClient` already removes the
+    // interpolator on an explicit removal, so this is the one place a body actually leaves
+    // the scene — and it is why a disconnect does not leave a ghost (S8.11).
+    if (this.actors.size !== this.client.remotes.size) {
+      for (const id of this.actors.keys()) {
+        if (!this.client.remotes.has(id)) this.actors.delete(id);
+      }
+    }
+
+    // Refilled after the removals and after every pose is current, so the array the shot path
+    // reads this frame holds exactly the bodies that are in the scene with the rigs they are
+    // drawn at. The filter is in `RoundBlocker.stopsRounds`, which the trace asks per body:
+    // liveness and dormancy change between frames, and a set that pre-filtered them would be
+    // the client's own copy of a fact that is one field away.
+    this.blockers.length = 0;
+    for (const actor of this.actors.values()) this.blockers.push(actor);
+  }
+
+  /** Stop answering for state from an instance this world is not in. See `retired`. */
+  private retire(): void {
+    this.retired = true;
+    this.pendingHash = null;
+  }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /**
- * Refilled per snapshot and handed straight to `MatchFlow`.
+ * Fill the shot payload from the replicated event and the gun the index named.
  *
- * The same "payloads are transient" contract the bus has used since M1: the callee reads it
- * during the call and never retains it.
+ * Writes into the module singleton rather than returning a record: this runs on the frame
+ * path, once per shot anybody near enough can hear, and the bus contract is that payloads are
+ * transient anyway.
  */
-const replicatedState: ReplicatedMatchState = makeReplicatedMatchState();
-
-// Event payload singletons. The bus contract since M1 is that payloads are transient and
-// never retained, which is what makes reusing one record per event type safe.
-const evFired = {
-  weaponId: '',
-  sourceId: 0,
-  x: 0,
-  y: 0,
-  z: 0,
-  dx: 0,
-  dy: 0,
-  dz: -1,
-  endX: 0,
-  endY: 0,
-  endZ: 0,
-  distance: 0,
-  shotIndex: 0,
-  spreadDeg: 0,
-  tracer: false,
-  hitTarget: false,
-  ammoInMag: 0,
-  pellets: 1,
-  pelletsHit: 0,
-  minimapPing: true,
-};
-
-const evImpact = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0, material: 0, penetrated: false };
-
-const evDamage = {
-  sourceId: 0,
-  targetId: 0,
-  weaponId: '',
-  zone: 'torso' as HitZone,
-  amount: 0,
-  x: 0,
-  y: 0,
-  z: 0,
-  distance: 0,
-  falloffLoss: 0,
-  penetrationLoss: 0,
-  lethal: false,
-  autonomous: false,
-};
-
-const evKilled = { targetId: 0, sourceId: 0, weaponId: '', zone: 'torso' as HitZone, killerHealth: 0 };
-
-const evStep = {
-  entityId: 0,
-  x: 0,
-  y: 0,
-  z: 0,
-  speed: 0,
-  heavy: false,
-  quiet: false,
-  material: 0,
-};
-
-const evLand = {
-  entityId: 0,
-  x: 0,
-  y: 0,
-  z: 0,
-  impactSpeed: 0,
-  stance: 'STAND' as const,
-  material: 0,
-};
-
-const evJump = { entityId: 0, x: 0, y: 0, z: 0, horizontalSpeed: 0 };
-
-/**
- * `limit` is left at zero: the score limit is a mode rule the client already holds, and the
- * HUD only redraws it when a `ScoreChanged` carries a non-zero one.
- */
-const evScore = { teamA: 0, teamB: 0, limit: 0 };
+function fillShotPayload(e: FiredEvent, def: WeaponDef): void {
+  evFired.weaponId = def.id;
+  evFired.sourceId = e.sourceId;
+  evFired.x = e.x;
+  evFired.y = e.y;
+  evFired.z = e.z;
+  evFired.endX = e.endX;
+  evFired.endY = e.endY;
+  evFired.endZ = e.endZ;
+  const dx = e.endX - e.x;
+  const dy = e.endY - e.y;
+  const dz = e.endZ - e.z;
+  const len = Math.hypot(dx, dy, dz) || 1;
+  evFired.dx = dx / len;
+  evFired.dy = dy / len;
+  evFired.dz = dz / len;
+  evFired.distance = len;
+  evFired.shotIndex = 0;
+  evFired.spreadDeg = 0;
+  evFired.tracer = e.tracer;
+  evFired.ammoInMag = 0;
+  /**
+   * The shot's two accuracy numbers (round 5, B5).
+   *
+   * `pellets` is not on the wire and must not be: it is a property of the weapon the
+   * index already named, and both sides compile against the same table. `pelletsHit` is,
+   * because how many of eight rays connected is not derivable from anything the client
+   * holds. `hitTarget` is the old bit, derived here rather than replicated beside the
+   * count it duplicates — a tracer and an impact only care whether anything landed.
+   */
+  evFired.pellets = def.pellets;
+  evFired.pelletsHit = e.pelletsHit;
+  evFired.hitTarget = hitsFrom(evFired) > 0;
+  // The server's answer for the gun as fitted, not the base def's (protocol v27): a
+  // suppressor is an attachment, and the base def has never had one.
+  evFired.minimapPing = e.minimapPing;
+}
+//#endregion

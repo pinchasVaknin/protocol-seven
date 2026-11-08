@@ -10,20 +10,33 @@
  * giving up on the frame the damage arrived.
  */
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /**
  * How long to keep asking: a snapshot interval (50 ms at 20 Hz), a lost snapshot behind it, the
  * link's jitter, and a frame. Past this the body is genuinely unknown — a range dummy, a player
  * who left — and the answer is the old one: nothing.
  */
 export const WAKE_WAIT_MS = 300;
+//#endregion
 
+// ======================================= CLASS WakeWait ======================================= \\
+//#region Class WakeWait
 export class WakeWait {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly ids: number[] = [];
   private readonly deadlines: number[] = [];
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   /** `capacity` questions at once; past it, the oldest is dropped for the newest. */
   constructor(private readonly capacity: number) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get size(): number {
     return this.ids.length;
   }
@@ -64,4 +77,6 @@ export class WakeWait {
     this.ids.length = 0;
     this.deadlines.length = 0;
   }
+  //#endregion
 }
+//#endregion

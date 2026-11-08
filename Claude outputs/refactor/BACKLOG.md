@@ -85,6 +85,7 @@ and belong in its Step 2 plan.
 | ~~C10~~ | `client/world/` MapBuildQueue, MapMesher, MapRender, MenuBackdrop, MenuSkirmish, Particulate, PropModels, SkyDome | **closed** — nothing was bound to it: no §1 row, and none of the eight names appears anywhere in this file except one parenthesis in #56 that says so itself — *"(The file is C9's, not C10's.)"*. The broader sweep is empty too: *particulate*, *dust*, *backdrop*, *mesher*, *map build*, *client/world*, *thumbnail* and *terrain* have no hits at all, every *sky* hit is #55's `SKY_LAYER` note, every *skirmish* hit is the NET harness, and every *prop* hit is #4's `props.ts` generator. **C10 opened #64 and #65**, both from its own 204 characterization tests and its own skeleton work |
 | ~~C11~~ | `client/ai/` ActorIndicator, BotMesh, BotRenderer; `client/combat/` TargetDummy, TargetRange | **#33 declined with a reason** — the fix that keeps the range's holes needs per-target ownership on a decal, which lives in `engine/Decals.ts`/`Fx.ts`: **C4's files**, finished, in the `check:style` ratchet and outside R3's fence — exactly why C4 declined it too. The cheap half C11 *could* do inside its own file (drop `'static'` from `TargetDummy.decals`) is a behaviour change that deletes the holes from the four measurement targets and the DPS dummy, which is what the range exists to read. C11 measured the window instead (see #33, rewritten): it is bounded at `RESPAWN_SECONDS` = **2.5 s**, on exactly one dummy. C11 opened #66, #67 and #68 |
 | ~~C12~~ | `client/equipment/` EquipmentAudio, EquipmentFx; `client/streaks/` ChopperCamera, ClientStreakPresentation, ReplicatedStreaks, SentryModel, StreakAudio, StreakMeshes, StreakRenderer; `client/meta/` CamoTextures, Profile, SaveStore | **closed** — nothing was bound to it: no §1 row, and none of the twelve names appears anywhere in this file except the three *watch-fors* aimed at it, and **C12 answered all three**. **#60**: of the two files it named, only `EquipmentAudio` has the defect — it writes the shared scratches and never sets `roll`, verified at runtime; `StreakAudio` holds its own specs and is clean, which is also the fix's shape. **#58**: confirmed, `CamoTextures` is the third copy. **#29**: answered, and not in the entry's favour — the load path sanitises **once**. C12 opened nothing: its 240 characterization tests found no new defect, and the two surprises they did find (`mortarInbound` whistles 18 m up, `SaveStore` hands an array to the migrator but not a number) are both working as written and are pinned in both halves |
+| ~~C13~~ | `client/net/` BrowserLink, Handshake, JoinOptions, NetSession, RemoteActor, WakeWait | **closed** — nothing was bound to it: no §1 row, and none of the six names, nor `client/net`, appears anywhere in this file. The broader sweep is empty too — every *reconnect*, *socket*, *handshake*, *join*, *transport* and *latency* hit belongs to `shared/net` or to the NET harness, and the one *interpolat* hit is #34's camera bob. What C13 did close is the **fourth** copy of #1's unwrap: `RemoteActor.renderYaw` was the shared `angleDelta` character for character, so folding it was a bit-exact no-op rather than the behaviour question the other copies are (see #1, which stays bound to C24). C13 opened nothing: its 129 characterization tests found no new defect |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
@@ -356,6 +357,25 @@ too. Both are evidence this one can be judged the same way.
 
 At d = -PI the two answers are a half turn apart in sign, which is the one input where a blend
 would visibly swing the other way.
+
+**A fourth copy, folded by C13 on 2026-11-08, and it was the easy one.**
+`src/client/net/RemoteActor.ts`'s `renderYaw` carried the unwrap inline, and unlike every other
+copy in this entry it was the shared function **character for character** — `% TAU`, `> PI`,
+`<= -PI`, with `TAU = Math.PI * 2` on both sides:
+
+```
+RemoteActor.renderYaw  let d = (yaw - prevYaw) % (PI*2); if (d > PI) d -= PI*2; if (d <= -PI) d += PI*2;
+                       return prevYaw + d * alpha;                 ->  (-PI, PI], the shared one
+```
+
+So folding it was a bit-exact no-op rather than a behaviour question, which is why C13 did it
+inside its own unit rather than leaving a fifth entry here. The method is now one line —
+`this.prevYaw + angleDelta(this.prevYaw, this.pose.yaw) * alpha` — which is what its
+single-player twin `Bot.renderYaw` has read since A23, so the two are the same sentence again.
+`RemoteActor.test.ts` pins both wrap directions and the `d = -PI` boundary with exact doubles,
+and the BROWSER checksum over 150 frames of yaw was byte-identical across the change. **This
+entry is unchanged otherwise:** it stays bound to C24 for `ClientMatch.angleDeltaRad`, which is
+still a different spelling with a different answer at one input.
 
 **A third spelling of the same unwrap, noted by C2 on 2026-10-25.**
 `src/client/engine/CameraRig.ts`'s non-exported `interpolatePhase` carries the unwrap inline:

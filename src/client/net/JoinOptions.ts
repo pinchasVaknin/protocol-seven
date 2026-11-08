@@ -1,11 +1,3 @@
-import { logger } from '../../shared/core/Log';
-import { NET_PERFECT, describeConditions, parseConditions, type NetConditions } from '../../shared/net/NetSim';
-import { resolveDisplayName } from '../../shared/net/UrlFlags';
-import { resolveServerUrl } from './BrowserLink';
-import type { HandshakeOptions } from './Handshake';
-
-const log = logger('join');
-
 /**
  * Join-by-URL (M10, S6).
  *
@@ -28,9 +20,28 @@ const log = logger('join');
  * what happens when you open the page.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { logger } from '../../shared/core/Log';
+import { NET_PERFECT, describeConditions, parseConditions, type NetConditions } from '../../shared/net/NetSim';
+import { resolveDisplayName } from '../../shared/net/UrlFlags';
+import { resolveServerUrl } from './BrowserLink';
+import type { HandshakeOptions } from './Handshake';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** Injected at build time by Vite. Absent in a plain `npm run dev`. */
 declare const __SERVER_URL__: string | undefined;
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('join');
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Whether a server address is configured at all (M11, §6.1).
  *
@@ -97,7 +108,6 @@ export function multiplayerJoinOptions(search: string, profileName: string): Han
   return options;
 }
 
-/** See `parseJoinOptions`. The one place the "same origin" spellings are listed. */
 /**
  * The host a `?server=` link sends PLAY to, when that is not this page's own (security audit
  * 2026-10-04, S10). Null when there is no flag, when it means this origin, or when it names this
@@ -126,7 +136,11 @@ export function foreignServerHost(search: string, pageHost: string): string | nu
   }
   return host === '' || host === pageHost.toLowerCase() ? null : host;
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** The one place the "same origin" spellings are listed. */
 function meansThisOrigin(raw: string): boolean {
   const v = raw.trim();
   return v === '' || v === '1' || v === '/ws';
@@ -157,3 +171,4 @@ function parseNetFlag(raw: string | null): NetConditions {
  * empty name. Two spellings of one rule is two rules, and this one had already drifted in a way
  * that mattered: see `withRewindSuffix` for the order-of-operations bug the duplication hid.
  */
+//#endregion

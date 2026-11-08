@@ -1,15 +1,3 @@
-import { logger } from '../../shared/core/Log';
-import { decodeHeader, writeHello, type WelcomeInfo } from '../../shared/net/Messages';
-import type { NetLoadout } from '../../shared/net/Skirmish';
-import { NO_SKIN_INDEX } from '../../shared/meta/Skins';
-import { HANDSHAKE_TIMEOUT_MS, PROTOCOL_VERSION, rejectText } from '../../shared/net/Protocol';
-import type { NetConditions } from '../../shared/net/NetSim';
-import { withRewindSuffix } from '../../shared/net/UrlFlags';
-import { ByteReader, ByteWriter } from '../../shared/net/Wire';
-import { BrowserLink } from './BrowserLink';
-
-const log = logger('handshake');
-
 /**
  * Open a connection and find out what match is running, *before* building a world (M10,
  * playtest round 2).
@@ -48,6 +36,21 @@ const log = logger('handshake');
  * happening thirty lines earlier.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { logger } from '../../shared/core/Log';
+import { decodeHeader, writeHello, type WelcomeInfo } from '../../shared/net/Messages';
+import type { NetLoadout } from '../../shared/net/Skirmish';
+import { NO_SKIN_INDEX } from '../../shared/meta/Skins';
+import { HANDSHAKE_TIMEOUT_MS, PROTOCOL_VERSION, rejectText } from '../../shared/net/Protocol';
+import type { NetConditions } from '../../shared/net/NetSim';
+import { withRewindSuffix } from '../../shared/net/UrlFlags';
+import { ByteReader, ByteWriter } from '../../shared/net/Wire';
+import { BrowserLink } from './BrowserLink';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface HandshakeResult {
   readonly link: BrowserLink;
   readonly welcome: WelcomeInfo;
@@ -97,6 +100,44 @@ export interface HandshakeOptions {
   readonly wantRewindDebug: boolean;
 }
 
+/** What a `Welcome` turned out to be worth, once it has been accepted. */
+interface WelcomeArrival {
+  readonly welcome: WelcomeInfo;
+  readonly receivedAtMs: number;
+  readonly pending: Uint8Array[];
+  readonly reconnectToken: Uint8Array | null;
+}
+
+/**
+ * One wait for a `Welcome`, carried between the poll and the frames it drains.
+ *
+ * A record rather than four closures over `awaitWelcome`'s locals, so the decoding steps are
+ * ordinary named functions the limits can be measured against. `settled` is the state that
+ * matters: it is what sends a frame behind the `Welcome` to `pending` rather than the switch.
+ */
+interface WelcomeWatch {
+  readonly reader: ByteReader;
+  /** Frames behind the `Welcome` in the same drain. See `HandshakeResult.pending`. */
+  readonly pending: Uint8Array[];
+  readonly startedAt: number;
+  settled: boolean;
+  timer: ReturnType<typeof setInterval> | undefined;
+}
+
+/** Finish the wait, once: an error or an arrival, never both and never twice. */
+type Settle = (err: HandshakeError | null, arrival: WelcomeArrival | null) => void;
+
+/** The decoded `Welcome`, narrowed out of everything `decodeHeader` can return. */
+type DecodedWelcome = Extract<ReturnType<typeof decodeHeader>, { kind: 'welcome' }>;
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const log = logger('handshake');
+//#endregion
+
+// ==================================== CLASS HandshakeError ==================================== \\
+//#region Class HandshakeError
 /**
  * A handshake that failed, with a reason fit to put on screen.
  *
@@ -104,6 +145,8 @@ export interface HandshakeOptions {
  * "something threw" — the first is a message for the player and the second is a bug.
  */
 export class HandshakeError extends Error {
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(
     message: string,
     /** True when the server answered and said no, rather than never answering. */
@@ -112,8 +155,12 @@ export class HandshakeError extends Error {
     super(message);
     this.name = 'HandshakeError';
   }
+  //#endregion
 }
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Connect, say hello, and wait for the server to say what it is running.
  *
@@ -130,28 +177,7 @@ export async function handshake(options: HandshakeOptions): Promise<HandshakeRes
     throw new HandshakeError(err instanceof Error ? err.message : String(err), false);
   }
 
-  // Mirrored from `NetClient.connect`, through the one function that spells the convention.
-  const name = withRewindSuffix(options.displayName, options.wantRewindDebug);
-  /**
-   * The class rides the `Hello` (M11, Tier 1 #20).
-   *
-   * It has to be here rather than in a message that follows, because the server creates the
-   * seat *inside* the handshake and the entity's constructor is what applies the perks. A
-   * class arriving one frame later arrives after the body it was meant to configure — measured
-   * at 178 mispredictions in 1277 comparisons. See `writeHello`.
-   *
-   * The buffer is sized for a name plus a full class: eight ids, two weapons with attachments,
-   * and their camo strings.
-   */
-  link.send(
-    writeHello(
-      new ByteWriter(1024),
-      name,
-      options.skinIndex ?? NO_SKIN_INDEX,
-      options.loadout ?? null,
-      options.reconnectToken ?? null,
-    ),
-  );
+  sendHello(link, options);
 
   try {
     const { welcome, receivedAtMs, pending, reconnectToken } = await awaitWelcome(link);
@@ -166,6 +192,35 @@ export async function handshake(options: HandshakeOptions): Promise<HandshakeRes
     throw err;
   }
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * The one frame this client sends before it knows anything.
+ *
+ * The class rides it (M11, Tier 1 #20). It has to be here rather than in a message that
+ * follows, because the server creates the seat *inside* the handshake and the entity's
+ * constructor is what applies the perks. A class arriving one frame later arrives after the
+ * body it was meant to configure — measured at 178 mispredictions in 1277 comparisons. See
+ * `writeHello`.
+ *
+ * The buffer is sized for a name plus a full class: eight ids, two weapons with attachments,
+ * and their camo strings.
+ */
+function sendHello(link: BrowserLink, options: HandshakeOptions): void {
+  // Mirrored from `NetClient.connect`, through the one function that spells the convention.
+  const name = withRewindSuffix(options.displayName, options.wantRewindDebug);
+  link.send(
+    writeHello(
+      new ByteWriter(1024),
+      name,
+      options.skinIndex ?? NO_SKIN_INDEX,
+      options.loadout ?? null,
+      options.reconnectToken ?? null,
+    ),
+  );
+}
 
 /**
  * Poll the link until it produces a `Welcome`, a refusal, or the deadline.
@@ -174,121 +229,133 @@ export async function handshake(options: HandshakeOptions): Promise<HandshakeRes
  * this happens between leaving the menu and building the world. 16 ms is a frame's worth,
  * which keeps the join feeling immediate without spinning.
  */
-function awaitWelcome(link: BrowserLink): Promise<{
-  welcome: WelcomeInfo;
-  receivedAtMs: number;
-  pending: Uint8Array[];
-  reconnectToken: Uint8Array | null;
-}> {
+function awaitWelcome(link: BrowserLink): Promise<WelcomeArrival> {
   return new Promise((resolve, reject) => {
-    const reader = new ByteReader(new Uint8Array(0));
-    const startedAt = performance.now();
-    let settled = false;
-
-    /** Frames behind the `Welcome` in the same drain. See `HandshakeResult.pending`. */
-    const pending: Uint8Array[] = [];
-
-    const finish = (fn: () => void): void => {
-      if (settled) return;
-      settled = true;
-      clearInterval(timer);
-      fn();
+    const watch: WelcomeWatch = {
+      reader: new ByteReader(new Uint8Array(0)),
+      pending: [],
+      startedAt: performance.now(),
+      settled: false,
+      timer: undefined,
     };
 
-    const timer = setInterval(() => {
-      if (settled) return;
+    /**
+     * `settled` is set **before** the resolve runs, so any frame still to be delivered in this
+     * same `poll` batch takes `consumeFrame`'s `pending` branch rather than the switch. That
+     * ordering is the whole mechanism.
+     */
+    const settle: Settle = (err, arrival) => {
+      if (watch.settled) return;
+      watch.settled = true;
+      clearInterval(watch.timer);
+      if (err !== null) reject(err);
+      else if (arrival !== null) resolve(arrival);
+    };
 
-      if (link.state === 'closed') {
-        finish(() =>
-          reject(new HandshakeError(link.reason || 'the server closed the connection', true)),
-        );
-        return;
-      }
-
-      link.poll((bytes) => {
-        /**
-         * Already have the welcome: keep the rest of this batch rather than discarding it.
-         *
-         * Copied because `poll` clears its queue immediately after this callback returns and
-         * the underlying buffers are the link's to reuse.
-         */
-        if (settled) {
-          pending.push(bytes.slice());
-          return;
-        }
-        reader.reuse(bytes);
-        const msg = decodeHeader(reader);
-
-        switch (msg.kind) {
-          case 'welcome': {
-            /**
-             * The version check the server also makes, made here too.
-             *
-             * S6.1 wants a mismatch refused *loudly* at both ends. The server refuses a bad
-             * client before decoding a gameplay byte; this refuses a bad server before
-             * building a world from map and mode strings a skewed build may have renamed.
-             */
-            if (msg.version !== PROTOCOL_VERSION) {
-              finish(() =>
-                reject(
-                  new HandshakeError(
-                    `server speaks protocol v${msg.version}, this build speaks v${PROTOCOL_VERSION}`,
-                    true,
-                  ),
-                ),
-              );
-              return;
-            }
-            const welcome: WelcomeInfo = {
-              entityId: msg.entityId,
-              team: msg.team,
-              mapId: msg.mapId,
-              modeId: msg.modeId,
-              serverTick: msg.serverTick,
-              serverMs: msg.serverMs,
-              snapshotHz: msg.snapshotHz,
-              // M11: which instance this seat is in, and from which tick. On a handshake the
-              // answer is always the warmup arena at the current tick (§6.7 makes warmup the
-              // only entry point), but it is read off the message rather than assumed — the
-              // day that stops being true, an assumption here would be a client applying an
-              // arena's world to a live match.
-              matchId: msg.matchId,
-              effectiveTick: msg.effectiveTick,
-              migrated: msg.migrated,
-            };
-            /**
-             * `settled` is set by `finish` *before* the resolve runs, so any frame still to be
-             * delivered in this same `poll` batch takes the `pending` branch above rather than
-             * the switch. That ordering is the whole mechanism.
-             */
-            const receivedAtMs = performance.now();
-            const reconnectToken = msg.reconnectToken;
-            finish(() => resolve({ welcome, receivedAtMs, pending, reconnectToken }));
-            return;
-          }
-          case 'reject':
-            finish(() => reject(new HandshakeError(rejectText(msg.code), true)));
-            return;
-          case 'bye':
-            finish(() => reject(new HandshakeError(msg.reason, true)));
-            return;
-          default:
-          /**
-           * Anything else arriving before the `Welcome` is dropped on the floor.
-           *
-           * In practice that is at most one snapshot, when the server's snapshot tick lands
-           * between seating us and the microtask that sends the welcome. It costs nothing:
-           * the encoder keeps sending *full* snapshots until the client acks one, so the
-           * next one 50 ms later carries everything the dropped one did.
-           */
-        }
-      });
-
-      if (performance.now() - startedAt > HANDSHAKE_TIMEOUT_MS) {
-        finish(() =>
-          reject(new HandshakeError('the server accepted the connection but never replied', false)),
-        );
-      }
+    watch.timer = setInterval(() => {
+      drainForWelcome(link, watch, settle);
     }, 16);
   });
 }
+
+/** One poll: the link's own state, whatever it is holding, and the deadline. */
+function drainForWelcome(link: BrowserLink, watch: WelcomeWatch, settle: Settle): void {
+  if (watch.settled) return;
+
+  if (link.state === 'closed') {
+    settle(new HandshakeError(link.reason || 'the server closed the connection', true), null);
+    return;
+  }
+
+  link.poll((bytes) => {
+    consumeFrame(watch, bytes, settle);
+  });
+
+  if (performance.now() - watch.startedAt > HANDSHAKE_TIMEOUT_MS) {
+    settle(new HandshakeError('the server accepted the connection but never replied', false), null);
+  }
+}
+
+/** One frame out of a drain: the answer, a refusal, or something to keep or drop. */
+function consumeFrame(watch: WelcomeWatch, bytes: Uint8Array, settle: Settle): void {
+  /**
+   * Already have the welcome: keep the rest of this batch rather than discarding it.
+   *
+   * Copied because `poll` clears its queue immediately after this callback returns and
+   * the underlying buffers are the link's to reuse.
+   */
+  if (watch.settled) {
+    watch.pending.push(bytes.slice());
+    return;
+  }
+  watch.reader.reuse(bytes);
+  const msg = decodeHeader(watch.reader);
+
+  switch (msg.kind) {
+    case 'welcome':
+      acceptWelcome(watch, msg, settle);
+      return;
+    case 'reject':
+      settle(new HandshakeError(rejectText(msg.code), true), null);
+      return;
+    case 'bye':
+      settle(new HandshakeError(msg.reason, true), null);
+      return;
+    default:
+    /**
+     * Anything else arriving before the `Welcome` is dropped on the floor.
+     *
+     * In practice that is at most one snapshot, when the server's snapshot tick lands
+     * between seating us and the microtask that sends the welcome. It costs nothing:
+     * the encoder keeps sending *full* snapshots until the client acks one, so the
+     * next one 50 ms later carries everything the dropped one did.
+     */
+  }
+}
+
+/** Check the version the server speaks, then settle on what it said it is running. */
+function acceptWelcome(watch: WelcomeWatch, msg: DecodedWelcome, settle: Settle): void {
+  /**
+   * The version check the server also makes, made here too.
+   *
+   * S6.1 wants a mismatch refused *loudly* at both ends. The server refuses a bad
+   * client before decoding a gameplay byte; this refuses a bad server before
+   * building a world from map and mode strings a skewed build may have renamed.
+   */
+  if (msg.version !== PROTOCOL_VERSION) {
+    settle(
+      new HandshakeError(
+        `server speaks protocol v${msg.version}, this build speaks v${PROTOCOL_VERSION}`,
+        true,
+      ),
+      null,
+    );
+    return;
+  }
+  const welcome = welcomeFrom(msg);
+  const receivedAtMs = performance.now();
+  const reconnectToken = msg.reconnectToken;
+  settle(null, { welcome, receivedAtMs, pending: watch.pending, reconnectToken });
+}
+
+/** The `Welcome`'s payload as the rest of the client reads it. */
+function welcomeFrom(msg: DecodedWelcome): WelcomeInfo {
+  return {
+    entityId: msg.entityId,
+    team: msg.team,
+    mapId: msg.mapId,
+    modeId: msg.modeId,
+    serverTick: msg.serverTick,
+    serverMs: msg.serverMs,
+    snapshotHz: msg.snapshotHz,
+    // M11: which instance this seat is in, and from which tick. On a handshake the
+    // answer is always the warmup arena at the current tick (§6.7 makes warmup the
+    // only entry point), but it is read off the message rather than assumed — the
+    // day that stops being true, an assumption here would be a client applying an
+    // arena's world to a live match.
+    matchId: msg.matchId,
+    effectiveTick: msg.effectiveTick,
+    migrated: msg.migrated,
+  };
+}
+//#endregion

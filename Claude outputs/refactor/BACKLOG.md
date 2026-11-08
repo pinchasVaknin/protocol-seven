@@ -87,6 +87,7 @@ and belong in its Step 2 plan.
 | ~~C12~~ | `client/equipment/` EquipmentAudio, EquipmentFx; `client/streaks/` ChopperCamera, ClientStreakPresentation, ReplicatedStreaks, SentryModel, StreakAudio, StreakMeshes, StreakRenderer; `client/meta/` CamoTextures, Profile, SaveStore | **closed** — nothing was bound to it: no §1 row, and none of the twelve names appears anywhere in this file except the three *watch-fors* aimed at it, and **C12 answered all three**. **#60**: of the two files it named, only `EquipmentAudio` has the defect — it writes the shared scratches and never sets `roll`, verified at runtime; `StreakAudio` holds its own specs and is clean, which is also the fix's shape. **#58**: confirmed, `CamoTextures` is the third copy. **#29**: answered, and not in the entry's favour — the load path sanitises **once**. C12 opened nothing: its 240 characterization tests found no new defect, and the two surprises they did find (`mortarInbound` whistles 18 m up, `SaveStore` hands an array to the migrator but not a number) are both working as written and are pinned in both halves |
 | ~~C13~~ | `client/net/` BrowserLink, Handshake, JoinOptions, NetSession, RemoteActor, WakeWait | **closed** — nothing was bound to it: no §1 row, and none of the six names, nor `client/net`, appears anywhere in this file. The broader sweep is empty too — every *reconnect*, *socket*, *handshake*, *join*, *transport* and *latency* hit belongs to `shared/net` or to the NET harness, and the one *interpolat* hit is #34's camera bob. What C13 did close is the **fourth** copy of #1's unwrap: `RemoteActor.renderYaw` was the shared `angleDelta` character for character, so folding it was a bit-exact no-op rather than the behaviour question the other copies are (see #1, which stays bound to C24). C13 opened nothing: its 129 characterization tests found no new defect |
 | ~~C14~~ | `client/ui/` Hud, HudBanner, HudStreaks, HudTactical | **closed** — nothing was bound to it: no §1 row, and none of the four names appears anywhere in this file. The broader sweep is empty too — *crosshair*, *banner*, *ammo*, *reticle*, *compass*, *threat*, *hit-direction*, *HudSurfaces* and *nameplate* have no hits that belong to these files, and the three *HUD* hits are #34's clock, #55's Chopper Gunner optic (C4 and C23's files) and #28. What C14 did close is **#28's `src/client/ui/` half**, which that entry asked a later unit to sweep: it is empty, and #28 now says so. C14 opened nothing: its 209 characterization tests found no new defect |
+| ~~C15~~ | `client/ui/` MatchHud, Killfeed, Scoreboard, Minimap, MortarOverlay, BearingIndicator | **closed** — nothing was bound to it: no §1 row, and none of the six names appears anywhere in this file. Three words looked dangerous and all three belong elsewhere: every *scoreboard* hit is `shared/combat/ScoreSystem.ts` (Cluster III, A9's file) or `MatchInstance`/`SeatChannels` (#42, B5's); the *mortar* hit inside #1 is the place that entry's last copy is **used**, while the copy itself is `ClientMatch.angleDeltaRad` (C24's file); and a sweep of all six files for `PI`, `TAU` and `angleDelta` found no unwrap at all, only canvas arcs. **C15 opened #69 and #70**, both from its own 164 characterization tests |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
@@ -646,6 +647,51 @@ Each of these is wrong today, was found while writing characterization tests, an
 rather than fixed** under §5.9 of the prompt — the test carries
 `// Pins current behaviour; suspected bug: <title>`. Fixing one means updating its pinning test in
 the same commit, with the reason.
+
+### #69 — The mortar overlay and the minimap disagree about what a wall is · `open` *(opened 2026-11-09 by C15)*
+
+**Files** `src/client/ui/MortarOverlay.ts` (`classify`) and `src/client/ui/Minimap.ts`
+(`classify`). **Origin** C15, found by reading the two files side by side and pinned by its
+characterization tests. Both files are C15's own, which is what makes this a decision rather
+than a fence problem.
+
+`MortarOverlay.ts`'s header says it in as many words:
+
+> *"**Reusing the minimap renderer** means the same brush-classification and footprint code, so
+> the overlay and the minimap agree about what a wall is; two rasterisers would eventually
+> disagree and the disagreement would be invisible until somebody called a strike into a
+> building that was not there."*
+
+They do not agree. The minimap has a rule the overlay has never had:
+
+```
+Minimap.classify        if (brush.rotationX !== undefined || brush.rotationZ !== undefined) return 'deck';
+MortarOverlay.classify  — no such line —
+```
+
+So a **pitched brush sitting below 3 m** — a ramp — is a light deck on the minimap and a dark
+wall on the overlay. Everything else about the two is the same: the 0.1 m floor, the 5.5 m
+roof, the 3.0 m deck line, and `size.y / 2` against `size.y * 0.5`, which is the same double.
+
+**What C15 did and did not do.** The footprint half of that paragraph is now true: `footprint`
+is exported from `Minimap.ts` and the overlay draws through it, which the browser checksum
+proves is a byte-for-byte no-op over the whole of FOUNDRY. The classification half is a
+**behaviour change** — ramps would change colour on the overlay — so it is pinned instead:
+`MortarOverlay.test.ts` has *"draws a low pitched brush as a WALL — which the minimap draws as
+a deck"*, and `Minimap.test.ts` has the matching case the other way.
+
+**The decision is which one is right**, and it is about what the player should see rather than
+about how the code is arranged. A ramp is somewhere a strike's victims can stand, which argues
+for the minimap's reading; the overlay is a *targeting* picture, where "can I drop shells here"
+may want a different answer from "can somebody walk here". Whoever takes it should also decide
+whether the two `drawProps` loops become one — they are identical today, and sharing them needs
+a second export from `Minimap.ts`, which C15 did not ask for.
+
+**Verify** `npm run check`, then C15's BROWSER checksum A: both rasters are in it, digested over
+the whole of FOUNDRY, so either picture moving is a diff. The two pinning tests have to be
+updated in the same commit, with the reason.
+
+---
 
 ### #66 — A retired actor's nameplate is emptied but never unparented · `open` *(opened 2026-11-05 by C11)*
 
@@ -2088,6 +2134,41 @@ method gives a sound baseline today.
 
 **Verify** five NET runs each way on a quiet machine, which is the measurement §6's own table
 was built from.
+
+### #70 — A fourth spelling of RAD2DEG, and folding it moves 85 inputs · `needs a decision from the user` *(opened 2026-11-09 by C15)*
+
+**Files** `src/client/ui/BearingIndicator.ts` (`update`). **Origin** C15, measured rather than
+argued.
+
+`MathUtil` exports `RAD2DEG = 180 / Math.PI`, and `Hud.showHitDirection` — the transient member
+of this very family, in C14's finished files — uses it. The persistent member spells it out:
+
+```
+Hud.showHitDirection    (bearingRad * RAD2DEG).toFixed(1)
+BearingIndicator.update  Math.round((bearingRad * 180) / Math.PI)
+```
+
+**It is not the same number.** `x * (180/PI)` rounds the quotient once and then multiplies;
+`(x * 180) / PI` multiplies and then divides. Over the 7,201 tenth-of-a-degree bearings from
+-360 to +360 the two expressions produce **different doubles in 1,730 cases**, and after
+`Math.round` they disagree in **85** of them — every one an exact half degree, where the two
+land on opposite sides of the rounding boundary. The first is at -350.5 degrees: one spelling
+says -350 and the other -351.
+
+So this is the same shape as #1: a fold that looks like tidying and is a behaviour change at a
+countable set of inputs. The consequence is one degree of rotation on a chevron, which is about
+2 px of arc and below what anybody can see — which is an argument for folding it, not against,
+but it is the user's call and not a refactor unit's.
+
+**Pinned meanwhile.** `BearingIndicator.test.ts` asserts the spelling against
+`Math.round((rad * 180) / Math.PI)` over five bearings and holds the 46.5-degree round trip
+(which lands at 46.49999999999999 and rounds *down*), so whoever folds it has the before and
+after already written.
+
+**Verify** `npm run check`, plus C15's BROWSER checksum A, whose bearing-indicator section walks
+eleven angles including both half-degree cases.
+
+---
 
 ### The missing item
 The chat list was counted as 24 and this file received 22 of them. Neither #19 (folded into #2) nor

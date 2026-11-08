@@ -506,6 +506,14 @@ const FINISHED = {
     'src/client/ui/HudStreaks.ts',
     'src/client/ui/HudTactical.ts',
   ],
+  C15: [
+    'src/client/ui/BearingIndicator.ts',
+    'src/client/ui/Killfeed.ts',
+    'src/client/ui/MatchHud.ts',
+    'src/client/ui/Minimap.ts',
+    'src/client/ui/MortarOverlay.ts',
+    'src/client/ui/Scoreboard.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

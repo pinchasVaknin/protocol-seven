@@ -1,6 +1,3 @@
-import { PROP_SHAPES } from '../../shared/world/maps/props';
-import type { Brush, MapDef } from '../../shared/world/maps/types';
-
 /**
  * The mortar targeting overlay (M7, brief S6.1).
  *
@@ -14,6 +11,12 @@ import type { Brush, MapDef } from '../../shared/world/maps/types';
  * what a wall is; two rasterisers would eventually disagree and the disagreement would be
  * invisible until somebody called a strike into a building that was not there.
  *
+ * The footprint is literally `Minimap`'s now. The classification is **not** — this file keeps
+ * its own `classify`, and it is not the minimap's: a pitched brush below 3 m is a wall here
+ * and a deck there. That is a real disagreement, of exactly the kind the paragraph above says
+ * must not exist, and it is filed rather than fixed because deciding which of the two is right
+ * is a decision about what the player sees. See BACKLOG #69.
+ *
  * The raster is built once when the overlay is first opened rather than at match start,
  * because most matches never call in a mortar and a 300 x 250 px canvas is not free.
  *
@@ -25,6 +28,26 @@ import type { Brush, MapDef } from '../../shared/world/maps/types';
  * accepts a relative nudge each frame and the click is the confirm.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { PROP_SHAPES } from '../../shared/world/maps/props';
+import type { Brush, MapDef } from '../../shared/world/maps/types';
+import { footprint } from './Minimap';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
+export interface MortarOverlayDeps {
+  readonly host: HTMLElement;
+  readonly mapDef: MapDef;
+  /** Called with world coordinates when the player confirms a target. */
+  readonly onConfirm: (x: number, z: number) => void;
+  readonly onCancel: () => void;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Pixels per metre in the overlay raster. Denser than the minimap: this is a big canvas. */
 const PX_PER_M = 9;
 
@@ -33,16 +56,13 @@ const COLOR_WALL_EDGE = '#3d4552';
 const COLOR_DECK = '#4a5462';
 const COLOR_CURSOR = '#e8604c';
 const COLOR_GRID = 'rgba(232, 234, 238, 0.06)';
+//#endregion
 
-export interface MortarOverlayDeps {
-  readonly host: HTMLElement;
-  readonly mapDef: MapDef;
-  /** Called with world coordinates when the player confirms a target. */
-  readonly onConfirm: (x: number, z: number) => void;
-  readonly onCancel: () => void;
-}
-
+// ==================================== CLASS MortarOverlay ===================================== \\
+//#region Class MortarOverlay
 export class MortarOverlay {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly element: HTMLElement;
 
   /** World-space cursor. Read by `Match` so a confirm lands where the ring is. */
@@ -61,7 +81,10 @@ export class MortarOverlay {
   private readonly heightPx: number;
   private open = false;
   private phase = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MortarOverlayDeps) {
     this.deps = deps;
     const bounds = deps.mapDef.navBounds;
@@ -95,7 +118,10 @@ export class MortarOverlay {
     this.element.appendChild(frame);
     deps.host.appendChild(this.element);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get isOpen(): boolean {
     return this.open;
   }
@@ -151,6 +177,59 @@ export class MortarOverlay {
     const cz = (this.markZ - this.minZ) * PX_PER_M;
     const r = scatterRadius * PX_PER_M;
 
+    this.drawStrikeZone(cx, cz, r);
+    this.drawCrosshairs(cx, cz);
+  }
+
+  dispose(): void {
+    this.element.remove();
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Rasterise the map once, the same way `Minimap` does.
+   *
+   * Same footprint projection for pitched brushes, through the same function. The
+   * classification thresholds are this file's own — see the header, and BACKLOG #69.
+   */
+  private buildRaster(): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = this.widthPx;
+    canvas.height = this.heightPx;
+    const ctx = canvas.getContext('2d');
+    if (ctx === null) throw new Error('Mortar overlay raster needs a 2D context');
+
+    ctx.setTransform(PX_PER_M, 0, 0, PX_PER_M, -this.minX * PX_PER_M, -this.minZ * PX_PER_M);
+    ctx.lineWidth = 0.1;
+
+    this.drawGrid(ctx);
+    drawBrushes(ctx, this.deps.mapDef);
+    drawProps(ctx, this.deps.mapDef);
+    return canvas;
+  }
+
+  /** A ten-metre grid, so distances are readable rather than guessed. */
+  private drawGrid(ctx: CanvasRenderingContext2D): void {
+    ctx.strokeStyle = COLOR_GRID;
+    for (let x = Math.ceil(this.minX / 10) * 10; x < this.minX + this.spanX; x += 10) {
+      ctx.beginPath();
+      ctx.moveTo(x, this.minZ);
+      ctx.lineTo(x, this.minZ + this.spanZ);
+      ctx.stroke();
+    }
+    for (let z = Math.ceil(this.minZ / 10) * 10; z < this.minZ + this.spanZ; z += 10) {
+      ctx.beginPath();
+      ctx.moveTo(this.minX, z);
+      ctx.lineTo(this.minX + this.spanX, z);
+      ctx.stroke();
+    }
+  }
+
+  /** The disc the shells will land in, and the pulsing ring that makes it findable. */
+  private drawStrikeZone(cx: number, cz: number, r: number): void {
+    const ctx = this.ctx;
     ctx.strokeStyle = COLOR_CURSOR;
     ctx.fillStyle = 'rgba(232, 96, 76, 0.14)';
     ctx.lineWidth = 2;
@@ -165,8 +244,11 @@ export class MortarOverlay {
     ctx.arc(cx, cz, r * 0.35, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
+  }
 
-    // Crosshairs out to the frame edge: precise placement needs a reference line.
+  /** Crosshairs out to the frame edge: precise placement needs a reference line. */
+  private drawCrosshairs(cx: number, cz: number): void {
+    const ctx = this.ctx;
     ctx.beginPath();
     ctx.moveTo(cx, 0);
     ctx.lineTo(cx, this.heightPx);
@@ -176,74 +258,48 @@ export class MortarOverlay {
     ctx.lineWidth = 1;
     ctx.stroke();
   }
+  //#endregion
+}
+//#endregion
 
-  dispose(): void {
-    this.element.remove();
-  }
-
-  // -- internals --------------------------------------------------------------
-
-  /**
-   * Rasterise the map once, the same way `Minimap` does.
-   *
-   * Same classification thresholds, same footprint projection for pitched brushes, so the two
-   * pictures cannot disagree about what a wall is.
-   */
-  private buildRaster(): HTMLCanvasElement {
-    const canvas = document.createElement('canvas');
-    canvas.width = this.widthPx;
-    canvas.height = this.heightPx;
-    const ctx = canvas.getContext('2d');
-    if (ctx === null) throw new Error('Mortar overlay raster needs a 2D context');
-
-    ctx.setTransform(PX_PER_M, 0, 0, PX_PER_M, -this.minX * PX_PER_M, -this.minZ * PX_PER_M);
-    ctx.lineWidth = 0.1;
-
-    // A ten-metre grid, so distances are readable rather than guessed.
-    ctx.strokeStyle = COLOR_GRID;
-    for (let x = Math.ceil(this.minX / 10) * 10; x < this.minX + this.spanX; x += 10) {
-      ctx.beginPath();
-      ctx.moveTo(x, this.minZ);
-      ctx.lineTo(x, this.minZ + this.spanZ);
-      ctx.stroke();
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Every solid brush, walls first, in this file's own classification. */
+function drawBrushes(ctx: CanvasRenderingContext2D, def: MapDef): void {
+  for (const pass of ['wall', 'deck'] as const) {
+    for (const brush of def.brushes) {
+      if (brush.solid === false) continue;
+      if (classify(brush) !== pass) continue;
+      ctx.fillStyle = pass === 'deck' ? COLOR_DECK : COLOR_WALL;
+      ctx.strokeStyle = COLOR_WALL_EDGE;
+      const planX = brush.size.x * Math.cos(brush.rotationZ ?? 0);
+      const planZ = brush.size.z * Math.cos(brush.rotationX ?? 0);
+      footprint(ctx, brush.position.x, brush.position.z, planX, planZ, brush.rotationY);
     }
-    for (let z = Math.ceil(this.minZ / 10) * 10; z < this.minZ + this.spanZ; z += 10) {
-      ctx.beginPath();
-      ctx.moveTo(this.minX, z);
-      ctx.lineTo(this.minX + this.spanX, z);
-      ctx.stroke();
-    }
-
-    for (const pass of ['wall', 'deck'] as const) {
-      for (const brush of this.deps.mapDef.brushes) {
-        if (brush.solid === false) continue;
-        if (classify(brush) !== pass) continue;
-        ctx.fillStyle = pass === 'deck' ? COLOR_DECK : COLOR_WALL;
-        ctx.strokeStyle = COLOR_WALL_EDGE;
-        const planX = brush.size.x * Math.cos(brush.rotationZ ?? 0);
-        const planZ = brush.size.z * Math.cos(brush.rotationX ?? 0);
-        footprint(ctx, brush.position.x, brush.position.z, planX, planZ, brush.rotationY);
-      }
-    }
-
-    ctx.fillStyle = COLOR_WALL;
-    ctx.strokeStyle = COLOR_WALL_EDGE;
-    for (const placement of this.deps.mapDef.props) {
-      const shape = PROP_SHAPES[placement.shape];
-      for (const part of shape.parts) {
-        if (!part.solid) continue;
-        const c = Math.cos(placement.rotationY);
-        const s = Math.sin(placement.rotationY);
-        const wx = placement.position.x + part.offset.x * c + part.offset.z * s;
-        const wz = placement.position.z - part.offset.x * s + part.offset.z * c;
-        footprint(ctx, wx, wz, part.size.x, part.size.z, placement.rotationY);
-      }
-    }
-    return canvas;
   }
 }
 
-/** The same thresholds `Minimap` classifies by; see its header for the reasoning. */
+/** Every solid part of every placed prop, in the wall colour. */
+function drawProps(ctx: CanvasRenderingContext2D, def: MapDef): void {
+  ctx.fillStyle = COLOR_WALL;
+  ctx.strokeStyle = COLOR_WALL_EDGE;
+  for (const placement of def.props) {
+    const shape = PROP_SHAPES[placement.shape];
+    for (const part of shape.parts) {
+      if (!part.solid) continue;
+      const c = Math.cos(placement.rotationY);
+      const s = Math.sin(placement.rotationY);
+      const wx = placement.position.x + part.offset.x * c + part.offset.z * s;
+      const wz = placement.position.z - part.offset.x * s + part.offset.z * c;
+      footprint(ctx, wx, wz, part.size.x, part.size.z, placement.rotationY);
+    }
+  }
+}
+
+/**
+ * The same thresholds `Minimap` classifies by — **except the pitched-brush rule, which this
+ * one does not have**. See the file header and BACKLOG #69.
+ */
 function classify(brush: Brush): 'skip' | 'wall' | 'deck' {
   const top = brush.position.y + brush.size.y * 0.5;
   const bottom = brush.position.y - brush.size.y * 0.5;
@@ -253,24 +309,7 @@ function classify(brush: Brush): 'skip' | 'wall' | 'deck' {
   return 'wall';
 }
 
-function footprint(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  z: number,
-  sx: number,
-  sz: number,
-  yaw: number,
-): void {
-  ctx.save();
-  ctx.translate(x, z);
-  ctx.rotate(-yaw);
-  ctx.beginPath();
-  ctx.rect(-sx * 0.5, -sz * 0.5, sx, sz);
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
-}
-
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
+//#endregion

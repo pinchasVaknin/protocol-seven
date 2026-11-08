@@ -1,7 +1,3 @@
-import { cssHex, cssRgba, palette } from './Palette';
-import { PROP_SHAPES } from '../../shared/world/maps/props';
-import type { Brush, MapDef, ObjectiveDef, ObjectiveKind } from '../../shared/world/maps/types';
-
 /**
  * The minimap (brief S6.4): rotating, canvas-drawn, **from the `MapDef`**.
  *
@@ -23,43 +19,15 @@ import type { Brush, MapDef, ObjectiveDef, ObjectiveKind } from '../../shared/wo
  *   - everything else            walls and cover, drawn dark
  */
 
-/** Pixel size of the offscreen world raster per metre. Higher is sharper and dearer. */
-const RASTER_PX_PER_M = 6;
-/** Metres from the player to the edge of the visible disc. */
-const VIEW_RADIUS_M = 34;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { cssHex, cssRgba, palette } from './Palette';
+import { PROP_SHAPES } from '../../shared/world/maps/props';
+import type { Brush, MapDef, ObjectiveDef, ObjectiveKind } from '../../shared/world/maps/types';
+//#endregion
 
-/** Gunfire pings alive at once, and how long one lasts. */
-const PING_POOL = 24;
-const PING_SECONDS = 2.4;
-
-const COLOR_WALL = '#2b313b';
-const COLOR_WALL_EDGE = '#3d4552';
-const COLOR_DECK = '#4a5462';
-const COLOR_BACKDROP = 'rgba(9, 11, 14, 0.72)';
-/**
- * M8: the four gameplay colours the minimap draws are read from the live palette rather
- * than written here, so colourblind mode changes the radar and not a filter over it.
- *
- * Cached as strings because a canvas fill takes a string and formatting one per dot, per
- * frame, for a ten-bot roster is exactly the sort of per-frame allocation S4.7 bans. The
- * cache is refilled by the palette's change notification, which fires immediately on
- * subscribe — so there is one code path for "set up" and "changed".
- */
-const ink = {
-  friendly: '',
-  local: '',
-  hostile: '',
-  sweep: '',
-  neutral: '',
-};
-palette.onChange((p) => {
-  ink.friendly = cssHex(p.friendly);
-  ink.local = cssHex(p.local);
-  ink.hostile = cssHex(p.hostile);
-  ink.sweep = cssRgba(p.hostile, 0.55);
-  ink.neutral = cssRgba(p.neutral, 0.85);
-});
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 interface Ping {
   x: number;
   z: number;
@@ -97,8 +65,46 @@ export interface MinimapObjectiveState {
   progress: number;
   contested: boolean;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Pixel size of the offscreen world raster per metre. Higher is sharper and dearer. */
+const RASTER_PX_PER_M = 6;
+/** Metres from the player to the edge of the visible disc. */
+const VIEW_RADIUS_M = 34;
+
+/** Gunfire pings alive at once, and how long one lasts. */
+const PING_POOL = 24;
+const PING_SECONDS = 2.4;
+
+const COLOR_WALL = '#2b313b';
+const COLOR_WALL_EDGE = '#3d4552';
+const COLOR_DECK = '#4a5462';
+const COLOR_BACKDROP = 'rgba(9, 11, 14, 0.72)';
+/**
+ * M8: the four gameplay colours the minimap draws are read from the live palette rather
+ * than written here, so colourblind mode changes the radar and not a filter over it.
+ *
+ * Cached as strings because a canvas fill takes a string and formatting one per dot, per
+ * frame, for a ten-bot roster is exactly the sort of per-frame allocation S4.7 bans. The
+ * cache is refilled by the palette's change notification, which fires immediately on
+ * subscribe — so there is one code path for "set up" and "changed".
+ */
+const ink = {
+  friendly: '',
+  local: '',
+  hostile: '',
+  sweep: '',
+  neutral: '',
+};
+//#endregion
+
+// ======================================= CLASS Minimap ======================================== \\
+//#region Class Minimap
 export class Minimap {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly element: HTMLElement;
 
   /**
@@ -148,7 +154,10 @@ export class Minimap {
   private readonly rasterW: number;
   private readonly rasterH: number;
   private readonly sizePx: number;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(def: MapDef, maxFriendlies: number, sizePx = 168) {
     this.sizePx = sizePx;
     this.objectives = def.objectives;
@@ -185,7 +194,10 @@ export class Minimap {
     this.rasterH = Math.ceil((bounds.max.z - bounds.min.z) * RASTER_PX_PER_M);
     this.raster = this.buildRaster(def);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** A shot was fired at a position the player should know about. */
   addPing(x: number, z: number): void {
     let oldest: Ping | undefined;
@@ -264,9 +276,10 @@ export class Minimap {
   dispose(): void {
     this.element.remove();
   }
+  //#endregion
 
-  // -- internals -------------------------------------------------------------
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /**
    * Rasterise the map once.
    *
@@ -284,55 +297,9 @@ export class Minimap {
     ctx.setTransform(RASTER_PX_PER_M, 0, 0, RASTER_PX_PER_M, -this.rasterMinX * RASTER_PX_PER_M, -this.rasterMinZ * RASTER_PX_PER_M);
     ctx.lineWidth = 0.12;
 
-    // Two passes so every deck sits above every wall, whatever order the map lists them in.
-    for (const pass of ['wall', 'deck'] as const) {
-      for (const brush of def.brushes) {
-        if (brush.solid === false) continue;
-        const kind = classify(brush);
-        if (kind !== pass) continue;
-        ctx.fillStyle = kind === 'deck' ? COLOR_DECK : COLOR_WALL;
-        ctx.strokeStyle = COLOR_WALL_EDGE;
-        // A pitched brush is longer than its footprint: 9.85 m of ramp covers 9.0 m of
-        // ground. Project the extents rather than drawing the box's own dimensions.
-        const planX = brush.size.x * Math.cos(brush.rotationZ ?? 0);
-        const planZ = brush.size.z * Math.cos(brush.rotationX ?? 0);
-        this.footprint(ctx, brush.position.x, brush.position.z, planX, planZ, brush.rotationY);
-      }
-    }
-
-    ctx.fillStyle = COLOR_WALL;
-    ctx.strokeStyle = COLOR_WALL_EDGE;
-    for (const placement of def.props) {
-      const shape = PROP_SHAPES[placement.shape];
-      for (const part of shape.parts) {
-        if (!part.solid) continue;
-        const c = Math.cos(placement.rotationY);
-        const s = Math.sin(placement.rotationY);
-        const wx = placement.position.x + part.offset.x * c + part.offset.z * s;
-        const wz = placement.position.z - part.offset.x * s + part.offset.z * c;
-        this.footprint(ctx, wx, wz, part.size.x, part.size.z, placement.rotationY);
-      }
-    }
+    drawBrushes(ctx, def);
+    drawProps(ctx, def);
     return canvas;
-  }
-
-  private footprint(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    z: number,
-    sx: number,
-    sz: number,
-    yaw: number,
-  ): void {
-    ctx.save();
-    ctx.translate(x, z);
-    // The prop mesher's yaw convention rotates +X toward -Z, hence the negated angle here.
-    ctx.rotate(-yaw);
-    ctx.beginPath();
-    ctx.rect(-sx / 2, -sz / 2, sx, sz);
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
   }
 
   private drawObjectives(ctx: CanvasRenderingContext2D, scale: number): void {
@@ -341,25 +308,12 @@ export class Minimap {
       if (this.objectiveKinds !== null && !this.objectiveKinds.includes(o.kind)) continue;
       // M7: ownership colours the pip and a capture in progress draws an arc around it.
       const state = this.objectiveStates.find((entry) => entry.id === o.id);
-      const colour =
-        state === undefined || state.owner === 'NONE'
-          ? ink.neutral
-          : state.owner === 'FRIENDLY'
-            ? ink.friendly
-            : ink.hostile;
+      const colour = objectiveInk(state);
       ctx.fillStyle = colour;
       ctx.strokeStyle = colour;
 
       ctx.beginPath();
-      if (o.kind === 'bombsite') {
-        const r = 1.6;
-        ctx.moveTo(o.position.x, o.position.z - r);
-        ctx.lineTo(o.position.x + r, o.position.z + r);
-        ctx.lineTo(o.position.x - r, o.position.z + r);
-        ctx.closePath();
-      } else {
-        ctx.arc(o.position.x, o.position.z, 1.5, 0, Math.PI * 2);
-      }
+      tracePip(ctx, o);
       // A held objective is filled; neutral or contested is outline only.
       if (state !== undefined && state.owner !== 'NONE' && !state.contested) {
         ctx.globalAlpha = 0.35;
@@ -369,19 +323,23 @@ export class Minimap {
       ctx.stroke();
 
       if (state !== undefined && state.progress > 0.001) {
-        ctx.lineWidth = 3 / scale;
-        ctx.beginPath();
-        ctx.arc(
-          o.position.x,
-          o.position.z,
-          2.4,
-          -Math.PI / 2,
-          -Math.PI / 2 + state.progress * Math.PI * 2,
-        );
-        ctx.stroke();
-        ctx.lineWidth = 2 / scale;
+        this.drawCaptureArc(ctx, o, state.progress, scale);
       }
     }
+  }
+
+  /** The ring around a pip that is changing hands, and the line width put back after it. */
+  private drawCaptureArc(
+    ctx: CanvasRenderingContext2D,
+    o: ObjectiveDef,
+    progress: number,
+    scale: number,
+  ): void {
+    ctx.lineWidth = 3 / scale;
+    ctx.beginPath();
+    ctx.arc(o.position.x, o.position.z, 2.4, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 2 / scale;
   }
 
   private drawPings(ctx: CanvasRenderingContext2D, scale: number, dt: number): void {
@@ -421,6 +379,26 @@ export class Minimap {
     ctx.globalAlpha = 1;
   }
 
+  private drawFriendlies(ctx: CanvasRenderingContext2D, scale: number): void {
+    ctx.fillStyle = ink.friendly;
+    ctx.strokeStyle = ink.friendly;
+    ctx.lineWidth = 1.4 / scale;
+    for (const a of this.friendlies) {
+      if (!a.active) continue;
+      // A chevron, not a dot: which way a teammate is looking is most of what makes a
+      // friendly marker worth glancing at.
+      const fx = -Math.sin(a.yaw);
+      const fz = -Math.cos(a.yaw);
+      const len = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(a.x + fx * len, a.z + fz * len);
+      ctx.lineTo(a.x - fz * 0.9 - fx * 0.5, a.z + fx * 0.9 - fz * 0.5);
+      ctx.lineTo(a.x + fz * 0.9 - fx * 0.5, a.z - fx * 0.9 - fz * 0.5);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
   /**
    * The radar beam.
    *
@@ -451,6 +429,19 @@ export class Minimap {
     ctx.restore();
   }
 
+  /** The player, always at the centre and always pointing up. */
+  private drawLocal(ctx: CanvasRenderingContext2D, half: number): void {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = ink.local;
+    ctx.beginPath();
+    ctx.moveTo(half, half - 9);
+    ctx.lineTo(half + 6, half + 7);
+    ctx.lineTo(half, half + 3);
+    ctx.lineTo(half - 6, half + 7);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   /**
    * Counter-UAV: bands of interference across the disc (M7).
    *
@@ -476,39 +467,94 @@ export class Minimap {
     }
     ctx.restore();
   }
+  //#endregion
+}
+//#endregion
 
-  private drawFriendlies(ctx: CanvasRenderingContext2D, scale: number): void {
-    ctx.fillStyle = ink.friendly;
-    ctx.strokeStyle = ink.friendly;
-    ctx.lineWidth = 1.4 / scale;
-    for (const a of this.friendlies) {
-      if (!a.active) continue;
-      // A chevron, not a dot: which way a teammate is looking is most of what makes a
-      // friendly marker worth glancing at.
-      const fx = -Math.sin(a.yaw);
-      const fz = -Math.cos(a.yaw);
-      const len = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(a.x + fx * len, a.z + fz * len);
-      ctx.lineTo(a.x - fz * 0.9 - fx * 0.5, a.z + fx * 0.9 - fz * 0.5);
-      ctx.lineTo(a.x + fz * 0.9 - fx * 0.5, a.z - fx * 0.9 - fz * 0.5);
-      ctx.closePath();
-      ctx.fill();
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/**
+ * One footprint, as a rotated rectangle around its own centre.
+ *
+ * Exported because `MortarOverlay` draws the same picture at a different scale and its header
+ * says in as many words that the two must not have separate renderers: *"two rasterisers would
+ * eventually disagree and the disagreement would be invisible"*. This is that one renderer.
+ */
+export function footprint(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  z: number,
+  sx: number,
+  sz: number,
+  yaw: number,
+): void {
+  ctx.save();
+  ctx.translate(x, z);
+  // The prop mesher's yaw convention rotates +X toward -Z, hence the negated angle here.
+  ctx.rotate(-yaw);
+  ctx.beginPath();
+  ctx.rect(-sx / 2, -sz / 2, sx, sz);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Every solid brush, walls first. */
+function drawBrushes(ctx: CanvasRenderingContext2D, def: MapDef): void {
+  // Two passes so every deck sits above every wall, whatever order the map lists them in.
+  for (const pass of ['wall', 'deck'] as const) {
+    for (const brush of def.brushes) {
+      if (brush.solid === false) continue;
+      const kind = classify(brush);
+      if (kind !== pass) continue;
+      ctx.fillStyle = kind === 'deck' ? COLOR_DECK : COLOR_WALL;
+      ctx.strokeStyle = COLOR_WALL_EDGE;
+      // A pitched brush is longer than its footprint: 9.85 m of ramp covers 9.0 m of
+      // ground. Project the extents rather than drawing the box's own dimensions.
+      const planX = brush.size.x * Math.cos(brush.rotationZ ?? 0);
+      const planZ = brush.size.z * Math.cos(brush.rotationX ?? 0);
+      footprint(ctx, brush.position.x, brush.position.z, planX, planZ, brush.rotationY);
     }
   }
+}
 
-  /** The player, always at the centre and always pointing up. */
-  private drawLocal(ctx: CanvasRenderingContext2D, half: number): void {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = ink.local;
-    ctx.beginPath();
-    ctx.moveTo(half, half - 9);
-    ctx.lineTo(half + 6, half + 7);
-    ctx.lineTo(half, half + 3);
-    ctx.lineTo(half - 6, half + 7);
-    ctx.closePath();
-    ctx.fill();
+/** Every solid part of every placed prop, in the wall colour. */
+function drawProps(ctx: CanvasRenderingContext2D, def: MapDef): void {
+  ctx.fillStyle = COLOR_WALL;
+  ctx.strokeStyle = COLOR_WALL_EDGE;
+  for (const placement of def.props) {
+    const shape = PROP_SHAPES[placement.shape];
+    for (const part of shape.parts) {
+      if (!part.solid) continue;
+      const c = Math.cos(placement.rotationY);
+      const s = Math.sin(placement.rotationY);
+      const wx = placement.position.x + part.offset.x * c + part.offset.z * s;
+      const wz = placement.position.z - part.offset.x * s + part.offset.z * c;
+      footprint(ctx, wx, wz, part.size.x, part.size.z, placement.rotationY);
+    }
   }
+}
+
+/** The colour a pip is drawn in: whose it is, or nobody's. */
+function objectiveInk(state: MinimapObjectiveState | undefined): string {
+  if (state === undefined || state.owner === 'NONE') return ink.neutral;
+  return state.owner === 'FRIENDLY' ? ink.friendly : ink.hostile;
+}
+
+/** A bomb site is a triangle and everything else is a circle. Traced, not painted. */
+function tracePip(ctx: CanvasRenderingContext2D, o: ObjectiveDef): void {
+  if (o.kind === 'bombsite') {
+    const r = 1.6;
+    ctx.moveTo(o.position.x, o.position.z - r);
+    ctx.lineTo(o.position.x + r, o.position.z + r);
+    ctx.lineTo(o.position.x - r, o.position.z + r);
+    ctx.closePath();
+    return;
+  }
+  ctx.arc(o.position.x, o.position.z, 1.5, 0, Math.PI * 2);
 }
 
 function classify(brush: Brush): 'skip' | 'wall' | 'deck' {
@@ -522,3 +568,15 @@ function classify(brush: Brush): 'skip' | 'wall' | 'deck' {
   if (bottom > 3.0) return 'deck';
   return 'wall';
 }
+//#endregion
+
+// =================================== MODULE INITIALISATION ==================================== \\
+//#region Module Initialisation
+palette.onChange((p) => {
+  ink.friendly = cssHex(p.friendly);
+  ink.local = cssHex(p.local);
+  ink.hostile = cssHex(p.hostile);
+  ink.sweep = cssRgba(p.hostile, 0.55);
+  ink.neutral = cssRgba(p.neutral, 0.85);
+});
+//#endregion

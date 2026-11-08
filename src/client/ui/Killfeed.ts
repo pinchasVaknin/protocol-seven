@@ -1,9 +1,3 @@
-import type { ScoreTeam } from '../../shared/combat/ScoreSystem';
-import { relationClass, relationTo, type ViewerContext } from '../../shared/ui/TeamColour';
-import type { GameEvents } from '../../shared/core/Events';
-import { streakWeaponTag } from '../../shared/streaks/StreakWeapons';
-import { HEADSHOT_PATH, HEADSHOT_VIEWBOX, ICON_VIEWBOX, iconFor, makeIconSvg } from './WeaponIcons';
-
 /**
  * The killfeed, drawn (brief S6.5).
  *
@@ -17,11 +11,17 @@ import { HEADSHOT_PATH, HEADSHOT_VIEWBOX, ICON_VIEWBOX, iconFor, makeIconSvg } f
  * why it does not appear in the HUD millisecond count next to it.
  */
 
-const ROWS = 5;
-/** Seconds a line stays fully readable, and how long it takes to go afterwards. */
-const HOLD_SECONDS = 4.6;
-const FADE_SECONDS = 0.8;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { ScoreTeam } from '../../shared/combat/ScoreSystem';
+import { relationClass, relationTo, type ViewerContext } from '../../shared/ui/TeamColour';
+import type { GameEvents } from '../../shared/core/Events';
+import { streakWeaponTag } from '../../shared/streaks/StreakWeapons';
+import { HEADSHOT_PATH, HEADSHOT_VIEWBOX, ICON_VIEWBOX, iconFor, makeIconSvg } from './WeaponIcons';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 type Entry = GameEvents['killfeed.entry'];
 
 interface Row {
@@ -40,8 +40,21 @@ interface Row {
   lastWeapon: string;
   lastHeadshot: boolean;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const ROWS = 5;
+/** Seconds a line stays fully readable, and how long it takes to go afterwards. */
+const HOLD_SECONDS = 4.6;
+const FADE_SECONDS = 0.8;
+//#endregion
+
+// ===================================== CLASS KillfeedView ===================================== \\
+//#region Class KillfeedView
 export class KillfeedView {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /**
    * Which seat is reading the feed. Defaulted rather than required, and set by `Hud` when the
    * match tells it — the feed is constructed before a seat is known, exactly like the summary
@@ -49,62 +62,27 @@ export class KillfeedView {
    */
   private viewer: ViewerContext = { team: 'A', freeForAll: false };
 
-  setViewer(viewer: ViewerContext): void {
-    this.viewer = viewer;
-  }
-
   readonly element: HTMLElement;
 
   private readonly rows: Row[] = [];
   /** Cached icon markup per weapon id, so a path is parsed once and not once per kill. */
   private readonly iconCache = new Map<string, SVGSVGElement>();
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor() {
     this.element = document.createElement('div');
     this.element.className = 'hud-feed';
 
-    for (let i = 0; i < ROWS; i++) {
-      const el = document.createElement('div');
-      el.className = 'hud-feed__row';
-      el.style.opacity = '0';
+    for (let i = 0; i < ROWS; i++) this.rows.push(this.createRow());
+  }
+  //#endregion
 
-      const killer = document.createElement('span');
-      killer.className = 'hud-feed__name';
-      /**
-       * The machine, next to the person (the human, 2026-09-24).
-       *
-       * A sentry kill is the owner's — it moves their counter and their team's score — and the
-       * feed said only their name, so the same line meant *they shot him* and *their turret
-       * shot him*. The tag is the difference, and it is read off the weapon the kill already
-       * carries rather than from anything new: a killstreak weapon's id is the tag.
-       */
-      const tag = document.createElement('span');
-      tag.className = 'hud-feed__tag';
-      const iconSlot = document.createElement('span');
-      iconSlot.className = 'hud-feed__icon';
-      const headshotSlot = document.createElement('span');
-      headshotSlot.className = 'hud-feed__hs';
-      const victim = document.createElement('span');
-      victim.className = 'hud-feed__name';
-
-      el.append(killer, tag, iconSlot, headshotSlot, victim);
-      this.element.appendChild(el);
-      this.rows.push({
-        el,
-        killer,
-        tag,
-        victim,
-        iconSlot,
-        headshotSlot,
-        life: 0,
-        active: false,
-        lastOpacity: -1,
-        lastKiller: '',
-        lastVictim: '',
-        lastWeapon: '',
-        lastHeadshot: false,
-      });
-    }
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  setViewer(viewer: ViewerContext): void {
+    this.viewer = viewer;
   }
 
   /**
@@ -147,10 +125,7 @@ export class KillfeedView {
     }
     if (entry.headshot !== head.lastHeadshot) {
       head.lastHeadshot = entry.headshot;
-      head.headshotSlot.replaceChildren();
-      if (entry.headshot) {
-        head.headshotSlot.appendChild(makeIconSvg(HEADSHOT_PATH, HEADSHOT_VIEWBOX, 'hud-feed__hs-svg'));
-      }
+      paintHeadshot(head, entry.headshot);
     }
 
     head.lastOpacity = -1;
@@ -183,8 +158,52 @@ export class KillfeedView {
       row.el.style.opacity = '0';
     }
   }
+  //#endregion
 
-  // -- internals -------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private createRow(): Row {
+    const el = document.createElement('div');
+    el.className = 'hud-feed__row';
+    el.style.opacity = '0';
+
+    const killer = document.createElement('span');
+    killer.className = 'hud-feed__name';
+    /**
+     * The machine, next to the person (the human, 2026-09-24).
+     *
+     * A sentry kill is the owner's — it moves their counter and their team's score — and the
+     * feed said only their name, so the same line meant *they shot him* and *their turret
+     * shot him*. The tag is the difference, and it is read off the weapon the kill already
+     * carries rather than from anything new: a killstreak weapon's id is the tag.
+     */
+    const tag = document.createElement('span');
+    tag.className = 'hud-feed__tag';
+    const iconSlot = document.createElement('span');
+    iconSlot.className = 'hud-feed__icon';
+    const headshotSlot = document.createElement('span');
+    headshotSlot.className = 'hud-feed__hs';
+    const victim = document.createElement('span');
+    victim.className = 'hud-feed__name';
+
+    el.append(killer, tag, iconSlot, headshotSlot, victim);
+    this.element.appendChild(el);
+    return {
+      el,
+      killer,
+      tag,
+      victim,
+      iconSlot,
+      headshotSlot,
+      life: 0,
+      active: false,
+      lastOpacity: -1,
+      lastKiller: '',
+      lastVictim: '',
+      lastWeapon: '',
+      lastHeadshot: false,
+    };
+  }
 
   private copyRow(from: Row, to: Row): void {
     to.active = from.active;
@@ -212,10 +231,7 @@ export class KillfeedView {
     }
     if (from.lastHeadshot !== to.lastHeadshot) {
       to.lastHeadshot = from.lastHeadshot;
-      to.headshotSlot.replaceChildren();
-      if (from.lastHeadshot) {
-        to.headshotSlot.appendChild(makeIconSvg(HEADSHOT_PATH, HEADSHOT_VIEWBOX, 'hud-feed__hs-svg'));
-      }
+      paintHeadshot(to, from.lastHeadshot);
     }
   }
 
@@ -238,6 +254,18 @@ export class KillfeedView {
     }
     row.iconSlot.appendChild(cached.cloneNode(true));
   }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** The headshot mark, or nothing. Both writers of a row make the same two calls. */
+function paintHeadshot(row: Row, headshot: boolean): void {
+  row.headshotSlot.replaceChildren();
+  if (headshot) {
+    row.headshotSlot.appendChild(makeIconSvg(HEADSHOT_PATH, HEADSHOT_VIEWBOX, 'hud-feed__hs-svg'));
+  }
 }
 
 /**
@@ -252,3 +280,4 @@ function teamClass(viewer: ViewerContext, team: ScoreTeam | 'NONE', involvesLoca
   const base = `hud-feed__name--${relationClass(relationTo(viewer, team))}`;
   return involvesLocal ? `${base} hud-feed__name--bright` : base;
 }
+//#endregion

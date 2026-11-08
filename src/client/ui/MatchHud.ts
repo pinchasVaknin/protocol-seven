@@ -1,19 +1,3 @@
-import type { CameraRig } from '../engine/CameraRig';
-import { makeScreenPoint, projectToScreen } from '../../shared/ui/ScreenProjection';
-import type { ViewerContext } from '../../shared/ui/TeamColour';
-import type { Combatant } from '../../shared/ai/Combatant';
-import type { ScoreSystem, ScoreTeam } from '../../shared/combat/ScoreSystem';
-import { EV, type GameBus } from '../../shared/core/Events';
-import type { ProceduralAudio } from '../engine/ProceduralAudio';
-import type { ColumnDef } from '../../shared/modes/GameMode';
-import type { MatchFlow } from '../../shared/modes/MatchFlow';
-import type { MapDef } from '../../shared/world/maps/types';
-import { briefVisible, captionHasCountdown, matchCaption } from '../../shared/ui/HudSurfaces';
-import { Hud, makeHudState, type HudState } from './Hud';
-import { Scoreboard } from './Scoreboard';
-import { HudStreaks, makeStreakHudState, type StreakHudState } from './HudStreaks';
-import { Disposable } from '../../shared/core/Disposable';
-
 /**
  * Everything the player looks at during a match, in one owner.
  *
@@ -32,6 +16,27 @@ import { Disposable } from '../../shared/core/Disposable';
  * game, the bug is upstream of this file by construction.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { CameraRig } from '../engine/CameraRig';
+import { makeScreenPoint, projectToScreen } from '../../shared/ui/ScreenProjection';
+import type { ViewerContext } from '../../shared/ui/TeamColour';
+import type { Combatant } from '../../shared/ai/Combatant';
+import type { ScoreSystem, ScoreTeam } from '../../shared/combat/ScoreSystem';
+import { EV, type GameBus } from '../../shared/core/Events';
+import type { ProceduralAudio } from '../engine/ProceduralAudio';
+import type { ColumnDef } from '../../shared/modes/GameMode';
+import type { MatchFlow } from '../../shared/modes/MatchFlow';
+import type { MapDef } from '../../shared/world/maps/types';
+import { briefVisible, captionHasCountdown, matchCaption } from '../../shared/ui/HudSurfaces';
+import { Hud, makeHudState, type HudState } from './Hud';
+import { Scoreboard } from './Scoreboard';
+import { HudStreaks, makeStreakHudState, type StreakHudState } from './HudStreaks';
+import { Disposable } from '../../shared/core/Disposable';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MatchHudDeps {
   readonly bus: GameBus;
   readonly uiHost: HTMLElement;
@@ -88,8 +93,22 @@ export interface MatchHudDeps {
    */
   readonly modeBrief: string;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const threatScratch = { active: false, x: 0, y: 0, z: 0 };
+/** Module-level and reused, like the threat's: the render pass allocates nothing (S4.7). */
+const objectiveScratch = { active: false, x: 0, z: 0 };
+/** Reused by both bearing projections. The render pass allocates nothing (S4.7). */
+const screenScratch = makeScreenPoint();
+//#endregion
+
+// ======================================= CLASS MatchHud ======================================= \\
+//#region Class MatchHud
 export class MatchHud extends Disposable {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly hud: Hud;
   readonly scoreboard: Scoreboard;
   /** M7: the streak strip and the objective banner. */
@@ -100,7 +119,11 @@ export class MatchHud extends Disposable {
 
   private readonly deps: MatchHudDeps;
   private scoreboardOpen = false;
+  private resultSurfacesVisible = true;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MatchHudDeps) {
     super();
     this.deps = deps;
@@ -130,7 +153,10 @@ export class MatchHud extends Disposable {
 
     this.subscribe();
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Wall time inside the last HUD update, ms. Reported in F1 (S7). */
   get lastUpdateMs(): number {
     return this.hud.lastUpdateMs;
@@ -164,8 +190,6 @@ export class MatchHud extends Disposable {
     this.streaks.element.hidden = !on;
   }
 
-  private resultSurfacesVisible = true;
-
   setScoreboardOpen(on: boolean): void {
     if (on === this.scoreboardOpen) return;
     this.scoreboardOpen = on;
@@ -182,68 +206,9 @@ export class MatchHud extends Disposable {
     state.playerZ = playerZ;
     state.playerYaw = playerYaw;
 
-    const banner = state.banner;
-    banner.secondsRemaining = flow.secondsRemaining;
-    banner.round = flow.round;
-    /**
-     * The caption over the crosshair, and it is the **one writer** of both fields (F12).
-     *
-     * The countdown is dropped in the arena rather than shown at zero: `phaseSecondsRemaining`
-     * counts the round-end hold down through `LIVE`, so a caption that took it would open on
-     * `WAITING · 5` and count toward nothing. See `captionHasCountdown`.
-     */
-    banner.phaseSeconds = captionHasCountdown(this.deps.warmupArena) ? flow.phaseSecondsRemaining : 0;
-    banner.phaseLabel = matchCaption(flow.currentPhase, this.deps.warmupArena, this.deps.ballotOpen());
-    /**
-     * The brief, under it, and this is its **one writer** too (F10).
-     *
-     * The predicate is `briefVisible` rather than "is the caption up": the caption is also up
-     * for `ROUND OVER`, for `MATCH OVER` and permanently in the arena, and none of those is a
-     * moment to tell somebody what the mode is for.
-     */
-    banner.phaseBrief = briefVisible(flow.currentPhase, flow.round, this.deps.warmupArena)
-      ? this.deps.modeBrief
-      : '';
-
-    // The flash and the threat are pushed into the HUD from the sim tick they happen on;
-    // fold them into the state here so `HudTactical` still sees one record per frame.
-    const tac = state.tactical;
-    tac.flash = this.hud.pendingFlash;
-    this.hud.readThreat(threatScratch);
-    tac.threatActive = threatScratch.active;
-    tac.threatX = threatScratch.x;
-    tac.threatY = threatScratch.y;
-    tac.threatZ = threatScratch.z;
-    this.hud.readObjectiveBearing(objectiveScratch);
-    tac.objectiveActive = objectiveScratch.active;
-    tac.objectiveX = objectiveScratch.x;
-    tac.objectiveZ = objectiveScratch.z;
-
-    /**
-     * The two arrows' angles, from the one projection (P9 follow-up).
-     *
-     * The camera's world matrix is refreshed first because the HUD runs *before* the renderer
-     * draws: `matrixWorldInverse` is maintained by `WebGLRenderer.render`, so reading it here
-     * without the refresh gives last frame's camera. One frame of lag on an arrow is invisible,
-     * but the whole reason this code exists is that a bearing nobody could measure was wrong for
-     * a milestone, and "close enough" is how that happened.
-     */
-    const camera = this.deps.cameraRig.camera;
-    camera.updateMatrixWorld();
-    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
-    const view = camera.matrixWorldInverse.elements;
-    const proj = camera.projectionMatrix.elements;
-    if (tac.threatActive) {
-      projectToScreen(view, proj, tac.threatX, tac.threatY, tac.threatZ, 1, 1, screenScratch);
-      tac.threatBearingRad = screenScratch.bearingRad;
-    }
-    if (tac.objectiveActive) {
-      // The bomb's own Y is not carried: an arrow around the crosshair is a compass, and a
-      // bomb three metres below you is still in the same direction. `projectToScreen` takes the
-      // player's own eye height so the view-space maths is the same one the renderer does.
-      projectToScreen(view, proj, tac.objectiveX, camera.position.y, tac.objectiveZ, 1, 1, screenScratch);
-      tac.objectiveBearingRad = screenScratch.bearingRad;
-    }
+    this.fillBanner(flow);
+    this.fillPushedFacts();
+    this.fillBearings();
 
     this.fillFriendlies();
     this.streaks.update(this.streakState);
@@ -263,41 +228,10 @@ export class MatchHud extends Disposable {
     this.scoreboard.dispose();
     this.hud.dispose();
   }
+  //#endregion
 
-  // -- internals -------------------------------------------------------------
-
-  /**
-   * Teammates on the minimap, from tick positions rather than interpolated ones.
-   *
-   * A marker moving 168 px across a 68 m disc at 60 Hz has no visible stutter, and asking
-   * the roster for an interpolated pose would mean every combatant carrying a render
-   * snapshot for the sake of a 3 px chevron.
-   */
-  private fillFriendlies(): void {
-    const markers = this.hud.minimap.friendlies;
-    let at = 0;
-    // No allies in Free-for-All. Every marker is left inactive rather than the loop being
-    // skipped, so the deactivation pass below still runs and a mid-match mode change — which
-    // only the harness can do — cannot leave a stale chevron on the disc.
-    for (const c of this.deps.freeForAll ? [] : this.deps.roster) {
-      if (at >= markers.length) break;
-      // The local player is drawn at the centre by the minimap itself.
-      if (c.entityId === 0) continue;
-      if (c.team !== this.deps.localTeam) continue;
-      const marker = markers[at];
-      if (marker === undefined) continue;
-      marker.x = c.px;
-      marker.z = c.pz;
-      marker.yaw = c.yaw;
-      marker.active = c.participating && c.health.alive;
-      at++;
-    }
-    for (let i = at; i < markers.length; i++) {
-      const marker = markers[i];
-      if (marker !== undefined) marker.active = false;
-    }
-  }
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private subscribe(): void {
     const { bus, audio } = this.deps;
 
@@ -361,11 +295,111 @@ export class MatchHud extends Disposable {
     }
     return undefined;
   }
+
+  /** The clock, the round, and the two lines over the crosshair. */
+  private fillBanner(flow: MatchFlow): void {
+    const banner = this.state.banner;
+    banner.secondsRemaining = flow.secondsRemaining;
+    banner.round = flow.round;
+    /**
+     * The caption over the crosshair, and it is the **one writer** of both fields (F12).
+     *
+     * The countdown is dropped in the arena rather than shown at zero: `phaseSecondsRemaining`
+     * counts the round-end hold down through `LIVE`, so a caption that took it would open on
+     * `WAITING · 5` and count toward nothing. See `captionHasCountdown`.
+     */
+    banner.phaseSeconds = captionHasCountdown(this.deps.warmupArena) ? flow.phaseSecondsRemaining : 0;
+    banner.phaseLabel = matchCaption(flow.currentPhase, this.deps.warmupArena, this.deps.ballotOpen());
+    /**
+     * The brief, under it, and this is its **one writer** too (F10).
+     *
+     * The predicate is `briefVisible` rather than "is the caption up": the caption is also up
+     * for `ROUND OVER`, for `MATCH OVER` and permanently in the arena, and none of those is a
+     * moment to tell somebody what the mode is for.
+     */
+    banner.phaseBrief = briefVisible(flow.currentPhase, flow.round, this.deps.warmupArena)
+      ? this.deps.modeBrief
+      : '';
+  }
+
+  /**
+   * The flash and the threat are pushed into the HUD from the sim tick they happen on; fold
+   * them into the state here so `HudTactical` still sees one record per frame.
+   */
+  private fillPushedFacts(): void {
+    const tac = this.state.tactical;
+    tac.flash = this.hud.pendingFlash;
+    this.hud.readThreat(threatScratch);
+    tac.threatActive = threatScratch.active;
+    tac.threatX = threatScratch.x;
+    tac.threatY = threatScratch.y;
+    tac.threatZ = threatScratch.z;
+    this.hud.readObjectiveBearing(objectiveScratch);
+    tac.objectiveActive = objectiveScratch.active;
+    tac.objectiveX = objectiveScratch.x;
+    tac.objectiveZ = objectiveScratch.z;
+  }
+
+  /**
+   * The two arrows' angles, from the one projection (P9 follow-up).
+   *
+   * The camera's world matrix is refreshed first because the HUD runs *before* the renderer
+   * draws: `matrixWorldInverse` is maintained by `WebGLRenderer.render`, so reading it here
+   * without the refresh gives last frame's camera. One frame of lag on an arrow is invisible,
+   * but the whole reason this code exists is that a bearing nobody could measure was wrong for
+   * a milestone, and "close enough" is how that happened.
+   */
+  private fillBearings(): void {
+    const tac = this.state.tactical;
+    const camera = this.deps.cameraRig.camera;
+    camera.updateMatrixWorld();
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+    const view = camera.matrixWorldInverse.elements;
+    const proj = camera.projectionMatrix.elements;
+    if (tac.threatActive) {
+      projectToScreen(view, proj, tac.threatX, tac.threatY, tac.threatZ, 1, 1, screenScratch);
+      tac.threatBearingRad = screenScratch.bearingRad;
+    }
+    if (tac.objectiveActive) {
+      // The bomb's own Y is not carried: an arrow around the crosshair is a compass, and a
+      // bomb three metres below you is still in the same direction. `projectToScreen` takes the
+      // player's own eye height so the view-space maths is the same one the renderer does.
+      projectToScreen(view, proj, tac.objectiveX, camera.position.y, tac.objectiveZ, 1, 1, screenScratch);
+      tac.objectiveBearingRad = screenScratch.bearingRad;
+    }
+  }
+
+  /**
+   * Teammates on the minimap, from tick positions rather than interpolated ones.
+   *
+   * A marker moving 168 px across a 68 m disc at 60 Hz has no visible stutter, and asking
+   * the roster for an interpolated pose would mean every combatant carrying a render
+   * snapshot for the sake of a 3 px chevron.
+   */
+  private fillFriendlies(): void {
+    const markers = this.hud.minimap.friendlies;
+    let at = 0;
+    // No allies in Free-for-All. Every marker is left inactive rather than the loop being
+    // skipped, so the deactivation pass below still runs and a mid-match mode change — which
+    // only the harness can do — cannot leave a stale chevron on the disc.
+    for (const c of this.deps.freeForAll ? [] : this.deps.roster) {
+      if (at >= markers.length) break;
+      // The local player is drawn at the centre by the minimap itself.
+      if (c.entityId === 0) continue;
+      if (c.team !== this.deps.localTeam) continue;
+      const marker = markers[at];
+      if (marker === undefined) continue;
+      marker.x = c.px;
+      marker.z = c.pz;
+      marker.yaw = c.yaw;
+      marker.active = c.participating && c.health.alive;
+      at++;
+    }
+    for (let i = at; i < markers.length; i++) {
+      const marker = markers[i];
+      if (marker !== undefined) marker.active = false;
+    }
+  }
+  //#endregion
 }
-
-const threatScratch = { active: false, x: 0, y: 0, z: 0 };
-/** Module-level and reused, like the threat's: the render pass allocates nothing (S4.7). */
-const objectiveScratch = { active: false, x: 0, z: 0 };
-/** Reused by both bearing projections. The render pass allocates nothing (S4.7). */
-const screenScratch = makeScreenPoint();
-
+//#endregion

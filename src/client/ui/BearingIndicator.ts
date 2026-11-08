@@ -1,3 +1,5 @@
+// =================================== CLASS BearingIndicator =================================== \\
+//#region Class BearingIndicator
 /**
  * A chevron on a ring around the crosshair, pointing at something in the world.
  *
@@ -21,11 +23,16 @@
  * anybody can see. A bomb that is not moving writes nothing at all after the first frame.
  */
 export class BearingIndicator {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly element: HTMLElement;
 
   private shown = false;
   private lastAngleDeg = 9999;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   /** `modifier` is appended to the base class, so a caller can style its own arrow. */
   constructor(modifier: string) {
     this.element = document.createElement('div');
@@ -33,7 +40,10 @@ export class BearingIndicator {
     this.element.appendChild(document.createElement('i'));
     this.element.style.opacity = '0';
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Point along `bearingRad`, or go away.
    *
@@ -70,4 +80,6 @@ export class BearingIndicator {
     this.lastAngleDeg = 9999;
     this.element.style.opacity = '0';
   }
+  //#endregion
 }
+//#endregion

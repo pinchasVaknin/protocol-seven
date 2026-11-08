@@ -1,6 +1,3 @@
-import { clamp01 } from '../../shared/core/MathUtil';
-import { BearingIndicator } from './BearingIndicator';
-
 /**
  * The M5 half of the HUD: equipment, the grenade indicator, the flash white-out, and the
  * scope (brief S6.1, S6.3).
@@ -11,26 +8,14 @@ import { BearingIndicator } from './BearingIndicator';
  * are `transform` and `opacity` only, and text is written only when the string changed.
  */
 
-/**
- * ADS fraction at which the scope tube starts closing in around the picture.
- *
- * The transition is deliberately non-linear: the weapon is visibly up before the vignette
- * arrives, so scoping reads as raising a rifle rather than as a screen effect.
- */
-const SCOPE_OVERLAY_START = 0.55;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { clamp01 } from '../../shared/core/MathUtil';
+import { BearingIndicator } from './BearingIndicator';
+//#endregion
 
-/**
- * ADS fraction past which the *weapon* stops being drawn (M7).
- *
- * A scoped weapon's tube is a solid cylinder standing exactly on the sight line, 0.17 m from
- * the eye — measured, not assumed. Below this fraction the player is looking *at* a rifle and
- * should see it; above it they are looking *through* an optic, and the honest picture is the
- * one the overlay draws. Without the hand-off the scope's clear centre is filled by the
- * weapon's own objective bell, which is the same defect the M6 playtest reported on the SMG's
- * red dot. Set above `SCOPE_OVERLAY_START` so the tube is already closing before the gun goes.
- */
-export const SCOPE_VIEWMODEL_HIDDEN = 0.8;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface TacticalState {
   /** Active weapon name and which slot it came from, for the weapon plate. */
   weaponName: string;
@@ -88,35 +73,55 @@ export interface TacticalState {
   fieldUpgradeCharge: number;
 }
 
-export function makeTacticalState(): TacticalState {
-  return {
-    weaponName: '',
-    slotIndex: 0,
-    otherName: '',
-    lethalId: 'frag',
-    lethalCount: 0,
-    tacticalId: 'flashbang',
-    tacticalCount: 0,
-    cookRemaining: 0,
-    cookTotal: 1,
-    flash: 0,
-    threatActive: false,
-    threatX: 0,
-    threatY: 0,
-    threatZ: 0,
-    threatBearingRad: 0,
-    objectiveActive: false,
-    objectiveX: 0,
-    objectiveZ: 0,
-    objectiveBearingRad: 0,
-    scopeFraction: 0,
-    breath: 1,
-    breathHeld: false,
-    hasScope: false,
-    fieldUpgradeName: '',
-    fieldUpgradeCharge: 0,
-  };
+/** The weapon plate: the active name over the other slot's. */
+interface WeaponPlate {
+  readonly root: HTMLElement;
+  readonly primary: HTMLElement;
+  readonly secondary: HTMLElement;
 }
+
+/** One equipment slot — a label and a count. The lethal and the tactical are the same thing. */
+interface GearSlot {
+  readonly root: HTMLElement;
+  readonly label: HTMLElement;
+  readonly count: HTMLElement;
+}
+
+/** The field upgrade's slot, whose charge is drawn behind its label rather than beside it. */
+interface UpgradeSlot {
+  readonly root: HTMLElement;
+  readonly fill: HTMLElement;
+  readonly label: HTMLElement;
+}
+
+/** A bar and the `i` that fills it. The cook timer and the breath meter are the same shape. */
+interface BarPair {
+  readonly bar: HTMLElement;
+  readonly fill: HTMLElement;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * ADS fraction at which the scope tube starts closing in around the picture.
+ *
+ * The transition is deliberately non-linear: the weapon is visibly up before the vignette
+ * arrives, so scoping reads as raising a rifle rather than as a screen effect.
+ */
+const SCOPE_OVERLAY_START = 0.55;
+
+/**
+ * ADS fraction past which the *weapon* stops being drawn (M7).
+ *
+ * A scoped weapon's tube is a solid cylinder standing exactly on the sight line, 0.17 m from
+ * the eye — measured, not assumed. Below this fraction the player is looking *at* a rifle and
+ * should see it; above it they are looking *through* an optic, and the honest picture is the
+ * one the overlay draws. Without the hand-off the scope's clear centre is filled by the
+ * weapon's own objective bell, which is the same defect the M6 playtest reported on the SMG's
+ * red dot. Set above `SCOPE_OVERLAY_START` so the tube is already closing before the gun goes.
+ */
+export const SCOPE_VIEWMODEL_HIDDEN = 0.8;
 
 /** Short labels. The HUD has no room for "FLASHBANG" next to a count. */
 const EQUIPMENT_LABELS: Readonly<Record<string, string>> = {
@@ -126,8 +131,13 @@ const EQUIPMENT_LABELS: Readonly<Record<string, string>> = {
   smoke: 'SMOKE',
   claymore: 'CLAY',
 };
+//#endregion
 
+// ===================================== CLASS HudTactical ====================================== \\
+//#region Class HudTactical
 export class HudTactical {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly element: HTMLElement;
   readonly flashElement: HTMLElement;
   readonly scopeElement: HTMLElement;
@@ -165,79 +175,52 @@ export class HudTactical {
   private lastScope = -1;
   private cookShown = false;
   private breathShown = false;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor() {
     this.element = document.createElement('div');
     this.element.className = 'hud-tac';
 
-    const weapons = document.createElement('div');
-    weapons.className = 'hud-tac__weapons';
-    this.weaponPrimary = document.createElement('span');
-    this.weaponPrimary.className = 'hud-tac__weapon op-label';
-    this.weaponSecondary = document.createElement('span');
-    this.weaponSecondary.className = 'hud-tac__weapon hud-tac__weapon--alt op-label';
-    weapons.append(this.weaponPrimary, this.weaponSecondary);
+    const weapons = this.createWeaponPlate();
+    this.weaponPrimary = weapons.primary;
+    this.weaponSecondary = weapons.secondary;
 
     const gear = document.createElement('div');
     gear.className = 'hud-tac__gear';
-    const lethal = document.createElement('div');
-    lethal.className = 'hud-tac__slot';
-    this.lethalLabel = document.createElement('span');
-    this.lethalLabel.className = 'hud-tac__slot-label op-label';
-    this.lethalCount = document.createElement('span');
-    this.lethalCount.className = 'hud-tac__slot-count op-num';
-    lethal.append(this.lethalLabel, this.lethalCount);
+    const lethal = this.createGearSlot();
+    this.lethalLabel = lethal.label;
+    this.lethalCount = lethal.count;
+    const tactical = this.createGearSlot();
+    this.tacticalLabel = tactical.label;
+    this.tacticalCount = tactical.count;
+    const upgrade = this.createUpgradeSlot();
+    this.upgradeSlot = upgrade.root;
+    this.upgradeFill = upgrade.fill;
+    this.upgradeLabel = upgrade.label;
+    gear.append(lethal.root, tactical.root, this.upgradeSlot);
 
-    const tactical = document.createElement('div');
-    tactical.className = 'hud-tac__slot';
-    this.tacticalLabel = document.createElement('span');
-    this.tacticalLabel.className = 'hud-tac__slot-label op-label';
-    this.tacticalCount = document.createElement('span');
-    this.tacticalCount.className = 'hud-tac__slot-count op-num';
-    tactical.append(this.tacticalLabel, this.tacticalCount);
-
-    // The field upgrade is a slot like the other two, with its charge drawn as a fill
-    // behind the label rather than as a separate bar — it is the same kind of thing as a
-    // grenade count and belongs in the same row (M6, S6.3).
-    this.upgradeSlot = document.createElement('div');
-    this.upgradeSlot.className = 'hud-tac__slot hud-tac__slot--upgrade';
-    this.upgradeFill = document.createElement('i');
-    this.upgradeFill.className = 'hud-tac__charge';
-    this.upgradeLabel = document.createElement('span');
-    this.upgradeLabel.className = 'hud-tac__slot-label op-label';
-    this.upgradeSlot.append(this.upgradeFill, this.upgradeLabel);
-
-    gear.append(lethal, tactical, this.upgradeSlot);
-
-    this.element.append(weapons, gear);
+    this.element.append(weapons.root, gear);
 
     // The cook bar sits under the crosshair rather than with the gear: it is a timer you
     // are watching while aiming, and a player looking at the corner of the screen with a
     // live grenade in their hand has already lost.
-    this.cookBar = document.createElement('div');
-    this.cookBar.className = 'hud-cook';
-    this.cookFill = document.createElement('i');
-    this.cookBar.appendChild(this.cookFill);
+    const cook = this.createBar('hud-cook');
+    this.cookBar = cook.bar;
+    this.cookFill = cook.fill;
 
-    this.breathBar = document.createElement('div');
-    this.breathBar.className = 'hud-breath';
-    this.breathFill = document.createElement('i');
-    this.breathBar.appendChild(this.breathFill);
+    const breath = this.createBar('hud-breath');
+    this.breathBar = breath.bar;
+    this.breathFill = breath.fill;
 
-
-
-    this.flashElement = document.createElement('div');
-    this.flashElement.className = 'hud-flash';
-    this.flashElement.style.opacity = '0';
-
-    this.scopeElement = document.createElement('div');
-    this.scopeElement.className = 'hud-scope';
-    this.scopeElement.style.opacity = '0';
-    const reticle = document.createElement('i');
-    reticle.className = 'hud-scope__reticle';
-    this.scopeElement.appendChild(reticle);
+    this.flashElement = this.createFlashLayer();
+    this.scopeElement = this.createScopeLayer();
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Every element this owns, in the order `Hud` should append them. */
   get layers(): readonly HTMLElement[] {
     return [
@@ -265,19 +248,15 @@ export class HudTactical {
       this.weaponSecondary.textContent = state.otherName;
     }
 
-    const lethalText = `${label(state.lethalId)} ${state.lethalCount}`;
+    const lethalText = `${equipmentLabel(state.lethalId)} ${state.lethalCount}`;
     if (lethalText !== this.lastLethal) {
       this.lastLethal = lethalText;
-      this.lethalLabel.textContent = label(state.lethalId);
-      this.lethalCount.textContent = state.lethalCount.toString();
-      this.lethalCount.classList.toggle('is-empty', state.lethalCount <= 0);
+      this.writeGearSlot(this.lethalLabel, this.lethalCount, state.lethalId, state.lethalCount);
     }
-    const tacticalText = `${label(state.tacticalId)} ${state.tacticalCount}`;
+    const tacticalText = `${equipmentLabel(state.tacticalId)} ${state.tacticalCount}`;
     if (tacticalText !== this.lastTactical) {
       this.lastTactical = tacticalText;
-      this.tacticalLabel.textContent = label(state.tacticalId);
-      this.tacticalCount.textContent = state.tacticalCount.toString();
-      this.tacticalCount.classList.toggle('is-empty', state.tacticalCount <= 0);
+      this.writeGearSlot(this.tacticalLabel, this.tacticalCount, state.tacticalId, state.tacticalCount);
     }
 
     if (state.fieldUpgradeName !== this.lastUpgrade) {
@@ -313,8 +292,79 @@ export class HudTactical {
     this.cookShown = false;
     this.breathShown = false;
   }
+  //#endregion
 
-  // -- internals -------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private createWeaponPlate(): WeaponPlate {
+    const root = document.createElement('div');
+    root.className = 'hud-tac__weapons';
+    const primary = document.createElement('span');
+    primary.className = 'hud-tac__weapon op-label';
+    const secondary = document.createElement('span');
+    secondary.className = 'hud-tac__weapon hud-tac__weapon--alt op-label';
+    root.append(primary, secondary);
+    return { root, primary, secondary };
+  }
+
+  private createGearSlot(): GearSlot {
+    const root = document.createElement('div');
+    root.className = 'hud-tac__slot';
+    const label = document.createElement('span');
+    label.className = 'hud-tac__slot-label op-label';
+    const count = document.createElement('span');
+    count.className = 'hud-tac__slot-count op-num';
+    root.append(label, count);
+    return { root, label, count };
+  }
+
+  /**
+   * The field upgrade is a slot like the other two, with its charge drawn as a fill
+   * behind the label rather than as a separate bar — it is the same kind of thing as a
+   * grenade count and belongs in the same row (M6, S6.3).
+   */
+  private createUpgradeSlot(): UpgradeSlot {
+    const root = document.createElement('div');
+    root.className = 'hud-tac__slot hud-tac__slot--upgrade';
+    const fill = document.createElement('i');
+    fill.className = 'hud-tac__charge';
+    const label = document.createElement('span');
+    label.className = 'hud-tac__slot-label op-label';
+    root.append(fill, label);
+    return { root, fill, label };
+  }
+
+  private createBar(className: string): BarPair {
+    const bar = document.createElement('div');
+    bar.className = className;
+    const fill = document.createElement('i');
+    bar.appendChild(fill);
+    return { bar, fill };
+  }
+
+  private createFlashLayer(): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'hud-flash';
+    el.style.opacity = '0';
+    return el;
+  }
+
+  private createScopeLayer(): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'hud-scope';
+    el.style.opacity = '0';
+    const reticle = document.createElement('i');
+    reticle.className = 'hud-scope__reticle';
+    el.appendChild(reticle);
+    return el;
+  }
+
+  /** The three writes a slot makes. Both slots make them; only the guard above differs. */
+  private writeGearSlot(label: HTMLElement, count: HTMLElement, id: string, amount: number): void {
+    label.textContent = equipmentLabel(id);
+    count.textContent = amount.toString();
+    count.classList.toggle('is-empty', amount <= 0);
+  }
 
   private updateCook(state: TacticalState): void {
     const cooking = state.cookRemaining > 0;
@@ -356,8 +406,46 @@ export class HudTactical {
     const opacity = value < SCOPE_OVERLAY_START ? 0 : (value - SCOPE_OVERLAY_START) / (1 - SCOPE_OVERLAY_START);
     this.scopeElement.style.opacity = opacity.toFixed(3);
   }
+  //#endregion
 }
+//#endregion
 
-function label(id: string): string {
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeTacticalState(): TacticalState {
+  return {
+    weaponName: '',
+    slotIndex: 0,
+    otherName: '',
+    lethalId: 'frag',
+    lethalCount: 0,
+    tacticalId: 'flashbang',
+    tacticalCount: 0,
+    cookRemaining: 0,
+    cookTotal: 1,
+    flash: 0,
+    threatActive: false,
+    threatX: 0,
+    threatY: 0,
+    threatZ: 0,
+    threatBearingRad: 0,
+    objectiveActive: false,
+    objectiveX: 0,
+    objectiveZ: 0,
+    objectiveBearingRad: 0,
+    scopeFraction: 0,
+    breath: 1,
+    breathHeld: false,
+    hasScope: false,
+    fieldUpgradeName: '',
+    fieldUpgradeCharge: 0,
+  };
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function equipmentLabel(id: string): string {
   return EQUIPMENT_LABELS[id] ?? id.toUpperCase();
 }
+//#endregion

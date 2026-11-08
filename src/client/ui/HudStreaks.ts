@@ -27,8 +27,13 @@
  * a reflow inside the frame budget is the thing this whole HUD is written to avoid.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { STREAK_COOLDOWN_SECONDS } from '../../shared/streaks/StreakDefs';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 interface StreakSlotState {
   /** Empty string for an unused slot. */
   name: string;
@@ -91,28 +96,29 @@ export interface StreakHudState {
   aliveEnemy: number;
 }
 
-export function makeStreakHudState(): StreakHudState {
-  return {
-    slots: [
-      { name: '', key: '3', ready: false, price: 0, lockoutSeconds: 0 },
-      { name: '', key: '4', ready: false, price: 0, lockoutSeconds: 0 },
-      { name: '', key: '5', ready: false, price: 0, lockoutSeconds: 0 },
-    ],
-    balance: 0,
-    nextName: '',
-    nextPrice: 0,
-    objectiveLabel: '',
-    objectiveSeconds: -1,
-    interactFraction: -1,
-    interactLabel: '',
-    urgent: false,
-    showAlive: false,
-    aliveFriendly: 0,
-    aliveEnemy: 0,
-  };
+/** The objective banner: a headline, a timer beside it, and the interaction ring under both. */
+interface ObjectiveBanner {
+  readonly root: HTMLElement;
+  readonly label: HTMLElement;
+  readonly timer: HTMLElement;
+  readonly ringWrap: HTMLElement;
+  readonly ringFill: HTMLElement;
+  readonly ringLabel: HTMLElement;
 }
 
+/** The alive line: how many are still standing on each side. */
+interface AliveStrip {
+  readonly root: HTMLElement;
+  readonly friendly: HTMLElement;
+  readonly enemy: HTMLElement;
+}
+//#endregion
+
+// ====================================== CLASS HudStreaks ====================================== \\
+//#region Class HudStreaks
 export class HudStreaks {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly element: HTMLElement;
   readonly bannerElement: HTMLElement;
   readonly aliveElement: HTMLElement;
@@ -142,80 +148,130 @@ export class HudStreaks {
   private lastAlive = '';
   private lastAliveShown = false;
 
+  private readonly aliveFriendlyEl: HTMLElement;
+  private readonly aliveEnemyEl: HTMLElement;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(host: HTMLElement) {
     this.element = document.createElement('div');
     this.element.className = 'hud-streaks';
 
-    const slots = document.createElement('div');
-    slots.className = 'hud-streaks__slots';
-    for (let i = 0; i < 3; i++) {
-      const slot = document.createElement('div');
-      slot.className = 'hud-streaks__slot';
-      const key = document.createElement('b');
-      key.className = 'hud-streaks__key';
-      key.textContent = String(3 + i);
-      const name = document.createElement('span');
-      name.className = 'hud-streaks__name';
-      // The price, always and only. `USED` used to share this element; the lockout that
-      // replaced it is drawn rather than written, so the cost has one job again.
-      const cost = document.createElement('i');
-      cost.className = 'hud-streaks__cost';
-      // The lockout, as a fill that drains. Scaled on a transform from the bottom, so the frame
-      // that draws it never touches layout.
-      const cool = document.createElement('u');
-      cool.className = 'hud-streaks__cool';
-      cool.style.transform = 'scaleY(0)';
-      slot.append(cool, key, name, cost);
-      slots.appendChild(slot);
-      this.slotEls.push(slot);
-      this.slotNameEls.push(name);
-      this.slotCostEls.push(cost);
-      this.slotCoolEls.push(cool);
-    }
-    this.element.appendChild(slots);
+    this.element.appendChild(this.createSlotStrip());
 
     this.progressEl = document.createElement('div');
     this.progressEl.className = 'hud-streaks__progress';
     this.element.appendChild(this.progressEl);
     host.appendChild(this.element);
 
-    // ---- the objective banner, centred above the crosshair ----
-    this.bannerElement = document.createElement('div');
-    this.bannerElement.className = 'hud-objective';
-    this.bannerElement.style.opacity = '0';
+    const banner = this.createObjectiveBanner();
+    this.bannerElement = banner.root;
+    this.bannerLabel = banner.label;
+    this.bannerTimer = banner.timer;
+    this.ringWrap = banner.ringWrap;
+    this.ringFill = banner.ringFill;
+    this.ringLabel = banner.ringLabel;
+    host.appendChild(this.bannerElement);
+
+    const alive = this.createAliveStrip();
+    this.aliveElement = alive.root;
+    this.aliveFriendlyEl = alive.friendly;
+    this.aliveEnemyEl = alive.enemy;
+    host.appendChild(this.aliveElement);
+  }
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
+  update(state: StreakHudState): void {
+    this.updateAliveStrip(state);
+    this.updateSlots(state);
+    this.updateProgress(state);
+    this.updateBanner(state);
+  }
+
+  dispose(): void {
+    this.element.remove();
+    this.bannerElement.remove();
+    this.aliveElement.remove();
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private createSlotStrip(): HTMLElement {
+    const slots = document.createElement('div');
+    slots.className = 'hud-streaks__slots';
+    for (let i = 0; i < 3; i++) slots.appendChild(this.createStreakSlot(i));
+    return slots;
+  }
+
+  private createStreakSlot(index: number): HTMLElement {
+    const slot = document.createElement('div');
+    slot.className = 'hud-streaks__slot';
+    const key = document.createElement('b');
+    key.className = 'hud-streaks__key';
+    key.textContent = String(3 + index);
+    const name = document.createElement('span');
+    name.className = 'hud-streaks__name';
+    // The price, always and only. `USED` used to share this element; the lockout that
+    // replaced it is drawn rather than written, so the cost has one job again.
+    const cost = document.createElement('i');
+    cost.className = 'hud-streaks__cost';
+    // The lockout, as a fill that drains. Scaled on a transform from the bottom, so the frame
+    // that draws it never touches layout.
+    const cool = document.createElement('u');
+    cool.className = 'hud-streaks__cool';
+    cool.style.transform = 'scaleY(0)';
+    slot.append(cool, key, name, cost);
+    this.slotEls.push(slot);
+    this.slotNameEls.push(name);
+    this.slotCostEls.push(cost);
+    this.slotCoolEls.push(cool);
+    return slot;
+  }
+
+  /** The objective banner, centred above the crosshair. */
+  private createObjectiveBanner(): ObjectiveBanner {
+    const root = document.createElement('div');
+    root.className = 'hud-objective';
+    root.style.opacity = '0';
 
     const head = document.createElement('div');
     head.className = 'hud-objective__head';
-    this.bannerLabel = document.createElement('span');
-    this.bannerLabel.className = 'hud-objective__label';
-    this.bannerTimer = document.createElement('b');
-    this.bannerTimer.className = 'hud-objective__timer';
-    head.append(this.bannerLabel, this.bannerTimer);
-    this.bannerElement.appendChild(head);
+    const label = document.createElement('span');
+    label.className = 'hud-objective__label';
+    const timer = document.createElement('b');
+    timer.className = 'hud-objective__timer';
+    head.append(label, timer);
+    root.appendChild(head);
 
-    this.ringWrap = document.createElement('div');
-    this.ringWrap.className = 'hud-objective__ring';
-    this.ringWrap.style.opacity = '0';
-    this.ringFill = document.createElement('i');
-    this.ringFill.className = 'hud-objective__ring-fill';
-    this.ringLabel = document.createElement('span');
-    this.ringLabel.className = 'hud-objective__ring-label';
-    this.ringWrap.append(this.ringFill, this.ringLabel);
-    this.bannerElement.appendChild(this.ringWrap);
+    const ringWrap = document.createElement('div');
+    ringWrap.className = 'hud-objective__ring';
+    ringWrap.style.opacity = '0';
+    const ringFill = document.createElement('i');
+    ringFill.className = 'hud-objective__ring-fill';
+    const ringLabel = document.createElement('span');
+    ringLabel.className = 'hud-objective__ring-label';
+    ringWrap.append(ringFill, ringLabel);
+    root.appendChild(ringWrap);
 
-    host.appendChild(this.bannerElement);
+    return { root, label, timer, ringWrap, ringFill, ringLabel };
+  }
 
-    /**
-     * The alive strip: how many are still standing on each side.
-     *
-     * The single most important number in a one-life mode — a 3-v-1 and a 1-v-3 are completely
-     * different rounds and nothing else on screen tells you which one you are in. Sits directly
-     * under the score banner, centred, and is hidden entirely in modes where everybody
-     * respawns and the count would be meaningless.
-     */
-    this.aliveElement = document.createElement('div');
-    this.aliveElement.className = 'hud-alive';
-    this.aliveElement.style.opacity = '0';
+  /**
+   * The alive strip: how many are still standing on each side.
+   *
+   * The single most important number in a one-life mode — a 3-v-1 and a 1-v-3 are completely
+   * different rounds and nothing else on screen tells you which one you are in. Sits directly
+   * under the score banner, centred, and is hidden entirely in modes where everybody
+   * respawns and the count would be meaningless.
+   */
+  private createAliveStrip(): AliveStrip {
+    const root = document.createElement('div');
+    root.className = 'hud-alive';
+    root.style.opacity = '0';
     const friendly = document.createElement('b');
     friendly.className = 'hud-alive__count hud-alive__count--friendly';
     const sep = document.createElement('span');
@@ -223,16 +279,11 @@ export class HudStreaks {
     sep.textContent = 'ALIVE';
     const enemy = document.createElement('b');
     enemy.className = 'hud-alive__count hud-alive__count--enemy';
-    this.aliveElement.append(friendly, sep, enemy);
-    this.aliveFriendlyEl = friendly;
-    this.aliveEnemyEl = enemy;
-    host.appendChild(this.aliveElement);
+    root.append(friendly, sep, enemy);
+    return { root, friendly, enemy };
   }
 
-  private readonly aliveFriendlyEl: HTMLElement;
-  private readonly aliveEnemyEl: HTMLElement;
-
-  update(state: StreakHudState): void {
+  private updateAliveStrip(state: StreakHudState): void {
     if (state.showAlive !== this.lastAliveShown) {
       this.lastAliveShown = state.showAlive;
       this.aliveElement.style.opacity = state.showAlive ? '1' : '0';
@@ -245,47 +296,59 @@ export class HudStreaks {
         this.aliveEnemyEl.textContent = String(state.aliveEnemy);
       }
     }
+  }
 
-    for (let i = 0; i < this.slotEls.length; i++) {
-      const entry = state.slots[i];
-      const name = entry?.name ?? '';
-      const ready = entry?.ready === true;
-      const lockout = entry?.lockoutSeconds ?? 0;
-      const cooling = name.length > 0 && lockout > 0;
-      const cost = name.length === 0 ? '' : String(entry?.price ?? 0);
-      // The cache key carries every fact the slot *writes*, so a slot that becomes affordable —
-      // or stops being — without changing its name still repaints. One stamp rather than three
-      // guards, because three guards would need three caches. The lockout is deliberately not in
-      // it: it is drawn on a transform, and a transform is not a write worth guarding.
-      const stamp = `${ready ? '+' : '-'}${cost}|${name}`;
-      if (stamp !== this.lastSlotNames[i]) {
-        this.lastSlotNames[i] = stamp;
-        const el = this.slotNameEls[i];
-        const costEl = this.slotCostEls[i];
-        const slot = this.slotEls[i];
-        if (el !== undefined) el.textContent = name;
-        if (costEl !== undefined) costEl.textContent = cost;
-        if (slot !== undefined) {
-          slot.classList.toggle('is-ready', ready);
-          slot.classList.toggle('is-owned', name.length > 0);
-        }
-      }
-      if (cooling !== this.lastSlotCooling[i]) {
-        this.lastSlotCooling[i] = cooling;
-        this.slotEls[i]?.classList.toggle('is-cooling', cooling);
-      }
-      const coolEl = this.slotCoolEls[i];
-      if (coolEl !== undefined) {
-        // Clamped at 1 rather than scaled against the whole lockout, so a streak still in the
-        // sky and one whose cooldown has just started read the same: full, then draining over
-        // the last STREAK_COOLDOWN_SECONDS. The alternative — a fraction of a total that is 120 s
-        // for a sentry and 30 s for a mortar — makes the same wait look different on two keys,
-        // for a reason the player has no way to see.
-        const fill = cooling ? Math.min(1, lockout / STREAK_COOLDOWN_SECONDS) : 0;
-        coolEl.style.transform = `scaleY(${fill.toFixed(3)})`;
-      }
+  private updateSlots(state: StreakHudState): void {
+    for (let i = 0; i < this.slotEls.length; i++) this.updateSlot(i, state.slots[i]);
+  }
+
+  private updateSlot(index: number, entry: StreakSlotState | undefined): void {
+    const name = entry?.name ?? '';
+    const ready = entry?.ready === true;
+    const lockout = entry?.lockoutSeconds ?? 0;
+    const cooling = name.length > 0 && lockout > 0;
+    const cost = name.length === 0 ? '' : String(entry?.price ?? 0);
+    // The cache key carries every fact the slot *writes*, so a slot that becomes affordable —
+    // or stops being — without changing its name still repaints. One stamp rather than three
+    // guards, because three guards would need three caches. The lockout is deliberately not in
+    // it: it is drawn on a transform, and a transform is not a write worth guarding.
+    const stamp = `${ready ? '+' : '-'}${cost}|${name}`;
+    if (stamp !== this.lastSlotNames[index]) {
+      this.lastSlotNames[index] = stamp;
+      this.writeSlot(index, name, cost, ready);
     }
+    if (cooling !== this.lastSlotCooling[index]) {
+      this.lastSlotCooling[index] = cooling;
+      this.slotEls[index]?.classList.toggle('is-cooling', cooling);
+    }
+    this.writeLockout(index, cooling, lockout);
+  }
 
+  private writeSlot(index: number, name: string, cost: string, ready: boolean): void {
+    const el = this.slotNameEls[index];
+    const costEl = this.slotCostEls[index];
+    const slot = this.slotEls[index];
+    if (el !== undefined) el.textContent = name;
+    if (costEl !== undefined) costEl.textContent = cost;
+    if (slot !== undefined) {
+      slot.classList.toggle('is-ready', ready);
+      slot.classList.toggle('is-owned', name.length > 0);
+    }
+  }
+
+  private writeLockout(index: number, cooling: boolean, lockout: number): void {
+    const coolEl = this.slotCoolEls[index];
+    if (coolEl === undefined) return;
+    // Clamped at 1 rather than scaled against the whole lockout, so a streak still in the
+    // sky and one whose cooldown has just started read the same: full, then draining over
+    // the last STREAK_COOLDOWN_SECONDS. The alternative — a fraction of a total that is 120 s
+    // for a sentry and 30 s for a mortar — makes the same wait look different on two keys,
+    // for a reason the player has no way to see.
+    const fill = cooling ? Math.min(1, lockout / STREAK_COOLDOWN_SECONDS) : 0;
+    coolEl.style.transform = `scaleY(${fill.toFixed(3)})`;
+  }
+
+  private updateProgress(state: StreakHudState): void {
     const progress =
       state.nextName.length === 0
         ? ''
@@ -295,8 +358,6 @@ export class HudStreaks {
       this.progressEl.textContent = progress;
       this.progressEl.style.opacity = progress.length > 0 ? '1' : '0';
     }
-
-    this.updateBanner(state);
   }
 
   private updateBanner(state: StreakHudState): void {
@@ -323,6 +384,10 @@ export class HudStreaks {
       this.bannerElement.classList.toggle('is-urgent', state.urgent);
     }
 
+    this.updateInteractRing(state);
+  }
+
+  private updateInteractRing(state: StreakHudState): void {
     const ringShown = state.interactFraction >= 0;
     if (ringShown !== this.lastRingShown) {
       this.lastRingShown = ringShown;
@@ -336,10 +401,30 @@ export class HudStreaks {
       this.ringLabel.textContent = state.interactLabel;
     }
   }
-
-  dispose(): void {
-    this.element.remove();
-    this.bannerElement.remove();
-    this.aliveElement.remove();
-  }
+  //#endregion
 }
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeStreakHudState(): StreakHudState {
+  return {
+    slots: [
+      { name: '', key: '3', ready: false, price: 0, lockoutSeconds: 0 },
+      { name: '', key: '4', ready: false, price: 0, lockoutSeconds: 0 },
+      { name: '', key: '5', ready: false, price: 0, lockoutSeconds: 0 },
+    ],
+    balance: 0,
+    nextName: '',
+    nextPrice: 0,
+    objectiveLabel: '',
+    objectiveSeconds: -1,
+    interactFraction: -1,
+    interactLabel: '',
+    urgent: false,
+    showAlive: false,
+    aliveFriendly: 0,
+    aliveEnemy: 0,
+  };
+}
+//#endregion

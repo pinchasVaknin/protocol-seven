@@ -1,21 +1,3 @@
-import type { HitZone } from '../../shared/combat/HitboxRig';
-import type { GameEvents } from '../../shared/core/Events';
-import { clamp01, RAD2DEG } from '../../shared/core/MathUtil';
-import type { HeaderSlot } from '../../shared/modes/GameMode';
-import {
-  relationClass,
-  relationTo,
-  type RelationClass,
-  type ViewerContext,
-} from '../../shared/ui/TeamColour';
-import { CROSSHAIR_LINE_LENGTH, crosshairGapPx, crosshairOpacity } from '../../shared/ui/Crosshair';
-import type { MapDef } from '../../shared/world/maps/types';
-import { HudBanner, makeBannerState, type BannerState } from './HudBanner';
-import { HudTactical, makeTacticalState, type TacticalState } from './HudTactical';
-import { KillfeedView } from './Killfeed';
-import { Minimap } from './Minimap';
-import { viewport } from './Viewport';
-
 /**
  * The in-match HUD (brief S6.4).
  *
@@ -35,27 +17,29 @@ import { viewport } from './Viewport';
  * class making the marker visible.
  */
 
-const DAMAGE_NUMBER_POOL = 14;
-const HITMARKER_SECONDS = 0.26;
-const KILLMARKER_SECONDS = 0.4;
-const DAMAGE_NUMBER_SECONDS = 0.8;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { HitZone } from '../../shared/combat/HitboxRig';
+import type { GameEvents } from '../../shared/core/Events';
+import { clamp01, RAD2DEG } from '../../shared/core/MathUtil';
+import type { HeaderSlot } from '../../shared/modes/GameMode';
+import {
+  relationClass,
+  relationTo,
+  type RelationClass,
+  type ViewerContext,
+} from '../../shared/ui/TeamColour';
+import { CROSSHAIR_LINE_LENGTH, crosshairGapPx, crosshairOpacity } from '../../shared/ui/Crosshair';
+import type { MapDef } from '../../shared/world/maps/types';
+import { HudBanner, makeBannerState, type BannerState } from './HudBanner';
+import { HudTactical, makeTacticalState, type TacticalState } from './HudTactical';
+import { KillfeedView } from './Killfeed';
+import { Minimap } from './Minimap';
+import { viewport } from './Viewport';
+//#endregion
 
-/** Directional hit indicators alive at once. Four is enough to read a crossfire. */
-const HIT_DIRECTION_POOL = 4;
-const HIT_DIRECTION_SECONDS = 1.1;
-/** How long the full-screen hurt flash lasts. */
-const HURT_FLASH_SECONDS = 0.42;
-
-
-/**
- * Health at which the low-health state begins (brief S6.4).
- *
- * Below this the rim goes red and stays red, the world goes behind a low-pass and a heartbeat
- * starts. It is deliberately a hard threshold rather than a ramp from full health: the whole
- * value of the state is that crossing it is a *fact* the player can act on.
- */
-export const LOW_HEALTH_THRESHOLD = 35;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
  * What the death screen tells the player about the fight they just lost (round 5, F9).
  *
@@ -141,55 +125,6 @@ export interface HudState {
   tactical: TacticalState;
 }
 
-/**
- * One line of death report, or `''` for nothing to say (playtest round 5, F9).
- *
- * A pure function so the sentence is testable without a DOM, which is what `MatchXpAudit` and
- * `CapabilityAudit` established as the shape for this kind of rule — and because "what does the
- * panel say when the killer was a mortar" is a question with an answer, not a rendering
- * accident.
- *
- * Every field is dropped when it has nothing to contribute rather than printed as a zero: a
- * killstreak has no health to report, a fall has no killer, and `HEALTH 0 LEFT` about a sentry
- * gun would be worse than silence. The order is fixed so the eye lands in the same place every
- * time — this is read in a second and a half, three or four times a minute.
- */
-function describeDeath(report: DeathReport | null): string {
-  if (report === null || report.killerName === '') return '';
-  const parts: string[] = [report.killerName.toUpperCase()];
-  if (report.weaponName !== '') parts.push(report.weaponName.toUpperCase());
-  if (report.distanceM >= 0) parts.push(`${Math.round(report.distanceM)}M`);
-  if (report.headshot) parts.push('HEADSHOT');
-  // The one that changes behaviour, and it goes last because it is the one worth pausing on.
-  if (report.killerHealth > 0) parts.push(`${Math.round(report.killerHealth)} HP LEFT`);
-  return parts.join(' · ');
-}
-
-export function makeHudState(): HudState {
-  return {
-    mag: 0,
-    reserve: 0,
-    magSize: 30,
-    reserveInfinite: false,
-    spreadDeg: 0,
-    adsFraction: 0,
-    fovDeg: 90,
-    reloading: false,
-    reloadFraction: 0,
-    health: 100,
-    healthMax: 100,
-    dead: false,
-    respawnSeconds: 0,
-    awaitingRound: false,
-    deathReport: null,
-    playerX: 0,
-    playerZ: 0,
-    playerYaw: 0,
-    banner: makeBannerState(),
-    tactical: makeTacticalState(),
-  };
-}
-
 interface DamageNumber {
   el: HTMLElement;
   life: number;
@@ -212,7 +147,55 @@ export interface HudDeps {
   readonly maxFriendlies: number;
 }
 
+/** The ammo counter: the magazine, the separator and the reserve. */
+interface AmmoBox {
+  readonly box: HTMLElement;
+  readonly mag: HTMLElement;
+  readonly reserve: HTMLElement;
+}
+
+/** The health bar and the `i` that scales inside it. */
+interface HealthBar {
+  readonly bar: HTMLElement;
+  readonly fill: HTMLElement;
+}
+
+/** The death screen: the label is written once, the other two every death. */
+interface DeadOverlay {
+  readonly overlay: HTMLElement;
+  readonly count: HTMLElement;
+  readonly detail: HTMLElement;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const DAMAGE_NUMBER_POOL = 14;
+const HITMARKER_SECONDS = 0.26;
+const KILLMARKER_SECONDS = 0.4;
+const DAMAGE_NUMBER_SECONDS = 0.8;
+
+/** Directional hit indicators alive at once. Four is enough to read a crossfire. */
+const HIT_DIRECTION_POOL = 4;
+const HIT_DIRECTION_SECONDS = 1.1;
+/** How long the full-screen hurt flash lasts. */
+const HURT_FLASH_SECONDS = 0.42;
+
+/**
+ * Health at which the low-health state begins (brief S6.4).
+ *
+ * Below this the rim goes red and stays red, the world goes behind a low-pass and a heartbeat
+ * starts. It is deliberately a hard threshold rather than a ramp from full health: the whole
+ * value of the state is that crossing it is a *fact* the player can act on.
+ */
+export const LOW_HEALTH_THRESHOLD = 35;
+//#endregion
+
+// ========================================= CLASS Hud ========================================== \\
+//#region Class Hud
 export class Hud {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   /** Hit-to-visual latency for the last hitmarker, ms. Reported in the debug overlay. */
   lastHitLatencyMs = -1;
   /** Damage numbers are off by default (S6.5). */
@@ -292,6 +275,11 @@ export class Hud {
   private threatY = 0;
   private threatZ = 0;
 
+  private introShown = false;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: HudDeps) {
     this.minimap = new Minimap(deps.mapDef, deps.maxFriendlies);
 
@@ -299,99 +287,45 @@ export class Hud {
     this.root.className = 'hud';
     this.root.hidden = true;
 
-    this.crosshair = document.createElement('div');
-    this.crosshair.className = 'hud-cross';
-    for (const side of ['t', 'b', 'l', 'r'] as const) {
-      const line = document.createElement('i');
-      line.className = `hud-cross__line hud-cross__line--${side}`;
-      this.crosshair.appendChild(line);
-      this.lines.push(line);
-    }
-    const dot = document.createElement('i');
-    dot.className = 'hud-cross__dot';
-    this.crosshair.appendChild(dot);
+    this.crosshair = this.createCrosshair();
     this.root.appendChild(this.crosshair);
 
-    this.hitmarker = document.createElement('div');
-    this.hitmarker.className = 'hud-hit';
-    for (let i = 0; i < 4; i++) this.hitmarker.appendChild(document.createElement('i'));
+    this.hitmarker = this.createHitmarker();
     this.root.appendChild(this.hitmarker);
 
-    this.ammoBox = document.createElement('div');
-    this.ammoBox.className = 'hud-ammo';
-    this.ammoMag = document.createElement('span');
-    this.ammoMag.className = 'hud-ammo__mag op-num';
-    const sep = document.createElement('span');
-    sep.className = 'hud-ammo__sep';
-    sep.textContent = '/';
-    this.ammoReserve = document.createElement('span');
-    this.ammoReserve.className = 'hud-ammo__reserve op-num';
-    this.ammoBox.append(this.ammoMag, sep, this.ammoReserve);
+    const ammo = this.createAmmoBox();
+    this.ammoBox = ammo.box;
+    this.ammoMag = ammo.mag;
+    this.ammoReserve = ammo.reserve;
     this.root.appendChild(this.ammoBox);
 
-    this.reloadBar = document.createElement('div');
-    this.reloadBar.className = 'hud-reload';
-    this.reloadBar.appendChild(document.createElement('i'));
+    this.reloadBar = this.createReloadBar();
     this.root.appendChild(this.reloadBar);
 
-    const numberLayer = document.createElement('div');
-    numberLayer.className = 'hud-numbers';
-    for (let i = 0; i < DAMAGE_NUMBER_POOL; i++) {
-      const el = document.createElement('span');
-      el.className = 'hud-number op-num';
-      el.style.opacity = '0';
-      numberLayer.appendChild(el);
-      this.numbers.push({ el, life: 0, x: 0, y: 0, active: false });
-    }
-    this.root.appendChild(numberLayer);
+    this.root.appendChild(this.createNumberLayer());
 
     // ---- M3: taking damage ------------------------------------------------
     //
     // Two rims, deliberately. The hurt flash is a *moment* — it spikes on a hit and decays
     // — and the low-health rim is a *state* that stays until you heal. One element doing
     // both would either flash weakly or hold at full brightness, and neither reads.
-    this.lowVignette = document.createElement('div');
-    this.lowVignette.className = 'hud-low';
+    this.lowVignette = this.createVignette('hud-low');
     this.root.appendChild(this.lowVignette);
 
-    this.hurtVignette = document.createElement('div');
-    this.hurtVignette.className = 'hud-hurt';
+    this.hurtVignette = this.createVignette('hud-hurt');
     this.root.appendChild(this.hurtVignette);
 
-    const directionLayer = document.createElement('div');
-    directionLayer.className = 'hud-dirs';
-    for (let i = 0; i < HIT_DIRECTION_POOL; i++) {
-      const el = document.createElement('div');
-      el.className = 'hud-dir';
-      el.style.opacity = '0';
-      el.appendChild(document.createElement('i'));
-      directionLayer.appendChild(el);
-      this.directions.push({ el, life: 0, active: false });
-    }
-    this.root.appendChild(directionLayer);
+    this.root.appendChild(this.createDirectionLayer());
 
-    this.healthBar = document.createElement('div');
-    this.healthBar.className = 'hud-health';
-    this.healthFill = document.createElement('i');
-    this.healthBar.appendChild(this.healthFill);
+    const health = this.createHealthBar();
+    this.healthBar = health.bar;
+    this.healthFill = health.fill;
     this.root.appendChild(this.healthBar);
 
-    this.deadOverlay = document.createElement('div');
-    this.deadOverlay.className = 'hud-dead';
-    const deadLabel = document.createElement('span');
-    deadLabel.className = 'hud-dead__label op-label';
-    deadLabel.textContent = 'You were killed';
-    this.deadCount = document.createElement('span');
-    this.deadCount.className = 'hud-dead__count op-num';
-    /**
-     * F9's detail line, under the countdown.
-     *
-     * One element rewritten on change rather than four, because the four facts are one sentence
-     * and are only ever set together — a death report arrives whole or not at all.
-     */
-    this.deadDetail = document.createElement('span');
-    this.deadDetail.className = 'hud-dead__detail op-label';
-    this.deadOverlay.append(deadLabel, this.deadCount, this.deadDetail);
+    const dead = this.createDeadOverlay();
+    this.deadOverlay = dead.overlay;
+    this.deadCount = dead.count;
+    this.deadDetail = dead.detail;
     this.root.appendChild(this.deadOverlay);
 
     /**
@@ -406,9 +340,7 @@ export class Hud {
      * element because the UA stylesheet says so at the lowest specificity there is, so any
      * author-level `display` outranks it. `.hud-phase` beside it already uses the class.
      */
-    this.cheatTag = document.createElement('div');
-    this.cheatTag.className = 'hud-cheat';
-    this.cheatTag.appendChild(document.createElement('span'));
+    this.cheatTag = this.createTag('hud-cheat');
     this.root.appendChild(this.cheatTag);
 
     /**
@@ -423,21 +355,10 @@ export class Hud {
      * it uses one: `[hidden] { display: none }` sits at the lowest specificity there is, and any
      * author-level `display` here would silently outrank it.
      */
-    this.aimWarning = document.createElement('div');
-    this.aimWarning.className = 'hud-aim';
-    this.aimWarning.appendChild(document.createElement('span'));
+    this.aimWarning = this.createTag('hud-aim');
     this.root.appendChild(this.aimWarning);
 
-    /**
-     * The mode header strip (playtest round 5, F8).
-     *
-     * Empty at construction and grown to whatever the mode hands over — the HUD knows the name
-     * of no mode, which is the whole point of `GameMode.headerSlots`. Under the score banner,
-     * so the two answers to "how is this going" are in one place rather than one on screen and
-     * one on the minimap.
-     */
-    this.headerStrip = document.createElement('div');
-    this.headerStrip.className = 'hud-header';
+    this.headerStrip = this.createHeaderStrip();
     this.root.appendChild(this.headerStrip);
 
     // ---- M4 ---------------------------------------------------------------
@@ -454,7 +375,10 @@ export class Hud {
 
     deps.host.appendChild(this.root);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   setVisible(on: boolean): void {
     this.root.hidden = !on;
     if (!on) this.clearMarkers();
@@ -472,8 +396,6 @@ export class Hud {
     this.introShown = on;
     this.root.classList.toggle('hud--intro', on);
   }
-
-  private introShown = false;
 
   /**
    * The cheat tag's text, or `''` to take it down (playtest round 4, F14).
@@ -556,22 +478,6 @@ export class Hud {
       // taken off you fills in the *attacker's* colour, which is the warning.
       cell.fill.className = `hud-header__fill hud-header__fill--${cap(slot)}`;
       cell.fill.style.transform = `scaleX(${Math.max(0, Math.min(1, slot.progress)).toFixed(3)})`;
-    }
-  }
-
-  private rebuildHeader(count: number): void {
-    this.headerStrip.replaceChildren();
-    this.headerCells.length = 0;
-    for (let i = 0; i < count; i++) {
-      const root = document.createElement('div');
-      root.className = 'hud-header__cell';
-      const label = document.createElement('span');
-      label.className = 'hud-header__label';
-      const fill = document.createElement('i');
-      fill.className = 'hud-header__fill';
-      root.append(label, fill);
-      this.headerStrip.appendChild(root);
-      this.headerCells.push({ root, fill });
     }
   }
 
@@ -745,8 +651,151 @@ export class Hud {
     this.minimap.dispose();
     this.root.remove();
   }
+  //#endregion
 
-  // -- internals -------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  private createCrosshair(): HTMLElement {
+    const crosshair = document.createElement('div');
+    crosshair.className = 'hud-cross';
+    for (const side of ['t', 'b', 'l', 'r'] as const) {
+      const line = document.createElement('i');
+      line.className = `hud-cross__line hud-cross__line--${side}`;
+      crosshair.appendChild(line);
+      this.lines.push(line);
+    }
+    const dot = document.createElement('i');
+    dot.className = 'hud-cross__dot';
+    crosshair.appendChild(dot);
+    return crosshair;
+  }
+
+  private createHitmarker(): HTMLElement {
+    const hitmarker = document.createElement('div');
+    hitmarker.className = 'hud-hit';
+    for (let i = 0; i < 4; i++) hitmarker.appendChild(document.createElement('i'));
+    return hitmarker;
+  }
+
+  private createAmmoBox(): AmmoBox {
+    const box = document.createElement('div');
+    box.className = 'hud-ammo';
+    const mag = document.createElement('span');
+    mag.className = 'hud-ammo__mag op-num';
+    const sep = document.createElement('span');
+    sep.className = 'hud-ammo__sep';
+    sep.textContent = '/';
+    const reserve = document.createElement('span');
+    reserve.className = 'hud-ammo__reserve op-num';
+    box.append(mag, sep, reserve);
+    return { box, mag, reserve };
+  }
+
+  private createReloadBar(): HTMLElement {
+    const bar = document.createElement('div');
+    bar.className = 'hud-reload';
+    bar.appendChild(document.createElement('i'));
+    return bar;
+  }
+
+  private createNumberLayer(): HTMLElement {
+    const numberLayer = document.createElement('div');
+    numberLayer.className = 'hud-numbers';
+    for (let i = 0; i < DAMAGE_NUMBER_POOL; i++) {
+      const el = document.createElement('span');
+      el.className = 'hud-number op-num';
+      el.style.opacity = '0';
+      numberLayer.appendChild(el);
+      this.numbers.push({ el, life: 0, x: 0, y: 0, active: false });
+    }
+    return numberLayer;
+  }
+
+  private createVignette(className: string): HTMLElement {
+    const el = document.createElement('div');
+    el.className = className;
+    return el;
+  }
+
+  private createDirectionLayer(): HTMLElement {
+    const directionLayer = document.createElement('div');
+    directionLayer.className = 'hud-dirs';
+    for (let i = 0; i < HIT_DIRECTION_POOL; i++) {
+      const el = document.createElement('div');
+      el.className = 'hud-dir';
+      el.style.opacity = '0';
+      el.appendChild(document.createElement('i'));
+      directionLayer.appendChild(el);
+      this.directions.push({ el, life: 0, active: false });
+    }
+    return directionLayer;
+  }
+
+  private createHealthBar(): HealthBar {
+    const bar = document.createElement('div');
+    bar.className = 'hud-health';
+    const fill = document.createElement('i');
+    bar.appendChild(fill);
+    return { bar, fill };
+  }
+
+  private createDeadOverlay(): DeadOverlay {
+    const overlay = document.createElement('div');
+    overlay.className = 'hud-dead';
+    const deadLabel = document.createElement('span');
+    deadLabel.className = 'hud-dead__label op-label';
+    deadLabel.textContent = 'You were killed';
+    const count = document.createElement('span');
+    count.className = 'hud-dead__count op-num';
+    /**
+     * F9's detail line, under the countdown.
+     *
+     * One element rewritten on change rather than four, because the four facts are one sentence
+     * and are only ever set together — a death report arrives whole or not at all.
+     */
+    const detail = document.createElement('span');
+    detail.className = 'hud-dead__detail op-label';
+    overlay.append(deadLabel, count, detail);
+    return { overlay, count, detail };
+  }
+
+  /** A one-line warning whose element is a `div` holding a `span`, hidden until a `--on` class. */
+  private createTag(className: string): HTMLElement {
+    const tag = document.createElement('div');
+    tag.className = className;
+    tag.appendChild(document.createElement('span'));
+    return tag;
+  }
+
+  /**
+   * The mode header strip (playtest round 5, F8).
+   *
+   * Empty at construction and grown to whatever the mode hands over — the HUD knows the name
+   * of no mode, which is the whole point of `GameMode.headerSlots`. Under the score banner,
+   * so the two answers to "how is this going" are in one place rather than one on screen and
+   * one on the minimap.
+   */
+  private createHeaderStrip(): HTMLElement {
+    const strip = document.createElement('div');
+    strip.className = 'hud-header';
+    return strip;
+  }
+
+  private rebuildHeader(count: number): void {
+    this.headerStrip.replaceChildren();
+    this.headerCells.length = 0;
+    for (let i = 0; i < count; i++) {
+      const root = document.createElement('div');
+      root.className = 'hud-header__cell';
+      const label = document.createElement('span');
+      label.className = 'hud-header__label';
+      const fill = document.createElement('i');
+      fill.className = 'hud-header__fill';
+      root.append(label, fill);
+      this.headerStrip.appendChild(root);
+      this.headerCells.push({ root, fill });
+    }
+  }
 
   private updateCrosshair(state: HudState): void {
     // The projection, the floor and the ADS fade all live in `shared/ui/Crosshair` now, so
@@ -978,4 +1027,61 @@ export class Hud {
     this.hurtTimer = 0;
     this.hurtPeak = 0;
   }
+  //#endregion
 }
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeHudState(): HudState {
+  return {
+    mag: 0,
+    reserve: 0,
+    magSize: 30,
+    reserveInfinite: false,
+    spreadDeg: 0,
+    adsFraction: 0,
+    fovDeg: 90,
+    reloading: false,
+    reloadFraction: 0,
+    health: 100,
+    healthMax: 100,
+    dead: false,
+    respawnSeconds: 0,
+    awaitingRound: false,
+    deathReport: null,
+    playerX: 0,
+    playerZ: 0,
+    playerYaw: 0,
+    banner: makeBannerState(),
+    tactical: makeTacticalState(),
+  };
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * One line of death report, or `''` for nothing to say (playtest round 5, F9).
+ *
+ * A pure function so the sentence is testable without a DOM, which is what `MatchXpAudit` and
+ * `CapabilityAudit` established as the shape for this kind of rule — and because "what does the
+ * panel say when the killer was a mortar" is a question with an answer, not a rendering
+ * accident.
+ *
+ * Every field is dropped when it has nothing to contribute rather than printed as a zero: a
+ * killstreak has no health to report, a fall has no killer, and `HEALTH 0 LEFT` about a sentry
+ * gun would be worse than silence. The order is fixed so the eye lands in the same place every
+ * time — this is read in a second and a half, three or four times a minute.
+ */
+function describeDeath(report: DeathReport | null): string {
+  if (report === null || report.killerName === '') return '';
+  const parts: string[] = [report.killerName.toUpperCase()];
+  if (report.weaponName !== '') parts.push(report.weaponName.toUpperCase());
+  if (report.distanceM >= 0) parts.push(`${Math.round(report.distanceM)}M`);
+  if (report.headshot) parts.push('HEADSHOT');
+  // The one that changes behaviour, and it goes last because it is the one worth pausing on.
+  if (report.killerHealth > 0) parts.push(`${Math.round(report.killerHealth)} HP LEFT`);
+  return parts.join(' · ');
+}
+//#endregion

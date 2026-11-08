@@ -1,10 +1,3 @@
-import {
-  relationClass,
-  relationTo,
-  relationToSelf,
-  type ViewerContext,
-} from '../../shared/ui/TeamColour';
-
 /**
  * The score banner and the round timer (brief S6.4).
  *
@@ -18,6 +11,18 @@ import {
  * all — which is the point of the DOM-cost note in S7.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import {
+  relationClass,
+  relationTo,
+  relationToSelf,
+  type ViewerContext,
+} from '../../shared/ui/TeamColour';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface BannerState {
   scoreA: number;
   scoreB: number;
@@ -53,25 +58,33 @@ export interface BannerState {
   selfScore: number;
 }
 
-export function makeBannerState(): BannerState {
-  return {
-    scoreA: 0,
-    scoreB: 0,
-    limit: 0,
-    secondsRemaining: 0,
-    round: 1,
-    roundsToWin: 1,
-    phaseSeconds: 0,
-    phaseLabel: '',
-    phaseBrief: '',
-    ffa: false,
-    leaderName: '',
-    leaderScore: 0,
-    selfScore: 0,
-  };
+/** One side of the banner: the caption, the score and the bar that fills under it. */
+interface TeamSlot {
+  readonly root: HTMLElement;
+  readonly score: HTMLElement;
+  readonly bar: HTMLElement;
+  readonly label: HTMLElement;
 }
 
+/** The clock and the round line between the two slots. */
+interface BannerCentre {
+  readonly root: HTMLElement;
+  readonly clock: HTMLElement;
+  readonly rounds: HTMLElement;
+}
+
+/** The warm-up / round-over caption and the mode brief under it. */
+interface PhaseBlock {
+  readonly phase: HTMLElement;
+  readonly brief: HTMLElement;
+}
+//#endregion
+
+// ====================================== CLASS HudBanner ======================================= \\
+//#region Class HudBanner
 export class HudBanner {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly element: HTMLElement;
 
   /** The two slot containers, so their colour can follow the seat. */
@@ -103,75 +116,41 @@ export class HudBanner {
   private readonly labelB: HTMLElement;
   private lastFfa = false;
   private lastLeadLabel = '';
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor() {
     this.element = document.createElement('div');
     this.element.className = 'hud-banner';
 
-    const teamA = document.createElement('div');
-    // Both slots are painted by `setViewer`, not here (round 4, B12). Baked in at
-    // construction, the left slot was friendly green in every seat — so a team-B player read
-    // their own score in the enemy's colour for the whole match.
-    teamA.className = 'hud-banner__team';
-    this.scoreA = document.createElement('span');
-    this.scoreA.className = 'hud-banner__score op-num';
-    const trackA = document.createElement('div');
-    trackA.className = 'hud-banner__track';
-    this.barA = document.createElement('i');
-    trackA.appendChild(this.barA);
-    // The same two slots, relabelled, rather than a second banner: the layout, the bars, the
-    // change-guards and the tabular numerals are all still exactly what is wanted.
-    this.labelA = document.createElement('span');
-    this.labelA.className = 'hud-banner__who op-label';
-    this.labelA.hidden = true;
-    teamA.append(this.labelA, this.scoreA, trackA);
+    const teamA = this.createTeamSlot();
+    this.scoreA = teamA.score;
+    this.barA = teamA.bar;
+    this.labelA = teamA.label;
 
-    const centre = document.createElement('div');
-    centre.className = 'hud-banner__centre';
-    this.clock = document.createElement('span');
-    this.clock.className = 'hud-banner__clock op-num';
-    this.rounds = document.createElement('span');
-    this.rounds.className = 'hud-banner__rounds op-label';
-    centre.append(this.clock, this.rounds);
+    const centre = this.createCentre();
+    this.clock = centre.clock;
+    this.rounds = centre.rounds;
 
-    const teamB = document.createElement('div');
-    teamB.className = 'hud-banner__team';
-    this.scoreB = document.createElement('span');
-    this.scoreB.className = 'hud-banner__score op-num';
-    const trackB = document.createElement('div');
-    trackB.className = 'hud-banner__track';
-    this.barB = document.createElement('i');
-    trackB.appendChild(this.barB);
-    this.labelB = document.createElement('span');
-    this.labelB.className = 'hud-banner__who op-label';
-    this.labelB.hidden = true;
-    teamB.append(this.labelB, this.scoreB, trackB);
+    const teamB = this.createTeamSlot();
+    this.scoreB = teamB.score;
+    this.barB = teamB.bar;
+    this.labelB = teamB.label;
 
-    this.element.append(teamA, centre, teamB);
-    this.slotLeft = teamA;
-    this.slotRight = teamB;
+    this.element.append(teamA.root, centre.root, teamB.root);
+    this.slotLeft = teamA.root;
+    this.slotRight = teamB.root;
     this.applyViewer();
 
-    // The warm-up / round-over line, centred over the crosshair rather than in the banner:
-    // it is a state change, and a state change belongs where the player is already looking.
-    this.phase = document.createElement('div');
-    this.phase.className = 'hud-phase';
-    this.phase.appendChild(document.createElement('span'));
-    /**
-     * The brief's own line (F10), a second child of the same block.
-     *
-     * `hidden` with a matching `.hud-phase__brief[hidden]` rule in `hud.css`. The attribute
-     * hides an element only because the UA stylesheet says so at the lowest specificity there
-     * is, and this element carries an author-level `display` — which is B13 exactly, and it
-     * cost two rounds. The rule is not defensive; without it the brief would stay painted for
-     * the rest of the match.
-     */
-    this.brief = document.createElement('small');
-    this.brief.className = 'hud-phase__brief';
-    this.brief.hidden = true;
-    this.phase.appendChild(this.brief);
+    const block = this.createPhaseBlock();
+    this.phase = block.phase;
+    this.brief = block.brief;
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** The phase caption is a separate layer; the HUD mounts it over the centre of the screen. */
   get phaseElement(): HTMLElement {
     return this.phase;
@@ -193,6 +172,109 @@ export class HudBanner {
     this.lastFillB = -1;
   }
 
+  update(state: BannerState): void {
+    /**
+     * In Free-for-All the two sides are **leader** and **you**, not team A and team B.
+     *
+     * The left slot is whoever is winning and the right is this client, so "am I close" is the
+     * same glance it is in a team mode.
+     *
+     * In a team mode the left slot is the viewer's **own** side rather than team A's (round 4,
+     * B12). `scoreA` and `scoreB` are still absolute on the wire, which is right — they are the
+     * match's scores, not this client's view of them — and this is the one place that turns
+     * them into a left and a right.
+     */
+    const ownScore = this.viewer.team === 'A' ? state.scoreA : state.scoreB;
+    const otherScore = this.viewer.team === 'A' ? state.scoreB : state.scoreA;
+    const left = state.ffa ? state.leaderScore : ownScore;
+    const right = state.ffa ? state.selfScore : otherScore;
+
+    this.updateFfaCaptions(state);
+    this.updateScores(left, right);
+    this.updateBars(left, right, state.limit);
+    this.updateClock(state);
+    this.updateRounds(state);
+    this.updatePhase(state);
+  }
+
+  reset(): void {
+    this.lastA = -1;
+    this.lastB = -1;
+    this.lastFillA = -1;
+    this.lastFillB = -1;
+    this.lastClock = '';
+    this.lastRounds = '';
+    this.lastPhase = '';
+    this.lastBrief = '';
+    this.phaseShown = false;
+    this.phase.classList.remove('hud-phase--on');
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * One side of the banner, uncoloured.
+   *
+   * Both slots are painted by `setViewer`, not here (round 4, B12). Baked in at construction,
+   * the left slot was friendly green in every seat — so a team-B player read their own score in
+   * the enemy's colour for the whole match.
+   *
+   * The caption above the score is the FFA relabelling: the same two slots, relabelled, rather
+   * than a second banner, because the layout, the bars, the change-guards and the tabular
+   * numerals are all still exactly what is wanted.
+   */
+  private createTeamSlot(): TeamSlot {
+    const root = document.createElement('div');
+    root.className = 'hud-banner__team';
+    const score = document.createElement('span');
+    score.className = 'hud-banner__score op-num';
+    const track = document.createElement('div');
+    track.className = 'hud-banner__track';
+    const bar = document.createElement('i');
+    track.appendChild(bar);
+    const label = document.createElement('span');
+    label.className = 'hud-banner__who op-label';
+    label.hidden = true;
+    root.append(label, score, track);
+    return { root, score, bar, label };
+  }
+
+  private createCentre(): BannerCentre {
+    const root = document.createElement('div');
+    root.className = 'hud-banner__centre';
+    const clock = document.createElement('span');
+    clock.className = 'hud-banner__clock op-num';
+    const rounds = document.createElement('span');
+    rounds.className = 'hud-banner__rounds op-label';
+    root.append(clock, rounds);
+    return { root, clock, rounds };
+  }
+
+  /**
+   * The warm-up / round-over line, centred over the crosshair rather than in the banner:
+   * it is a state change, and a state change belongs where the player is already looking.
+   */
+  private createPhaseBlock(): PhaseBlock {
+    const phase = document.createElement('div');
+    phase.className = 'hud-phase';
+    phase.appendChild(document.createElement('span'));
+    /**
+     * The brief's own line (F10), a second child of the same block.
+     *
+     * `hidden` with a matching `.hud-phase__brief[hidden]` rule in `hud.css`. The attribute
+     * hides an element only because the UA stylesheet says so at the lowest specificity there
+     * is, and this element carries an author-level `display` — which is B13 exactly, and it
+     * cost two rounds. The rule is not defensive; without it the brief would stay painted for
+     * the rest of the match.
+     */
+    const brief = document.createElement('small');
+    brief.className = 'hud-phase__brief';
+    brief.hidden = true;
+    phase.appendChild(brief);
+    return { phase, brief };
+  }
+
   /**
    * The one writer of the two slots' colour.
    *
@@ -212,23 +294,7 @@ export class HudBanner {
     this.slotRight.className = `hud-banner__team hud-banner__team--${relationClass(right)}`;
   }
 
-  update(state: BannerState): void {
-    /**
-     * In Free-for-All the two sides are **leader** and **you**, not team A and team B.
-     *
-     * The left slot is whoever is winning and the right is this client, so "am I close" is the
-     * same glance it is in a team mode.
-     *
-     * In a team mode the left slot is the viewer's **own** side rather than team A's (round 4,
-     * B12). `scoreA` and `scoreB` are still absolute on the wire, which is right — they are the
-     * match's scores, not this client's view of them — and this is the one place that turns
-     * them into a left and a right.
-     */
-    const ownScore = this.viewer.team === 'A' ? state.scoreA : state.scoreB;
-    const otherScore = this.viewer.team === 'A' ? state.scoreB : state.scoreA;
-    const left = state.ffa ? state.leaderScore : ownScore;
-    const right = state.ffa ? state.selfScore : otherScore;
-
+  private updateFfaCaptions(state: BannerState): void {
     if (state.ffa !== this.lastFfa) {
       this.lastFfa = state.ffa;
       this.element.classList.toggle('hud-banner--ffa', state.ffa);
@@ -241,7 +307,9 @@ export class HudBanner {
       this.labelB.textContent = state.ffa ? 'YOU' : '';
       this.labelB.hidden = !state.ffa;
     }
+  }
 
+  private updateScores(left: number, right: number): void {
     if (left !== this.lastA) {
       this.lastA = left;
       this.scoreA.textContent = String(left);
@@ -250,8 +318,10 @@ export class HudBanner {
       this.lastB = right;
       this.scoreB.textContent = String(right);
     }
+  }
 
-    const limit = state.limit > 0 ? state.limit : 1;
+  private updateBars(left: number, right: number, scoreLimit: number): void {
+    const limit = scoreLimit > 0 ? scoreLimit : 1;
     const fillA = Math.round(Math.min(1, left / limit) * 100) / 100;
     const fillB = Math.round(Math.min(1, right / limit) * 100) / 100;
     if (fillA !== this.lastFillA) {
@@ -262,7 +332,9 @@ export class HudBanner {
       this.lastFillB = fillB;
       this.barB.style.transform = `scaleX(${fillB.toFixed(2)})`;
     }
+  }
 
+  private updateClock(state: BannerState): void {
     const clock = formatClock(state.secondsRemaining);
     if (clock !== this.lastClock) {
       this.lastClock = clock;
@@ -270,28 +342,15 @@ export class HudBanner {
       // Under thirty seconds the clock goes to the accent colour. One threshold, not a ramp.
       this.clock.classList.toggle('hud-banner__clock--urgent', state.secondsRemaining <= 30);
     }
+  }
 
+  private updateRounds(state: BannerState): void {
     // Only shown by a mode that has rounds, so TDM's banner is not carrying "ROUND 1 OF 1".
     const rounds = state.roundsToWin > 1 ? `ROUND ${state.round}` : '';
     if (rounds !== this.lastRounds) {
       this.lastRounds = rounds;
       this.rounds.textContent = rounds;
     }
-
-    this.updatePhase(state);
-  }
-
-  reset(): void {
-    this.lastA = -1;
-    this.lastB = -1;
-    this.lastFillA = -1;
-    this.lastFillB = -1;
-    this.lastClock = '';
-    this.lastRounds = '';
-    this.lastPhase = '';
-    this.lastBrief = '';
-    this.phaseShown = false;
-    this.phase.classList.remove('hud-phase--on');
   }
 
   private updatePhase(state: BannerState): void {
@@ -324,6 +383,28 @@ export class HudBanner {
     const span = this.phase.firstElementChild;
     if (span instanceof HTMLElement) span.textContent = text;
   }
+  //#endregion
+}
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+export function makeBannerState(): BannerState {
+  return {
+    scoreA: 0,
+    scoreB: 0,
+    limit: 0,
+    secondsRemaining: 0,
+    round: 1,
+    roundsToWin: 1,
+    phaseSeconds: 0,
+    phaseLabel: '',
+    phaseBrief: '',
+    ffa: false,
+    leaderName: '',
+    leaderScore: 0,
+    selfScore: 0,
+  };
 }
 
 /** `M:SS`, floored, never negative. */
@@ -333,3 +414,4 @@ export function formatClock(seconds: number): string {
   const s = total % 60;
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
+//#endregion

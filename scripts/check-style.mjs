@@ -500,6 +500,12 @@ const FINISHED = {
     'src/client/net/RemoteActor.ts',
     'src/client/net/WakeWait.ts',
   ],
+  C14: [
+    'src/client/ui/Hud.ts',
+    'src/client/ui/HudBanner.ts',
+    'src/client/ui/HudStreaks.ts',
+    'src/client/ui/HudTactical.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

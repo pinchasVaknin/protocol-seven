@@ -1,11 +1,3 @@
-import { camoDef, isCamoId } from '../../shared/meta/Camos';
-import { challengeDef } from '../../shared/meta/Challenges';
-import { levelProgress, prestigeLabel, stepLevelBar } from '../../shared/meta/Levels';
-import { unlocksAtLevel } from '../../shared/meta/Unlocks';
-import type { XpReport } from '../../shared/meta/XpRules';
-import { requireWeapon, WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
-import type { ProceduralAudio } from '../engine/ProceduralAudio';
-
 /**
  * The end-of-match XP breakdown (brief S6.1).
  *
@@ -40,15 +32,19 @@ import type { ProceduralAudio } from '../engine/ProceduralAudio';
  * is what `npm run layout` would refuse.
  */
 
-/** Seconds between one row landing and the next. */
-const ROW_INTERVAL = 0.34;
-/** Seconds the bar takes to travel one full level. Capped so a big match is not a wait. */
-const BAR_SECONDS_PER_LEVEL = 1.1;
-/** Seconds the level-up flourish holds before the bar resumes. */
-const LEVELUP_HOLD = 0.85;
-/** Seconds after the last row before the unlock list appears. */
-const TAIL_DELAY = 0.4;
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { camoDef, isCamoId } from '../../shared/meta/Camos';
+import { challengeDef } from '../../shared/meta/Challenges';
+import { levelProgress, prestigeLabel, stepLevelBar } from '../../shared/meta/Levels';
+import { unlocksAtLevel } from '../../shared/meta/Unlocks';
+import type { XpReport } from '../../shared/meta/XpRules';
+import { requireWeapon, WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
+import type { ProceduralAudio } from '../engine/ProceduralAudio';
+//#endregion
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 type Phase = 'IDLE' | 'ROWS' | 'BAR' | 'LEVELUP' | 'TAIL' | 'DONE';
 
 export interface XpSummaryDeps {
@@ -69,7 +65,43 @@ export interface XpSummaryDeps {
   readonly autoOpen?: boolean;
 }
 
+/** The list above the strip: the rows, and the tail of what the match unlocked. */
+interface ListParts {
+  readonly element: HTMLElement;
+  readonly rows: HTMLElement;
+  readonly tail: HTMLElement;
+}
+
+/** The strip itself, and the four things the cadence writes into it. */
+interface StripParts {
+  readonly element: HTMLButtonElement;
+  readonly level: HTMLElement;
+  readonly barFill: HTMLElement;
+  readonly barLabel: HTMLElement;
+  readonly total: HTMLElement;
+  readonly unlocks: HTMLElement;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Seconds between one row landing and the next. */
+const ROW_INTERVAL = 0.34;
+/** Seconds the bar takes to travel one full level. Capped so a big match is not a wait. */
+const BAR_SECONDS_PER_LEVEL = 1.1;
+/** Seconds the level-up flourish holds before the bar resumes. */
+const LEVELUP_HOLD = 0.85;
+/** Seconds after the last row before the unlock list appears. */
+const TAIL_DELAY = 0.4;
+/** The longest frame the cadence will believe. A tab that was in the background is not a jump. */
+const MAX_FRAME_SECONDS = 0.1;
+//#endregion
+
+// ====================================== CLASS XpSummary ======================================= \\
+//#region Class XpSummary
 export class XpSummary {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly element: HTMLElement;
 
   /**
@@ -105,65 +137,38 @@ export class XpSummary {
   private raf = 0;
   private lastFrameMs = 0;
 
+  private readonly frame = (nowMs: number): void => {
+    const dt = Math.min(MAX_FRAME_SECONDS, Math.max(0, (nowMs - this.lastFrameMs) / 1000));
+    this.lastFrameMs = nowMs;
+    this.step(dt);
+    if (this.phase === 'DONE') {
+      this.raf = 0;
+      return;
+    }
+    this.raf = requestAnimationFrame(this.frame);
+  };
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: XpSummaryDeps) {
     this.deps = deps;
 
     this.element = document.createElement('div');
     this.element.className = 'xp';
 
-    // The list: the rows and the unlock tail, above the strip, hidden until the accordion opens.
-    this.listEl = document.createElement('div');
-    this.listEl.className = 'xp__list';
-    this.listEl.hidden = true;
+    const list = createList();
+    this.listEl = list.element;
+    this.rowsEl = list.rows;
+    this.tailEl = list.tail;
 
-    this.rowsEl = document.createElement('div');
-    this.rowsEl.className = 'xp__rows';
-
-    this.tailEl = document.createElement('div');
-    this.tailEl.className = 'xp__tail';
-
-    this.listEl.append(this.rowsEl, this.tailEl);
-
-    // The strip: the level, the bar with its label, the running total, and the chevron. One
-    // button, so the whole strip is the accordion's handle and a keyboard can reach it.
-    this.strip = document.createElement('button');
-    this.strip.type = 'button';
-    this.strip.className = 'xp__strip';
-    this.strip.setAttribute('aria-expanded', 'false');
-    this.strip.addEventListener('click', () => this.toggle());
-
-    const levelBlock = document.createElement('div');
-    levelBlock.className = 'xp__level-block';
-    const levelCaption = document.createElement('span');
-    levelCaption.className = 'op-label';
-    levelCaption.textContent = 'LEVEL';
-    this.levelEl = document.createElement('span');
-    this.levelEl.className = 'xp__level op-num';
-    levelBlock.append(levelCaption, this.levelEl);
-
-    const barBlock = document.createElement('div');
-    barBlock.className = 'xp__bar-block';
-    const bar = document.createElement('div');
-    bar.className = 'xp__bar';
-    this.barFill = document.createElement('i');
-    bar.appendChild(this.barFill);
-    this.barLabel = document.createElement('div');
-    this.barLabel.className = 'xp__bar-label op-label';
-    barBlock.append(bar, this.barLabel);
-
-    this.totalEl = document.createElement('div');
-    this.totalEl.className = 'xp__total op-num';
-
-    // The unlock count, lit when the cadence ends without opening the list (M18).
-    this.unlocksEl = document.createElement('span');
-    this.unlocksEl.className = 'xp__unlocks op-label';
-    this.unlocksEl.hidden = true;
-
-    const chevron = document.createElement('span');
-    chevron.className = 'xp__chevron';
-    chevron.setAttribute('aria-hidden', 'true');
-
-    this.strip.append(levelBlock, barBlock, this.unlocksEl, this.totalEl, chevron);
+    const strip = this.createStrip();
+    this.strip = strip.element;
+    this.levelEl = strip.level;
+    this.barFill = strip.barFill;
+    this.barLabel = strip.barLabel;
+    this.totalEl = strip.total;
+    this.unlocksEl = strip.unlocks;
 
     this.flourish = document.createElement('div');
     this.flourish.className = 'xp__flourish';
@@ -171,7 +176,10 @@ export class XpSummary {
 
     this.element.append(this.listEl, this.strip, this.flourish);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /** Whether the row list is showing. */
   get isOpen(): boolean {
     return this.opened;
@@ -190,10 +198,10 @@ export class XpSummary {
     this.listEl.hidden = false;
     if (instant) this.element.classList.add('xp--instant');
     // A reflow between un-hiding and the class, so the height is a transition from 0.
-    void this.listEl.offsetHeight;
+    forceReflow(this.listEl);
     this.element.classList.add('xp--open');
     if (instant) {
-      void this.listEl.offsetHeight;
+      forceReflow(this.listEl);
       this.element.classList.remove('xp--instant');
     }
   }
@@ -275,7 +283,7 @@ export class XpSummary {
     this.paintBar();
     this.paintTail();
     this.phase = 'DONE';
-    if (!(this.deps.autoOpen ?? true)) this.paintUnlocks();
+    if (!this.autoOpens) this.paintUnlocks();
   }
 
   stop(): void {
@@ -286,19 +294,58 @@ export class XpSummary {
   get isPlaying(): boolean {
     return this.phase !== 'IDLE' && this.phase !== 'DONE';
   }
+  //#endregion
 
-  // -- animation --------------------------------------------------------------
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** The strip: the level, the bar with its label, the running total, and the chevron. */
+  private createStrip(): StripParts {
+    // One button, so the whole strip is the accordion's handle and a keyboard can reach it.
+    const element = document.createElement('button');
+    element.type = 'button';
+    element.className = 'xp__strip';
+    element.setAttribute('aria-expanded', 'false');
+    element.addEventListener('click', () => this.toggle());
 
-  private readonly frame = (nowMs: number): void => {
-    const dt = Math.min(0.1, Math.max(0, (nowMs - this.lastFrameMs) / 1000));
-    this.lastFrameMs = nowMs;
-    this.step(dt);
-    if (this.phase === 'DONE') {
-      this.raf = 0;
-      return;
-    }
-    this.raf = requestAnimationFrame(this.frame);
-  };
+    const levelBlock = document.createElement('div');
+    levelBlock.className = 'xp__level-block';
+    const levelCaption = document.createElement('span');
+    levelCaption.className = 'op-label';
+    levelCaption.textContent = 'LEVEL';
+    const level = document.createElement('span');
+    level.className = 'xp__level op-num';
+    levelBlock.append(levelCaption, level);
+
+    const barBlock = document.createElement('div');
+    barBlock.className = 'xp__bar-block';
+    const bar = document.createElement('div');
+    bar.className = 'xp__bar';
+    const barFill = document.createElement('i');
+    bar.appendChild(barFill);
+    const barLabel = document.createElement('div');
+    barLabel.className = 'xp__bar-label op-label';
+    barBlock.append(bar, barLabel);
+
+    const total = document.createElement('div');
+    total.className = 'xp__total op-num';
+
+    // The unlock count, lit when the cadence ends without opening the list (M18).
+    const unlocks = document.createElement('span');
+    unlocks.className = 'xp__unlocks op-label';
+    unlocks.hidden = true;
+
+    const chevron = document.createElement('span');
+    chevron.className = 'xp__chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+
+    element.append(levelBlock, barBlock, unlocks, total, chevron);
+    return { element, level, barFill, barLabel, total, unlocks };
+  }
+
+  /** Whether the list shows itself when the cadence ends. See `XpSummaryDeps.autoOpen`. */
+  private get autoOpens(): boolean {
+    return this.deps.autoOpen ?? true;
+  }
 
   private step(dt: number): void {
     const report = this.report;
@@ -307,43 +354,34 @@ export class XpSummary {
 
     switch (this.phase) {
       case 'ROWS':
-        while (this.timer >= ROW_INTERVAL && this.rowIndex < report.lines.length) {
-          this.timer -= ROW_INTERVAL;
-          this.appendRow(this.rowIndex, true);
-          this.rowIndex++;
-        }
-        if (this.rowIndex >= report.lines.length) {
-          this.phase = 'BAR';
-          this.timer = 0;
-          this.targetXp = report.xpBefore + report.total;
-        }
-        break;
-
+        this.stepRows(report);
+        return;
       case 'BAR':
         this.stepBar(dt, report);
-        break;
-
+        return;
       case 'LEVELUP':
-        if (this.timer < LEVELUP_HOLD) break;
-        this.flourish.classList.remove('is-on');
-        this.phase = 'BAR';
-        this.timer = 0;
-        break;
-
+        this.stepLevelUpHold();
+        return;
       case 'TAIL':
-        if (this.timer < TAIL_DELAY) break;
-        this.paintTail();
-        this.phase = 'DONE';
-        // The cadence is over: show what it landed, without being asked (D2) — or, where the
-        // list would cover something (M18), say what it holds and let the click open it.
-        if (this.deps.autoOpen ?? true) this.open();
-        else this.paintUnlocks();
-        break;
-
+        this.stepTail();
+        return;
       case 'IDLE':
       case 'DONE':
-        break;
+        return;
     }
+  }
+
+  /** One row per interval until they are all in, then the bar takes over the whole total. */
+  private stepRows(report: XpReport): void {
+    while (this.timer >= ROW_INTERVAL && this.rowIndex < report.lines.length) {
+      this.timer -= ROW_INTERVAL;
+      this.appendRow(this.rowIndex, true);
+      this.rowIndex++;
+    }
+    if (this.rowIndex < report.lines.length) return;
+    this.phase = 'BAR';
+    this.timer = 0;
+    this.targetXp = report.xpBefore + report.total;
   }
 
   /**
@@ -357,7 +395,7 @@ export class XpSummary {
    * regression). This used to do the arithmetic itself, and it invented a one-XP level above
    * the cap — `Math.max(1, xpForLevel(level))` against a function that returns zero there on
    * purpose — so a max-level summary crossed the same boundary every frame, replayed the
-   * flourish for a level that never changed, and never reached `DONE`. The frame loop below
+   * flourish for a level that never changed, and never reached `DONE`. The frame loop above
    * stops on `DONE` and nothing else, so it ran for as long as the screen was up. Everything
    * left here is presentation: the text, the bar, the flourish and the phase.
    */
@@ -378,6 +416,26 @@ export class XpSummary {
     if (step.levelUp) this.playLevelUp(levelProgress(this.shownXp).level);
   }
 
+  /** The flourish holds, and then the bar carries on from where it stopped. */
+  private stepLevelUpHold(): void {
+    if (this.timer < LEVELUP_HOLD) return;
+    this.flourish.classList.remove('is-on');
+    this.phase = 'BAR';
+    this.timer = 0;
+  }
+
+  /**
+   * The cadence is over: show what it landed, without being asked (D2) — or, where the list
+   * would cover something (M18), say what it holds and let the click open it.
+   */
+  private stepTail(): void {
+    if (this.timer < TAIL_DELAY) return;
+    this.paintTail();
+    this.phase = 'DONE';
+    if (this.autoOpens) this.open();
+    else this.paintUnlocks();
+  }
+
   private playLevelUp(level: number): void {
     this.paintLevel(level);
     const unlocked = unlocksAtLevel(level);
@@ -395,8 +453,7 @@ export class XpSummary {
       sub.textContent = `UNLOCKED · ${unlocked.join(' · ')}`;
       this.flourish.appendChild(sub);
     }
-    // Force a reflow so the class change is a transition rather than an instant state.
-    void this.flourish.offsetWidth;
+    forceReflow(this.flourish);
     this.flourish.classList.add('is-on');
 
     this.deps.audio.playLevelUp();
@@ -425,7 +482,7 @@ export class XpSummary {
 
     row.append(label, count, value);
     this.rowsEl.appendChild(row);
-    void row.offsetWidth;
+    forceReflow(row);
     row.classList.add('is-in');
     if (withAudio) this.deps.audio.playXpTick(index);
   }
@@ -473,9 +530,41 @@ export class XpSummary {
       this.tailEl.appendChild(tag('WEAPON', `${requireWeapon(id).name} levelled up`));
     }
     if (this.tailEl.childElementCount === 0) return;
-    void this.tailEl.offsetWidth;
+    forceReflow(this.tailEl);
     this.tailEl.classList.add('is-in');
   }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** The list above the strip, folded until the accordion opens. */
+function createList(): ListParts {
+  const element = document.createElement('div');
+  element.className = 'xp__list';
+  element.hidden = true;
+
+  const rows = document.createElement('div');
+  rows.className = 'xp__rows';
+
+  const tail = document.createElement('div');
+  tail.className = 'xp__tail';
+
+  element.append(rows, tail);
+  return { element, rows, tail };
+}
+
+/**
+ * Flush the pending layout, so the class change on the next line is a *transition* rather
+ * than an instant state.
+ *
+ * Reading any box metric does it; this reads one and throws it away, which is the whole of the
+ * idiom. Four places need it — un-hiding the list, landing a row, lighting the flourish and
+ * bringing the tail in — and all four are a class added immediately afterwards.
+ */
+function forceReflow(el: HTMLElement): void {
+  void el.offsetWidth;
 }
 
 function tag(kind: string, text: string): HTMLElement {
@@ -489,3 +578,4 @@ function tag(kind: string, text: string): HTMLElement {
   el.append(k, t);
   return el;
 }
+//#endregion

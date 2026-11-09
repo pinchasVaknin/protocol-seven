@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**54 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**55 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -51,6 +51,13 @@ need **no browser-verified row at all** - there is no WebGL under the settings s
 screen or the palette, so the rebinding capture, which registers on `window` in the capture
 phase, is driven by a test rather than described by one. #75 and #76 are both the same shape as
 #69 and #72 before them: a comment that states a rule its own code does not keep.
+
+**C18 opened #77** on 2026-11-09 — the second entry about the test suite's own running time
+after #68, and the first opened by a *gate run* rather than by a unit's files. It is also the
+first unit whose **live browser check could not be run at all**: the desktop window was hidden,
+`requestAnimationFrame` never fired, and a match cannot reach its debrief without frames. The
+dump oracle was unaffected, because it was written to need no frames — which is the lesson
+worth keeping from this one.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -101,6 +108,7 @@ and belong in its Step 2 plan.
 | ~~C15~~ | `client/ui/` MatchHud, Killfeed, Scoreboard, Minimap, MortarOverlay, BearingIndicator | **closed** — nothing was bound to it: no §1 row, and none of the six names appears anywhere in this file. Three words looked dangerous and all three belong elsewhere: every *scoreboard* hit is `shared/combat/ScoreSystem.ts` (Cluster III, A9's file) or `MatchInstance`/`SeatChannels` (#42, B5's); the *mortar* hit inside #1 is the place that entry's last copy is **used**, while the copy itself is `ClientMatch.angleDeltaRad` (C24's file); and a sweep of all six files for `PI`, `TAU` and `angleDelta` found no unwrap at all, only canvas arcs. **C15 opened #69 and #70**, both from its own 164 characterization tests |
 | ~~C16~~ | `client/ui/` LoadoutEditor, LoadoutStats, QuickLoadout | **closed** — nothing was bound to it: no §1 row, and none of the three names appears anywhere in this file. Two entries name a C16 file and neither is C16's: **#35** points at `LoadoutEditor.ts:999` as the *call site* where a weapon's file is fetched on demand, but the edit it asks for is `Game.warmWeaponAssets` in `Game.ts` — C23's file, outside R3's fence — so C16 declined it with that reason and it stays bound where it is; **#28**'s `src/client/ui/` half was already closed by C14, and the only *six* in this directory is this screen's six category bars, which is a different six and a true one. The broader sweep is empty too: every *loadout* hit is `sanitiseLoadout` in `shared/meta/` (A19's files, #29) or `ServerMatch`'s `setPendingLoadout` (#42); every *camo* hit is one of those two or #58's `client/meta/CamoTextures.ts`, which C12 already answered; and *perk*, *streak*, *attachment* and *create-a-class* have no hit that belongs to these three files — the 34 *streak* hits are all the streak systems themselves. **C16 opened #71, #72 and #73**, all three from its own 219 characterization tests |
 | ~~C17~~ | `client/ui/` Settings, Palette, PauseMenu | **closed** — nothing was bound to it: no §1 row, and none of the three names appears anywhere in this file. Five words looked dangerous and all five belong elsewhere: *binding* is the word in this file's own opening sentence; *sensitivity* and *shadow* are **#34**, whose mouse-path measurement and shadow-tier elimination are in C2's files; *volume* is `combat/BodyVolume`; and all five *slider* hits are the F1 debug panel's tuning sliders in `WeaponTuning.ts` (**#11**, A8's file) and the two voice sliders beside them — not one of them is a control on this screen. **C17 opened #74, #75 and #76**: the first from its own Step 0, the other two measured in the browser during its live check |
+| ~~C18~~ | `client/ui/` EndOfMatch, XpSummary, ProfilePanel, PlayerCard | **closed** — nothing was bound to it: no §1 row, and none of the four names appears anywhere in this file. Twenty words were swept and five returned something, all of it elsewhere: *summary* is the summary→arena migration of **#42** and the NET harness's; *prestige* is `doPrestige` inside **#2**'s account of the save's load path; *challenge* is A18's file list; *skip* is a tick **#42** says was skipped. **`\bXP\b` returned nothing at all** — the sixty-nine case-insensitive hits were *xp* inside *expression* and *experiment*. **C18 opened #77**, from its own gate run rather than from its files |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
@@ -1758,6 +1766,40 @@ C23, so the entry stays bound there, with the decision still the user's.
 ---
 
 ## 6. Documentation and housekeeping
+
+### #77 — One seeded skirmish test times out on a cold full run and passes alone · `needs measurement` *(opened 2026-11-09 by C18)*
+
+**Files** `src/client/world/MenuSkirmish.test.ts` (`deals a different fight for a different
+seed`); `vitest.config.ts` holds the timeout #68 set. **Origin** C18's gate run.
+
+Measured on the same tree, twice in a row:
+
+```
+npm run check, cold        153 s   1 failed — "Test timed out in 30000ms"
+npm run check, warm         67 s   292 files, 6,253 tests, all passed
+the one file, alone       11.7 s   28 tests, all passed
+```
+
+The failing test builds two seeded skirmishes and compares them; it is CPU-bound, it imports
+nothing of C18's, and C18 changed nothing it can see. What changed is the **suite**: 292 files
+now, each in its own worker, and vitest's own note on the cold run was *"transforming modules
+took 437 s"*. Under that contention one 11.7-second file does not get 30 seconds of its own
+within 30 seconds of wall clock.
+
+**This is #68's question asked again from the other side.** #68 raised the per-test timeout from
+five seconds to thirty because it was a hang detector being used as a performance budget. Thirty
+is enough for this test by a factor of two and a half when it is alone, and not enough when 291
+other files are competing — so the number is still measuring the machine rather than the code.
+
+**Decide**, and measure first: raise the timeout again (cheap, and makes it a worse hang
+detector); give this one file its own `testTimeout` (honest, and admits the file is slow); make
+the test cheaper (it is a determinism check, and two skirmishes may be more than it needs);
+or turn on `fsModuleCache`, which vitest's own note suggests and which would cut the 437 s the
+cold run spends transforming before any test starts.
+
+**Verify** `npm run check` from a cold cache, three times, and record how often it goes red.
+
+---
 
 ### #65 — `MapMesher`'s ray bundle is built at load by a hoist nothing writes down · `open` *(opened 2026-11-03 by C10)*
 

@@ -524,6 +524,12 @@ const FINISHED = {
     'src/client/ui/PauseMenu.ts',
     'src/client/ui/Settings.ts',
   ],
+  C18: [
+    'src/client/ui/EndOfMatch.ts',
+    'src/client/ui/PlayerCard.ts',
+    'src/client/ui/ProfilePanel.ts',
+    'src/client/ui/XpSummary.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

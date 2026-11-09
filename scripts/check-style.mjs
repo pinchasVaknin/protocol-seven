@@ -514,6 +514,11 @@ const FINISHED = {
     'src/client/ui/MortarOverlay.ts',
     'src/client/ui/Scoreboard.ts',
   ],
+  C16: [
+    'src/client/ui/LoadoutEditor.ts',
+    'src/client/ui/LoadoutStats.ts',
+    'src/client/ui/QuickLoadout.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

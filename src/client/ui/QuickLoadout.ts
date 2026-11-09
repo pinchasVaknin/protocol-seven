@@ -1,5 +1,3 @@
-import type { LoadoutSlot } from '../../shared/meta/Loadouts';
-
 /**
  * The quick class selector: five classes, five keys, no menu (M11 Gate B).
  *
@@ -37,6 +35,13 @@ import type { LoadoutSlot } from '../../shared/meta/Loadouts';
  * frames the player actually presses something and on no others.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { LoadoutSlot } from '../../shared/meta/Loadouts';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface QuickLoadoutDeps {
   readonly host: HTMLElement;
   /** The five classes, in key order. Read on every `show`, so a rename is picked up. */
@@ -46,11 +51,19 @@ export interface QuickLoadoutDeps {
   /** The player pressed a key. Zero-based. */
   readonly onPick: (index: number) => void;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Keys 1-5. Five is what `LOADOUT_SLOT_COUNT` authors and what a hand reaches without moving. */
 const MAX_ROWS = 5;
+//#endregion
 
+// ===================================== CLASS QuickLoadout ===================================== \\
+//#region Class QuickLoadout
 export class QuickLoadout {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly element: HTMLElement;
 
   private readonly deps: QuickLoadoutDeps;
@@ -62,7 +75,10 @@ export class QuickLoadout {
   private lastSelected = -1;
   private lastLabel = '';
   private lastNames = '';
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: QuickLoadoutDeps) {
     this.deps = deps;
 
@@ -77,17 +93,7 @@ export class QuickLoadout {
     const list = document.createElement('div');
     list.className = 'ql__rows';
     for (let i = 0; i < MAX_ROWS; i++) {
-      const row = document.createElement('div');
-      row.className = 'ql__row';
-
-      const key = document.createElement('span');
-      key.className = 'ql__key op-num';
-      key.textContent = String(i + 1);
-
-      const name = document.createElement('span');
-      name.className = 'ql__name';
-
-      row.append(key, name);
+      const { row, name } = createRow(i);
       list.appendChild(row);
       this.rows.push(row);
       this.names.push(name);
@@ -95,7 +101,10 @@ export class QuickLoadout {
     this.element.appendChild(list);
     deps.host.appendChild(this.element);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get isOpen(): boolean {
     return this.shown;
   }
@@ -149,7 +158,10 @@ export class QuickLoadout {
   dispose(): void {
     this.element.remove();
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private paint(): void {
     const slots = this.deps.slots();
     const selected = this.deps.equipped();
@@ -171,4 +183,25 @@ export class QuickLoadout {
       row.classList.toggle('is-selected', i === selected);
     }
   }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** One row: the key that picks it, and the name the paint writes into. */
+function createRow(index: number): { row: HTMLElement; name: HTMLElement } {
+  const row = document.createElement('div');
+  row.className = 'ql__row';
+
+  const key = document.createElement('span');
+  key.className = 'ql__key op-num';
+  key.textContent = String(index + 1);
+
+  const name = document.createElement('span');
+  name.className = 'ql__name';
+
+  row.append(key, name);
+  return { row, name };
+}
+//#endregion

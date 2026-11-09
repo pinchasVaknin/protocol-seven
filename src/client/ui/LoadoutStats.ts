@@ -1,5 +1,3 @@
-import type { WeaponDef } from '../../shared/weapons/WeaponDefs';
-
 /**
  * The loadout editor's stat read-out (brief S6.3).
  *
@@ -18,6 +16,13 @@ import type { WeaponDef } from '../../shared/weapons/WeaponDefs';
  * arrow on a rising reload time would be worse than no colour at all.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { WeaponDef } from '../../shared/weapons/WeaponDefs';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 interface StatRow {
   readonly label: string;
   readonly read: (def: WeaponDef) => number;
@@ -28,7 +33,10 @@ interface StatRow {
   /** Scale applied before formatting, e.g. seconds to milliseconds. */
   readonly scale?: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const ROWS: readonly StatRow[] = [
   { label: 'Damage near', read: (d) => d.damage.near, unit: '', digits: 0, higherIsBetter: true },
   { label: 'Damage far', read: (d) => d.damage.far, unit: '', digits: 0, higherIsBetter: true },
@@ -128,14 +136,22 @@ const ROWS: readonly StatRow[] = [
 
 /** How close two values have to be to count as unchanged. Guards float noise. */
 const EPSILON = 1e-6;
+//#endregion
 
+// ===================================== CLASS LoadoutStats ===================================== \\
+//#region Class LoadoutStats
 export class LoadoutStats {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly element: HTMLElement;
 
   private readonly body: HTMLElement;
   private readonly title: HTMLElement;
   private readonly subtitle: HTMLElement;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor() {
     this.element = document.createElement('div');
     this.element.className = 'lo-stats';
@@ -149,7 +165,10 @@ export class LoadoutStats {
 
     this.element.append(this.title, this.subtitle, this.body);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Repaint against a base and its resolved counterpart.
    *
@@ -172,15 +191,12 @@ export class LoadoutStats {
       this.body.appendChild(this.makeRow(row, baseValue, resolvedValue, moved));
     }
 
-    const footer = document.createElement('div');
-    footer.className = 'lo-stats__footer op-label';
-    footer.textContent =
-      changed === 0
-        ? 'No modifiers fitted — these are the base values'
-        : `${changed} value${changed === 1 ? '' : 's'} changed by attachments and perks`;
-    this.body.appendChild(footer);
+    this.body.appendChild(makeFooter(changed));
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private makeRow(row: StatRow, baseValue: number, resolvedValue: number, moved: boolean): HTMLElement {
     const el = document.createElement('div');
     el.className = 'lo-stat';
@@ -196,24 +212,45 @@ export class LoadoutStats {
     if (!moved) {
       value.textContent = format(resolvedValue, row.digits, row.unit);
     } else {
-      const from = document.createElement('span');
-      from.className = 'lo-stat__from';
-      from.textContent = format(baseValue, row.digits, row.unit);
-      const arrow = document.createElement('span');
-      arrow.className = 'lo-stat__arrow';
-      arrow.textContent = '→';
-      const to = document.createElement('span');
-      const better = resolvedValue > baseValue === row.higherIsBetter;
-      to.className = `lo-stat__to ${better ? 'is-better' : 'is-worse'}`;
-      to.textContent = format(resolvedValue, row.digits, row.unit);
-      value.append(from, arrow, to);
+      value.append(...movedParts(row, baseValue, resolvedValue));
     }
 
     el.append(label, value);
     return el;
   }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** The three spans a moved row reads as: where it was, an arrow, and where it is now. */
+function movedParts(row: StatRow, baseValue: number, resolvedValue: number): HTMLElement[] {
+  const from = document.createElement('span');
+  from.className = 'lo-stat__from';
+  from.textContent = format(baseValue, row.digits, row.unit);
+  const arrow = document.createElement('span');
+  arrow.className = 'lo-stat__arrow';
+  arrow.textContent = '→';
+  const to = document.createElement('span');
+  const better = resolvedValue > baseValue === row.higherIsBetter;
+  to.className = `lo-stat__to ${better ? 'is-better' : 'is-worse'}`;
+  to.textContent = format(resolvedValue, row.digits, row.unit);
+  return [from, arrow, to];
+}
+
+/** The one line of prose under the table: how many of the rows above it moved. */
+function makeFooter(changed: number): HTMLElement {
+  const footer = document.createElement('div');
+  footer.className = 'lo-stats__footer op-label';
+  footer.textContent =
+    changed === 0
+      ? 'No modifiers fitted — these are the base values'
+      : `${changed} value${changed === 1 ? '' : 's'} changed by attachments and perks`;
+  return footer;
 }
 
 function format(value: number, digits: number, unit: string): string {
   return `${value.toFixed(digits)}${unit}`;
 }
+//#endregion

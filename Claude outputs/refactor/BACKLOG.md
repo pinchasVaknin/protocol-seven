@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**48 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**51 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -40,6 +40,11 @@ and **#68 was closed on 2026-11-07**, two days later, when it stopped being a wa
 red on an untouched tree: the per-test timeout was a hang detector being used as a performance
 budget, and it is now thirty seconds instead of five. The reasoning lives in `vitest.config.ts`,
 beside the number.
+
+**C16 opened #71, #72 and #73** on 2026-11-09 and **declined #35** with a reason rather than
+leaving it silent: the entry names one of C16's files, but only as the call site, and the edit
+it asks for is in `Game.ts`. That makes C16 the second unit after C11 to answer an entry it
+could not do, and the third division-C unit in a row to find nothing bound to it at all.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -88,6 +93,7 @@ and belong in its Step 2 plan.
 | ~~C13~~ | `client/net/` BrowserLink, Handshake, JoinOptions, NetSession, RemoteActor, WakeWait | **closed** — nothing was bound to it: no §1 row, and none of the six names, nor `client/net`, appears anywhere in this file. The broader sweep is empty too — every *reconnect*, *socket*, *handshake*, *join*, *transport* and *latency* hit belongs to `shared/net` or to the NET harness, and the one *interpolat* hit is #34's camera bob. What C13 did close is the **fourth** copy of #1's unwrap: `RemoteActor.renderYaw` was the shared `angleDelta` character for character, so folding it was a bit-exact no-op rather than the behaviour question the other copies are (see #1, which stays bound to C24). C13 opened nothing: its 129 characterization tests found no new defect |
 | ~~C14~~ | `client/ui/` Hud, HudBanner, HudStreaks, HudTactical | **closed** — nothing was bound to it: no §1 row, and none of the four names appears anywhere in this file. The broader sweep is empty too — *crosshair*, *banner*, *ammo*, *reticle*, *compass*, *threat*, *hit-direction*, *HudSurfaces* and *nameplate* have no hits that belong to these files, and the three *HUD* hits are #34's clock, #55's Chopper Gunner optic (C4 and C23's files) and #28. What C14 did close is **#28's `src/client/ui/` half**, which that entry asked a later unit to sweep: it is empty, and #28 now says so. C14 opened nothing: its 209 characterization tests found no new defect |
 | ~~C15~~ | `client/ui/` MatchHud, Killfeed, Scoreboard, Minimap, MortarOverlay, BearingIndicator | **closed** — nothing was bound to it: no §1 row, and none of the six names appears anywhere in this file. Three words looked dangerous and all three belong elsewhere: every *scoreboard* hit is `shared/combat/ScoreSystem.ts` (Cluster III, A9's file) or `MatchInstance`/`SeatChannels` (#42, B5's); the *mortar* hit inside #1 is the place that entry's last copy is **used**, while the copy itself is `ClientMatch.angleDeltaRad` (C24's file); and a sweep of all six files for `PI`, `TAU` and `angleDelta` found no unwrap at all, only canvas arcs. **C15 opened #69 and #70**, both from its own 164 characterization tests |
+| ~~C16~~ | `client/ui/` LoadoutEditor, LoadoutStats, QuickLoadout | **closed** — nothing was bound to it: no §1 row, and none of the three names appears anywhere in this file. Two entries name a C16 file and neither is C16's: **#35** points at `LoadoutEditor.ts:999` as the *call site* where a weapon's file is fetched on demand, but the edit it asks for is `Game.warmWeaponAssets` in `Game.ts` — C23's file, outside R3's fence — so C16 declined it with that reason and it stays bound where it is; **#28**'s `src/client/ui/` half was already closed by C14, and the only *six* in this directory is this screen's six category bars, which is a different six and a true one. The broader sweep is empty too: every *loadout* hit is `sanitiseLoadout` in `shared/meta/` (A19's files, #29) or `ServerMatch`'s `setPendingLoadout` (#42); every *camo* hit is one of those two or #58's `client/meta/CamoTextures.ts`, which C12 already answered; and *perk*, *streak*, *attachment* and *create-a-class* have no hit that belongs to these three files — the 34 *streak* hits are all the streak systems themselves. **C16 opened #71, #72 and #73**, all three from its own 219 characterization tests |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
@@ -313,6 +319,30 @@ changed, and all fifteen columns through `applyReplicated` and `reset`. Do not w
 ---
 
 ## 4. Independent — one decision each
+
+### #71 — The loadout editor keeps a map of its category bars that nothing reads · `open` *(opened 2026-11-09 by C16)*
+
+**Files** `src/client/ui/LoadoutEditor.ts` (`boxElements`). **Origin** C16's Step 0, confirmed by
+a tree-wide search.
+
+`private readonly boxElements = new Map<BoxKind, HTMLElement>()` is cleared in `paint`, filled
+one entry per bar in `paintCategories`, and **never read** — not in this file, not anywhere in
+`src/`. It is six map writes per paint and a reference to six live elements that outlives
+nothing, which is harmless; it is also a reader's question with no answer in the file.
+
+C16 left it alone on purpose: the approved Step 2 plan did not name it, and deleting private
+state is a widening of scope rather than a split of a function, however safe. It is three lines
+to remove — the declaration, the `clear()` and the `set()` — with no test and no oracle touching
+it, which is why this entry exists rather than a commit.
+
+**Watch for** whether it was meant to serve an `openBox`-by-element path that was never written:
+`openBox(kind, tab)` finds its box in `BOXES` rather than in this map, so the map's only possible
+purpose is one nothing has needed yet.
+
+**Verify** `npm run check`, plus C16's BROWSER checksum A and `npm run layout`, neither of which
+can see a private field — which is the point.
+
+---
 
 ### #1 — One local angle helper that is **not** the shared one · `bound to C24`
 
@@ -647,6 +677,74 @@ Each of these is wrong today, was found while writing characterization tests, an
 rather than fixed** under §5.9 of the prompt — the test carries
 `// Pins current behaviour; suspected bug: <title>`. Fixing one means updating its pinning test in
 the same commit, with the reason.
+
+### #72 — `assignSlot` writes the two weapons in place and replaces the four arrays · `open` *(opened 2026-11-09 by C16)*
+
+**Files** `src/client/ui/LoadoutEditor.ts` (`assignSlot`, `assignWeapon`). **Origin** C16, found
+by its own characterization tests and pinned rather than fixed. The file is C16's own, which
+makes this a decision rather than a fence problem.
+
+The function's one-line header says what it is for:
+
+> *"Put `from` into `target` in place: the profile owns `target`, so it is written, not
+> replaced."*
+
+That holds for `target.primary` and `target.secondary`, which `assignWeapon` writes field by
+field. It does not hold one level down. CANCEL leaves the slot with **four new arrays**:
+
+```
+target.perks                 = [...from.perks];
+target.streaks               = [...from.streaks];
+target.primary.attachments   = [...from.primary.attachments];
+target.secondary.attachments = [...from.secondary.attachments];
+```
+
+So anything that captured `slot.perks`, `slot.streaks` or either `attachments` array and held it
+across a CANCEL is writing into an array the class no longer has — the exact hazard the comment
+says the function avoids, one level down from where it avoids it.
+
+**Nothing is known to do that today.** The editor looks the arrays up through `this.slot` every
+time, and `Profile` hands out the live slot rather than a field of it. That is why this is a
+hazard and not a bug report: it is a rule the function states and then breaks, and the next
+caller that believes the comment is the one that pays.
+
+**Pinned meanwhile.** `LoadoutEditor.test.ts` has *"CANCEL writes the weapon objects in place and
+replaces the four arrays"*, which asserts both halves by identity, with the §5.9 comment. Fixing
+it means `target.perks.length = 0; target.perks.push(...from.perks)` four times — or deciding
+the comment is the thing that is wrong and rewriting it to say which half is in place.
+
+**Verify** `npm run check`, then C16's BROWSER checksum A, whose fifteen tab sections and its
+`the range door` sections all run through a CANCEL path.
+
+---
+
+### #73 — A class name is trimmed before the sixteen-character cap and not after · `open` *(opened 2026-11-09 by C16)*
+
+**Files** `src/client/ui/LoadoutEditor.ts` (`createPlateName`). **Origin** C16, found by its own
+characterization tests and pinned rather than fixed.
+
+The plate's name field commits on `change`:
+
+```
+const next = name.value.trim().toUpperCase().slice(0, 16);
+if (next.length === 0) return;
+```
+
+`trim` runs **before** `slice`, so a name longer than sixteen characters is cut wherever the
+sixteenth character falls — and when that is a space, the space is stored. `recon overwatch
+team` is saved as `RECON OVERWATCH ` with a trailing space, which the strip then draws, the
+quick selector draws, and the save file carries. The `maxLength = 16` on the field means this is
+only reachable by pasting or by a programmatic write, which is why nobody has seen it.
+
+The fix is one more `.trim()` after the slice, and it is a behaviour change at exactly the
+inputs above — a stored name loses a trailing space — so it is pinned rather than folded:
+`LoadoutEditor.test.ts` has *"trims before the cap and not after it, so a long name can end in a
+space"* with the §5.9 comment, beside the case that holds the ordinary path.
+
+**Verify** `npm run check`. No oracle holds it: dump A's class is named by this script rather
+than typed, so the checksum does not move either way.
+
+---
 
 ### #69 — The mortar overlay and the minimap disagree about what a wall is · `open` *(opened 2026-11-09 by C15)*
 
@@ -1534,6 +1632,14 @@ that keep them for a version. **Decide**: warm the whole arsenal at boot; warm i
 once the equipped class is ready, which is the middle answer and costs nothing at the moment the
 player presses Play; or leave it on demand and spend the fix on a placeholder better than a grey
 primitive.
+
+**C16 declined it** on 2026-11-09, which is why the line number above now reads differently.
+`LoadoutEditor.ts:999` was the `preload` call in the middle of `optionsFor`; the split moved it
+into `warmWeaponFile`, with the whole of the paragraph that explained it. That call is the *call
+site*, not the fix: it already does the most a screen can do, which is to ask for every card's
+file at the moment the list opens rather than at the moment the pointer lands. The edit this
+entry asks for is in `Game.warmWeaponAssets`, which is outside C16's fence (R3) and belongs to
+C23, so the entry stays bound there, with the decision still the user's.
 
 ---
 

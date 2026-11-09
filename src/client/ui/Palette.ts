@@ -1,5 +1,3 @@
-import type { ColorblindMode } from '../../shared/meta/SaveData';
-
 /**
  * Every colour that carries **gameplay meaning**, in one place (brief S6.3).
  *
@@ -42,6 +40,13 @@ import type { ColorblindMode } from '../../shared/meta/SaveData';
  * indistinguishable pair into a different indistinguishable pair.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { ColorblindMode } from '../../shared/meta/SaveData';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface GameplayPalette {
   /** The local player's team. */
   readonly friendly: number;
@@ -71,7 +76,10 @@ export interface GameplayPalette {
   /** Something going well that is not a team: a capture completing, XP. */
   readonly positive: number;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const BASE: GameplayPalette = {
   /**
    * Blue, not green. Team-mates read as blue on the overhead nameplate, the minimap, the
@@ -135,23 +143,12 @@ const PALETTES: Readonly<Record<ColorblindMode, GameplayPalette>> = {
   tritanopia: BLUE_YELLOW_SAFE,
 };
 
-function paletteFor(mode: ColorblindMode): GameplayPalette {
-  return PALETTES[mode] ?? BASE;
-}
+/** How transparent the three soft variants are. One number, so the three cannot drift apart. */
+const SOFT_ALPHA = 0.55;
+//#endregion
 
-/** `0xRRGGBB` as `#rrggbb`, for CSS and for canvas fill styles. */
-export function cssHex(value: number): string {
-  return `#${(value >>> 0).toString(16).padStart(6, '0')}`;
-}
-
-/** `0xRRGGBB` plus an alpha, as `rgba(...)`. Canvases need this and CSS variables do too. */
-export function cssRgba(value: number, alpha: number): string {
-  const r = (value >> 16) & 0xff;
-  const g = (value >> 8) & 0xff;
-  const b = value & 0xff;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
+// ===================================== CLASS PaletteState ===================================== \\
+//#region Class PaletteState
 /**
  * The live palette, and the one thing everything else reads.
  *
@@ -165,12 +162,17 @@ export function cssRgba(value: number, alpha: number): string {
  * `var(--c-hostile)` and be correct in every mode without any JavaScript at the call site.
  */
 class PaletteState {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private mode: ColorblindMode = 'off';
   private palette: GameplayPalette = BASE;
   private readonly listeners: Array<(p: GameplayPalette) => void> = [];
   /** Whether `:root` has ever been written. See `set`. */
   private written = false;
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get current(): GameplayPalette {
     return this.palette;
   }
@@ -206,9 +208,17 @@ class PaletteState {
       if (at >= 0) this.listeners.splice(at, 1);
     };
   }
+  //#endregion
 
-  /** Push the palette onto `:root`, so CSS can name colours instead of repeating them. */
-  writeCssVariables(): void {
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Push the palette onto `:root`, so CSS can name colours instead of repeating them.
+   *
+   * Private since C17: `set` is the one entry point, and a caller that wrote the variables
+   * without going through it would be publishing a palette this object does not hold.
+   */
+  private writeCssVariables(): void {
     const root = document.documentElement.style;
     const p = this.palette;
     root.setProperty('--c-friendly', cssHex(p.friendly));
@@ -221,9 +231,9 @@ class PaletteState {
     root.setProperty('--c-damage', cssHex(p.damage));
     root.setProperty('--c-positive', cssHex(p.positive));
     // Alpha variants the HUD needs, generated rather than hand-maintained alongside them.
-    root.setProperty('--c-damage-soft', cssRgba(p.damage, 0.55));
-    root.setProperty('--c-hostile-soft', cssRgba(p.hostile, 0.55));
-    root.setProperty('--c-friendly-soft', cssRgba(p.friendly, 0.55));
+    root.setProperty('--c-damage-soft', cssRgba(p.damage, SOFT_ALPHA));
+    root.setProperty('--c-hostile-soft', cssRgba(p.hostile, SOFT_ALPHA));
+    root.setProperty('--c-friendly-soft', cssRgba(p.friendly, SOFT_ALPHA));
 
     /**
      * The two semantic tokens M1 shipped, overridden.
@@ -242,6 +252,34 @@ class PaletteState {
     root.setProperty('--c-good', cssHex(p.friendly));
     root.setProperty('--c-bad', cssHex(p.hostile));
   }
+  //#endregion
+}
+//#endregion
+
+// ===================================== DERIVED CONSTANTS ====================================== \\
+//#region Derived Constants
+export const palette = new PaletteState();
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** `0xRRGGBB` as `#rrggbb`, for CSS and for canvas fill styles. */
+export function cssHex(value: number): string {
+  return `#${(value >>> 0).toString(16).padStart(6, '0')}`;
 }
 
-export const palette = new PaletteState();
+/** `0xRRGGBB` plus an alpha, as `rgba(...)`. Canvases need this and CSS variables do too. */
+export function cssRgba(value: number, alpha: number): string {
+  const r = (value >> 16) & 0xff;
+  const g = (value >> 8) & 0xff;
+  const b = value & 0xff;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function paletteFor(mode: ColorblindMode): GameplayPalette {
+  return PALETTES[mode] ?? BASE;
+}
+//#endregion

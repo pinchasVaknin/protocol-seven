@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**51 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**54 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -45,6 +45,12 @@ beside the number.
 leaving it silent: the entry names one of C16's files, but only as the call site, and the edit
 it asks for is in `Game.ts`. That makes C16 the second unit after C11 to answer an entry it
 could not do, and the third division-C unit in a row to find nothing bound to it at all.
+
+**C17 opened #74, #75 and #76** on 2026-11-09, and is the first unit whose files turned out to
+need **no browser-verified row at all** - there is no WebGL under the settings screen, the pause
+screen or the palette, so the rebinding capture, which registers on `window` in the capture
+phase, is driven by a test rather than described by one. #75 and #76 are both the same shape as
+#69 and #72 before them: a comment that states a rule its own code does not keep.
 
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
@@ -94,6 +100,7 @@ and belong in its Step 2 plan.
 | ~~C14~~ | `client/ui/` Hud, HudBanner, HudStreaks, HudTactical | **closed** — nothing was bound to it: no §1 row, and none of the four names appears anywhere in this file. The broader sweep is empty too — *crosshair*, *banner*, *ammo*, *reticle*, *compass*, *threat*, *hit-direction*, *HudSurfaces* and *nameplate* have no hits that belong to these files, and the three *HUD* hits are #34's clock, #55's Chopper Gunner optic (C4 and C23's files) and #28. What C14 did close is **#28's `src/client/ui/` half**, which that entry asked a later unit to sweep: it is empty, and #28 now says so. C14 opened nothing: its 209 characterization tests found no new defect |
 | ~~C15~~ | `client/ui/` MatchHud, Killfeed, Scoreboard, Minimap, MortarOverlay, BearingIndicator | **closed** — nothing was bound to it: no §1 row, and none of the six names appears anywhere in this file. Three words looked dangerous and all three belong elsewhere: every *scoreboard* hit is `shared/combat/ScoreSystem.ts` (Cluster III, A9's file) or `MatchInstance`/`SeatChannels` (#42, B5's); the *mortar* hit inside #1 is the place that entry's last copy is **used**, while the copy itself is `ClientMatch.angleDeltaRad` (C24's file); and a sweep of all six files for `PI`, `TAU` and `angleDelta` found no unwrap at all, only canvas arcs. **C15 opened #69 and #70**, both from its own 164 characterization tests |
 | ~~C16~~ | `client/ui/` LoadoutEditor, LoadoutStats, QuickLoadout | **closed** — nothing was bound to it: no §1 row, and none of the three names appears anywhere in this file. Two entries name a C16 file and neither is C16's: **#35** points at `LoadoutEditor.ts:999` as the *call site* where a weapon's file is fetched on demand, but the edit it asks for is `Game.warmWeaponAssets` in `Game.ts` — C23's file, outside R3's fence — so C16 declined it with that reason and it stays bound where it is; **#28**'s `src/client/ui/` half was already closed by C14, and the only *six* in this directory is this screen's six category bars, which is a different six and a true one. The broader sweep is empty too: every *loadout* hit is `sanitiseLoadout` in `shared/meta/` (A19's files, #29) or `ServerMatch`'s `setPendingLoadout` (#42); every *camo* hit is one of those two or #58's `client/meta/CamoTextures.ts`, which C12 already answered; and *perk*, *streak*, *attachment* and *create-a-class* have no hit that belongs to these three files — the 34 *streak* hits are all the streak systems themselves. **C16 opened #71, #72 and #73**, all three from its own 219 characterization tests |
+| ~~C17~~ | `client/ui/` Settings, Palette, PauseMenu | **closed** — nothing was bound to it: no §1 row, and none of the three names appears anywhere in this file. Five words looked dangerous and all five belong elsewhere: *binding* is the word in this file's own opening sentence; *sensitivity* and *shadow* are **#34**, whose mouse-path measurement and shadow-tier elimination are in C2's files; *volume* is `combat/BodyVolume`; and all five *slider* hits are the F1 debug panel's tuning sliders in `WeaponTuning.ts` (**#11**, A8's file) and the two voice sliders beside them — not one of them is a control on this screen. **C17 opened #74, #75 and #76**: the first from its own Step 0, the other two measured in the browser during its live check |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
@@ -319,6 +326,40 @@ changed, and all fifteen columns through `applyReplicated` and `reset`. Do not w
 ---
 
 ## 4. Independent — one decision each
+
+### #74 — Four files build the same pager arrow, and two of them are already finished · `open` *(opened 2026-11-09 by C17)*
+
+**Files** `src/client/ui/Settings.ts` (`creditsArrow`), `src/client/ui/LoadoutEditor.ts`
+(`arrowButton`, C16's finished file), and the pagers in `src/client/ui/PlaySolo.ts` and
+`src/client/ui/VoteOverlay.ts` (both C19's, not started). **Origin** C17's Step 0.
+
+The credits pager on INFO is deliberately the same control Create-a-Class pages its lists with
+— it uses `lo-pager` and `lo-arrow`, the editor's own classes, and says so in its comment. What
+it does not share is the **element**: each of these files builds its own
+`<button class="lo-arrow">` with a glyph, an `aria-label`, a disabled test and a click handler,
+four to seven lines each.
+
+```
+LoadoutEditor.arrowButton   lo-arrow . aria-label . onClick                     (C16, finished)
+Settings.creditsArrow       lo-arrow . aria-label . disabled by page . onClick  (C17, this unit)
+PlaySolo                    ps-pager__arrow . title . makeIconSvg               (C19)
+VoteOverlay                 its own                                             (C19)
+```
+
+Only two of the four are really the same function: C17's and C16's. The other two differ in
+class and in content, so this is **not** one fold — it is a decision about whether a shared
+`pagerArrow(text, label, onClick)` belongs somewhere both can import, and if so where. C17 did
+not do it because the obvious home is `LoadoutEditor.ts`'s copy, which is in C16's finished
+files and not exported (R2, R3).
+
+**Watch for** C19, which owns the other two. If it finds the same shape a third and a fourth
+time, that is the moment to decide — and the answer is probably one helper in `Frame.ts` or
+`ScreenChrome.ts`, which both units already import.
+
+**Verify** `npm run check`, plus C16's and C17's BROWSER checksums (both hold a pager's element
+tree, with the arrows' labels and their disabled states) and `npm run layout`.
+
+---
 
 ### #71 — The loadout editor keeps a map of its category bars that nothing reads · `open` *(opened 2026-11-09 by C16)*
 
@@ -677,6 +718,79 @@ Each of these is wrong today, was found while writing characterization tests, an
 rather than fixed** under §5.9 of the prompt — the test carries
 `// Pins current behaviour; suspected bug: <title>`. Fixing one means updating its pinning test in
 the same commit, with the reason.
+
+### #75 — The pause screen's debug button cannot appear while the pause screen is up · `open` *(opened 2026-11-09 by C17)*
+
+**Files** `src/client/ui/PauseMenu.ts` (`setDebugAvailable`, and the comment on it);
+`src/client/Game.ts` (`updateHudSurfaces`) is the other half. **Origin** C17, measured in the
+browser during its live check.
+
+The method's comment makes a promise:
+
+> *"Idempotent, and called every frame from the one pass that decides every other surface, which
+> is why it can be a plain assignment: there is no moment at which somebody has to remember to
+> refresh it — **including the moment the player types the code on this very screen**."*
+
+The emphasised clause is the one case that does not hold. `Game.updateHudSurfaces` runs from the
+match loop, and the match loop does not advance while the game is `PAUSED` — which is the only
+state this screen is ever up in. Measured on a live solo match on FOUNDRY, with the setter on
+`debugButton.hidden` instrumented:
+
+```
+paused, over one second         0 writes
+resumed, over three seconds     3 writes
+```
+
+So a player who types the code on the pause screen gets *"Code accepted."* on the line under the
+field and **no button**, until they resume and pause again. The entitlement is real by then; the
+refresh simply never ran while they were looking at it.
+
+**This is not what C17 changed.** The method and its one writer are character for character what
+they were, and C17's BROWSER checksum A holds the button hidden and shown as two different
+sections, both unchanged across the unit. What C17 adds is the measurement, and the fact that
+the comment is wrong about its own method.
+
+**Two fixes, and they are not equivalent.** `Game` could call `updateHudSurfaces` once on the
+transition into `PAUSED` — cheap, and it fixes the moment the player enters the screen but not
+the moment they type; or the cheat reply path could call `setDebugAvailable` itself, which fixes
+the typing moment and gives the entitlement a second writer, which is the thing the comment says
+it is glad not to have. Both edits are in `Game.ts`, which no unit has reached yet.
+
+**Pinned meanwhile.** `PauseMenu.test.ts` holds the button's hidden-ness as a pure function of
+`setDebugAvailable`, which is true and stays true under either fix. Nothing pins the gap itself,
+because the gap is in the caller.
+
+**Verify** `npm run check`, then: solo match, Escape, type the code, and read the button without
+resuming.
+
+---
+
+### #76 — The one line of state on the settings screen is told apart only by its position · `open` *(opened 2026-11-09 by C17)*
+
+**Files** `src/client/ui/Settings.ts` (`createBindingsFoot`, `bindingNoteText`). **Origin** C17,
+found while writing its characterization tests.
+
+Four paragraphs on this screen carry the class `st-note`: two under BINDINGS (the rebinding line
+and the fullscreen hint) and two in INFO (the credits intro and the `CREDITS.md` pointer). They
+are built by the same helper and they can only be read by position — C17's own tests index them
+`notes(r)[0]` and `notes(r)[1]`, because nothing in the markup distinguishes one from another.
+
+That is tolerable in a test and wrong on the screen. The rebinding line is the one piece of
+*state* here that is not a control: it says three different things (idle, armed, and the news
+after a key was taken off something else) and it is the only one of the four a reader needs to
+be told has changed. It has no `aria-live`, no id and no class of its own, so a screen reader is
+given no reason to announce the sentence that says `W was taken off "Move forward"`.
+
+**The fix is a modifier class and a live region** — `st-note--status` and `aria-live="polite"` on
+that one paragraph — and it is an accessibility change rather than a refactor: it adds an
+attribute to the rendered tree, which moves C17's BROWSER checksum A, and a unit that promises
+no behaviour change may not do that quietly.
+
+**Verify** `npm run check`, then C17's checksum A, whose `BINDINGS, a slot armed` and
+`BINDINGS, after a steal` sections both hold that paragraph and will differ by the new
+attribute — re-baseline them in the same commit, with the reason.
+
+---
 
 ### #72 — `assignSlot` writes the two weapons in place and replaces the four arrays · `open` *(opened 2026-11-09 by C16)*
 

@@ -1,28 +1,3 @@
-import {
-  ACTIONS,
-  defaultBindings,
-  inputLabel,
-  mouseInput,
-  type ActionDef,
-  type ActionId,
-  type BindingMap,
-} from '../../shared/core/Keybinds';
-import {
-  COLORBLIND_MODES,
-  SHADOW_QUALITIES,
-  type ColorblindMode,
-  type SettingsV1,
-  type ShadowQuality,
-} from '../../shared/meta/SaveData';
-import { characterDefinition } from '../characters/CharacterCatalog';
-import type { Profile } from '../meta/Profile';
-import { CHARACTER_CREDIT, CREDITS_NOTE, MODEL_CREDITS, type CreditEntry } from './CreditsData';
-import { createScreen } from './Frame';
-import { PlayerCard } from './PlayerCard';
-import { ProfilePanel } from './ProfilePanel';
-import { makeScreenFooter, makeScreenHeader } from './ScreenChrome';
-import { makeIconSvg } from './WeaponIcons';
-
 /**
  * The settings screen (brief S6.3; the reference's SYSTEM CONTROL since M17, C4).
  *
@@ -70,6 +45,36 @@ import { makeIconSvg } from './WeaponIcons';
  * progress keeps its two-step arm, cleared on every category change and every `show`.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import {
+  ACTIONS,
+  defaultBindings,
+  inputLabel,
+  mouseInput,
+  type ActionDef,
+  type ActionId,
+  type BindingMap,
+} from '../../shared/core/Keybinds';
+import {
+  COLORBLIND_MODES,
+  SHADOW_QUALITIES,
+  type ColorblindMode,
+  type SettingsV1,
+  type ShadowQuality,
+} from '../../shared/meta/SaveData';
+import { characterDefinition } from '../characters/CharacterCatalog';
+import type { Profile } from '../meta/Profile';
+import { CHARACTER_CREDIT, CREDITS_NOTE, MODEL_CREDITS, type CreditEntry } from './CreditsData';
+import { createScreen } from './Frame';
+import { PlayerCard } from './PlayerCard';
+import { ProfilePanel } from './ProfilePanel';
+import { makeScreenFooter, makeScreenHeader } from './ScreenChrome';
+import { makeIconSvg } from './WeaponIcons';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface SettingsDeps {
   readonly host: HTMLElement;
   /** The saved record. Read on `show`, and on BACK to revert. */
@@ -96,44 +101,54 @@ interface TabDef {
   readonly glyph: string;
 }
 
-/** The rail's glyphs: one path each in a 24-box, filled with `currentColor`. */
-const TABS: readonly TabDef[] = [
-  {
-    id: 'CONTROLS',
-    subtitle: 'OPERATIVE INPUT CONFIGURATION',
-    // A mouse.
-    glyph:
-      'M12 2 a7 7 0 0 0 -7 7 v6 a7 7 0 0 0 14 0 V9 a7 7 0 0 0 -7 -7 Z M12 4 a5 5 0 0 1 5 5 v1 h-4.2 V4.1 ' +
-      'A5 5 0 0 1 12 4 Z M11.2 4.1 V10 H7 V9 a5 5 0 0 1 4.2 -4.9 Z M7 12 h10 v3 a5 5 0 0 1 -10 0 Z',
-  },
-  {
-    id: 'BINDINGS',
-    subtitle: 'KEY ASSIGNMENTS',
-    // A keyboard.
-    glyph:
-      'M2 6 h20 a1 1 0 0 1 1 1 v10 a1 1 0 0 1 -1 1 H2 a1 1 0 0 1 -1 -1 V7 a1 1 0 0 1 1 -1 Z M3 8 v8 h18 V8 Z ' +
-      'M5 9.5 h2 v2 H5 Z M8.5 9.5 h2 v2 h-2 Z M12 9.5 h2 v2 h-2 Z M15.5 9.5 h2 v2 h-2 Z M5 13 h2 v2 H5 Z M8.5 13 h7 v2 h-7 Z M17 13 h2 v2 h-2 Z',
-  },
-  {
-    id: 'AUDIO',
-    subtitle: 'MIX AND LEVELS',
-    // A speaker with two arcs.
-    glyph:
-      'M3 9 h4 l5 -4 v14 l-5 -4 H3 Z M14.5 8.2 a4.5 4.5 0 0 1 0 7.6 l-1 -1.6 a2.6 2.6 0 0 0 0 -4.4 Z ' +
-      'M16.8 5.2 a8 8 0 0 1 0 13.6 l-1 -1.6 a6.1 6.1 0 0 0 0 -10.4 Z',
-  },
-  {
-    id: 'VIDEO',
-    subtitle: 'DISPLAY AND RENDERING',
-    // A monitor.
-    glyph: 'M2 4 h20 a1 1 0 0 1 1 1 v11 a1 1 0 0 1 -1 1 H2 a1 1 0 0 1 -1 -1 V5 a1 1 0 0 1 1 -1 Z M3 6 v9 h18 V6 Z M8 19 h8 v2 H8 Z',
-  },
-  {
-    id: 'INFO',
-    subtitle: 'REFERENCE AND ACCOUNT',
-    // A document.
-    glyph: 'M6 2 h8 l5 5 v15 H6 Z M8 4 v16 h9 V8 h-4 V4 Z M9.5 11 h6 v1.6 h-6 Z M9.5 14 h6 v1.6 h-6 Z M9.5 17 h4 v1.6 h-4 Z',
-  },
+/** A control row before its control is put in it: the box, and the label that leads it. */
+interface RowParts {
+  readonly row: HTMLElement;
+  readonly name: HTMLElement;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Every glyph on this screen is one path in a 24-box, filled with `currentColor`. */
+const GLYPH_VIEWBOX = '0 0 24 24';
+
+/** A mouse. The rail's CONTROLS icon, and the side column's input-device card. */
+const MOUSE_GLYPH =
+  'M12 2 a7 7 0 0 0 -7 7 v6 a7 7 0 0 0 14 0 V9 a7 7 0 0 0 -7 -7 Z M12 4 a5 5 0 0 1 5 5 v1 h-4.2 V4.1 ' +
+  'A5 5 0 0 1 12 4 Z M11.2 4.1 V10 H7 V9 a5 5 0 0 1 4.2 -4.9 Z M7 12 h10 v3 a5 5 0 0 1 -10 0 Z';
+
+/** A keyboard. */
+const KEYBOARD_GLYPH =
+  'M2 6 h20 a1 1 0 0 1 1 1 v10 a1 1 0 0 1 -1 1 H2 a1 1 0 0 1 -1 -1 V7 a1 1 0 0 1 1 -1 Z M3 8 v8 h18 V8 Z ' +
+  'M5 9.5 h2 v2 H5 Z M8.5 9.5 h2 v2 h-2 Z M12 9.5 h2 v2 h-2 Z M15.5 9.5 h2 v2 h-2 Z M5 13 h2 v2 H5 Z M8.5 13 h7 v2 h-7 Z M17 13 h2 v2 h-2 Z';
+
+/** A speaker with two arcs. The rail's AUDIO icon, and the LEVELS section's. */
+const SPEAKER_GLYPH =
+  'M3 9 h4 l5 -4 v14 l-5 -4 H3 Z M14.5 8.2 a4.5 4.5 0 0 1 0 7.6 l-1 -1.6 a2.6 2.6 0 0 0 0 -4.4 Z ' +
+  'M16.8 5.2 a8 8 0 0 1 0 13.6 l-1 -1.6 a6.1 6.1 0 0 0 0 -10.4 Z';
+
+/** A monitor. The rail's VIDEO icon, and the RENDERING section's. */
+const MONITOR_GLYPH = 'M2 4 h20 a1 1 0 0 1 1 1 v11 a1 1 0 0 1 -1 1 H2 a1 1 0 0 1 -1 -1 V5 a1 1 0 0 1 1 -1 Z M3 6 v9 h18 V6 Z M8 19 h8 v2 H8 Z';
+
+/** A document. */
+const DOCUMENT_GLYPH = 'M6 2 h8 l5 5 v15 H6 Z M8 4 v16 h9 V8 h-4 V4 Z M9.5 11 h6 v1.6 h-6 Z M9.5 14 h6 v1.6 h-6 Z M9.5 17 h4 v1.6 h-4 Z';
+
+/** A dial with four ticks: the SENSITIVITY section. */
+const SENSITIVITY_GLYPH =
+  'M12 4 A8 8 0 1 0 12 20 A8 8 0 1 0 12 4 Z M12 7 A5 5 0 1 1 12 17 A5 5 0 1 1 12 7 Z ' +
+  'M11 1h2v4h-2z M11 19h2v4h-2z M1 11h4v2H1z M19 11h4v2h-4z';
+
+/** An eye: the VIEW section. */
+const VIEW_GLYPH = 'M2 12 c3 -5 6.5 -7 10 -7 s7 2 10 7 c-3 5 -6.5 7 -10 7 s-7 -2 -10 -7 Z M12 8 a4 4 0 1 0 0 8 a4 4 0 1 0 0 -8 Z';
+
+/** The five categories, in rail order. A non-empty tuple, so the first is a fallback with no cast. */
+const TABS: readonly [TabDef, ...TabDef[]] = [
+  { id: 'CONTROLS', subtitle: 'OPERATIVE INPUT CONFIGURATION', glyph: MOUSE_GLYPH },
+  { id: 'BINDINGS', subtitle: 'KEY ASSIGNMENTS', glyph: KEYBOARD_GLYPH },
+  { id: 'AUDIO', subtitle: 'MIX AND LEVELS', glyph: SPEAKER_GLYPH },
+  { id: 'VIDEO', subtitle: 'DISPLAY AND RENDERING', glyph: MONITOR_GLYPH },
+  { id: 'INFO', subtitle: 'REFERENCE AND ACCOUNT', glyph: DOCUMENT_GLYPH },
 ];
 
 const CHEVRON = 'M9 4 L17 12 L9 20 L7.4 18.4 L13.8 12 L7.4 5.6 Z';
@@ -146,6 +161,9 @@ const BINDING_COLUMNS: readonly (readonly ActionDef['group'][])[] = [
   ['Combat'],
   ['Equipment', 'Interface'],
 ];
+
+/** Two slots always, so an action with one binding still offers somewhere to add a second. */
+const BINDING_SLOTS = 2;
 
 const SHADOW_LABELS: Readonly<Record<ShadowQuality, string>> = {
   off: 'Off',
@@ -171,8 +189,9 @@ const PLATE_CAPTION = 'ADJUST YOUR CONTROLS FOR MAXIMUM PERFORMANCE';
  */
 const FULLSCREEN_HINT = 'F11 for fullscreen — required to capture Ctrl+W (crouch + forward)';
 
-/** The line above the credits list: why the names are there at all. */
 /**
+ * The line above the credits list: why the names are there at all.
+ *
  * The second sentence is the other half of CC-BY §3(a) (2026-09-27): the licence asks for an
  * indication that the material was changed, and every model here is changed — the build takes
  * the parts it wants, re-origins them, decimates and re-textures. Said once, over the whole
@@ -196,44 +215,18 @@ const CREDITS_INTRO =
  */
 const CREDITS_PER_PAGE = 14;
 
-/**
- * One credited source: who made it, under what licence, and which of the game's things it is.
- *
- * The title and the licence are links because CC-BY asks for both — the material and the deed
- * — and a credit screen in a browser is the one place where that costs nothing. `noreferrer`
- * and a new tab, so a player reading a credit does not lose the match behind them.
- */
-function creditRow(host: HTMLElement, entry: CreditEntry): void {
-  const link = (text: string, href: string, className: string): HTMLElement => {
-    const a = document.createElement('a');
-    a.className = className;
-    a.href = href;
-    a.target = '_blank';
-    a.rel = 'noreferrer noopener';
-    a.textContent = text;
-    return a;
-  };
+const RESET_WARNING = 'LEVEL, UNLOCKS, CAMOS AND CLASSES. SETTINGS ARE KEPT.';
 
-  const source = document.createElement('span');
-  source.className = 'st-credit__source';
-  source.appendChild(link(entry.title, entry.url, 'st-credit__link'));
-  const by = document.createElement('span');
-  by.className = 'st-credit__by';
-  by.textContent = ` by ${entry.author}`;
-  source.appendChild(by);
+/** What the line under the binding list says when nothing has happened to it yet. */
+const BINDING_HELP = 'Click a binding to change it. A key taken from another action is removed from it.';
+const BINDING_ARMED = 'Press any key or mouse button. Escape cancels.';
+//#endregion
 
-  const licence = document.createElement('span');
-  licence.className = 'st-credit__licence';
-  licence.appendChild(link(entry.license, entry.licenseUrl, 'st-credit__link'));
-
-  const used = document.createElement('span');
-  used.className = 'st-credit__used';
-  used.textContent = entry.used;
-
-  host.append(source, licence, used);
-}
-
+// ======================================= CLASS Settings ======================================= \\
+//#region Class Settings
 export class Settings {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly deps: SettingsDeps;
   private readonly screen: HTMLElement;
   /** The window-sized box the chrome mounts on (R1.1). `screen` is the layer. */
@@ -256,6 +249,40 @@ export class Settings {
   /** The page of credits INFO is showing. Back to the first on entering the screen or a category. */
   private creditsPage = 0;
 
+  /**
+   * Every capture handler ends the dispatch.
+   *
+   * `stopPropagation` in the capture phase at `window` stops the event reaching anything
+   * else at all, which is the point: pressing `W` to bind it must not also walk the player
+   * forward, and clicking to bind a mouse button must not fire the weapon.
+   */
+  private readonly onCaptureKey = (e: KeyboardEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.code === 'Escape') {
+      this.stopCapture();
+      this.paint();
+      return;
+    }
+    this.commitCapture(e.code);
+  };
+
+  private readonly onCaptureMouse = (e: MouseEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    this.commitCapture(mouseInput(e.button));
+  };
+
+  private readonly onCaptureWheel = (e: WheelEvent): void => {
+    if (e.deltaY === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.commitCapture(e.deltaY < 0 ? 'WheelUp' : 'WheelDown');
+  };
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: SettingsDeps) {
     this.deps = deps;
     const { layer, viewport, frame } = createScreen('op-screen st');
@@ -281,7 +308,10 @@ export class Settings {
     });
     deps.host.appendChild(this.screen);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   show(): void {
     this.screen.hidden = false;
     this.capturing = null;
@@ -334,9 +364,10 @@ export class Settings {
     this.stopCapture();
     this.screen.remove();
   }
+  //#endregion
 
-  // -- the draft ---------------------------------------------------------------
-
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   /** A change: into the draft, and live. */
   private edit(patch: Partial<SettingsV1>): void {
     Object.assign(this.draft, patch);
@@ -347,8 +378,6 @@ export class Settings {
   private revert(): void {
     this.deps.onPreview(this.deps.read());
   }
-
-  // -- painting --------------------------------------------------------------
 
   private paint(): void {
     const body = document.createElement('div');
@@ -370,100 +399,100 @@ export class Settings {
     const rail = document.createElement('nav');
     rail.className = 'st-rail';
     rail.setAttribute('aria-label', 'Settings categories');
-    TABS.forEach((def, i) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'st-rail__item';
-      b.classList.toggle('is-on', def.id === this.tab);
-      b.setAttribute('aria-current', def.id === this.tab ? 'page' : 'false');
-      b.appendChild(makeIconSvg(def.glyph, '0 0 24 24', 'st-rail__glyph'));
-      const num = document.createElement('span');
-      num.className = 'st-rail__num op-num';
-      num.textContent = `0${i + 1}`;
-      const name = document.createElement('span');
-      name.className = 'st-rail__name';
-      name.textContent = def.id;
-      b.append(num, name, makeIconSvg(CHEVRON, '0 0 24 24', 'st-rail__chevron'));
-      b.addEventListener('click', () => {
-        this.stopCapture();
-        this.tab = def.id;
-        this.resetArmed = false;
-        this.creditsPage = 0;
-        this.paint();
-      });
-      rail.appendChild(b);
-    });
+    TABS.forEach((def, i) => rail.appendChild(this.createRailItem(def, i)));
     return rail;
+  }
+
+  /** One category on the rail: its glyph, its number, its name and the chevron. */
+  private createRailItem(def: TabDef, index: number): HTMLElement {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'st-rail__item';
+    b.classList.toggle('is-on', def.id === this.tab);
+    b.setAttribute('aria-current', def.id === this.tab ? 'page' : 'false');
+    b.appendChild(makeIconSvg(def.glyph, GLYPH_VIEWBOX, 'st-rail__glyph'));
+    const num = document.createElement('span');
+    num.className = 'st-rail__num op-num';
+    num.textContent = `0${index + 1}`;
+    const name = document.createElement('span');
+    name.className = 'st-rail__name';
+    name.textContent = def.id;
+    b.append(num, name, makeIconSvg(CHEVRON, GLYPH_VIEWBOX, 'st-rail__chevron'));
+    b.addEventListener('click', () => {
+      this.stopCapture();
+      this.tab = def.id;
+      this.resetArmed = false;
+      this.creditsPage = 0;
+      this.paint();
+    });
+    return b;
   }
 
   /** The panel: the category's head, its controls beside the side column, and the foot. */
   private paintPanel(): HTMLElement {
-    const def = TABS.find((t) => t.id === this.tab) ?? TABS[0]!;
     const panel = document.createElement('section');
     panel.className = 'st-panel';
-
-    const head = document.createElement('div');
-    head.className = 'st-panel__head';
-    head.appendChild(makeIconSvg(def.glyph, '0 0 24 24', 'st-panel__glyph'));
-    const titles = document.createElement('div');
-    titles.className = 'st-panel__titles';
-    const title = document.createElement('h2');
-    title.className = 'st-panel__title';
-    title.textContent = def.id;
-    const sub = document.createElement('span');
-    sub.className = 'op-label st-panel__sub';
-    sub.textContent = def.subtitle;
-    titles.append(title, sub);
-    head.appendChild(titles);
-
     const main = document.createElement('div');
     main.className = 'st-main';
-    if (this.tab === 'CONTROLS') this.paintControls(main);
-    else if (this.tab === 'BINDINGS') this.paintBindings(main);
-    else if (this.tab === 'AUDIO') this.paintAudio(main);
-    else if (this.tab === 'VIDEO') this.paintVideo(main);
-    else this.paintInfo(main);
+    this.paintCategory(main);
+    panel.append(createPanelHead(tabDef(this.tab)), this.createColumns(main), this.createFoot());
+    return panel;
+  }
 
+  /** The open category's controls, into the panel's main box. */
+  private paintCategory(main: HTMLElement): void {
+    switch (this.tab) {
+      case 'CONTROLS':
+        this.paintControls(main);
+        return;
+      case 'BINDINGS':
+        this.paintBindings(main);
+        return;
+      case 'AUDIO':
+        this.paintAudio(main);
+        return;
+      case 'VIDEO':
+        this.paintVideo(main);
+        return;
+      case 'INFO':
+        this.paintInfo(main);
+        return;
+    }
+  }
+
+  /**
+   * The controls, with the side column beside them — except under BINDINGS.
+   *
+   * BINDINGS takes the whole width: three columns of labels and two key chips each do not
+   * fit beside the side column without truncating the labels, and a label cut to "CROUC…"
+   * is a binding row that cannot be read.
+   */
+  private createColumns(main: HTMLElement): HTMLElement {
     const columns = document.createElement('div');
     columns.className = 'st-columns';
-    // BINDINGS takes the whole width: three columns of labels and two key chips each do not
-    // fit beside the side column without truncating the labels, and a label cut to "CROUC…"
-    // is a binding row that cannot be read.
     if (this.tab === 'BINDINGS') {
       columns.classList.add('st-columns--wide');
       columns.appendChild(main);
     } else {
       columns.append(main, this.paintSide());
     }
+    return columns;
+  }
 
+  /** BACK and APPLY, on the bar the other screens end on. */
+  private createFoot(): HTMLElement {
     const foot = document.createElement('div');
     foot.className = 'op-actionbar op-actionbar--bare st-foot';
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'op-cta op-cta--quiet st-back';
-    back.appendChild(makeIconSvg(ARROW_LEFT, '0 0 24 24', 'op-cta__lead'));
-    const bt = document.createElement('span');
-    bt.textContent = 'BACK';
-    back.appendChild(bt);
-    back.addEventListener('click', () => {
+    const back = createFootButton('BACK', ARROW_LEFT, 'op-cta op-cta--quiet st-back', () => {
       this.revert();
       this.deps.onBack();
     });
-    const apply = document.createElement('button');
-    apply.type = 'button';
-    apply.className = 'op-cta op-cta--primary st-apply';
-    apply.appendChild(makeIconSvg(CHECK, '0 0 24 24', 'op-cta__lead'));
-    const at = document.createElement('span');
-    at.textContent = 'APPLY';
-    apply.appendChild(at);
-    apply.addEventListener('click', () => {
+    const apply = createFootButton('APPLY', CHECK, 'op-cta op-cta--primary st-apply', () => {
       this.deps.onCommit(this.draft);
       this.deps.onBack();
     });
     foot.append(back, apply);
-
-    panel.append(head, columns, foot);
-    return panel;
+    return foot;
   }
 
   /** The side column: the input device, and the operator's portrait under the caption. */
@@ -473,7 +502,7 @@ export class Settings {
 
     const device = document.createElement('div');
     device.className = 'st-card';
-    device.appendChild(makeIconSvg(TABS[0]!.glyph, '0 0 24 24', 'st-card__glyph'));
+    device.appendChild(makeIconSvg(MOUSE_GLYPH, GLYPH_VIEWBOX, 'st-card__glyph'));
     const dt = document.createElement('div');
     dt.className = 'st-card__text';
     const dl = document.createElement('span');
@@ -487,6 +516,12 @@ export class Settings {
     dt.append(dl, dv);
     device.appendChild(dt);
 
+    side.append(device, this.createPlate());
+    return side;
+  }
+
+  /** The operator's portrait, shaded, under the caption and its three bars. */
+  private createPlate(): HTMLElement {
     const plate = document.createElement('div');
     plate.className = 'st-plate';
     const img = document.createElement('img');
@@ -507,16 +542,12 @@ export class Settings {
       bars.appendChild(bar);
     }
     plate.append(img, shade, caption, bars);
-
-    side.append(device, plate);
-    return side;
+    return plate;
   }
-
-  // -- the categories ---------------------------------------------------------
 
   private paintControls(host: HTMLElement): void {
     const s = this.draft;
-    const look = this.section('SENSITIVITY', 'M12 4 A8 8 0 1 0 12 20 A8 8 0 1 0 12 4 Z M12 7 A5 5 0 1 1 12 17 A5 5 0 1 1 12 7 Z M11 1h2v4h-2z M11 19h2v4h-2z M1 11h4v2H1z M19 11h4v2h-4z');
+    const look = this.section('SENSITIVITY', SENSITIVITY_GLYPH);
     look.append(
       this.slider('Look sensitivity', s.sensitivity, 0.1, 5, 0.05, (v) => this.edit({ sensitivity: v })),
       this.slider(
@@ -529,7 +560,7 @@ export class Settings {
         'Applied in proportion to how far the sights are up, so it arrives with the picture.',
       ),
     );
-    const view = this.section('VIEW', 'M2 12 c3 -5 6.5 -7 10 -7 s7 2 10 7 c-3 5 -6.5 7 -10 7 s-7 -2 -10 -7 Z M12 8 a4 4 0 1 0 0 8 a4 4 0 1 0 0 -8 Z');
+    const view = this.section('VIEW', VIEW_GLYPH);
     view.append(
       this.slider('Field of view', s.fov, 60, 120, 1, (v) => this.edit({ fov: v }), undefined, (v) => `${v.toFixed(0)}°`),
       this.toggle('Invert vertical look', s.invertY, (v) => this.edit({ invertY: v })),
@@ -539,44 +570,43 @@ export class Settings {
 
   private paintBindings(host: HTMLElement): void {
     host.classList.add('st-main--bindings', 'st-main--tight');
-    const groups = new Map<ActionDef['group'], ActionDef[]>();
-    for (const a of ACTIONS) {
-      const list = groups.get(a.group);
-      if (list === undefined) groups.set(a.group, [a]);
-      else list.push(a);
-    }
+    host.appendChild(this.createBindingColumns(this.draft.bindings));
+    host.appendChild(this.createBindingsFoot());
+  }
 
-    const bindings = this.draft.bindings;
+  /** The three columns of the binding table, in the order `BINDING_COLUMNS` stands them. */
+  private createBindingColumns(bindings: BindingMap): HTMLElement {
+    const groups = groupActions();
     const columns = document.createElement('div');
     columns.className = 'st-bindings';
     for (const column of BINDING_COLUMNS) {
-      const col = document.createElement('div');
-      col.className = 'st-bindings__column';
-      for (const group of column) {
-        const sec = this.section(group.toUpperCase());
-        for (const action of groups.get(group) ?? []) sec.appendChild(this.bindingRow(action, bindings));
-        col.appendChild(sec);
-      }
-      columns.appendChild(col);
+      columns.appendChild(this.createBindingColumn(column, groups, bindings));
     }
-    host.appendChild(columns);
+    return columns;
+  }
 
+  private createBindingColumn(
+    column: readonly ActionDef['group'][],
+    groups: ReadonlyMap<ActionDef['group'], readonly ActionDef[]>,
+    bindings: BindingMap,
+  ): HTMLElement {
+    const col = document.createElement('div');
+    col.className = 'st-bindings__column';
+    for (const group of column) {
+      const sec = this.section(group.toUpperCase());
+      for (const action of groups.get(group) ?? []) sec.appendChild(this.bindingRow(action, bindings));
+      col.appendChild(sec);
+    }
+    return col;
+  }
+
+  /** Under the three columns: what to do, the fullscreen hint, and the way back to the defaults. */
+  private createBindingsFoot(): HTMLElement {
     const foot = document.createElement('div');
     foot.className = 'st-bindings__foot';
     const notes = document.createElement('div');
     notes.className = 'st-bindings__notes';
-    const note = document.createElement('p');
-    note.className = 'st-note';
-    note.textContent =
-      this.notice !== ''
-        ? this.notice
-        : this.capturing !== null
-          ? 'Press any key or mouse button. Escape cancels.'
-          : 'Click a binding to change it. A key taken from another action is removed from it.';
-    const hint = document.createElement('p');
-    hint.className = 'st-note';
-    hint.textContent = FULLSCREEN_HINT;
-    notes.append(note, hint);
+    notes.append(note(this.bindingNoteText()), note(FULLSCREEN_HINT));
     const reset = document.createElement('button');
     reset.type = 'button';
     reset.className = 'op-cta op-cta--quiet st-reset';
@@ -589,114 +619,14 @@ export class Settings {
       this.paint();
     });
     foot.append(notes, reset);
-    host.appendChild(foot);
+    return foot;
   }
 
-  /**
-   * INFO: the credits, and the reset control the main menu used to carry under its buttons.
-   *
-   * **The credits are here because this is the build a player actually has.** Every model in
-   * the game is someone else's: the weapons, attachments, knife and hands are Sketchfab models
-   * under CC-BY or the Sketchfab Standard licence, the characters and animations are Mixamo's.
-   * CC-BY asks for the title, the author, the links and the licence *wherever the work is
-   * distributed* — a `CREDITS.md` in the repository is not distributed with a deployed client,
-   * and this screen is. It is short by design: one line per source with both links, and the
-   * full page, with every built file, in `CREDITS.md`. The list is generated
-   * (`scripts/credits.mjs` → `CreditsData.ts`) from the same records the `.glb` files carry,
-   * so a model added without a credit fails `npm run check:credits` rather than shipping.
-   *
-   * Reset progress is a two-step button rather than a `window.confirm`: the page owns pointer
-   * lock and a native modal steals focus in a way the input layer then has to recover from.
-   * The second press has to be a deliberate second click, and clicking any other category —
-   * or re-entering the screen — puts it back.
-   */
-  private paintInfo(host: HTMLElement): void {
-    host.classList.add('st-main--tight');
-    const entries: readonly CreditEntry[] = [...MODEL_CREDITS, CHARACTER_CREDIT];
-    const pages = Math.max(1, Math.ceil(entries.length / CREDITS_PER_PAGE));
-    this.creditsPage = Math.min(this.creditsPage, pages - 1);
-
-    const credits = this.section('CREDITS');
-    credits.querySelector('.st-sec__head')?.appendChild(this.creditsPager(pages));
-    const intro = document.createElement('p');
-    intro.className = 'st-note';
-    intro.textContent = CREDITS_INTRO;
-    credits.appendChild(intro);
-
-    const list = document.createElement('div');
-    list.className = 'st-credits';
-    const first = this.creditsPage * CREDITS_PER_PAGE;
-    for (const entry of entries.slice(first, first + CREDITS_PER_PAGE)) creditRow(list, entry);
-    credits.appendChild(list);
-
-    const note = document.createElement('p');
-    note.className = 'st-note';
-    note.textContent = CREDITS_NOTE;
-    credits.appendChild(note);
-
-    const progress = this.section('PROGRESS');
-    const wrap = document.createElement('div');
-    wrap.className = 'st-danger';
-    const reset = document.createElement('button');
-    reset.type = 'button';
-    reset.className = 'op-cta op-cta--quiet st-reset';
-    reset.classList.toggle('op-cta--danger', this.resetArmed);
-    const rt = document.createElement('span');
-    rt.textContent = this.resetArmed ? 'CONFIRM — ERASE ALL PROGRESS' : 'RESET PROGRESS';
-    reset.appendChild(rt);
-    reset.addEventListener('click', () => {
-      if (!this.resetArmed) {
-        this.resetArmed = true;
-        this.paint();
-        return;
-      }
-      this.resetArmed = false;
-      this.deps.onResetProgress();
-      this.notice = '';
-      this.paint();
-    });
-    wrap.appendChild(reset);
-    if (this.resetArmed) {
-      const warn = document.createElement('span');
-      warn.className = 'op-label st-danger__warn';
-      warn.textContent = 'LEVEL, UNLOCKS, CAMOS AND CLASSES. SETTINGS ARE KEPT.';
-      wrap.appendChild(warn);
-    }
-    progress.appendChild(wrap);
-
-    host.append(credits, progress);
-  }
-
-  /**
-   * The credits' page arrows and count, at the right end of the section's head — the same
-   * control Create-a-Class pages its lists with (`lo-pager`). Absent when one page holds them.
-   */
-  private creditsPager(pages: number): HTMLElement {
-    const pager = document.createElement('div');
-    pager.className = 'lo-pager st-pager';
-    pager.hidden = pages <= 1;
-    const arrow = (text: string, label: string, to: number): HTMLButtonElement => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'lo-arrow';
-      b.textContent = text;
-      b.setAttribute('aria-label', label);
-      b.disabled = to < 0 || to >= pages;
-      b.addEventListener('click', () => {
-        this.creditsPage = to;
-        this.paint();
-      });
-      return b;
-    };
-    const count = document.createElement('span');
-    count.className = 'lo-pager__count op-label';
-    count.textContent = `${this.creditsPage + 1} / ${pages}`;
-    pager.append(
-      arrow('‹', 'Previous page of credits', this.creditsPage - 1),
-      count,
-      arrow('›', 'Next page of credits', this.creditsPage + 1),
-    );
-    return pager;
+  /** The last rebind's news if there is any, else what the armed row is waiting for, else how to start. */
+  private bindingNoteText(): string {
+    if (this.notice !== '') return this.notice;
+    if (this.capturing !== null) return BINDING_ARMED;
+    return BINDING_HELP;
   }
 
   private bindingRow(action: ActionDef, bindings: BindingMap): HTMLElement {
@@ -711,27 +641,28 @@ export class Settings {
     const keys = document.createElement('div');
     keys.className = 'st-bind__keys';
     const list = bindings[action.id] ?? [];
-    // Two slots always, so an action with one binding still offers somewhere to add a second.
-    for (let slot = 0; slot < 2; slot++) {
-      const current = list[slot];
-      const armed = this.capturing?.action === action.id && this.capturing.slot === slot;
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'st-key';
-      b.classList.toggle('is-armed', armed);
-      b.classList.toggle('is-empty', current === undefined);
-      b.textContent = armed ? 'PRESS…' : current === undefined ? '—' : inputLabel(current);
-      b.addEventListener('click', () => this.startCapture(action.id, slot));
-      keys.appendChild(b);
-    }
+    for (let slot = 0; slot < BINDING_SLOTS; slot++) keys.appendChild(this.keyButton(action.id, slot, list[slot]));
     row.appendChild(keys);
     return row;
+  }
+
+  /** One slot: what is bound in it, or PRESS… while it is the one waiting for a key. */
+  private keyButton(action: ActionId, slot: number, current: string | undefined): HTMLButtonElement {
+    const armed = this.capturing?.action === action && this.capturing.slot === slot;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'st-key';
+    b.classList.toggle('is-armed', armed);
+    b.classList.toggle('is-empty', current === undefined);
+    b.textContent = armed ? 'PRESS…' : current === undefined ? '—' : inputLabel(current);
+    b.addEventListener('click', () => this.startCapture(action, slot));
+    return b;
   }
 
   private paintAudio(host: HTMLElement): void {
     const s = this.draft;
     const pct = (v: number): string => `${Math.round(v * 100)}%`;
-    const levels = this.section('LEVELS', TABS[2]!.glyph);
+    const levels = this.section('LEVELS', SPEAKER_GLYPH);
     levels.append(
       this.slider('Master', s.masterVolume, 0, 1, 0.01, (v) => this.edit({ masterVolume: v }), undefined, pct),
       this.slider(
@@ -761,7 +692,7 @@ export class Settings {
 
   private paintVideo(host: HTMLElement): void {
     const s = this.draft;
-    const rendering = this.section('RENDERING', TABS[3]!.glyph);
+    const rendering = this.section('RENDERING', MONITOR_GLYPH);
     rendering.append(
       this.slider(
         'Render scale',
@@ -791,7 +722,117 @@ export class Settings {
     host.append(rendering, access);
   }
 
-  // -- capture ---------------------------------------------------------------
+  /**
+   * INFO: the credits, and the reset control the main menu used to carry under its buttons.
+   */
+  private paintInfo(host: HTMLElement): void {
+    host.classList.add('st-main--tight');
+    host.append(this.createCreditsSection(), this.createProgressSection());
+  }
+
+  /**
+   * **The credits are here because this is the build a player actually has.** Every model in
+   * the game is someone else's: the weapons, attachments, knife and hands are Sketchfab models
+   * under CC-BY or the Sketchfab Standard licence, the characters and animations are Mixamo's.
+   * CC-BY asks for the title, the author, the links and the licence *wherever the work is
+   * distributed* — a `CREDITS.md` in the repository is not distributed with a deployed client,
+   * and this screen is. It is short by design: one line per source with both links, and the
+   * full page, with every built file, in `CREDITS.md`. The list is generated
+   * (`scripts/credits.mjs` → `CreditsData.ts`) from the same records the `.glb` files carry,
+   * so a model added without a credit fails `npm run check:credits` rather than shipping.
+   */
+  private createCreditsSection(): HTMLElement {
+    const entries: readonly CreditEntry[] = [...MODEL_CREDITS, CHARACTER_CREDIT];
+    const pages = Math.max(1, Math.ceil(entries.length / CREDITS_PER_PAGE));
+    this.creditsPage = Math.min(this.creditsPage, pages - 1);
+
+    const credits = this.section('CREDITS');
+    credits.querySelector('.st-sec__head')?.appendChild(this.creditsPager(pages));
+    credits.appendChild(note(CREDITS_INTRO));
+
+    const list = document.createElement('div');
+    list.className = 'st-credits';
+    const first = this.creditsPage * CREDITS_PER_PAGE;
+    for (const entry of entries.slice(first, first + CREDITS_PER_PAGE)) creditRow(list, entry);
+    credits.appendChild(list);
+
+    credits.appendChild(note(CREDITS_NOTE));
+    return credits;
+  }
+
+  /**
+   * Reset progress is a two-step button rather than a `window.confirm`: the page owns pointer
+   * lock and a native modal steals focus in a way the input layer then has to recover from.
+   * The second press has to be a deliberate second click, and clicking any other category —
+   * or re-entering the screen — puts it back.
+   */
+  private createProgressSection(): HTMLElement {
+    const progress = this.section('PROGRESS');
+    const wrap = document.createElement('div');
+    wrap.className = 'st-danger';
+    wrap.appendChild(this.createResetButton());
+    if (this.resetArmed) wrap.appendChild(resetWarning());
+    progress.appendChild(wrap);
+    return progress;
+  }
+
+  private createResetButton(): HTMLButtonElement {
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'op-cta op-cta--quiet st-reset';
+    reset.classList.toggle('op-cta--danger', this.resetArmed);
+    const rt = document.createElement('span');
+    rt.textContent = this.resetArmed ? 'CONFIRM — ERASE ALL PROGRESS' : 'RESET PROGRESS';
+    reset.appendChild(rt);
+    reset.addEventListener('click', () => this.onResetClick());
+    return reset;
+  }
+
+  /** The first click arms, the second wipes and disarms. */
+  private onResetClick(): void {
+    if (!this.resetArmed) {
+      this.resetArmed = true;
+      this.paint();
+      return;
+    }
+    this.resetArmed = false;
+    this.deps.onResetProgress();
+    this.notice = '';
+    this.paint();
+  }
+
+  /**
+   * The credits' page arrows and count, at the right end of the section's head — the same
+   * control Create-a-Class pages its lists with (`lo-pager`). Absent when one page holds them.
+   */
+  private creditsPager(pages: number): HTMLElement {
+    const pager = document.createElement('div');
+    pager.className = 'lo-pager st-pager';
+    pager.hidden = pages <= 1;
+    const count = document.createElement('span');
+    count.className = 'lo-pager__count op-label';
+    count.textContent = `${this.creditsPage + 1} / ${pages}`;
+    pager.append(
+      this.creditsArrow('‹', 'Previous page of credits', this.creditsPage - 1, pages),
+      count,
+      this.creditsArrow('›', 'Next page of credits', this.creditsPage + 1, pages),
+    );
+    return pager;
+  }
+
+  private creditsArrow(text: string, label: string, to: number, pages: number): HTMLButtonElement {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'lo-arrow';
+    b.textContent = text;
+    b.setAttribute('aria-label', label);
+    b.disabled = to < 0 || to >= pages;
+    b.addEventListener('click', () => {
+      this.creditsPage = to;
+      this.paint();
+    });
+    return b;
+  }
 
   private startCapture(action: ActionId, slot: number): void {
     this.stopCapture();
@@ -812,37 +853,6 @@ export class Settings {
   }
 
   /**
-   * Every capture handler ends the dispatch.
-   *
-   * `stopPropagation` in the capture phase at `window` stops the event reaching anything
-   * else at all, which is the point: pressing `W` to bind it must not also walk the player
-   * forward, and clicking to bind a mouse button must not fire the weapon.
-   */
-  private readonly onCaptureKey = (e: KeyboardEvent): void => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.code === 'Escape') {
-      this.stopCapture();
-      this.paint();
-      return;
-    }
-    this.commit(e.code);
-  };
-
-  private readonly onCaptureMouse = (e: MouseEvent): void => {
-    e.preventDefault();
-    e.stopPropagation();
-    this.commit(mouseInput(e.button));
-  };
-
-  private readonly onCaptureWheel = (e: WheelEvent): void => {
-    if (e.deltaY === 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    this.commit(e.deltaY < 0 ? 'WheelUp' : 'WheelDown');
-  };
-
-  /**
    * Write the captured input into the draft's binding table.
    *
    * The rebind happens on a *copy* of the map, which is then handed to `edit` like any other
@@ -850,28 +860,14 @@ export class Settings {
    * exactly the same path a volume slider does, and there is no second mechanism to keep in
    * step.
    */
-  private commit(input: string): void {
+  private commitCapture(input: string): void {
     const target = this.capturing;
     if (target === null) return;
     this.stopCapture();
 
     const next = cloneBindings(this.draft.bindings);
-    let stolenFrom: ActionId | null = null;
-    for (const action of ACTIONS) {
-      if (action.id === target.action) continue;
-      const list = next[action.id];
-      if (list === undefined) continue;
-      const at = list.indexOf(input);
-      if (at < 0) continue;
-      list.splice(at, 1);
-      stolenFrom = action.id;
-    }
-
-    const list = next[target.action] ?? [];
-    const dup = list.indexOf(input);
-    if (dup >= 0 && dup !== target.slot) list.splice(dup, 1);
-    list[Math.min(target.slot, list.length)] = input;
-    next[target.action] = list;
+    const stolenFrom = takeInputFrom(next, input, target.action);
+    placeInput(next, target.action, input, target.slot);
 
     this.edit({ bindings: next });
     this.notice =
@@ -881,15 +877,13 @@ export class Settings {
     this.paint();
   }
 
-  // -- primitives ------------------------------------------------------------
-
   /** A bordered group with a heading, and a glyph beside it where the group has one. */
   private section(title: string, glyph?: string): HTMLElement {
     const sec = document.createElement('div');
     sec.className = 'st-sec';
     const head = document.createElement('div');
     head.className = 'st-sec__head';
-    if (glyph !== undefined) head.appendChild(makeIconSvg(glyph, '0 0 24 24', 'st-sec__glyph'));
+    if (glyph !== undefined) head.appendChild(makeIconSvg(glyph, GLYPH_VIEWBOX, 'st-sec__glyph'));
     const label = document.createElement('span');
     label.className = 'st-sec__title';
     label.textContent = title;
@@ -908,24 +902,15 @@ export class Settings {
     help?: string,
     format: (v: number) => string = (v) => v.toFixed(2),
   ): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'st-row';
-
-    const name = document.createElement('span');
-    name.className = 'st-row__label';
-    name.textContent = label;
+    const { row, name } = createSettingRow(label);
 
     const readout = document.createElement('span');
     readout.className = 'st-row__value op-num';
     readout.textContent = format(value);
 
-    const input = document.createElement('input');
-    input.type = 'range';
-    input.className = 'st-range';
-    input.min = String(min);
-    input.max = String(max);
-    input.step = String(step);
-    input.value = String(value);
+    const input = createRange(min, max, step, value);
+    // No repaint here on purpose: the panel is rebuilt wholesale by `paint`, and rebuilding
+    // this element mid-drag would take the pointer off the slider the player is holding.
     input.addEventListener('input', () => {
       const v = Number(input.value);
       readout.textContent = format(v);
@@ -933,17 +918,11 @@ export class Settings {
     });
 
     row.append(name, input, readout);
-    if (help !== undefined) row.appendChild(helpText(help));
-    return row;
+    return withHelp(row, help);
   }
 
   private toggle(label: string, value: boolean, onChange: (v: boolean) => void, help?: string): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'st-row st-row--toggle';
-
-    const name = document.createElement('span');
-    name.className = 'st-row__label';
-    name.textContent = label;
+    const { row, name } = createSettingRow(label, 'st-row--toggle');
 
     const b = document.createElement('button');
     b.type = 'button';
@@ -951,6 +930,7 @@ export class Settings {
     b.classList.toggle('is-on', value);
     b.textContent = value ? 'ON' : 'OFF';
     b.setAttribute('aria-pressed', value ? 'true' : 'false');
+    // The same reason the slider does not repaint: the button writes its own two states.
     b.addEventListener('click', () => {
       const next = !b.classList.contains('is-on');
       b.classList.toggle('is-on', next);
@@ -960,8 +940,7 @@ export class Settings {
     });
 
     row.append(name, b);
-    if (help !== undefined) row.appendChild(helpText(help));
-    return row;
+    return withHelp(row, help);
   }
 
   private picker<T extends string>(
@@ -972,12 +951,7 @@ export class Settings {
     format: (v: T) => string,
     help?: string,
   ): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'st-row st-row--stack';
-
-    const name = document.createElement('span');
-    name.className = 'st-row__label';
-    name.textContent = label;
+    const { row, name } = createSettingRow(label, 'st-row--stack');
     row.appendChild(name);
 
     const list = document.createElement('div');
@@ -989,6 +963,7 @@ export class Settings {
       b.classList.toggle('is-on', option === value);
       b.textContent = format(option);
       b.setAttribute('aria-pressed', option === value ? 'true' : 'false');
+      // Unlike the slider and the toggle, a picker repaints: the marks are on its siblings.
       b.addEventListener('click', () => {
         onChange(option);
         this.paint();
@@ -996,9 +971,174 @@ export class Settings {
       list.appendChild(b);
     }
     row.appendChild(list);
-    if (help !== undefined) row.appendChild(helpText(help));
-    return row;
+    return withHelp(row, help);
   }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** The open category's row in the table, falling back to the first. */
+function tabDef(id: Tab): TabDef {
+  return TABS.find((t) => t.id === id) ?? TABS[0];
+}
+
+/** The panel's head: the category's glyph, its name and its subtitle. */
+function createPanelHead(def: TabDef): HTMLElement {
+  const head = document.createElement('div');
+  head.className = 'st-panel__head';
+  head.appendChild(makeIconSvg(def.glyph, GLYPH_VIEWBOX, 'st-panel__glyph'));
+  const titles = document.createElement('div');
+  titles.className = 'st-panel__titles';
+  const title = document.createElement('h2');
+  title.className = 'st-panel__title';
+  title.textContent = def.id;
+  const sub = document.createElement('span');
+  sub.className = 'op-label st-panel__sub';
+  sub.textContent = def.subtitle;
+  titles.append(title, sub);
+  head.appendChild(titles);
+  return head;
+}
+
+/** One of the panel's two foot buttons: a glyph, a word, and what it does. */
+function createFootButton(text: string, glyph: string, className: string, onClick: () => void): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = className;
+  b.appendChild(makeIconSvg(glyph, GLYPH_VIEWBOX, 'op-cta__lead'));
+  const label = document.createElement('span');
+  label.textContent = text;
+  b.appendChild(label);
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+/** The box and the label every control row opens with. The modifier is the row's own class. */
+function createSettingRow(label: string, modifier = ''): RowParts {
+  const row = document.createElement('div');
+  row.className = modifier === '' ? 'st-row' : `st-row ${modifier}`;
+  const name = document.createElement('span');
+  name.className = 'st-row__label';
+  name.textContent = label;
+  return { row, name };
+}
+
+function createRange(min: number, max: number, step: number, value: number): HTMLInputElement {
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.className = 'st-range';
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(value);
+  return input;
+}
+
+/** The one optional line under a control, and the tail every row builder ends on. */
+function withHelp(row: HTMLElement, help: string | undefined): HTMLElement {
+  if (help !== undefined) row.appendChild(helpText(help));
+  return row;
+}
+
+function helpText(text: string): HTMLElement {
+  const p = document.createElement('p');
+  p.className = 'st-row__help';
+  p.textContent = text;
+  return p;
+}
+
+/** A line of prose in a section: the binding notes and the two credits notes. */
+function note(text: string): HTMLElement {
+  const p = document.createElement('p');
+  p.className = 'st-note';
+  p.textContent = text;
+  return p;
+}
+
+function resetWarning(): HTMLElement {
+  const warn = document.createElement('span');
+  warn.className = 'op-label st-danger__warn';
+  warn.textContent = RESET_WARNING;
+  return warn;
+}
+
+/** The actions, bucketed by the group whose section their row stands in. */
+function groupActions(): Map<ActionDef['group'], ActionDef[]> {
+  const groups = new Map<ActionDef['group'], ActionDef[]>();
+  for (const a of ACTIONS) {
+    const list = groups.get(a.group);
+    if (list === undefined) groups.set(a.group, [a]);
+    else list.push(a);
+  }
+  return groups;
+}
+
+/**
+ * Take an input off every action but one.
+ *
+ * Returns the last action it was taken from, which is what the notice names. A key can only
+ * be on one other action at a time, so "the last" and "the one" are the same thing.
+ */
+function takeInputFrom(bindings: BindingMap, input: string, except: ActionId): ActionId | null {
+  let stolenFrom: ActionId | null = null;
+  for (const action of ACTIONS) {
+    if (action.id === except) continue;
+    const list = bindings[action.id];
+    if (list === undefined) continue;
+    const at = list.indexOf(input);
+    if (at < 0) continue;
+    list.splice(at, 1);
+    stolenFrom = action.id;
+  }
+  return stolenFrom;
+}
+
+/** Put the input in the slot, taking it out of the action's *other* slot if it was there. */
+function placeInput(bindings: BindingMap, action: ActionId, input: string, slot: number): void {
+  const list = bindings[action] ?? [];
+  const dup = list.indexOf(input);
+  if (dup >= 0 && dup !== slot) list.splice(dup, 1);
+  list[Math.min(slot, list.length)] = input;
+  bindings[action] = list;
+}
+
+/**
+ * One credited source: who made it, under what licence, and which of the game's things it is.
+ *
+ * The title and the licence are links because CC-BY asks for both — the material and the deed
+ * — and a credit screen in a browser is the one place where that costs nothing. `noreferrer`
+ * and a new tab, so a player reading a credit does not lose the match behind them.
+ */
+function creditRow(host: HTMLElement, entry: CreditEntry): void {
+  const source = document.createElement('span');
+  source.className = 'st-credit__source';
+  source.appendChild(creditLink(entry.title, entry.url));
+  const by = document.createElement('span');
+  by.className = 'st-credit__by';
+  by.textContent = ` by ${entry.author}`;
+  source.appendChild(by);
+
+  const licence = document.createElement('span');
+  licence.className = 'st-credit__licence';
+  licence.appendChild(creditLink(entry.license, entry.licenseUrl));
+
+  const used = document.createElement('span');
+  used.className = 'st-credit__used';
+  used.textContent = entry.used;
+
+  host.append(source, licence, used);
+}
+
+function creditLink(text: string, href: string): HTMLElement {
+  const a = document.createElement('a');
+  a.className = 'st-credit__link';
+  a.href = href;
+  a.target = '_blank';
+  a.rel = 'noreferrer noopener';
+  a.textContent = text;
+  return a;
 }
 
 /** A copy the draft can be edited on: every field is a primitive but the binding lists. */
@@ -1015,10 +1155,4 @@ function cloneBindings(source: BindingMap): BindingMap {
 function labelOf(id: ActionId): string {
   return ACTIONS.find((a) => a.id === id)?.label ?? id;
 }
-
-function helpText(text: string): HTMLElement {
-  const p = document.createElement('p');
-  p.className = 'st-row__help';
-  p.textContent = text;
-  return p;
-}
+//#endregion

@@ -1,5 +1,3 @@
-import { createScreen } from './Frame';
-
 /**
  * The pause screen (M5, from the M4 playtest notes).
  *
@@ -39,6 +37,13 @@ import { createScreen } from './Frame';
  * LOADOUT` at all, which is what makes this a rule instead of an omission.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { createScreen } from './Frame';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface PauseMenuDeps {
   readonly host: HTMLElement;
   readonly onResume: () => void;
@@ -56,7 +61,38 @@ export interface PauseMenuDeps {
   readonly onCheatCode: (code: string) => void;
 }
 
+/** The action stack, and the two buttons the screen keeps a handle on. */
+interface Actions {
+  readonly element: HTMLElement;
+  readonly resume: HTMLButtonElement;
+  readonly debug: HTMLButtonElement;
+}
+
+/** The code field and the form around it. */
+interface CodeForm {
+  readonly element: HTMLElement;
+  readonly input: HTMLInputElement;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * Room for every code in the table and no room for a paragraph. The server bounds it too,
+ * at `CHEAT_CODE_MAX`, because a limit only a client enforces is not a limit.
+ */
+const CODE_MAX_LENGTH = 24;
+
+// F1 is no longer bound during play (M5 playtest note); the overlay is a button here.
+// The class line is the whole of B8: 1-5 is the in-match route, and the only one.
+const HINT = 'Esc to resume · 1-5 to change class · Tab for the scoreboard';
+//#endregion
+
+// ====================================== CLASS PauseMenu ======================================= \\
+//#region Class PauseMenu
 export class PauseMenu {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly screen: HTMLElement;
   private readonly status: HTMLElement;
   private readonly deps: PauseMenuDeps;
@@ -71,7 +107,10 @@ export class PauseMenu {
   private readonly codeInput: HTMLInputElement;
   private readonly codeResult: HTMLElement;
   private readonly debugButton: HTMLButtonElement;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: PauseMenuDeps) {
     this.deps = deps;
 
@@ -86,68 +125,27 @@ export class PauseMenu {
     this.status = document.createElement('p');
     this.status.className = 'op-screen__sub';
 
-    this.resumeButton = button('Resume', () => deps.onResume());
-    this.resumeButton.classList.add('op-btn--primary');
-    // M8: paused is where a player actually notices their sensitivity is wrong, and the
-    // cursor is already free here.
-    const settings = button('Settings', () => this.onSettings?.());
-    // F14: present only for a session that has unlocked it. `setDebugAvailable` is the one
-    // writer and `Game.updateHudSurfaces` is its one caller, so the button's presence is a pure
-    // function of the entitlement rather than something toggled at two separate moments.
-    this.debugButton = button('Debug overlay', () => deps.onToggleDebug());
-    this.debugButton.hidden = true;
-    const quit = button('Quit to menu', () => deps.onQuit());
-    quit.classList.add('op-btn--quiet');
-
-    const actions = document.createElement('div');
-    actions.className = 'op-actions op-actions--stack';
-    actions.append(this.resumeButton, settings, this.debugButton, quit);
+    const actions = this.createActions();
+    this.resumeButton = actions.resume;
+    this.debugButton = actions.debug;
 
     const hint = document.createElement('p');
     hint.className = 'op-screen__sub';
-    // F1 is no longer bound during play (M5 playtest note); the overlay is a button here.
-    // The class line is the whole of B8: 1-5 is the in-match route, and the only one.
-    hint.textContent = 'Esc to resume · 1-5 to change class · Tab for the scoreboard';
+    hint.textContent = HINT;
 
-    /**
-     * The code field (F14).
-     *
-     * A `<form>`, so Enter submits without a keydown listener of our own — which also means the
-     * key never reaches `Input` at all, because a submit is a form event rather than a binding.
-     * `autocomplete` is off because a browser offering to remember somebody's cheat codes is
-     * noise, and this is not a password field.
-     */
-    const codeForm = document.createElement('form');
-    codeForm.className = 'op-code';
-    this.codeInput = document.createElement('input');
-    this.codeInput.type = 'text';
-    this.codeInput.className = 'op-code__input';
-    this.codeInput.placeholder = 'Code';
-    this.codeInput.autocomplete = 'off';
-    this.codeInput.spellcheck = false;
-    // Room for every code in the table and no room for a paragraph. The server bounds it too,
-    // at `CHEAT_CODE_MAX`, because a limit only a client enforces is not a limit.
-    this.codeInput.maxLength = 24;
-    const codeSubmit = document.createElement('button');
-    codeSubmit.type = 'submit';
-    codeSubmit.className = 'op-btn op-btn--quiet op-code__go';
-    codeSubmit.textContent = 'Enter';
-    codeForm.append(this.codeInput, codeSubmit);
-    codeForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const code = this.codeInput.value.trim();
-      if (code === '') return;
-      this.codeInput.value = '';
-      deps.onCheatCode(code);
-    });
+    const code = this.createCodeForm();
+    this.codeInput = code.input;
 
     this.codeResult = document.createElement('p');
     this.codeResult.className = 'op-screen__sub op-code__result';
 
-    frame.append(heading, this.status, actions, hint, codeForm, this.codeResult);
+    frame.append(heading, this.status, actions.element, hint, code.element, this.codeResult);
     deps.host.appendChild(this.screen);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Whether the debug overlay is reachable from here (F14).
    *
@@ -194,8 +192,69 @@ export class PauseMenu {
   dispose(): void {
     this.screen.remove();
   }
-}
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** The four things a paused player wants, in the order they want them. */
+  private createActions(): Actions {
+    const resume = button('Resume', () => this.deps.onResume());
+    resume.classList.add('op-btn--primary');
+    // M8: paused is where a player actually notices their sensitivity is wrong, and the
+    // cursor is already free here.
+    const settings = button('Settings', () => this.onSettings?.());
+    // F14: present only for a session that has unlocked it. `setDebugAvailable` is the one
+    // writer and `Game.updateHudSurfaces` is its one caller, so the button's presence is a pure
+    // function of the entitlement rather than something toggled at two separate moments.
+    const debug = button('Debug overlay', () => this.deps.onToggleDebug());
+    debug.hidden = true;
+    const quit = button('Quit to menu', () => this.deps.onQuit());
+    quit.classList.add('op-btn--quiet');
+
+    const element = document.createElement('div');
+    element.className = 'op-actions op-actions--stack';
+    element.append(resume, settings, debug, quit);
+    return { element, resume, debug };
+  }
+
+  /**
+   * The code field (F14).
+   *
+   * A `<form>`, so Enter submits without a keydown listener of our own — which also means the
+   * key never reaches `Input` at all, because a submit is a form event rather than a binding.
+   * `autocomplete` is off because a browser offering to remember somebody's cheat codes is
+   * noise, and this is not a password field.
+   */
+  private createCodeForm(): CodeForm {
+    const element = document.createElement('form');
+    element.className = 'op-code';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'op-code__input';
+    input.placeholder = 'Code';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.maxLength = CODE_MAX_LENGTH;
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'op-btn op-btn--quiet op-code__go';
+    submit.textContent = 'Enter';
+    element.append(input, submit);
+    element.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const code = input.value.trim();
+      if (code === '') return;
+      input.value = '';
+      this.deps.onCheatCode(code);
+    });
+    return { element, input };
+  }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 function button(text: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
@@ -204,3 +263,4 @@ function button(text: string, onClick: () => void): HTMLButtonElement {
   b.addEventListener('click', onClick);
   return b;
 }
+//#endregion

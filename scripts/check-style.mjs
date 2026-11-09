@@ -519,6 +519,11 @@ const FINISHED = {
     'src/client/ui/LoadoutStats.ts',
     'src/client/ui/QuickLoadout.ts',
   ],
+  C17: [
+    'src/client/ui/Palette.ts',
+    'src/client/ui/PauseMenu.ts',
+    'src/client/ui/Settings.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

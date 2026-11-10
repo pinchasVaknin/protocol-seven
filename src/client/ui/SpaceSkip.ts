@@ -1,5 +1,3 @@
-import { SkipGesture } from '../../shared/ui/SkipGesture';
-
 /**
  * Space, on a screen that is playing something (the human's brief, §8 and §9, 2026-09-24).
  *
@@ -22,6 +20,14 @@ import { SkipGesture } from '../../shared/ui/SkipGesture';
  * time, and Space on a focused `<button>` is a click. Prevented because Space scrolls a
  * page, and the frame is a page.
  */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { SkipGesture } from '../../shared/ui/SkipGesture';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface SpaceSkipDeps {
   /**
    * Whether the screen wants the key at all right now. The debrief's second of grace is
@@ -31,18 +37,30 @@ export interface SpaceSkipDeps {
   /** Three quick taps. Null on a screen with nowhere to go — the intro. */
   readonly onLeave: (() => void) | null;
 }
+//#endregion
 
-/** Seconds, from the same clock the render frame uses. */
-function nowSeconds(): number {
-  return performance.now() / 1000;
-}
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Milliseconds to the second, for the clock below. */
+const MS_PER_SECOND = 1000;
+//#endregion
 
+// ====================================== CLASS SpaceSkip ======================================= \\
+//#region Class SpaceSkip
 export class SpaceSkip {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly gesture = new SkipGesture();
   private listening = false;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(private readonly deps: SpaceSkipDeps) {}
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Extra seconds for this frame's timeline, on top of `dt`.
    *
@@ -81,7 +99,10 @@ export class SpaceSkip {
   reset(): void {
     this.gesture.reset();
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   // -- the events ---------------------------------------------------------------
 
   /**
@@ -125,4 +146,14 @@ export class SpaceSkip {
   private readonly onBlur = (): void => {
     this.gesture.reset();
   };
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Seconds, from the same clock the render frame uses. */
+function nowSeconds(): number {
+  return performance.now() / MS_PER_SECOND;
+}
+//#endregion

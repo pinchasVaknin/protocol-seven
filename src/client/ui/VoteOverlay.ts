@@ -1,3 +1,5 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import { DT } from '../../shared/core/Loop';
 import type { VoteInfo } from '../../shared/net/Messages';
 import {
@@ -9,6 +11,7 @@ import {
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
 import { findMap, findMode } from '../../shared/modes/ModeRegistry';
 import type { GameModeId } from '../../shared/modes/GameMode';
+//#endregion
 
 /**
  * The vote overlay (M11, §6.4, §6.10).
@@ -52,6 +55,8 @@ import type { GameModeId } from '../../shared/modes/GameMode';
  * listener is attached in `buildRow` and never re-attached.
  */
 
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface VoteOverlayDeps {
   readonly host: HTMLElement;
   /** Cast a vote for `option` in `phase`. The server decides whether it counts. */
@@ -62,6 +67,7 @@ export interface VoteOverlayDeps {
   readonly audio: ProceduralAudio;
 }
 
+/** The four nodes of one option row, held so a broadcast can write into them. */
 interface Row {
   readonly button: HTMLButtonElement;
   readonly name: HTMLElement;
@@ -69,7 +75,21 @@ interface Row {
   readonly fill: HTMLElement;
 }
 
+/** One option as the surface needs it: the label, the tally, the share, and whether it is mine. */
+interface OptionView {
+  readonly index: number;
+  readonly label: string;
+  readonly count: number;
+  readonly pct: number;
+  readonly self: boolean;
+}
+//#endregion
+
+// ===================================== CLASS VoteOverlay ====================================== \\
+//#region Class VoteOverlay
 export class VoteOverlay {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly deps: VoteOverlayDeps;
   private readonly root: HTMLElement;
   private readonly banner: HTMLElement;
@@ -87,7 +107,10 @@ export class VoteOverlay {
   /** A server notice being shown, and how many frames it has left. See `notice`. */
   private noticeText = '';
   private noticeFramesLeft = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: VoteOverlayDeps) {
     this.deps = deps;
 
@@ -125,7 +148,10 @@ export class VoteOverlay {
     this.root.append(this.banner, head, this.optionHost, this.hint);
     deps.host.appendChild(this.root);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Apply a broadcast from the server.
    *
@@ -164,50 +190,14 @@ export class VoteOverlay {
     this.root.hidden = !balloting && info.phase !== VotePhase.PLAY && this.noticeFramesLeft === 0;
 
     if (info.phase === VotePhase.PLAY) {
-      // The countdown to the next ballot: *"visible but unobtrusive"* (§6.4). No options, no
-      // banner — just how long you have left to shoot before you are asked.
-      this.heading.textContent = 'NEXT VOTE IN';
-      this.showNoticeOrHideBanner();
-      this.hint.hidden = true;
-      this.renderRows([]);
-      this.tick();
+      this.applyPlaying();
       return;
     }
-
     if (!balloting) {
-      /**
-       * `ALLOCATING`: no ballot, and normally nothing to say.
-       *
-       * The exception is a notice, and it is the important case — this is the phase a failed
-       * allocation leaves the cycle in. The clock and the options are cleared so the surface
-       * carries the message and nothing stale beside it.
-       */
-      this.heading.textContent = 'STARTING THE MATCH';
-      this.clock.textContent = '';
-      this.hint.hidden = true;
-      this.renderRows([]);
-      this.showNoticeOrHideBanner();
+      this.applyAllocating();
       return;
     }
-
-    this.hint.hidden = false;
-    this.heading.textContent = info.phase === VotePhase.MODE_VOTE ? 'VOTE — MODE' : 'VOTE — MAP';
-
-    const decidedMode = MODE_BALLOT[info.decidedMode];
-    if (this.noticeFramesLeft > 0) {
-      // A notice outranks the mode announcement for as long as it is up: it is the answer to
-      // something the player just tried to do, and the mode banner will still be there after.
-      this.banner.hidden = false;
-      this.banner.textContent = this.noticeText;
-    } else if (info.phase === VotePhase.MAP_VOTE && decidedMode !== undefined) {
-      this.banner.hidden = false;
-      this.banner.textContent = `${modeName(decidedMode)} — NOW PICK THE MAP`;
-    } else {
-      this.banner.hidden = true;
-    }
-
-    this.renderRows(this.optionsFor(info));
-    this.tick();
+    this.applyBallot(info);
   }
 
   /** Put a live notice on the banner, or hide it. The only writer of both, outside `apply`. */
@@ -228,21 +218,8 @@ export class VoteOverlay {
    * shaped around.
    */
   tick(): void {
-    if (this.noticeFramesLeft > 0) {
-      this.noticeFramesLeft--;
-      if (this.noticeFramesLeft === 0) {
-        this.noticeText = '';
-        this.banner.hidden = true;
-        /**
-         * The notice was the only reason this surface was up during `ALLOCATING`; take it down
-         * with the message. Without this the empty panel outlives the thing it existed to say.
-         */
-        const phase = this.info?.phase ?? VotePhase.IDLE;
-        if (phase !== VotePhase.PLAY && phase !== VotePhase.MODE_VOTE && phase !== VotePhase.MAP_VOTE) {
-          this.root.hidden = true;
-        }
-      }
-    }
+    // One call on a method of this object, every frame: no allocation and no closure.
+    if (this.noticeFramesLeft > 0) this.countNoticeDown();
 
     const info = this.info;
     if (info === null || this.root.hidden) return;
@@ -324,6 +301,83 @@ export class VoteOverlay {
     this.rows.clear();
     this.root.remove();
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  // -- the phases --------------------------------------------------------------
+
+  /**
+   * `PLAY`: the countdown to the next ballot, *"visible but unobtrusive"* (§6.4).
+   *
+   * No options and no banner — just how long you have left to shoot before you are asked.
+   */
+  private applyPlaying(): void {
+    this.heading.textContent = 'NEXT VOTE IN';
+    this.showNoticeOrHideBanner();
+    this.hint.hidden = true;
+    this.renderRows([]);
+    this.tick();
+  }
+
+  /**
+   * `ALLOCATING`: no ballot, and normally nothing to say.
+   *
+   * The exception is a notice, and it is the important case — this is the phase a failed
+   * allocation leaves the cycle in. The clock and the options are cleared so the surface
+   * carries the message and nothing stale beside it.
+   */
+  private applyAllocating(): void {
+    this.heading.textContent = 'STARTING THE MATCH';
+    this.clock.textContent = '';
+    this.hint.hidden = true;
+    this.renderRows([]);
+    this.showNoticeOrHideBanner();
+  }
+
+  /** A ballot is open: name it, say what was decided before it, and draw the tally. */
+  private applyBallot(info: VoteInfo): void {
+    this.hint.hidden = false;
+    this.heading.textContent = info.phase === VotePhase.MODE_VOTE ? 'VOTE — MODE' : 'VOTE — MAP';
+    this.paintBanner(info);
+    this.renderRows(this.optionsFor(info));
+    this.tick();
+  }
+
+  /** The banner over a ballot: a live notice, else the mode the map vote follows, else nothing. */
+  private paintBanner(info: VoteInfo): void {
+    const decidedMode = MODE_BALLOT[info.decidedMode];
+    if (this.noticeFramesLeft > 0) {
+      // A notice outranks the mode announcement for as long as it is up: it is the answer to
+      // something the player just tried to do, and the mode banner will still be there after.
+      this.banner.hidden = false;
+      this.banner.textContent = this.noticeText;
+      return;
+    }
+    if (info.phase === VotePhase.MAP_VOTE && decidedMode !== undefined) {
+      this.banner.hidden = false;
+      this.banner.textContent = `${modeName(decidedMode)} — NOW PICK THE MAP`;
+      return;
+    }
+    this.banner.hidden = true;
+  }
+
+  /**
+   * One frame off the notice, and what happens when it runs out.
+   *
+   * The notice was the only reason this surface was up during `ALLOCATING`; take it down with
+   * the message. Without this the empty panel outlives the thing it existed to say.
+   */
+  private countNoticeDown(): void {
+    this.noticeFramesLeft--;
+    if (this.noticeFramesLeft !== 0) return;
+    this.noticeText = '';
+    this.banner.hidden = true;
+    const phase = this.info?.phase ?? VotePhase.IDLE;
+    if (phase !== VotePhase.PLAY && phase !== VotePhase.MODE_VOTE && phase !== VotePhase.MAP_VOTE) {
+      this.root.hidden = true;
+    }
+  }
 
   // -- rendering ---------------------------------------------------------------
 
@@ -359,14 +413,7 @@ export class VoteOverlay {
 
     for (const item of items) {
       const row = this.rows.get(item.index);
-      if (row === undefined) continue;
-      row.name.textContent = `${item.index + 1}  ${item.label}`;
-      row.count.textContent = String(item.count);
-      row.fill.style.width = `${item.pct}%`;
-      row.button.classList.toggle('op-vote__option--on', item.self);
-      // Still announced: which option *this* player chose is real information, even though the
-      // control cannot be operated with a pointer.
-      row.button.setAttribute('aria-pressed', item.self ? 'true' : 'false');
+      if (row !== undefined) updateRow(row, item);
     }
   }
 
@@ -399,14 +446,21 @@ export class VoteOverlay {
     this.rows.set(item.index, { button, name, count, fill });
     return button;
   }
+  //#endregion
 }
+//#endregion
 
-interface OptionView {
-  readonly index: number;
-  readonly label: string;
-  readonly count: number;
-  readonly pct: number;
-  readonly self: boolean;
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** Write a broadcast into a row that is already on screen, which is the whole discipline. */
+function updateRow(row: Row, item: OptionView): void {
+  row.name.textContent = `${item.index + 1}  ${item.label}`;
+  row.count.textContent = String(item.count);
+  row.fill.style.width = `${item.pct}%`;
+  row.button.classList.toggle('op-vote__option--on', item.self);
+  // Still announced: which option *this* player chose is real information, even though the
+  // control cannot be operated with a pointer.
+  row.button.setAttribute('aria-pressed', item.self ? 'true' : 'false');
 }
 
 function modeName(id: GameModeId): string {
@@ -426,3 +480,4 @@ function mapName(id: string): string {
     return id;
   }
 }
+//#endregion

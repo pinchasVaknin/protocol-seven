@@ -52,19 +52,28 @@
  * that Chrome resolves them in the zoomed element's own pixels.
  */
 
-export const FRAME_WIDTH = 1920;
-export const FRAME_HEIGHT = 1080;
-
-/** The largest uniform scale at which the frame fits the window. */
-export function frameScale(viewportWidth: number, viewportHeight: number): number {
-  return Math.min(viewportWidth / FRAME_WIDTH, viewportHeight / FRAME_HEIGHT);
-}
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** The scale, and the window's size in frame pixels at it — what a full-bleed box inside the zoom measures. */
 export interface FrameViewport {
   readonly scale: number;
   readonly width: number;
   readonly height: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** The size every screen is laid out at, whatever the window is. */
+export const FRAME_WIDTH = 1920;
+export const FRAME_HEIGHT = 1080;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** The largest uniform scale at which the frame fits the window. */
+export function frameScale(viewportWidth: number, viewportHeight: number): number {
+  return Math.min(viewportWidth / FRAME_WIDTH, viewportHeight / FRAME_HEIGHT);
 }
 
 /**
@@ -110,3 +119,4 @@ export function createScreen(layerClass: string): { layer: HTMLElement; viewport
   layer.appendChild(viewport);
   return { layer, viewport, frame };
 }
+//#endregion

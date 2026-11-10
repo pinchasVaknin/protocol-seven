@@ -1,16 +1,3 @@
-import type { BotDifficulty } from '../../shared/ai/DifficultyTiers';
-import type { GameModeId } from '../../shared/modes/GameMode';
-import { DEFAULT_MODE_ID, findMap, modesForMap } from '../../shared/modes/ModeRegistry';
-import type { Profile } from '../meta/Profile';
-import { CHEAT_CODE_MAX } from '../../shared/cheats/Cheats';
-import { createScreen } from './Frame';
-import { makeLockup } from './Emblem';
-import { PlayerCard } from './PlayerCard';
-import { paintPlaySolo, testbedMode } from './PlaySolo';
-import { ProfilePanel } from './ProfilePanel';
-import { CHROME_LINE, makeScreenFooter, makeScreenHeader, type ScreenPlace } from './ScreenChrome';
-import { makeIconSvg } from './WeaponIcons';
-
 /**
  * The front end (brief S6.7; rebuilt on the design frame by M15, A2): main -> play -> match.
  *
@@ -67,8 +54,35 @@ import { makeIconSvg } from './WeaponIcons';
  *
  * Pointer lock can only be requested from a user gesture, so the button that starts a match
  * is genuinely load-bearing rather than a formality.
+ *
+ * ## One ordering in the constructor is load-bearing, and it is not obvious
+ *
+ * `codeResult` is an initialised field, so `useDefineForClassFields` runs its initialiser
+ * before the constructor's first statement — which is what lets `buildCodeForm()` append it
+ * from inside the constructor. And `panel` is built **before** `card` while the panel's own
+ * callbacks close over `this.card`: that is safe because a callback runs later, and it would
+ * stop being safe if either the declarations or the assignments were reordered. Nothing here
+ * needs changing; it needs not being changed by accident.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { BotDifficulty } from '../../shared/ai/DifficultyTiers';
+import type { GameModeId } from '../../shared/modes/GameMode';
+import { DEFAULT_MODE_ID, findMap, modesForMap } from '../../shared/modes/ModeRegistry';
+import type { Profile } from '../meta/Profile';
+import { CHEAT_CODE_MAX } from '../../shared/cheats/Cheats';
+import { createScreen } from './Frame';
+import { makeLockup } from './Emblem';
+import { PlayerCard } from './PlayerCard';
+import { paintPlaySolo, testbedMode } from './PlaySolo';
+import { ProfilePanel } from './ProfilePanel';
+import { CHROME_LINE, makeScreenFooter, makeScreenHeader, type ScreenPlace } from './ScreenChrome';
+import { makeIconSvg } from './WeaponIcons';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MenuSelection {
   modeId: GameModeId;
   mapId: string;
@@ -111,7 +125,14 @@ export interface MenuDeps {
   readonly onCheatCode: (code: string) => void;
 }
 
+/** The two pages the front end has. The match is not one of them. */
 type Page = 'MAIN' | 'PLAY';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** The box every glyph in this file is drawn in. */
+const GLYPH_VIEWBOX = '0 0 24 24';
 
 /** What the chrome calls each page (`ScreenChrome.ts`): the header's place and the footer's stamp. */
 const PLACES: Readonly<Record<Page, ScreenPlace>> = {
@@ -137,8 +158,13 @@ const GLYPH = {
     'M14 4.5 A2.5 2.5 0 1 0 14 9.5 A2.5 2.5 0 1 0 14 4.5 Z M9 14.5 A2.5 2.5 0 1 0 9 19.5 A2.5 2.5 0 1 0 9 14.5 Z',
   chevron: 'M9 4 L17 12 L9 20 L7.4 18.4 L13.8 12 L7.4 5.6 Z',
 } as const;
+//#endregion
 
+// ======================================== CLASS Menus ========================================= \\
+//#region Class Menus
 export class Menus {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly deps: MenuDeps;
   private readonly screen: HTMLElement;
   /** The window-sized box the header and the footer mount on (R1.1). `screen` is the layer. */
@@ -153,7 +179,10 @@ export class Menus {
   private page: Page = 'MAIN';
   /** The mode the player had before the testbed took it (decision 5); what a real map restores. */
   private rememberedMode: GameModeId;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MenuDeps) {
     this.deps = deps;
     const { layer, viewport, frame } = createScreen('op-screen op-screen--menu');
@@ -178,7 +207,10 @@ export class Menus {
     });
     deps.host.appendChild(this.screen);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * A one-line status over the backdrop: booting, connecting, reconnecting, refused.
    *
@@ -194,7 +226,7 @@ export class Menus {
     // The chrome of a previous menu paint, if any, comes off the viewport with the page.
     this.viewport.replaceChildren(this.frame);
     // The logo, on the black the canvas clears to until the map lands: the game opens on it.
-    this.frame.replaceChildren(makeLockup(), subtitle(message));
+    this.frame.replaceChildren(makeLockup(), createSubtitle(message));
   }
 
   /**
@@ -230,7 +262,7 @@ export class Menus {
     foot.className = 'op-label op-gate__foot';
     foot.textContent = CHROME_LINE;
     this.viewport.replaceChildren(this.frame);
-    this.frame.replaceChildren(makeLockup(), subtitle(headline), body, foot);
+    this.frame.replaceChildren(makeLockup(), createSubtitle(headline), body, foot);
   }
 
   /**
@@ -276,6 +308,26 @@ export class Menus {
     this.screen.remove();
   }
 
+  /** What happened to the last code. One writer, `Game.requestCheat` and its reply. */
+  setCodeResult(text: string): void {
+    this.codeResult.textContent = text;
+  }
+
+  /**
+   * Re-read the player card in the header, without rebuilding the page.
+   *
+   * The card is otherwise read on a page change (`header()`), which is the right moment for
+   * everything that moves the level *between* screens. `ATT7777` moves it while the player is
+   * looking at the header — the level goes to the cap on a keypress — and a card that still
+   * says LEVEL 1 under a caption reading *"max level"* is the screen contradicting itself.
+   */
+  refreshCard(): void {
+    this.card.refresh();
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   // -- pages -----------------------------------------------------------------
 
   /**
@@ -309,23 +361,6 @@ export class Menus {
       this.deps.onCheatCode(code);
     });
     return form;
-  }
-
-  /** What happened to the last code. One writer, `Game.requestCheat` and its reply. */
-  setCodeResult(text: string): void {
-    this.codeResult.textContent = text;
-  }
-
-  /**
-   * Re-read the player card in the header, without rebuilding the page.
-   *
-   * The card is otherwise read on a page change (`header()`), which is the right moment for
-   * everything that moves the level *between* screens. `ATT7777` moves it while the player is
-   * looking at the header — the level goes to the cap on a keypress — and a card that still
-   * says LEVEL 1 under a caption reading *"max level"* is the screen contradicting itself.
-   */
-  refreshCard(): void {
-    this.card.refresh();
   }
 
   private paint(): void {
@@ -404,11 +439,11 @@ export class Menus {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'op-nav';
-    const icon = makeIconSvg(glyph, '0 0 24 24', 'op-nav__icon');
+    const icon = makeIconSvg(glyph, GLYPH_VIEWBOX, 'op-nav__icon');
     const text = document.createElement('span');
     text.className = 'op-nav__label';
     text.textContent = label;
-    const chevron = makeIconSvg(GLYPH.chevron, '0 0 24 24', 'op-nav__chevron');
+    const chevron = makeIconSvg(GLYPH.chevron, GLYPH_VIEWBOX, 'op-nav__chevron');
     b.append(icon, text, chevron);
     b.addEventListener('click', onClick);
     return b;
@@ -473,11 +508,17 @@ export class Menus {
     const wanted = this.rememberedMode;
     selection.modeId = modesForMap(mapId).some((m) => m.id === wanted) ? wanted : DEFAULT_MODE_ID;
   }
+  //#endregion
 }
+//#endregion
 
-function subtitle(text: string): HTMLElement {
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** The one line under the lockup on the boot screen and on the gate. */
+function createSubtitle(text: string): HTMLElement {
   const p = document.createElement('p');
   p.className = 'op-screen__sub';
   p.textContent = text;
   return p;
 }
+//#endregion

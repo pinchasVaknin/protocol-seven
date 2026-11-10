@@ -1,6 +1,3 @@
-import { findMap } from '../../shared/modes/ModeRegistry';
-import type { MapBuildProgress } from '../world/MapRender';
-
 /**
  * The fallback for a client that missed the readiness timeout (M11, §4.18, §6.5).
  *
@@ -27,12 +24,34 @@ import type { MapBuildProgress } from '../world/MapRender';
  * thing it claims to describe has stopped.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { findMap } from '../../shared/modes/ModeRegistry';
+import type { MapBuildProgress } from '../world/MapRender';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** What the detail line says while a map is being built behind it. */
+const DETAIL_LINE = 'BUILDING THE MAP — THE MATCH HAS ALREADY STARTED';
+
+/** The bar's own ceiling, so a chunk count past its total cannot overfill it. */
+const FULL = 100;
+//#endregion
+
+// ==================================== CLASS LoadingScreen ===================================== \\
+//#region Class LoadingScreen
 export class LoadingScreen {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   private readonly root: HTMLElement;
   private readonly title: HTMLElement;
   private readonly detail: HTMLElement;
   private readonly fill: HTMLElement;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(host: HTMLElement) {
     this.root = document.createElement('div');
     this.root.className = 'op-loading';
@@ -53,7 +72,10 @@ export class LoadingScreen {
     this.root.append(this.title, track, this.detail);
     host.appendChild(this.root);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get visible(): boolean {
     return !this.root.hidden;
   }
@@ -66,7 +88,7 @@ export class LoadingScreen {
    */
   show(mapId: string): void {
     this.title.textContent = mapNameOf(mapId);
-    this.detail.textContent = 'BUILDING THE MAP — THE MATCH HAS ALREADY STARTED';
+    this.detail.textContent = DETAIL_LINE;
     this.fill.style.width = '0%';
     this.root.hidden = false;
   }
@@ -74,7 +96,7 @@ export class LoadingScreen {
   /** Advance the bar from real chunk counts. Safe to call with null. */
   update(progress: MapBuildProgress | null): void {
     if (progress === null || progress.total <= 0) return;
-    const pct = Math.min(100, Math.round((progress.done / progress.total) * 100));
+    const pct = Math.min(FULL, Math.round((progress.done / progress.total) * FULL));
     this.fill.style.width = `${pct}%`;
   }
 
@@ -85,8 +107,13 @@ export class LoadingScreen {
   dispose(): void {
     this.root.remove();
   }
+  //#endregion
 }
+//#endregion
 
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/** The map's own name, or the raw id for a map this build does not know. */
 function mapNameOf(mapId: string): string {
   try {
     return findMap(mapId).name;
@@ -94,3 +121,4 @@ function mapNameOf(mapId: string): string {
     return mapId;
   }
 }
+//#endregion

@@ -530,6 +530,16 @@ const FINISHED = {
     'src/client/ui/ProfilePanel.ts',
     'src/client/ui/XpSummary.ts',
   ],
+  C19: [
+    'src/client/ui/Frame.ts',
+    'src/client/ui/LoadingScreen.ts',
+    'src/client/ui/Menus.ts',
+    'src/client/ui/PlaySolo.ts',
+    'src/client/ui/ScreenChrome.ts',
+    'src/client/ui/SpaceSkip.ts',
+    'src/client/ui/Splash.ts',
+    'src/client/ui/VoteOverlay.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

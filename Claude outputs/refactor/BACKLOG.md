@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**55 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**57 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -61,6 +61,21 @@ worth keeping from this one. The live check **was** run on 2026-11-10, a day aft
 that said it had not been, and it passed; the C18 row says what it covered. Nothing in it moved
 the unit, so there is no re-baseline: it is a record, not a correction.
 
+**C19 corrected #74 on 2026-11-10** and opened **#78** and **#79**. It is the first unit to find
+that an entry it inherited had **miscounted its own evidence**: #74 said four files build the
+same pager arrow and named `VoteOverlay.ts` as the fourth, and `VoteOverlay.ts` has no arrow.
+The entry was written from C16's note about `optionsFor`, which both files do have, and the two
+were conflated. Three copies, not four — and because they sit in three different units, the
+moment #74 was waiting for (one unit owning two of them) will never arrive. That is now said in
+the entry rather than left as a watch.
+
+C19 is also the **second unit in the programme with nothing left browser-verified**, after C17,
+and the first to say so after actually running the live check rather than instead of it: every
+one of its eight surfaces builds and drives in node, there is no WebGL anywhere under it, and
+the live run was for the things the browser *adds* — 36 Web Animations composited at once, a
+`clientWidth` for `skullShift` to measure, a real `zoom` from `applyFrameScale`, and the build's
+own version on the footer stamp where a test run sees `dev`.
+
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
 opened by units since and are not from that list.)
@@ -111,6 +126,7 @@ and belong in its Step 2 plan.
 | ~~C16~~ | `client/ui/` LoadoutEditor, LoadoutStats, QuickLoadout | **closed** — nothing was bound to it: no §1 row, and none of the three names appears anywhere in this file. Two entries name a C16 file and neither is C16's: **#35** points at `LoadoutEditor.ts:999` as the *call site* where a weapon's file is fetched on demand, but the edit it asks for is `Game.warmWeaponAssets` in `Game.ts` — C23's file, outside R3's fence — so C16 declined it with that reason and it stays bound where it is; **#28**'s `src/client/ui/` half was already closed by C14, and the only *six* in this directory is this screen's six category bars, which is a different six and a true one. The broader sweep is empty too: every *loadout* hit is `sanitiseLoadout` in `shared/meta/` (A19's files, #29) or `ServerMatch`'s `setPendingLoadout` (#42); every *camo* hit is one of those two or #58's `client/meta/CamoTextures.ts`, which C12 already answered; and *perk*, *streak*, *attachment* and *create-a-class* have no hit that belongs to these three files — the 34 *streak* hits are all the streak systems themselves. **C16 opened #71, #72 and #73**, all three from its own 219 characterization tests |
 | ~~C17~~ | `client/ui/` Settings, Palette, PauseMenu | **closed** — nothing was bound to it: no §1 row, and none of the three names appears anywhere in this file. Five words looked dangerous and all five belong elsewhere: *binding* is the word in this file's own opening sentence; *sensitivity* and *shadow* are **#34**, whose mouse-path measurement and shadow-tier elimination are in C2's files; *volume* is `combat/BodyVolume`; and all five *slider* hits are the F1 debug panel's tuning sliders in `WeaponTuning.ts` (**#11**, A8's file) and the two voice sliders beside them — not one of them is a control on this screen. **C17 opened #74, #75 and #76**: the first from its own Step 0, the other two measured in the browser during its live check |
 | ~~C18~~ | `client/ui/` EndOfMatch, XpSummary, ProfilePanel, PlayerCard | **closed** — nothing was bound to it: no §1 row, and none of the four names appears anywhere in this file. Twenty words were swept and five returned something, all of it elsewhere: *summary* is the summary→arena migration of **#42** and the NET harness's; *prestige* is `doPrestige` inside **#2**'s account of the save's load path; *challenge* is A18's file list; *skip* is a tick **#42** says was skipped. **`\bXP\b` returned nothing at all** — the sixty-nine case-insensitive hits were *xp* inside *expression* and *experiment*. **C18 opened #77**, from its own gate run rather than from its files. Its live BROWSER check was **run the next day, 2026-11-10**, once the desktop window was brought forward, and passed: a real solo match on FOUNDRY driven to its debrief, all seven phases, the FLIP's measured transform, three podium bodies rendered through a real WebGL context with their medals and stat cards, Tab both ways, Escape out, and the profile panel's three tabs reading the save the match had just banked — no console errors anywhere |
+| ~~C19~~ | `client/ui/` Frame, ScreenChrome, LoadingScreen, SpaceSkip, Splash, PlaySolo, Menus, VoteOverlay | **closed** — one entry was bound to it, **#74**, whose own instruction was *"watch for C19, which owns the other two"*. C19 **corrected it**: there are three copies of the pager arrow, not four, because `VoteOverlay` has no pager and no arrow at all — its options are disabled `op-vote__option` buttons with a fill bar. So C19 owns **one** of the three, which is the one case the entry said would not settle it, and #74 stays open, re-scoped. Eighteen words were swept; every other hit is elsewhere (`vote` is B4's `VoteCycle` row, `the menu` is **#35**'s *"warm it behind the menu"*, and `chrome` is mostly **Chrome the browser** inside #34's mouse-path analysis). **C19 opened #78 and #79**, both duplication that spans the division |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
@@ -337,11 +353,11 @@ changed, and all fifteen columns through `applyReplicated` and `reset`. Do not w
 
 ## 4. Independent — one decision each
 
-### #74 — Four files build the same pager arrow, and two of them are already finished · `open` *(opened 2026-11-09 by C17)*
+### #74 — Three files build the same pager arrow, and all three are now finished · `open` *(opened 2026-11-09 by C17, corrected 2026-11-10 by C19)*
 
-**Files** `src/client/ui/Settings.ts` (`creditsArrow`), `src/client/ui/LoadoutEditor.ts`
-(`arrowButton`, C16's finished file), and the pagers in `src/client/ui/PlaySolo.ts` and
-`src/client/ui/VoteOverlay.ts` (both C19's, not started). **Origin** C17's Step 0.
+**Files** `src/client/ui/Settings.ts` (`creditsArrow`, C17's), `src/client/ui/LoadoutEditor.ts`
+(`arrowButton`, C16's) and `src/client/ui/PlaySolo.ts` (`arrowButton`, C19's) — all three in
+finished units. **Origin** C17's Step 0; the count corrected by C19's.
 
 The credits pager on INFO is deliberately the same control Create-a-Class pages its lists with
 — it uses `lo-pager` and `lo-arrow`, the editor's own classes, and says so in its comment. What
@@ -351,20 +367,28 @@ four to seven lines each.
 
 ```
 LoadoutEditor.arrowButton   lo-arrow . aria-label . onClick                     (C16, finished)
-Settings.creditsArrow       lo-arrow . aria-label . disabled by page . onClick  (C17, this unit)
-PlaySolo                    ps-pager__arrow . title . makeIconSvg               (C19)
-VoteOverlay                 its own                                             (C19)
+Settings.creditsArrow       lo-arrow . aria-label . disabled by page . onClick  (C17, finished)
+PlaySolo.arrowButton        ps-pager__arrow . title . aria-label . makeIconSvg  (C19, finished)
 ```
 
-Only two of the four are really the same function: C17's and C16's. The other two differ in
-class and in content, so this is **not** one fold — it is a decision about whether a shared
-`pagerArrow(text, label, onClick)` belongs somewhere both can import, and if so where. C17 did
-not do it because the obvious home is `LoadoutEditor.ts`'s copy, which is in C16's finished
-files and not exported (R2, R3).
+**Corrected by C19 (2026-11-10): there are three, not four.** This entry named
+`VoteOverlay.ts` as the fourth copy. It has no pager and no arrow: its options are
+`<button class="op-vote__option">` elements that are `disabled` and `aria-disabled` with a fill
+bar behind the label, and the file builds no arrow of any kind. The claim came from C16's note
+that `optionsFor` exists in both `LoadoutEditor.ts` and `VoteOverlay.ts` with different bodies
+— which is true, and is about a different function.
 
-**Watch for** C19, which owns the other two. If it finds the same shape a third and a fourth
-time, that is the moment to decide — and the answer is probably one helper in `Frame.ts` or
-`ScreenChrome.ts`, which both units already import.
+Two of the three really are the same function: C16's and C17's, both `lo-arrow`. The third is
+the same *shape* in different clothes — `ps-pager__arrow`, an SVG glyph through `makeIconSvg`
+rather than a text chevron, and a `title` as well as an `aria-label`.
+
+**The moment this entry was waiting for will not arrive.** It said to watch C19, on the theory
+that a unit owning two of the copies could fold them. C19 owns one. The three sit in three
+different units, all three now finished and fenced by R2 and R3, so no unit will ever hold two
+— and a shared helper put in `ScreenChrome.ts` today would have exactly one caller, which is
+worse than the duplication. This is a **one-off task over three finished files**, to be taken
+on its own and not at a unit's Step 2: add `pagerArrow` to `ScreenChrome.ts` (which all three
+units already import) and convert all three call sites in one change.
 
 **Verify** `npm run check`, plus C16's and C17's BROWSER checksums (both hold a pager's element
 tree, with the arrows' labels and their disabled states) and `npm run layout`.
@@ -1947,6 +1971,64 @@ immune, because its figures go through `toFixed(3)`/`toFixed(4)`.
 ---
 
 ## 6b. Duplication that spans units — opened by A16
+
+### #78 — Division C writes the same three lines of DOM about five hundred times · `open` *(opened 2026-11-10 by C19)*
+
+**Files** every screen in `src/client/ui/`. **Origin** C19's Step 1, counted across its own
+eight files first and then the division.
+
+```
+const x = document.createElement('span');
+x.className = 'op-label ps-fact__label';
+x.textContent = label;
+```
+
+That idiom — create, class, text — appears about **150 times in C19's eight files alone** and
+upwards of **500 across division C**. One helper collapses each to a line:
+
+```ts
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string)
+```
+
+**Why no unit has done it.** It needs a module both halves of the division can import, and R3
+allows a **new source file** only in a unit marked *design*. Putting it in one screen's file and
+importing sideways is the wrong shape — and putting it in `ScreenChrome.ts`, which everything
+already imports, would make that file the division's DOM library by accident rather than by
+decision.
+
+**Decide** whether `src/client/ui/Dom.ts` is worth a design unit of its own. If it is, the
+conversion is mechanical and every screen in the division has a characterization suite behind
+it now (C14–C19 together), so it is the cheapest it will ever be. If it is not, say so here and
+stop re-noticing it — three units have now written it down.
+
+**Verify** `npm run check` and every division-C BROWSER checksum, which between them hold the
+element tree of every screen in the game.
+
+---
+
+### #79 — The DOM double is copied whole into every test file that needs it · `open` *(opened 2026-11-10 by C19)*
+
+**Files** every `*.test.ts` in `src/client/ui/` from C14 on — fifteen copies now, seven of them
+added by C19. **Origin** C19's Step 3.
+
+`FakeElement` and the environment around it are about **255 lines**, and each test file carries
+its own copy, because R9 gives a test file no skeleton and R3 gives a unit nowhere shared to put
+one. The copies have **already drifted**: C19 had to teach its own copy that
+`setAttribute('class', …)` writes the token set — which is how every SVG icon in the project is
+classed, so the earlier copies cannot find an icon with `querySelector` and the tests written
+against them silently do not look.
+
+That drift is the cost, not the line count. A double that differs between files is a set of
+tests that disagree about what a browser does.
+
+**Decide** where a shared `src/client/ui/testing/dom.ts` (or a `test/` fixture outside `src/`)
+should live, which is the same question as **#78** and probably the same answer. Until then,
+every new unit's copy should be taken from the newest one rather than from the nearest.
+
+**Verify** the whole suite, twice: once to see it pass on the shared double, and once with a
+deliberate break per file to see that the suites still bite.
+
+---
 
 ### #67 — Two files build the rig's boxes the same way, and hold the same two colours · `open` *(opened 2026-11-05 by C11)*
 

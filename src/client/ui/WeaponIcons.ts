@@ -1,5 +1,3 @@
-import { weaponSilhouettePath } from '../weapons/WeaponSilhouette';
-
 /**
  * Killfeed icons, drawn rather than loaded (brief S6.5, S2).
  *
@@ -21,18 +19,14 @@ import { weaponSilhouettePath } from '../weapons/WeaponSilhouette';
  * one a null could not have kept.
  */
 
-export const ICON_VIEWBOX = '0 0 48 16';
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { weaponSilhouettePath } from '../weapons/WeaponSilhouette';
+//#endregion
 
-/**
- * SVG path data for one weapon's outline, in `ICON_VIEWBOX`, barrel pointing right.
- *
- * Keyed by weapon **id** rather than by class, which is the change F15 bought: an SMG and an
- * LMG are not the same shape, and the feed can now say which one killed you without printing
- * its name. `weaponSilhouettePath` memoises, so calling this per feed row costs a map lookup.
- */
-export function iconFor(weaponId: string): string {
-  return weaponSilhouettePath(weaponId);
-}
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+export const ICON_VIEWBOX = '0 0 48 16';
 
 /**
  * A headshot marker: a small skull-ish glyph, drawn beside the icon.
@@ -46,15 +40,39 @@ export const HEADSHOT_PATH =
   'C9.7 7.6 10.5 6.6 10.5 5.2 C10.5 3 9 1 6 1 Z M4.2 4.6 A0.9 0.9 0 1 1 4.2 6.4 ' +
   'A0.9 0.9 0 1 1 4.2 4.6 Z M7.8 4.6 A0.9 0.9 0 1 1 7.8 6.4 A0.9 0.9 0 1 1 7.8 4.6 Z';
 
-/** Build an inline SVG element for a path. Namespaced, so it renders inside the DOM HUD. */
+/** The namespace an inline SVG must be built in to render inside the DOM HUD. */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/**
+ * SVG path data for one weapon's outline, in `ICON_VIEWBOX`, barrel pointing right.
+ *
+ * Keyed by weapon **id** rather than by class, which is the change F15 bought: an SMG and an
+ * LMG are not the same shape, and the feed can now say which one killed you without printing
+ * its name. `weaponSilhouettePath` memoises, so calling this per feed row costs a map lookup.
+ */
+export function iconFor(weaponId: string): string {
+  return weaponSilhouettePath(weaponId);
+}
+
+/**
+ * Build an inline SVG element for a path.
+ *
+ * Every glyph in the game comes through here — the weapons' outlines, the menu's four, the
+ * category icons, the pagers' chevrons — so the namespace and the `aria-hidden` are
+ * load-bearing well outside this file: an SVG built without the first does not render, and
+ * one built without the second is read out beside the name it already sits next to.
+ */
 export function makeIconSvg(path: string, viewBox: string, className: string): SVGSVGElement {
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
+  const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', viewBox);
   svg.setAttribute('class', className);
   svg.setAttribute('aria-hidden', 'true');
-  const shape = document.createElementNS(NS, 'path');
+  const shape = document.createElementNS(SVG_NS, 'path');
   shape.setAttribute('d', path);
   svg.appendChild(shape);
   return svg;
 }
+//#endregion

@@ -37,8 +37,13 @@
  * that added them, not in a script the build depends on.
  */
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const BRAND_ROOT = '/brand';
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** The side's emblem, by its relation to the viewer: the wolf for the viewer's own, the demon for the other. */
 export function teamEmblemUrl(relation: 'FRIENDLY' | 'HOSTILE'): string {
   return `${BRAND_ROOT}/${relation === 'FRIENDLY' ? 'team-allies' : 'team-axis'}.png`;
@@ -72,3 +77,4 @@ export function makeLockup(): HTMLElement {
   img.draggable = false;
   return img;
 }
+//#endregion

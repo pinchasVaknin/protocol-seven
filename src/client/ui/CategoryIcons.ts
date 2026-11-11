@@ -9,8 +9,8 @@
  * state. 24×24, drawn to read at 64 px.
  */
 
-export const CATEGORY_VIEWBOX = '0 0 24 24';
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export type CategoryIconId =
   | 'lethal'
   | 'tactical'
@@ -22,8 +22,15 @@ export type CategoryIconId =
   | 'attachment'
   | 'equipment'
   | 'lock';
+//#endregion
 
-const PATHS: Readonly<Record<CategoryIconId, string>> = {
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** The box every glyph here is drawn in, and the one the menu's four share. */
+export const CATEGORY_VIEWBOX = '0 0 24 24';
+
+/** One path per kind, drawn to read at 64 px. */
+const CATEGORY_PATHS: Readonly<Record<CategoryIconId, string>> = {
   /** A frag: a body of segments under a lever and a pin ring. */
   lethal:
     'M10 3h4v2h-1v1.2c2.9.6 5 3.1 5 6.3 0 3.6-2.9 6.5-6.5 6.5S5 16.1 5 12.5c0-3.2 2.1-5.7 5-6.3V5h-1V3z' +
@@ -63,7 +70,12 @@ const PATHS: Readonly<Record<CategoryIconId, string>> = {
     'M7 10V8a5 5 0 0 1 10 0v2h1.5a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z' +
     'M9 10h6V8a3 3 0 0 0-6 0z M11 14h2v3.5h-2z',
 };
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
+/** The drawing for one kind of thing a class holds. */
 export function categoryIcon(id: CategoryIconId): string {
-  return PATHS[id];
+  return CATEGORY_PATHS[id];
 }
+//#endregion

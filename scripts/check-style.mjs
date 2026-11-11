@@ -540,6 +540,15 @@ const FINISHED = {
     'src/client/ui/Splash.ts',
     'src/client/ui/VoteOverlay.ts',
   ],
+  C20: [
+    'src/client/ui/CategoryIcons.ts',
+    'src/client/ui/CharacterStage.ts',
+    'src/client/ui/Emblem.ts',
+    'src/client/ui/FpsCounter.ts',
+    'src/client/ui/Lineup.ts',
+    'src/client/ui/WeaponIcons.ts',
+    'src/client/ui/WeaponPreview.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

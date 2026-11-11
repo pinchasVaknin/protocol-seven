@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**57 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**60 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -76,6 +76,20 @@ the live run was for the things the browser *adds* — 36 Web Animations composi
 `clientWidth` for `skullShift` to measure, a real `zoom` from `applyFrameScale`, and the build's
 own version on the footer stamp where a test run sees `dev`.
 
+**C20 opened #80, #81 and #82 on 2026-11-11.** It is the unit that owns the WebGL, and the
+thing worth keeping from it is where that boundary actually fell: **two methods**, both named
+`tick`, both failing on one line of a function that existed in two copies. Everything else in
+the unit — fifteen public members across the two renderer classes, and all five small files —
+runs in node. And a `tick` that throws on its last line has already done all of its work, so
+the turntable, the fling's decay and the whole walk-in are measured in node through a frame
+that never draws.
+
+**#80 is the first entry in the programme opened by a number rather than by a reading.** The
+weapon preview frames every weapon to the same bounding diagonal, and for five of the twelve
+it does not: the test that was written to pin *0.62* found *0.612802* instead, and the five
+that miss are the two SMGs, the two LMGs and one sniper. It is a tenth of a per cent of a
+panel and it is wrong, and nothing but a characterization test would ever have looked.
+
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
 opened by units since and are not from that list.)
@@ -127,6 +141,7 @@ and belong in its Step 2 plan.
 | ~~C17~~ | `client/ui/` Settings, Palette, PauseMenu | **closed** — nothing was bound to it: no §1 row, and none of the three names appears anywhere in this file. Five words looked dangerous and all five belong elsewhere: *binding* is the word in this file's own opening sentence; *sensitivity* and *shadow* are **#34**, whose mouse-path measurement and shadow-tier elimination are in C2's files; *volume* is `combat/BodyVolume`; and all five *slider* hits are the F1 debug panel's tuning sliders in `WeaponTuning.ts` (**#11**, A8's file) and the two voice sliders beside them — not one of them is a control on this screen. **C17 opened #74, #75 and #76**: the first from its own Step 0, the other two measured in the browser during its live check |
 | ~~C18~~ | `client/ui/` EndOfMatch, XpSummary, ProfilePanel, PlayerCard | **closed** — nothing was bound to it: no §1 row, and none of the four names appears anywhere in this file. Twenty words were swept and five returned something, all of it elsewhere: *summary* is the summary→arena migration of **#42** and the NET harness's; *prestige* is `doPrestige` inside **#2**'s account of the save's load path; *challenge* is A18's file list; *skip* is a tick **#42** says was skipped. **`\bXP\b` returned nothing at all** — the sixty-nine case-insensitive hits were *xp* inside *expression* and *experiment*. **C18 opened #77**, from its own gate run rather than from its files. Its live BROWSER check was **run the next day, 2026-11-10**, once the desktop window was brought forward, and passed: a real solo match on FOUNDRY driven to its debrief, all seven phases, the FLIP's measured transform, three podium bodies rendered through a real WebGL context with their medals and stat cards, Tab both ways, Escape out, and the profile panel's three tabs reading the save the match had just banked — no console errors anywhere |
 | ~~C19~~ | `client/ui/` Frame, ScreenChrome, LoadingScreen, SpaceSkip, Splash, PlaySolo, Menus, VoteOverlay | **closed** — one entry was bound to it, **#74**, whose own instruction was *"watch for C19, which owns the other two"*. C19 **corrected it**: there are three copies of the pager arrow, not four, because `VoteOverlay` has no pager and no arrow at all — its options are disabled `op-vote__option` buttons with a fill bar. So C19 owns **one** of the three, which is the one case the entry said would not settle it, and #74 stays open, re-scoped. Eighteen words were swept; every other hit is elsewhere (`vote` is B4's `VoteCycle` row, `the menu` is **#35**'s *"warm it behind the menu"*, and `chrome` is mostly **Chrome the browser** inside #34's mouse-path analysis). **C19 opened #78 and #79**, both duplication that spans the division |
+| ~~C20~~ | `client/ui/` CharacterStage, WeaponPreview, Lineup, Emblem, CategoryIcons, WeaponIcons, FpsCounter | **closed** — one entry names a file of its: **#35**, which cites `WeaponPreview.ts:245`. The fix it asks for is in `Game.warmWeaponAssets`, outside this fence, so it stays `bound to C23`; the line moved to **336** when `show` came apart, and the entry now says so. Twenty words were swept and the rest is elsewhere: every *renderer* hit is the main one, *camo* is the finish table's, *skin* is the catalogue's, and *CharacterStage*, *Lineup*, *Emblem*, *CategoryIcons*, *WeaponIcons* and *FpsCounter* return nothing at all. **C20 opened #80, #81 and #82** — the first from a number its own tests measured, the second and third from running its own oracles |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
@@ -747,6 +762,45 @@ the figures this file produces — compare its output before and after; those fi
 ---
 
 ## 5. Suspected bugs, pinned in tests, awaiting a fix
+
+### #80 — Five of the twelve weapons are framed slightly off their own diagonal in the preview · `open` *(opened 2026-11-11 by C20)*
+
+**Files** `src/client/ui/WeaponPreview.ts` (`buildFitted`). **Pinned by**
+`WeaponPreview.test.ts`, *"frames the two SMGs, the two LMGs and one sniper slightly off"*.
+**Origin** C20's characterization tests.
+
+`buildFitted` measures the model it has just built, scales it so its bounding **diagonal** is
+`FIT_DIAGONAL` (0.62 m), and offsets it by the scaled centre so it turns on the spot. For
+seven of the twelve that is exact to twelve places. For the other five it is not:
+
+```
+smg_wasp         diag 0.612802   off axis 0.006730      1.16% under
+smg_meridian     diag 0.617571   off axis 0.002816      0.39% under
+lmg_bastion      diag 0.623207   off axis 0.004189      0.52% over
+lmg_monolith     diag 0.624919   off axis 0.005917      0.79% over
+sniper_vantage   diag 0.620561   off axis 0.001025      0.09% over
+```
+
+The same numbers come out of node and out of the browser, to six places, so it is the
+arithmetic and not the environment. The box `buildFitted` measures and the box the same model
+reports once its world matrices are flushed are not the same box for these five —
+`Box3.setFromObject` updates an object's **descendants** and not the object itself, and these
+five have a part whose matrix is written after it is built.
+
+**It is small.** Six millimetres off the axis on a model 0.62 m across, on a panel 360 px
+wide: under half a pixel. But the comment above that code says the ordering exists so the
+weapon *"turns on the spot"* rather than wobbling, and for five weapons it wobbles — by less
+than the eye can see, which is exactly why nobody found it.
+
+**Decide** whether to flush the matrices before measuring (`model.root.updateMatrixWorld(true)`
+before the `Box3`, one line) or to leave it and relax the comment. The first is almost
+certainly right and almost certainly invisible; the test pins today's numbers either way, so
+it will say plainly which weapons moved.
+
+**Verify** `npm run check`; C20's dump oracle holds all twelve numbers, so a fix shows up as
+twelve lines of diff and nothing else.
+
+---
 
 Each of these is wrong today, was found while writing characterization tests, and was **pinned
 rather than fixed** under §5.9 of the prompt — the test carries
@@ -1770,7 +1824,7 @@ and the grey primitive fallback stands in for as long as the file takes to arriv
 comment says so and gives the reason — while `warmWorldAssets` warms the whole arsenal at *LOD*
 detail, the quarter-sized file a body carries, about nine megabytes for the fifteen. Nothing warms
 the arsenal's **viewmodels**, so the editor and the preview ask per weapon as the player reaches it
-(`LoadoutEditor.ts:999`, `WeaponPreview.ts:245`), and that request is what the grey is waiting on.
+(`LoadoutEditor.ts:1135`, `WeaponPreview.ts:336`), and that request is what the grey is waiting on.
 
 The request is a global asynchronous preload at boot, so the weapons are already in memory. The
 mechanism exists — `warmWorldAssets` is that loop for the LODs — so the edit is a few lines, and
@@ -1781,7 +1835,12 @@ once the equipped class is ready, which is the middle answer and costs nothing a
 player presses Play; or leave it on demand and spend the fix on a placeholder better than a grey
 primitive.
 
-**C16 declined it** on 2026-11-09, which is why the line number above now reads differently.
+**C20 moved the second line number** on 2026-11-11: `WeaponPreview.ts:245` was the `preload`
+call inside `show`, and the split moved it into `showWhenLoaded` at 336 with its whole
+paragraph. As with C16's move, that is the *call site* and not the fix, which is still in
+`Game.warmWeaponAssets` and still C23's.
+
+**C16 declined it** on 2026-11-09, which is why the first line number above reads differently.
 `LoadoutEditor.ts:999` was the `preload` call in the middle of `optionsFor`; the split moved it
 into `warmWeaponFile`, with the whole of the paragraph that explained it. That call is the *call
 site*, not the fix: it already does the most a screen can do, which is to ask for every card's
@@ -1792,6 +1851,56 @@ C23, so the entry stays bound there, with the decision still the user's.
 ---
 
 ## 6. Documentation and housekeeping
+
+### #81 — A passing `npm run layout` can still exit 1, on its own teardown · `open` *(opened 2026-11-11 by C20)*
+
+**Files** `scripts/headless-chrome.mjs` (`withPage`, the `rmSync` at the end).
+**Origin** C20's before run.
+
+```
+PASS — every surface fits its frame
+Error: EPERM, Permission denied: \\?\C:\Users\...\Temp\operator-layout-guy5QM
+    at rmSync (node:fs:1222:18)
+    at withPage (scripts/headless-chrome.mjs:241:5)
+```
+
+The probe printed its result and its 264 measurements, every one `ok`, and then failed
+deleting the headless profile folder because Chrome on Windows had not let go of it yet. Exit
+code 1 for a run that passed. It is **intermittent**: C20's after run, the same command on the
+same tree, exited 0.
+
+A tool that reports success with a failing exit code cannot be put in a script, which is most
+of what an instrument is for — and the error text names a random directory, so a run that
+hits it cannot be diffed against one that did not without trimming first, which is what C20's
+baseline had to do.
+
+**Decide**: retry the delete a few times, ignore EPERM on the teardown and say so, or leave
+the folder for the OS to collect. The first is the usual answer on Windows.
+
+**Verify** run `npm run layout` ten times and count the exits.
+
+---
+
+### #82 — `setPointerCapture` on the stage is unguarded · `open` *(opened 2026-11-11 by C20)*
+
+**Files** `src/client/ui/CharacterStage.ts:608` (`listenForDrag`). **Origin** C20's oracle run.
+
+The last statement of the `pointerdown` handler is `this.canvas.setPointerCapture(e.pointerId)`,
+which throws `InvalidStateError` for a pointer the browser does not consider active. C20's
+dump hit it with synthetic events, which is not the product — but a real pointer can go away
+between the event being queued and the handler running, and then the throw escapes from inside
+a listener with `this.dragging` already set.
+
+What it costs is small: `pointerup` still fires and `release` still runs, so the stage is not
+left stuck. The drag simply stops tracking once the pointer leaves the canvas, which is what
+the capture was there to prevent.
+
+**Decide** whether a `try`/`catch` around that one line is worth it. It is one line, and the
+argument against is that swallowing an error hides a real one.
+
+**Verify** BROWSER: drag the operator off the edge of the canvas and back.
+
+---
 
 ### #77 — One seeded skirmish test times out on a cold full run and passes alone · `needs measurement` *(opened 2026-11-09 by C18)*
 

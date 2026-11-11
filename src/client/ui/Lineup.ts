@@ -1,6 +1,3 @@
-import { compareRows, type Rankable, type ScoreTeam } from '../../shared/combat/ScoreSystem';
-import type { WinnerFacts } from '../../shared/modes/MatchOutcome';
-
 /**
  * Who stands on the podium after a match, and where (M15, D1; the podium, M18).
  *
@@ -24,6 +21,14 @@ import type { WinnerFacts } from '../../shared/modes/MatchOutcome';
  * so the feet land on the blocks by construction.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { compareRows, type Rankable, type ScoreTeam } from '../../shared/combat/ScoreSystem';
+import type { WinnerFacts } from '../../shared/modes/MatchOutcome';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface LineupRow extends Rankable {
   readonly entityId: number;
   readonly displayName: string;
@@ -31,6 +36,20 @@ export interface LineupRow extends Rankable {
   readonly isLocal: boolean;
 }
 
+export interface SlotPosition {
+  /** Metres from the platform's centre, across. */
+  readonly x: number;
+  /** Metres above the platform: the block's top. */
+  readonly y: number;
+  /** Metres toward the camera. */
+  readonly z: number;
+  /** Radians. π faces the camera; the flanks turn a little toward the centre. */
+  readonly yaw: number;
+}
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Gold, silver, bronze. */
 export const PODIUM_SIZE = 3;
 /** Where the three stand, metres across: gold centre, silver on the viewer's left, bronze right. `CharacterStage` builds the blocks here. */
@@ -38,6 +57,12 @@ export const PODIUM_X: readonly number[] = [0, -1.9, 1.9];
 /** The blocks' heights, metres, in the same order. */
 export const PODIUM_STEPS: readonly number[] = [0.34, 0.2, 0.1];
 
+/** How far the flanks turn in, per metre off the centre line. */
+const FLANK_TURN = 0.11;
+//#endregion
+
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /** The rows to stand on the podium, best first. Empty for an empty board; fewer than three for a board of fewer. */
 export function podiumOf<T extends LineupRow>(result: WinnerFacts, rows: readonly T[]): T[] {
   const ladder = [...rows].sort(compareRows);
@@ -52,20 +77,6 @@ export function podiumOf<T extends LineupRow>(result: WinnerFacts, rows: readonl
   return ladder.slice(0, PODIUM_SIZE);
 }
 
-export interface SlotPosition {
-  /** Metres from the platform's centre, across. */
-  readonly x: number;
-  /** Metres above the platform: the block's top. */
-  readonly y: number;
-  /** Metres toward the camera. */
-  readonly z: number;
-  /** Radians. π faces the camera; the flanks turn a little toward the centre. */
-  readonly yaw: number;
-}
-
-/** How far the flanks turn in, per metre off the centre line. */
-const FLANK_TURN = 0.11;
-
 /** Where `count` bodies stand, by rank: index 0 is gold, on the centre block. */
 export function podiumSlots(count: number): SlotPosition[] {
   const n = Math.max(0, Math.min(PODIUM_SIZE, Math.round(count)));
@@ -77,3 +88,4 @@ export function podiumSlots(count: number): SlotPosition[] {
   }
   return slots;
 }
+//#endregion

@@ -1,5 +1,3 @@
-import type { FrameStats } from '../debug/FrameStats';
-
 /**
  * The always-on frame-rate read-out (brief S6.3).
  *
@@ -16,17 +14,39 @@ import type { FrameStats } from '../debug/FrameStats';
  * telling you what things cost.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { FrameStats } from '../debug/FrameStats';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 /** Updates per second. */
 const REFRESH_HZ = 4;
 
+/**
+ * The three bands, in frames per second. Three rather than a gradient, because the question
+ * a player is asking is *"is this smooth"* and that has three answers.
+ */
+const GOOD_FROM = 58;
+const FAIR_FROM = 40;
+//#endregion
+
+// ====================================== CLASS FpsCounter ====================================== \\
+//#region Class FpsCounter
 export class FpsCounter {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly element: HTMLElement;
 
   private readonly stats: FrameStats;
   private accumulator = 0;
   private visible = false;
   private lastShown = -1;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(host: HTMLElement, stats: FrameStats) {
     this.stats = stats;
     this.element = document.createElement('div');
@@ -35,7 +55,10 @@ export class FpsCounter {
     this.element.textContent = '—';
     host.appendChild(this.element);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   setVisible(on: boolean): void {
     if (on === this.visible) return;
     this.visible = on;
@@ -59,14 +82,14 @@ export class FpsCounter {
     if (fps === this.lastShown) return;
     this.lastShown = fps;
     this.element.textContent = `${fps} FPS`;
-    // Three bands rather than a gradient: the question a player is asking is "is this
-    // smooth", and that has three answers.
-    this.element.classList.toggle('op-fps--good', fps >= 58);
-    this.element.classList.toggle('op-fps--fair', fps >= 40 && fps < 58);
-    this.element.classList.toggle('op-fps--poor', fps < 40);
+    this.element.classList.toggle('op-fps--good', fps >= GOOD_FROM);
+    this.element.classList.toggle('op-fps--fair', fps >= FAIR_FROM && fps < GOOD_FROM);
+    this.element.classList.toggle('op-fps--poor', fps < FAIR_FROM);
   }
 
   dispose(): void {
     this.element.remove();
   }
+  //#endregion
 }
+//#endregion

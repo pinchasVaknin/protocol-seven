@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**60 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**61 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -90,6 +90,22 @@ it does not: the test that was written to pin *0.62* found *0.612802* instead, a
 that miss are the two SMGs, the two LMGs and one sniper. It is a tenth of a per cent of a
 panel and it is wrong, and nothing but a characterization test would ever have looked.
 
+**C21 opened #83 on 2026-11-14** and found nothing bound to its seven files. It is the unit
+that owns the last of the client's match plumbing, and the entry it opened is the one kind this
+programme keeps finding: a comment that states a rule its own code does not keep. `MatchMeta`
+says of the Shooting Range that *"it simply never writes any of it"*, and the path it takes
+writes all of it.
+
+C21 is also the unit with the **largest single function the programme has reduced**: `subscribe`
+at 111 lines and a cognitive complexity of 31, down to ten subscription lines and ten handlers.
+The handlers are arrow-function **fields** rather than methods, because R7 owns that decision:
+`WeaponFired` and `DamageDealt` arrive on every round fired in the match, and a field is
+allocated once with the object where `this.onX.bind(this)` would allocate per subscription.
+And it is the first unit to replace an `instanceof` chain under §4.4 with a registry that is a
+`private static` field — which is also where its one real surprise came from: a static field
+initialiser runs when the class is *defined*, so the `const` it read was still in its temporal
+dead zone. The constant is above the class now, with a comment saying why.
+
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
 opened by units since and are not from that list.)
@@ -142,6 +158,7 @@ and belong in its Step 2 plan.
 | ~~C18~~ | `client/ui/` EndOfMatch, XpSummary, ProfilePanel, PlayerCard | **closed** — nothing was bound to it: no §1 row, and none of the four names appears anywhere in this file. Twenty words were swept and five returned something, all of it elsewhere: *summary* is the summary→arena migration of **#42** and the NET harness's; *prestige* is `doPrestige` inside **#2**'s account of the save's load path; *challenge* is A18's file list; *skip* is a tick **#42** says was skipped. **`\bXP\b` returned nothing at all** — the sixty-nine case-insensitive hits were *xp* inside *expression* and *experiment*. **C18 opened #77**, from its own gate run rather than from its files. Its live BROWSER check was **run the next day, 2026-11-10**, once the desktop window was brought forward, and passed: a real solo match on FOUNDRY driven to its debrief, all seven phases, the FLIP's measured transform, three podium bodies rendered through a real WebGL context with their medals and stat cards, Tab both ways, Escape out, and the profile panel's three tabs reading the save the match had just banked — no console errors anywhere |
 | ~~C19~~ | `client/ui/` Frame, ScreenChrome, LoadingScreen, SpaceSkip, Splash, PlaySolo, Menus, VoteOverlay | **closed** — one entry was bound to it, **#74**, whose own instruction was *"watch for C19, which owns the other two"*. C19 **corrected it**: there are three copies of the pager arrow, not four, because `VoteOverlay` has no pager and no arrow at all — its options are disabled `op-vote__option` buttons with a fill bar. So C19 owns **one** of the three, which is the one case the entry said would not settle it, and #74 stays open, re-scoped. Eighteen words were swept; every other hit is elsewhere (`vote` is B4's `VoteCycle` row, `the menu` is **#35**'s *"warm it behind the menu"*, and `chrome` is mostly **Chrome the browser** inside #34's mouse-path analysis). **C19 opened #78 and #79**, both duplication that spans the division |
 | ~~C20~~ | `client/ui/` CharacterStage, WeaponPreview, Lineup, Emblem, CategoryIcons, WeaponIcons, FpsCounter | **closed** — one entry names a file of its: **#35**, which cites `WeaponPreview.ts:245`. The fix it asks for is in `Game.warmWeaponAssets`, outside this fence, so it stays `bound to C23`; the line moved to **336** when `show` came apart, and the entry now says so. Twenty words were swept and the rest is elsewhere: every *renderer* hit is the main one, *camo* is the finish table's, *skin* is the catalogue's, and *CharacterStage*, *Lineup*, *Emblem*, *CategoryIcons*, *WeaponIcons* and *FpsCounter* return nothing at all. **C20 opened #80, #81 and #82** — the first from a number its own tests measured, the second and third from running its own oracles |
+| ~~C21~~ | `client/` MatchEquipment, MatchFeedback, MatchMeta, MatchObjectives, GameLoadout, GameScreens, main | **closed** — nothing was bound to it: no §1 row, and **none of the seven file names appears anywhere in this file** — not one, which no earlier unit could say of all of its files. Thirteen words were swept and every hit is somewhere else: all 37 *equipment* hits are `shared/equipment` (#13's `equipment.simulate` argument, #16's three body heights, #17, #18) or C12's `client/equipment/`; *objectives* is one hit, `ObjectiveStat` in #14/#15's scoreboard cluster; *bomb* is one, `MatchInstance.sendBomb` in #50's comment list; *feedback* is one, the English word inside #33; the 20 *loadout* hits are #71 and #72 in C16's finished editor and the `shared/meta/` rules; and `client/Match` finds only `MatchWorld.ts:795`, which is C22's file and not this unit's. **C21 opened #83**, from the one file in the unit that writes its rule down |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
@@ -762,6 +779,54 @@ the figures this file produces — compare its output before and after; those fi
 ---
 
 ## 5. Suspected bugs, pinned in tests, awaiting a fix
+
+### #83 — A Shooting Range session banks a loss's worth of XP onto the account, and says nothing · `open` *(opened 2026-11-14 by C21)*
+
+**Files** `src/client/MatchMeta.ts:174` (`finish`, and the comment above it);
+`src/client/Game.ts:1148` reads the same flag for the other half. **Pinned by**
+`MatchMeta.test.ts`, *"banks a loss onto the profile even for a range, and says nothing"* and
+*"banks the same amount a lost match would"*. **Origin** C21's characterization tests.
+
+`MatchMeta.finish` branches on `banksProgress`, and the comment above the branch says what the
+branch is for:
+
+> A testbed must not move the account. The range still **counts** kills and challenges in
+> memory so the panels show something real; it simply never writes any of it.
+
+The path it takes writes all of it. `progression.finish(false, false)` is the same
+`MatchProgression.finish` every other match calls: it runs `tracker.onMatchEnd`, banks the
+weapon tallies, and reaches `profile.bankMatch` and `profile.flush()` like any other ending.
+The only thing the branch does is force the *won* flag down — so the range is reported as a
+loss, which is the half the comment's second sentence describes, and banked as a loss, which
+is the half it denies.
+
+`Game` holds the other end. At `Game.ts:1148` it reads the same `banksProgress` off the mode
+and uses it to decide whether to **show** the XP strip — `banks ? report : null` — so the
+account moves and the screen that would have said so is the one thing the flag does suppress.
+
+**Measured in the live engine**, not only in tests: a range match finished with `banks=false
+won=true` moved the profile from 16500 to 17000. A loss is 500 XP, and that is what the range
+pays.
+
+**Decide** which of the two sentences is the intended behaviour, because they cannot both be:
+
+- *Never writes any of it* — the comment's own claim, and the one the flag's name implies.
+  `finish` returns a report built from the in-memory tallies without reaching the profile at
+  all. That needs `MatchProgression.finish` to grow a "compute but do not bank" path, which is
+  a change in `shared/meta/` — outside C21's fence under R3, and outside C24's too.
+- *Banks it like any other loss* — today's behaviour, in which case the comment is wrong and
+  the strip should probably be shown rather than hidden, since the XP is real.
+
+The first is almost certainly what was meant: a range is a testbed, the account is not supposed
+to move in it, and a player grinding challenges on the range is being paid for it silently.
+
+**Verify** `npm run check`. The two pinning tests hold today's numbers from both directions —
+one that the profile moves by exactly the report's total, one that the amount equals a lost
+match's — so a fix is two tests inverted and nothing else. C21's dump oracle does not cover
+this path (it holds no profile writes by design, after the first run of it banked into the
+page's real save).
+
+---
 
 ### #80 — Five of the twelve weapons are framed slightly off their own diagonal in the preview · `open` *(opened 2026-11-11 by C20)*
 

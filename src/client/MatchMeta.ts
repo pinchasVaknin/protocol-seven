@@ -1,24 +1,3 @@
-import type * as THREE from 'three';
-import type { BotDirector } from '../shared/ai/BotDirector';
-import type { BotTeam } from '../shared/ai/Combatant';
-import type { ScoreSystem } from '../shared/combat/ScoreSystem';
-import type { GameBus } from '../shared/core/Events';
-import type { InputCommand } from '../shared/core/InputCommand';
-import type { EquipmentSystem, EquipmentInventory } from '../shared/equipment/EquipmentSystem';
-import { ChallengeTracker } from '../shared/meta/ChallengeTracker';
-import type { ResolvedLoadout } from '../shared/meta/Loadouts';
-import { MatchProgression } from '../shared/meta/MatchProgression';
-import { isMvp } from '../shared/modes/MatchOutcome';
-import type { Profile } from './meta/Profile';
-import type { XpReport } from '../shared/meta/XpRules';
-import { FieldUpgradeRuntime } from '../shared/perks/FieldUpgrade';
-import { PerksRuntime } from '../shared/perks/PerksRuntime';
-import { PerksRenderer } from './perks/PerksRenderer';
-import type { PerkState } from '../shared/perks/PerkState';
-import type { Health } from '../shared/player/Health';
-import type { PlayerController } from '../shared/player/PlayerController';
-import type { PlayerSim } from '../shared/player/PlayerState';
-import type { WeaponSystem } from '../shared/weapons/WeaponSystem';
 
 /**
  * Progression and perks, composed into a match.
@@ -44,6 +23,33 @@ import type { WeaponSystem } from '../shared/weapons/WeaponSystem';
  * charge timer, and the progression side is event-driven counting.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type * as THREE from 'three';
+import type { BotDirector } from '../shared/ai/BotDirector';
+import type { BotTeam } from '../shared/ai/Combatant';
+import type { ScoreSystem } from '../shared/combat/ScoreSystem';
+import type { GameBus } from '../shared/core/Events';
+import type { InputCommand } from '../shared/core/InputCommand';
+import type { EquipmentSystem, EquipmentInventory } from '../shared/equipment/EquipmentSystem';
+import { ChallengeTracker } from '../shared/meta/ChallengeTracker';
+import type { ResolvedLoadout } from '../shared/meta/Loadouts';
+import { MatchProgression } from '../shared/meta/MatchProgression';
+import { isMvp } from '../shared/modes/MatchOutcome';
+import type { Profile } from './meta/Profile';
+import type { XpReport } from '../shared/meta/XpRules';
+import { FieldUpgradeRuntime } from '../shared/perks/FieldUpgrade';
+import { PerksRuntime } from '../shared/perks/PerksRuntime';
+import { PerksRenderer } from './perks/PerksRenderer';
+import type { PerkState } from '../shared/perks/PerkState';
+import type { Health } from '../shared/player/Health';
+import type { PlayerController } from '../shared/player/PlayerController';
+import type { PlayerSim } from '../shared/player/PlayerState';
+import type { WeaponSystem } from '../shared/weapons/WeaponSystem';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MatchMetaDeps {
   readonly bus: GameBus;
   readonly scene: THREE.Scene;
@@ -62,8 +68,13 @@ export interface MatchMetaDeps {
   /** False in the Shooting Range: a testbed must not bank progress (see `Range.ts`). */
   readonly banksProgress: boolean;
 }
+//#endregion
 
+// ====================================== CLASS MatchMeta ======================================= \\
+//#region Class MatchMeta
 export class MatchMeta {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly tracker: ChallengeTracker;
   readonly progression: MatchProgression;
   readonly perks: PerksRuntime;
@@ -76,7 +87,10 @@ export class MatchMeta {
 
   private readonly deps: MatchMetaDeps;
   private perkState: PerkState;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MatchMetaDeps) {
     this.deps = deps;
     this.perkState = deps.loadout.perkState;
@@ -114,7 +128,10 @@ export class MatchMeta {
 
     this.applyPerkHooks();
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get state(): PerkState {
     return this.perkState;
   }
@@ -188,6 +205,10 @@ export class MatchMeta {
    * It was `PLAYER_ENTITY_ID` — zero — which over the network is the server's empty spectator
    * seat, so Dead Silence made nobody quiet and flash resistance protected nobody.
    */
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   private applyPerkHooks(): void {
     const state = this.perkState;
     const me = this.deps.localId;
@@ -208,4 +229,6 @@ export class MatchMeta {
   private isMvp(): boolean {
     return isMvp(this.deps.score.rows, this.deps.localId);
   }
+  //#endregion
 }
+//#endregion

@@ -549,6 +549,15 @@ const FINISHED = {
     'src/client/ui/WeaponIcons.ts',
     'src/client/ui/WeaponPreview.ts',
   ],
+  C21: [
+    'src/client/GameLoadout.ts',
+    'src/client/GameScreens.ts',
+    'src/client/MatchEquipment.ts',
+    'src/client/MatchFeedback.ts',
+    'src/client/MatchMeta.ts',
+    'src/client/MatchObjectives.ts',
+    'src/client/main.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,13 @@
+/**
+ * How fast a replicated grenade closes on the position replication last reported, per second.
+ *
+ * Sized against the snapshot interval rather than picked: at 20 Hz a frame arrives every 50 ms,
+ * and this closes about 78% of the gap in that time — fast enough that the drawn grenade is
+ * never visibly behind, slow enough that each new sample is a nudge rather than a jump.
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import type { BotDirector } from '../shared/ai/BotDirector';
 import type { BotTeam, Combatant } from '../shared/ai/Combatant';
@@ -14,15 +24,6 @@ import { BotThrower, type MutableThrowIntent } from '../shared/equipment/BotThro
 import { ALL_EQUIPMENT, SMOKE } from '../shared/equipment/EquipmentDefs';
 import { PEFlag, type ProjectileState, type SmokeState } from '../shared/net/Skirmish';
 import type { Projectile } from '../shared/equipment/Projectile';
-
-/**
- * How fast a replicated grenade closes on the position replication last reported, per second.
- *
- * Sized against the snapshot interval rather than picked: at 20 Hz a frame arrives every 50 ms,
- * and this closes about 78% of the gap in that time — fast enough that the drawn grenade is
- * never visibly behind, slow enough that each new sample is a nudge rather than a jump.
- */
-const REPLICATED_EASE_RATE = 30;
 import type { EquipmentConfig } from '../shared/equipment/EquipmentConfig';
 import { EquipmentAudio } from './equipment/EquipmentAudio';
 import { EquipmentFx } from './equipment/EquipmentFx';
@@ -33,6 +34,11 @@ import type { Hud } from './ui/Hud';
 import type { WeaponAssetService } from './weapons/WeaponAssetService';
 import type { CollisionWorld } from '../shared/world/CollisionWorld';
 import { Disposable } from '../shared/core/Disposable';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+const REPLICATED_EASE_RATE = 30;
 
 /**
  * Equipment, composed into a match.
@@ -93,8 +99,13 @@ const CONCUSSION_SECONDS = 1.6;
 const CONCUSSION_MIN_FALLOFF = 0.35;
 /** The ring is a hint at this range, not the wall of tone a flashbang produces. */
 const CONCUSSION_RING_SCALE = 0.45;
+//#endregion
 
+// ==================================== CLASS MatchEquipment ==================================== \\
+//#region Class MatchEquipment
 export class MatchEquipment extends Disposable {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly system: EquipmentSystem;
   readonly thrower: ThrowController;
   readonly botThrower: BotThrower;
@@ -137,7 +148,10 @@ export class MatchEquipment extends Disposable {
   private elapsed = 0;
   /** Round-robin cursor so one bot is considered per tick rather than all ten. */
   private throwCursor = 0;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MatchEquipmentDeps) {
     super();
     this.deps = deps;
@@ -184,6 +198,10 @@ export class MatchEquipment extends Disposable {
   }
 
   /** One sim tick. */
+  //#endregion
+
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   simulate(cmd: InputCommand, sim: PlayerSim, playerAlive: boolean): void {
     const t0 = performance.now();
     this.elapsed += DT;
@@ -213,8 +231,30 @@ export class MatchEquipment extends Disposable {
     smoke: readonly SmokeState[],
     localId: number,
   ): void {
-    const pool = this.system.projectiles;
+    this.adoptProjectiles(projectiles, localId);
+    this.releaseVanished();
+    this.applyReplicatedSmoke(smoke);
+  }
 
+  /**
+   * Ease every replicated grenade toward where the server last said it was.
+   *
+   * §8.24 asks for reconciliation *"without visible teleporting"*, and this is the half of that
+   * which applies to grenades the client never predicted. Snapping to each 20 Hz sample would
+   * make a thrown object move in visible steps — the one place stepping is obvious, because a
+   * grenade is small, fast and the eye is following it.
+   *
+   * Exponential rather than a fixed lerp: the rate is chosen to close most of the gap within one
+   * snapshot interval, so a grenade that has just been adopted catches up quickly and one that
+   * is being updated steadily sits a few centimetres behind the truth — which is exactly the
+   * trade §4.12 makes for remote bodies.
+   */
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** Every grenade the server is still sending, taken into the pool or followed in it. */
+  private adoptProjectiles(projectiles: readonly ProjectileState[], localId: number): void {
     this.seenSerials.clear();
     for (const state of projectiles) {
       if (state.ownerId === localId) continue;
@@ -235,30 +275,20 @@ export class MatchEquipment extends Disposable {
       slot.resting = (state.flags & PEFlag.Resting) !== 0;
       slot.phase = (state.flags & PEFlag.Armed) !== 0 ? 'ARMED' : 'LIVE';
     }
+  }
 
-    // Anything replicated that stopped being sent has detonated or expired. The bang itself
-    // arrives as `EV.EquipmentExploded`, so this only has to stop drawing the body.
+  /**
+   * Anything replicated that stopped being sent has detonated or expired. The bang itself
+   * arrives as `EV.EquipmentExploded`, so this only has to stop drawing the body.
+   */
+  private releaseVanished(): void {
+    const pool = this.system.projectiles;
     for (const p of pool.items) {
       if (!p.active || !p.replicated) continue;
       if (!this.seenSerials.has(p.serial)) pool.release(p);
     }
-
-    this.applyReplicatedSmoke(smoke);
   }
 
-  /**
-   * Ease every replicated grenade toward where the server last said it was.
-   *
-   * §8.24 asks for reconciliation *"without visible teleporting"*, and this is the half of that
-   * which applies to grenades the client never predicted. Snapping to each 20 Hz sample would
-   * make a thrown object move in visible steps — the one place stepping is obvious, because a
-   * grenade is small, fast and the eye is following it.
-   *
-   * Exponential rather than a fixed lerp: the rate is chosen to close most of the gap within one
-   * snapshot interval, so a grenade that has just been adopted catches up quickly and one that
-   * is being updated steadily sits a few centimetres behind the truth — which is exactly the
-   * trade §4.12 makes for remote bodies.
-   */
   private easeReplicated(dt: number): void {
     const k = 1 - Math.exp(-REPLICATED_EASE_RATE * dt);
     for (const p of this.system.projectiles.items) {
@@ -514,6 +544,6 @@ export class MatchEquipment extends Disposable {
   get roster(): readonly Combatant[] {
     return this.deps.bots.roster;
   }
+  //#endregion
 }
-
-/** The writable side of `ThrowIntent`; one instance, rewritten in place each tick. */
+//#endregion

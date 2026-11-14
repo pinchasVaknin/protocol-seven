@@ -1,8 +1,3 @@
-import type { ResolvedLoadout } from '../shared/meta/Loadouts';
-import type { Profile } from './meta/Profile';
-import type { GameModeId } from '../shared/modes/GameMode';
-import { DEFAULT_MODE_ID, findMode, MODES } from '../shared/modes/ModeRegistry';
-import { cloneWeaponDef, type WeaponDef } from '../shared/weapons/WeaponDefs';
 
 /**
  * The bridge between the profile's equipped class and the objects a match is built from.
@@ -18,6 +13,17 @@ import { cloneWeaponDef, type WeaponDef } from '../shared/weapons/WeaponDefs';
  * used and the reason nothing has to resubscribe when the player switches class.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { ResolvedLoadout } from '../shared/meta/Loadouts';
+import type { Profile } from './meta/Profile';
+import type { GameModeId } from '../shared/modes/GameMode';
+import { DEFAULT_MODE_ID, findMode, MODES } from '../shared/modes/ModeRegistry';
+import { cloneWeaponDef, type WeaponDef } from '../shared/weapons/WeaponDefs';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 /** Where the equipped class lands. All three are mutated in place. */
 export interface LoadoutTargets {
   /** The player's primary, resolved: base + attachments + perks. */
@@ -26,7 +32,10 @@ export interface LoadoutTargets {
   /** The *base* of the player's primary, unmodified. Not what bots carry — see `BotArsenal`. */
   readonly playerBase: WeaponDef;
 }
+//#endregion
 
+// ===================================== EXPORTED FUNCTIONS ===================================== \\
+//#region Exported Functions
 /**
  * Resolve the equipped class and copy it into the match's weapon objects.
  *
@@ -46,6 +55,14 @@ export function applyEquippedLoadout(
   return loadout;
 }
 
+/** A stored mode id that no longer exists falls back to the default rather than throwing. */
+export function asModeId(id: string): GameModeId {
+  return MODES.some((m) => m.id === id) ? (id as GameModeId) : DEFAULT_MODE_ID;
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /**
  * Overwrite one `WeaponDef`'s contents with another's, keeping the destination object.
  *
@@ -65,8 +82,4 @@ function copyWeaponDefInto(src: WeaponDef, dst: WeaponDef): void {
   if (nested.scope !== undefined) dst.scope = nested.scope;
   else delete dst.scope;
 }
-
-/** A stored mode id that no longer exists falls back to the default rather than throwing. */
-export function asModeId(id: string): GameModeId {
-  return MODES.some((m) => m.id === id) ? (id as GameModeId) : DEFAULT_MODE_ID;
-}
+//#endregion

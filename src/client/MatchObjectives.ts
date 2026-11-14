@@ -1,15 +1,3 @@
-import * as THREE from 'three';
-import type { BotTeam } from '../shared/ai/Combatant';
-import type { GameBus } from '../shared/core/Events';
-import type { GameMode } from '../shared/modes/GameMode';
-import { palette } from './ui/Palette';
-import { Domination } from '../shared/modes/Domination';
-import { stackRate } from '../shared/modes/ObjectiveZone';
-import { KillConfirmed } from '../shared/modes/KillConfirmed';
-import { SearchAndDestroy } from '../shared/modes/SearchAndDestroy';
-import type { ObjectiveZone } from '../shared/modes/ObjectiveZone';
-import { Disposable } from '../shared/core/Disposable';
-
 /**
  * The objectives, as things you can see in the world (M7, brief S6.3).
  *
@@ -65,46 +53,44 @@ import { Disposable } from '../shared/core/Disposable';
  * true each frame, which is one source of truth rather than two.
  */
 
-/**
- * Neutral, friendly and enemy — read from the live palette (M8).
- *
- * These are `THREE.Color` inputs rather than CSS, which is the reason S6.3's "not just a CSS
- * filter" has teeth: a flag ring, a dog tag and a bomb light are *world geometry*, and no
- * amount of filtering the page would have touched them. Objective materials are rebuilt on
- * a palette change, which happens once, on a user gesture, outside a match tick.
- */
-function colorNeutral(): number {
-  return palette.current.neutral;
-}
-function colorFriendly(): number {
-  return palette.current.friendly;
-}
-function colorEnemy(): number {
-  return palette.current.hostile;
-}
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import * as THREE from 'three';
+import type { BotTeam } from '../shared/ai/Combatant';
+import type { GameBus } from '../shared/core/Events';
+import type { GameMode } from '../shared/modes/GameMode';
+import { palette } from './ui/Palette';
+import { Domination } from '../shared/modes/Domination';
+import { stackRate } from '../shared/modes/ObjectiveZone';
+import { KillConfirmed } from '../shared/modes/KillConfirmed';
+import { SearchAndDestroy } from '../shared/modes/SearchAndDestroy';
+import type { ObjectiveZone } from '../shared/modes/ObjectiveZone';
+import { Disposable } from '../shared/core/Disposable';
+import type { GameModeId } from '../shared/modes/GameMode';
+//#endregion
 
-/** Height of a flag pole, metres. Tall enough to see over a container. */
-const POLE_HEIGHT = 3.4;
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 /**
- * The capture fill's opacity band, and its beat (playtest round 5, F7).
+ * What one mode puts on the map, and what it does with it every frame (§4.4).
  *
- * The old fill was a flat 0.85 — near enough opaque that it painted over the floor markings and
- * anybody standing on it, which is the *"flat opaque disc"* F7 reported. A band rather than a
- * single value because the disc pulses now, and the floor is what it is worth at its dimmest:
- * low enough to read the ground through, high enough to be unmistakable from across the map.
+ * The five `instanceof` checks this replaces were spread over two methods, and the thing they
+ * were really doing was choosing a **presenter** for the mode: Domination gets flags, Search &
+ * Destroy gets sites and a bomb, Kill Confirmed gets a pool of tags, and the other three get
+ * nothing at all. A `Record<GameModeId, …>` says that in one place and makes it exhaustive:
+ * a seventh mode does not compile until somebody decides what it draws.
  *
- * `CAPTURE_STACK_FALLOFF` is `DEFAULT_ZONE_CONFIG.stackFalloff` restated, and it is a second
- * copy of a simulation number in a cosmetic file — which is deliberate and is the lesser of two
- * evils. Importing the config would put a mode's tuning into the renderer, and
- * `check-cosmetics` exists to keep that boundary; a decorative beat that is slightly wrong on
- * the day somebody retunes stacking is a wrong *animation rate*, not a wrong capture.
+ * Each entry still casts the mode to its own class once, on one line, because a table keyed by
+ * id cannot narrow a type — and that is the honest cost of this shape rather than something
+ * hidden by it. Three casts in three named places beats five `instanceof` in two methods,
+ * because the compiler now checks the *set*.
  */
-const CAPTURE_FILL_MIN = 0.28;
-const CAPTURE_FILL_MAX = 0.6;
-/** Radians per second of pulse for a single attacker; multiplied by the stack rate. */
-const CAPTURE_PULSE_HZ = 3.4;
-const CAPTURE_STACK_FALLOFF = 0.6;
+interface ObjectivePresenter {
+  /** Called once, from the constructor. */
+  readonly build: (self: MatchObjectives, mode: GameMode) => void;
+  /** Called every frame, after the zones have been updated. */
+  readonly update: (self: MatchObjectives, mode: GameMode) => void;
+}
 
 export interface MatchObjectivesDeps {
   readonly bus: GameBus;
@@ -141,7 +127,40 @@ interface TagVisual {
   tagId: number;
   active: boolean;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * Neutral, friendly and enemy — read from the live palette (M8).
+ *
+ * These are `THREE.Color` inputs rather than CSS, which is the reason S6.3's "not just a CSS
+ * filter" has teeth: a flag ring, a dog tag and a bomb light are *world geometry*, and no
+ * amount of filtering the page would have touched them. Objective materials are rebuilt on
+ * a palette change, which happens once, on a user gesture, outside a match tick.
+ */
+/** Height of a flag pole, metres. Tall enough to see over a container. */
+const POLE_HEIGHT = 3.4;
+
+/**
+ * The capture fill's opacity band, and its beat (playtest round 5, F7).
+ *
+ * The old fill was a flat 0.85 — near enough opaque that it painted over the floor markings and
+ * anybody standing on it, which is the *"flat opaque disc"* F7 reported. A band rather than a
+ * single value because the disc pulses now, and the floor is what it is worth at its dimmest:
+ * low enough to read the ground through, high enough to be unmistakable from across the map.
+ *
+ * `CAPTURE_STACK_FALLOFF` is `DEFAULT_ZONE_CONFIG.stackFalloff` restated, and it is a second
+ * copy of a simulation number in a cosmetic file — which is deliberate and is the lesser of two
+ * evils. Importing the config would put a mode's tuning into the renderer, and
+ * `check-cosmetics` exists to keep that boundary; a decorative beat that is slightly wrong on
+ * the day somebody retunes stacking is a wrong *animation rate*, not a wrong capture.
+ */
+const CAPTURE_FILL_MIN = 0.28;
+const CAPTURE_FILL_MAX = 0.6;
+/** Radians per second of pulse for a single attacker; multiplied by the stack rate. */
+const CAPTURE_PULSE_HZ = 3.4;
+const CAPTURE_STACK_FALLOFF = 0.6;
 /**
  * How high a carried bomb rides above its carrier's feet, metres.
  *
@@ -150,7 +169,58 @@ interface TagVisual {
  */
 const CARRY_HEIGHT = 0.95;
 
+/**
+ * A mode that puts nothing on the map: Team Deathmatch, Free-for-All and the range.
+ *
+ * A constant rather than a helper below the class, because `PRESENTERS` is a static field and
+ * its initialiser runs when the class is defined -- a `const` further down the file is still
+ * in its temporal dead zone at that moment.
+ */
+const NO_OBJECTIVES: ObjectivePresenter = {
+  build: (): void => undefined,
+  update: (): void => undefined,
+};
+//#endregion
+
+// =================================== CLASS MatchObjectives ==================================== \\
+//#region Class MatchObjectives
 export class MatchObjectives extends Disposable {
+  // ========================================== STATIC ========================================== \\
+  //#region Static
+  /**
+   * Which presenter each mode gets. Exhaustive by construction: `satisfies` makes a missing
+   * mode a compile error rather than a screen with nothing on it.
+   *
+   * Inside the class body because the entries reach the instance's own private builders --
+   * a table at module scope could not, and making those builders public to feed it would be
+   * the tail wagging the dog (R2).
+   */
+  private static readonly PRESENTERS = {
+    TDM: NO_OBJECTIVES,
+    FFA: NO_OBJECTIVES,
+    RANGE: NO_OBJECTIVES,
+    DOM: {
+      build: (self: MatchObjectives, mode: GameMode): void => {
+        for (const zone of (mode as Domination).zones) self.flags.push(self.buildFlag(zone, true));
+      },
+      update: (): void => undefined,
+    },
+    SND: {
+      build: (self: MatchObjectives, mode: GameMode): void => {
+        for (const site of (mode as SearchAndDestroy).sites) self.sites.push(self.buildFlag(site, false));
+        self.buildBomb();
+      },
+      update: (self: MatchObjectives, mode: GameMode): void => self.updateBomb(mode as SearchAndDestroy),
+    },
+    KC: {
+      build: (self: MatchObjectives): void => self.buildTagPool(),
+      update: (self: MatchObjectives, mode: GameMode): void => self.updateTags(mode as KillConfirmed),
+    },
+  } satisfies Record<GameModeId, ObjectivePresenter>;
+  //#endregion
+
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly group = new THREE.Group();
 
   private readonly deps: MatchObjectivesDeps;
@@ -182,20 +252,19 @@ export class MatchObjectives extends Disposable {
   private readonly hostileMaterials: THREE.MeshBasicMaterial[] = [];
   private spin = 0;
 
+  /** This mode's presenter, chosen once. See `PRESENTERS`. */
+  private readonly presenter: ObjectivePresenter;
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MatchObjectivesDeps) {
     super();
     this.deps = deps;
     this.group.name = 'objectives';
 
-    const mode = deps.mode;
-    if (mode instanceof Domination) {
-      for (const zone of mode.zones) this.flags.push(this.buildFlag(zone, true));
-    }
-    if (mode instanceof SearchAndDestroy) {
-      for (const site of mode.sites) this.sites.push(this.buildFlag(site, false));
-      this.buildBomb();
-    }
-    if (mode instanceof KillConfirmed) this.buildTagPool();
+    this.presenter = MatchObjectives.PRESENTERS[deps.mode.id];
+    this.presenter.build(this, deps.mode);
 
     this.bombLight = this.bomb.children.find(isBasicMesh) ?? this.buildFallbackLight();
 
@@ -208,7 +277,10 @@ export class MatchObjectives extends Disposable {
     );
     deps.scene.add(this.group);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Per frame. Presentation only: nothing here may change what the mode believes.
    *
@@ -237,8 +309,7 @@ export class MatchObjectives extends Disposable {
     for (const flag of this.flags) this.updateZone(flag, dt);
     for (const site of this.sites) this.updateZone(site, dt);
 
-    if (mode instanceof KillConfirmed) this.updateTags(mode);
-    if (mode instanceof SearchAndDestroy) this.updateBomb(mode);
+    this.presenter.update(this, mode);
   }
 
   override dispose(): void {
@@ -249,7 +320,10 @@ export class MatchObjectives extends Disposable {
     this.disposables.length = 0;
     this.hostileMaterials.length = 0;
   }
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
   // -- flags and bomb sites ---------------------------------------------------
 
   /**
@@ -259,6 +333,17 @@ export class MatchObjectives extends Disposable {
    * what the occupancy test uses and the two cannot drift. The inner one is the progress arc,
    * grown by scaling rather than by rebuilding geometry every frame.
    */
+  /** The pole a Domination flag flies from. A bomb site has none: nothing flies over it. */
+  private buildPole(): THREE.Mesh {
+    const poleGeo = new THREE.CylinderGeometry(0.045, 0.055, POLE_HEIGHT, 6);
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.7, metalness: 0.3 });
+    this.disposables.push(poleGeo, poleMat);
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.y = POLE_HEIGHT * 0.5;
+    pole.castShadow = true;
+    return pole;
+  }
+
   private buildFlag(zone: ObjectiveZone, withPole: boolean): FlagVisual {
     const group = new THREE.Group();
     const p = zone.def.position;
@@ -299,15 +384,7 @@ export class MatchObjectives extends Disposable {
     });
     this.disposables.push(bannerMat, ringMat, progressMat);
 
-    if (withPole) {
-      const poleGeo = new THREE.CylinderGeometry(0.045, 0.055, POLE_HEIGHT, 6);
-      const poleMat = new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.7, metalness: 0.3 });
-      this.disposables.push(poleGeo, poleMat);
-      const pole = new THREE.Mesh(poleGeo, poleMat);
-      pole.position.y = POLE_HEIGHT * 0.5;
-      pole.castShadow = true;
-      group.add(pole);
-    }
+    if (withPole) group.add(this.buildPole());
 
     const bannerGeo = new THREE.PlaneGeometry(0.95, 0.62);
     this.disposables.push(bannerGeo);
@@ -379,7 +456,7 @@ export class MatchObjectives extends Disposable {
 
   private colourFor(team: BotTeam | 'NONE'): number {
     if (team === 'NONE') return colorNeutral();
-    return team === this.deps.localTeam ? colorFriendly() : colorEnemy();
+    return team === this.deps.localTeam ? colorFriendly() : colorHostile();
   }
 
   // -- dog tags ---------------------------------------------------------------
@@ -436,7 +513,7 @@ export class MatchObjectives extends Disposable {
     this.disposables.push(steel);
 
     for (let i = 0; i < 24; i++) {
-      const mat = new THREE.MeshBasicMaterial({ color: colorEnemy(), toneMapped: false });
+      const mat = new THREE.MeshBasicMaterial({ color: colorHostile(), toneMapped: false });
       this.hostileMaterials.push(mat);
       this.disposables.push(mat);
 
@@ -478,13 +555,25 @@ export class MatchObjectives extends Disposable {
    * Matched by id rather than by index so a tag collected out of order does not make every
    * later tag jump position for a frame.
    */
+  /**
+   * The visual this tag already has, else a never-used one, else any free one.
+   *
+   * Three passes in that order so a tag keeps the same object across frames: a tag that was
+   * handed a different plate every frame would swing out of phase with itself.
+   */
+  private visualFor(tagId: number): TagVisual | undefined {
+    return (
+      this.tags.find((v) => v.tagId === tagId)
+      ?? this.tags.find((v) => !v.active && v.tagId < 0)
+      ?? this.tags.find((v) => !v.active)
+    );
+  }
+
   private updateTags(mode: KillConfirmed): void {
     for (const visual of this.tags) visual.active = false;
 
     for (const tag of mode.tags) {
-      let visual = this.tags.find((v) => v.tagId === tag.id);
-      if (visual === undefined) visual = this.tags.find((v) => !v.active && v.tagId < 0);
-      if (visual === undefined) visual = this.tags.find((v) => !v.active);
+      const visual = this.visualFor(tag.id);
       if (visual === undefined) continue;
 
       visual.tagId = tag.id;
@@ -499,7 +588,7 @@ export class MatchObjectives extends Disposable {
       visual.hanger.rotation.z = 0.22 + Math.sin(this.spin * 1.9 + tag.id) * 0.16;
       // Friendly tags deny, enemy tags score — so they must be told apart instantly.
       visual.edge.material.color.setHex(
-        tag.team === this.deps.localTeam ? colorFriendly() : colorEnemy(),
+        tag.team === this.deps.localTeam ? colorFriendly() : colorHostile(),
       );
       // The last three seconds blink, which is the only warning it is about to evaporate.
       visual.group.visible = tag.life > 3 || Math.sin(this.spin * 14) > -0.2;
@@ -518,7 +607,7 @@ export class MatchObjectives extends Disposable {
     const bodyGeo = new THREE.BoxGeometry(0.42, 0.26, 0.3);
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0x23282f, roughness: 0.7, metalness: 0.25 });
     const lightGeo = new THREE.SphereGeometry(0.05, 8, 6);
-    const lightMat = new THREE.MeshBasicMaterial({ color: colorEnemy(), toneMapped: false });
+    const lightMat = new THREE.MeshBasicMaterial({ color: colorHostile(), toneMapped: false });
     this.hostileMaterials.push(lightMat);
     this.disposables.push(bodyGeo, bodyMat, lightGeo, lightMat);
 
@@ -562,7 +651,7 @@ export class MatchObjectives extends Disposable {
 
   private buildFallbackLight(): THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> {
     const geo = new THREE.SphereGeometry(0.01, 4, 3);
-    const mat = new THREE.MeshBasicMaterial({ color: colorEnemy() });
+    const mat = new THREE.MeshBasicMaterial({ color: colorHostile() });
     this.hostileMaterials.push(mat);
     this.disposables.push(geo, mat);
     const mesh = new THREE.Mesh(geo, mat);
@@ -611,23 +700,36 @@ export class MatchObjectives extends Disposable {
      * body a client knows nothing else about.
      */
     if (!planted) {
-      const carried = mode.bomb === 'CARRIED';
-      /*
-       * Not on a carrier this client is not told about (anti-wallhack phase 2, part 4). The server
-       * sends such a bomb where the carrier was last seen — the place a dormant body is frozen at —
-       * and the body is not drawn there, so neither is what it carries.
-       */
-      this.bomb.visible = carried && !(mode.carrierId >= 0 && this.deps.dormant?.(mode.carrierId) === true);
-      if (this.bomb.visible) {
-        const held = mode.carrierId >= 0;
-        this.bomb.position.set(mode.bombX, mode.bombY + (held ? CARRY_HEIGHT : 0), mode.bombZ);
-        // Slowly turning on the floor so it reads as a pickup; steady in a carrier's hands.
-        this.bomb.rotation.y = held ? this.spin * 2.2 : this.spin * 0.7;
-        // The light keeps blinking either way: across a site it is how both sides find it.
-        this.bombLight.visible = Math.sin(this.spin * 5) > -0.3;
-      }
+      this.showLooseBomb(mode);
       return;
     }
+    this.showPlantedBomb(mode, site);
+  }
+
+  /**
+   * Before the plant the same mesh is the bomb itself — on the floor **or on its carrier**
+   * (M11 Gate B playtest).
+   */
+  private showLooseBomb(mode: SearchAndDestroy): void {
+    const carried = mode.bomb === 'CARRIED';
+    /*
+     * Not on a carrier this client is not told about (anti-wallhack phase 2, part 4). The server
+     * sends such a bomb where the carrier was last seen — the place a dormant body is frozen at —
+     * and the body is not drawn there, so neither is what it carries.
+     */
+    this.bomb.visible = carried && !(mode.carrierId >= 0 && this.deps.dormant?.(mode.carrierId) === true);
+    if (this.bomb.visible) {
+      const held = mode.carrierId >= 0;
+      this.bomb.position.set(mode.bombX, mode.bombY + (held ? CARRY_HEIGHT : 0), mode.bombZ);
+      // Slowly turning on the floor so it reads as a pickup; steady in a carrier's hands.
+      this.bomb.rotation.y = held ? this.spin * 2.2 : this.spin * 0.7;
+      // The light keeps blinking either way: across a site it is how both sides find it.
+      this.bombLight.visible = Math.sin(this.spin * 5) > -0.3;
+    }
+  }
+
+  /** Planted: on the site, still, with the light counting down. */
+  private showPlantedBomb(mode: SearchAndDestroy, site: ObjectiveZone | null): void {
     this.bomb.visible = true;
     this.bomb.rotation.y = 0;
     if (site === null) return;
@@ -664,8 +766,26 @@ export class MatchObjectives extends Disposable {
     ring.material.opacity = 0.6 + Math.sin(this.spin * 7) * 0.2;
     ring.rotation.z = this.spin * 1.4;
   }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function colorNeutral(): number {
+  return palette.current.neutral;
+}
+
+function colorFriendly(): number {
+  return palette.current.friendly;
+}
+
+/** The hostile colour. Named for the palette's own field rather than for "the enemy". */
+function colorHostile(): number {
+  return palette.current.hostile;
 }
 
 function isBasicMesh(o: THREE.Object3D): o is THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> {
   return o instanceof THREE.Mesh && o.material instanceof THREE.MeshBasicMaterial;
 }
+//#endregion

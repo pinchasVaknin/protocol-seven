@@ -1,11 +1,16 @@
-import { installClock } from '../shared/core/Clock';
-import { browserClock } from './engine/BrowserClock';
-import { Game } from './Game';
-
 /**
  * Entry point. Finds the three hosts the game needs and starts the state machine.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { installClock } from '../shared/core/Clock';
+import { browserClock } from './engine/BrowserClock';
+import { Game } from './Game';
+//#endregion
+
+// =================================== MODULE INITIALISATION ==================================== \\
+//#region Module Initialisation
 // Before anything else: the shared simulation measures itself through an installed clock
 // and throws if it has none (M9, S3). The server's entry point does the same with its own.
 installClock(browserClock);
@@ -23,3 +28,4 @@ if (uiRoot === null || debugRoot === null) {
 
 const game = new Game(canvas, uiRoot, debugRoot);
 game.start();
+//#endregion

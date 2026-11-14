@@ -1,16 +1,3 @@
-import type { ProceduralAudio } from './engine/ProceduralAudio';
-import type { Match } from './ClientMatch';
-import type { Profile } from './meta/Profile';
-import type { CharacterAssetService } from './characters/CharacterAssetService';
-import type { WeaponAssetService } from './weapons/WeaponAssetService';
-import type { XpReport } from '../shared/meta/XpRules';
-import type { MatchResult } from '../shared/modes/GameMode';
-import { EndOfMatch, type LineupSource, type MatchFacts } from './ui/EndOfMatch';
-import { LoadoutEditor } from './ui/LoadoutEditor';
-import { Menus, type MenuSelection } from './ui/Menus';
-import { PauseMenu } from './ui/PauseMenu';
-import { XpSummary } from './ui/XpSummary';
-
 /**
  * The front end: every full-screen DOM surface that is not the HUD (M7).
  *
@@ -31,6 +18,24 @@ import { XpSummary } from './ui/XpSummary';
  * belongs with them.
  */
 
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { ProceduralAudio } from './engine/ProceduralAudio';
+import type { Match } from './ClientMatch';
+import type { Profile } from './meta/Profile';
+import type { CharacterAssetService } from './characters/CharacterAssetService';
+import type { WeaponAssetService } from './weapons/WeaponAssetService';
+import type { XpReport } from '../shared/meta/XpRules';
+import type { MatchResult } from '../shared/modes/GameMode';
+import { EndOfMatch, type LineupSource, type MatchFacts } from './ui/EndOfMatch';
+import { LoadoutEditor } from './ui/LoadoutEditor';
+import { Menus, type MenuSelection } from './ui/Menus';
+import { PauseMenu } from './ui/PauseMenu';
+import { XpSummary } from './ui/XpSummary';
+//#endregion
+
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface GameScreensDeps {
   readonly host: HTMLElement;
   readonly profile: Profile;
@@ -84,94 +89,54 @@ export interface GameScreensDeps {
   /** The weapon templates the loadout editor's preview draws from (M19). */
   readonly weaponAssets: WeaponAssetService | null;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** Sized to the largest roster any map asks for, so the board never has to grow. */
+const SUMMARY_ROWS_PER_TEAM = 8;
+//#endregion
+
+// ===================================== CLASS GameScreens ====================================== \\
+//#region Class GameScreens
 export class GameScreens {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly menus: Menus;
   readonly loadoutEditor: LoadoutEditor;
   readonly xpSummary: XpSummary;
   readonly pauseMenu: PauseMenu;
   readonly summary: EndOfMatch;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
+  /**
+   * The five, in the order they are assigned — and the order is load-bearing.
+   *
+   * **Two of them close over each other.** `xpSummary`'s `onLevel` reads `this.summary`, which
+   * does not exist yet when it is built, and `summary`'s `onContinue` reads `this.xpSummary`,
+   * which does. Both are safe because a callback runs later, and both stop being safe the
+   * moment the order changes. Nothing here needs changing; it needs not being changed by
+   * accident, which is why it is written down rather than left to be re-derived.
+   *
+   * The three builders that close over nothing are free functions below; the two that close
+   * over `this` are methods.
+   */
   constructor(deps: GameScreensDeps) {
-    this.menus = new Menus({
-      host: deps.host,
-      selection: deps.selection,
-      onLaunch: deps.onLaunch,
-      onPlayMultiplayer: deps.onPlayMultiplayer,
-      serverConfigured: deps.serverConfigured,
-      foreignServer: deps.foreignServer,
-      profile: deps.profile,
-      onDisplayName: deps.onDisplayName,
-      onCheatCode: deps.onCheatCode,
-      onLoadout: deps.onLoadout,
-      onSettings: deps.onSettings,
-    });
-
-    this.loadoutEditor = new LoadoutEditor({
-      host: deps.host,
-      profile: deps.profile,
-      onSaveAndExit: deps.onLoadoutSaveAndExit,
-      anisotropy: deps.anisotropy,
-      characterAssets: deps.characterAssets,
-      weaponAssets: deps.weaponAssets,
-      serverConfigured: deps.serverConfigured,
-      onDisplayName: deps.onDisplayName,
-    });
-
-    this.xpSummary = new XpSummary({
-      audio: deps.audio,
-      // The header's card follows the bar (M18): the level beside the callsign flips with the flourish.
-      onLevel: (level) => this.summary.setShownLevel(level),
-      // The list would open over the podium's stat cards; the strip says what it holds instead.
-      autoOpen: false,
-    });
-
-    this.pauseMenu = new PauseMenu({
-      host: deps.host,
-      onResume: deps.onResume,
-      onToggleDebug: deps.onToggleOverlay,
-      onQuit: deps.onQuitToMenu,
-      statusLine: deps.pauseStatusLine,
-      onCheatCode: deps.onCheatCode,
-    });
-    this.pauseMenu.setOnSettings(deps.onSettings);
-
-    this.summary = new EndOfMatch({
-      // Sized to the largest roster any map asks for, so the board never has to grow.
-      rowsPerTeam: 8,
-      /**
-       * Acts on the first press (playtest round 4, B4).
-       *
-       * This used to swallow the first click to finish the XP animation and leave only on the
-       * second, which is the reported *"you have to click twice"* — and it was this, not a
-       * focus guard and not pointer lock. The reasoning behind it was sound and the shape was
-       * not: a button labelled "Return to lobby" that does something else is a button that
-       * lies, and the moment there are two of them the player cannot tell which press was
-       * eaten by which.
-       *
-       * The XP is banked when SUMMARY is *entered*, not when the bar finishes, so skipping the
-       * animation costs nothing but the animation. Leaving finishes it and goes.
-       */
-      onContinue: () => {
-        this.xpSummary.finish();
-        deps.onLeaveSummary();
-      },
-      onExit: () => {
-        this.xpSummary.finish();
-        deps.onExitSummary();
-      },
-      // The podium's bodies (M15, D1): the same service and the same filtering as the match's.
-      characterAssets: deps.characterAssets,
-      weaponAssets: deps.weaponAssets,
-      anisotropy: deps.anisotropy,
-      profile: deps.profile,
-      audio: deps.audio,
-    });
+    this.menus = createMenus(deps);
+    this.loadoutEditor = createEditor(deps);
+    this.xpSummary = this.createXpSummary(deps);
+    this.pauseMenu = createPauseMenu(deps);
+    this.summary = this.createSummary(deps);
     // The M4 insertion point, filled (S6.1).
     this.summary.xpSlot.appendChild(this.xpSummary.element);
     deps.host.appendChild(this.summary.element);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   /**
    * Put the post-match board up.
    *
@@ -228,4 +193,99 @@ export class GameScreens {
     this.xpSummary.stop();
     this.summary.hide();
   }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** The XP strip. Its level callback reads `summary`, which is assigned after it. */
+  private createXpSummary(deps: GameScreensDeps): XpSummary {
+    return new XpSummary({
+      audio: deps.audio,
+      // The header's card follows the bar (M18): the level beside the callsign flips with the flourish.
+      onLevel: (level) => this.summary.setShownLevel(level),
+      // The list would open over the podium's stat cards; the strip says what it holds instead.
+      autoOpen: false,
+    });
+  }
+
+  /** The post-match board. Both its buttons finish the XP animation before they leave. */
+  private createSummary(deps: GameScreensDeps): EndOfMatch {
+    return new EndOfMatch({
+      rowsPerTeam: SUMMARY_ROWS_PER_TEAM,
+      /**
+       * Acts on the first press (playtest round 4, B4).
+       *
+       * This used to swallow the first click to finish the XP animation and leave only on the
+       * second, which is the reported *"you have to click twice"* — and it was this, not a
+       * focus guard and not pointer lock. The reasoning behind it was sound and the shape was
+       * not: a button labelled "Return to lobby" that does something else is a button that
+       * lies, and the moment there are two of them the player cannot tell which press was
+       * eaten by which.
+       *
+       * The XP is banked when SUMMARY is *entered*, not when the bar finishes, so skipping the
+       * animation costs nothing but the animation. Leaving finishes it and goes.
+       */
+      onContinue: () => {
+        this.xpSummary.finish();
+        deps.onLeaveSummary();
+      },
+      onExit: () => {
+        this.xpSummary.finish();
+        deps.onExitSummary();
+      },
+      // The podium's bodies (M15, D1): the same service and the same filtering as the match's.
+      characterAssets: deps.characterAssets,
+      weaponAssets: deps.weaponAssets,
+      anisotropy: deps.anisotropy,
+      profile: deps.profile,
+      audio: deps.audio,
+    });
+  }
+  //#endregion
 }
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+function createMenus(deps: GameScreensDeps): Menus {
+  return new Menus({
+    host: deps.host,
+    selection: deps.selection,
+    onLaunch: deps.onLaunch,
+    onPlayMultiplayer: deps.onPlayMultiplayer,
+    serverConfigured: deps.serverConfigured,
+    foreignServer: deps.foreignServer,
+    profile: deps.profile,
+    onDisplayName: deps.onDisplayName,
+    onCheatCode: deps.onCheatCode,
+    onLoadout: deps.onLoadout,
+    onSettings: deps.onSettings,
+  });
+}
+
+function createEditor(deps: GameScreensDeps): LoadoutEditor {
+  return new LoadoutEditor({
+    host: deps.host,
+    profile: deps.profile,
+    onSaveAndExit: deps.onLoadoutSaveAndExit,
+    anisotropy: deps.anisotropy,
+    characterAssets: deps.characterAssets,
+    weaponAssets: deps.weaponAssets,
+    serverConfigured: deps.serverConfigured,
+    onDisplayName: deps.onDisplayName,
+  });
+}
+
+function createPauseMenu(deps: GameScreensDeps): PauseMenu {
+  const pause = new PauseMenu({
+    host: deps.host,
+    onResume: deps.onResume,
+    onToggleDebug: deps.onToggleOverlay,
+    onQuit: deps.onQuitToMenu,
+    statusLine: deps.pauseStatusLine,
+    onCheatCode: deps.onCheatCode,
+  });
+  pause.setOnSettings(deps.onSettings);
+  return pause;
+}
+//#endregion

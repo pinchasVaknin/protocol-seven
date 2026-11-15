@@ -558,6 +558,7 @@ const FINISHED = {
     'src/client/MatchObjectives.ts',
     'src/client/main.ts',
   ],
+  C22: ['src/client/MatchWorld.ts'],
 };
 
 // ---------------------------------------------------------------------------

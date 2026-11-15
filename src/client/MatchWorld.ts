@@ -1,3 +1,37 @@
+/**
+ * The world a match is played in, as one object with one lifetime (M7).
+ *
+ * ## Why this file exists
+ *
+ * M4 made the world per-match: the map, the player, the match and all of its debug tooling
+ * are built on entering MATCH and **fully disposed on leaving SUMMARY**, because S6.3 says
+ * loading a map twice must not double anything. That was implemented as `buildWorld` and
+ * `teardownWorld` inside `Game.ts` plus six nullable fields, and by M6 those six fields were
+ * woven through `simulate`, `draw`, five state handlers and eight getters — around thirty
+ * call sites, every one of them an optional chain on a field that is either all present or
+ * all absent. `Game.ts` reached 905 lines and PLAN.md named the split as the first M7 job.
+ *
+ * The fix is not to move code, it is to move the *nullability*. Six fields that are always
+ * null together are one field that is sometimes null, so `Game` now holds a single
+ * `MatchWorld | null` and asks once. Inside here nothing is optional: a `MatchWorld` that
+ * exists has a map, a player, a match and a debug suite, which is why this file has no `?.`
+ * in it and why `Game.simulate` no longer has four.
+ *
+ * ## The mirror rule still holds
+ *
+ * The constructor and `dispose` are exact mirrors — every field the one sets, the other
+ * clears; every group the one adds to the scene, the other removes. That is the property
+ * `MatchHarness` is really testing when it runs three matches and logs the heap at each
+ * boundary, and it is easier to check now that both halves are adjacent in one file instead
+ * of ninety lines apart in the state machine.
+ *
+ * What deliberately does **not** live here is anything genuinely process-wide: the renderer,
+ * the textures, the audio graph, the input listener, the frame-stats buffer, the profile and
+ * the config objects the tuning panel holds references to. Those are handed in.
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import { MODELLED_PROP_SHAPES, PropModels, STATION_SHAPE } from './world/PropModels';
 import type { SchedulerConfig } from '../shared/ai/AiScheduler';
@@ -45,7 +79,13 @@ import type { WelcomeInfo } from '../shared/net/Messages';
 import { LocalIdentity } from '../shared/combat/LocalIdentity';
 import type { BrowserLink } from './net/BrowserLink';
 import type { SkirmishSink } from '../shared/net/NetClient';
-import { isArenaInstance, ownerFromCode, VotePhase, type NetLoadout } from '../shared/net/Skirmish';
+import {
+  isArenaInstance,
+  ownerFromCode,
+  VotePhase,
+  type NetLoadout,
+  type ObjectiveState,
+} from '../shared/net/Skirmish';
 import { resolveDisplayName } from '../shared/net/UrlFlags';
 import { NetSession } from './net/NetSession';
 import { logger } from '../shared/core/Log';
@@ -53,47 +93,10 @@ import type { RenderableActor } from '../shared/ai/BotVisualState';
 import type { CharacterAvatarProviderResolver } from './characters/CharacterAvatarProvider';
 import { applyAmbient, loadMap, type LoadedMap } from './world/MapRender';
 import { Particulate } from './world/Particulate';
+//#endregion
 
-/**
- * The world a match is played in, as one object with one lifetime (M7).
- *
- * ## Why this file exists
- *
- * M4 made the world per-match: the map, the player, the match and all of its debug tooling
- * are built on entering MATCH and **fully disposed on leaving SUMMARY**, because S6.3 says
- * loading a map twice must not double anything. That was implemented as `buildWorld` and
- * `teardownWorld` inside `Game.ts` plus six nullable fields, and by M6 those six fields were
- * woven through `simulate`, `draw`, five state handlers and eight getters — around thirty
- * call sites, every one of them an optional chain on a field that is either all present or
- * all absent. `Game.ts` reached 905 lines and PLAN.md named the split as the first M7 job.
- *
- * The fix is not to move code, it is to move the *nullability*. Six fields that are always
- * null together are one field that is sometimes null, so `Game` now holds a single
- * `MatchWorld | null` and asks once. Inside here nothing is optional: a `MatchWorld` that
- * exists has a map, a player, a match and a debug suite, which is why this file has no `?.`
- * in it and why `Game.simulate` no longer has four.
- *
- * ## The mirror rule still holds
- *
- * The constructor and `dispose` are exact mirrors — every field the one sets, the other
- * clears; every group the one adds to the scene, the other removes. That is the property
- * `MatchHarness` is really testing when it runs three matches and logs the heap at each
- * boundary, and it is easier to check now that both halves are adjacent in one file instead
- * of ninety lines apart in the state machine.
- *
- * What deliberately does **not** live here is anything genuinely process-wide: the renderer,
- * the textures, the audio graph, the input listener, the frame-stats buffer, the profile and
- * the config objects the tuning panel holds references to. Those are handed in.
- */
-
-/**
- * Seed for everything in `ai/`. Fixed, so two runs of the harness with the same roster
- * produce the same firefight and a regression in bot behaviour is reproducible.
- */
-const AI_SEED = 0x0fe7_a105;
-
-const netLog = logger('world');
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 export interface MatchWorldDeps {
   // ---- process-wide handles ------------------------------------------------
   readonly bus: GameBus;
@@ -227,8 +230,27 @@ export interface NetworkedMatchOptions {
    */
   readonly prebuiltMap?: LoadedMap | null;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * Seed for everything in `ai/`. Fixed, so two runs of the harness with the same roster
+ * produce the same firefight and a regression in bot behaviour is reproducible.
+ */
+const AI_SEED = 0x0fe7_a105;
+
+const netLog = logger('world');
+
+const EMPTY_ACTORS: readonly RenderableActor[] = [];
+const EMPTY_BLOCKERS: readonly RoundBlocker[] = [];
+//#endregion
+
+// ====================================== CLASS MatchWorld ====================================== \\
+//#region Class MatchWorld
 export class MatchWorld {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly map: LoadedMap;
   readonly player: PlayerController;
   readonly match: Match;
@@ -271,367 +293,36 @@ export class MatchWorld {
 
   private readonly deps: MatchWorldDeps;
   private readonly matchEndedSubscription: () => void;
+  //#endregion
 
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(deps: MatchWorldDeps) {
     this.deps = deps;
 
-    /**
-     * Adopt the background build if it produced the map we need (M11, §6.5).
-     *
-     * The identity check is not paranoia: the build is started when the map vote resolves and
-     * adopted when the migration lands, and between those two the allocation can fail or a
-     * different map can win a re-run cycle. Adopting a map for the wrong world would put the
-     * player in geometry the server is not simulating, which is the M10 map-desync bug —
-     * spawning outside the world, walking through walls that are not there — arriving by a
-     * new route.
-     */
-    const prebuilt = deps.server?.prebuiltMap ?? null;
-    const map =
-      prebuilt !== null && prebuilt.def.id === deps.mapEntry.def.id
-        ? prebuilt
-        : loadMap(deps.mapEntry.def, deps.textures, deps.profile.settings.shadowQuality);
+    const map = this.createMap(deps);
     this.map = map;
     deps.scene.add(map.root);
     applyAmbient(deps.scene, map.def);
 
-    // Added to the map's own root rather than to the scene, so the one `scene.remove` in
-    // `dispose` takes it with everything else and there is no second thing to forget.
-    const particulateDef = map.def.particulate;
-    this.particulate = particulateDef === undefined ? null : new Particulate(particulateDef);
-    if (this.particulate !== null) map.root.add(this.particulate.points);
-
-    /**
-     * The resupply station's model, when it arrives.
-     *
-     * Added to the map's own root for the reason the particulate is, and *after* the match has
-     * started for a reason of its own: the download is not on the critical path. Until it lands
-     * the station is an invisible box that resupplies exactly as it does with it — a worse
-     * picture and an identical game — and a map that places none never asks for the file.
-     */
-    if (MODELLED_PROP_SHAPES.has(STATION_SHAPE) && map.def.props.some((prop) => prop.shape === STATION_SHAPE)) {
-      void this.propModels.preloadStation().then(() => {
-        // The match may already be over; the root is the thing to ask, as everywhere else here.
-        if (map.root.parent === null) return;
-        this.propModels.addStations(map.root, map.def);
-      });
-    }
+    this.particulate = this.createParticulate(map);
+    this.preloadStationModel(map);
     map.collision.configure(deps.movementConfig.maxSlopeDeg, deps.movementConfig.collisionSkin);
 
-    const player = new PlayerController(deps.movementConfig, map.collision, deps.bus);
+    const player = this.createPlayer(deps, map);
     this.player = player;
 
-    const spawn = map.spawns[0];
-    if (spawn === undefined) throw new Error('Map has no spawn zones');
-    player.spawn(spawn.position.x, spawn.position.y, spawn.position.z, spawn.facingYaw);
-    deps.input.setView(spawn.facingYaw, 0);
-
-    /**
-     * The session is built **before** the match, because the match's renderer needs to be
-     * pointed at the session's actor list at construction — and after the player, because the
-     * session predicts through that controller.
-     */
-    const server = deps.server;
-    this.net =
-      server === null
-        ? null
-        : new NetSession({
-            link: server.link,
-            welcome: server.welcome,
-            receivedAtMs: server.receivedAtMs,
-            pending: server.pending,
-            displayName: server.displayName,
-            healthMax: () => deps.healthConfig.max,
-            bus: deps.bus,
-            controller: player,
-            identity: this.identity,
-            wantRewindDebug: server.wantRewindDebug,
-            onNewMatch: server.onNewMatch,
-            skirmish: server.skirmish,
-            loadout: server.loadout,
-            skinIndex: server.skinIndex,
-            reconnectToken: server.reconnectToken,
-            // Both of these are filled in properly the moment the match exists — see below.
-            // They are indirected through `this.match` rather than captured, because the
-            // match cannot exist before the session it is being handed to.
-            sample: (tick) => this.sampleCommand(tick),
-            applyWeapon: (cmd) => this.applyWeaponForNet(cmd),
-            moveScale: (cmd) => this.weaponMoveScale(cmd),
-          });
-
-    this.match = new Match({
-      bus: deps.bus,
-      networked: server !== null,
-      identity: this.identity,
-      localTeam: server?.welcome.team,
-      // The name the server seated us under, or — solo — the profile's callsign through the
-      // same sanitiser the join uses, so the two paths agree on what an empty name becomes.
-      localName: server?.displayName ?? resolveDisplayName(null, deps.profile.settings.callsign),
-      actors: this.net === null ? undefined : () => netSessionActors(this.net),
-      // The same bodies again, for the shot path rather than the renderer: a networked
-      // client's predicted round stops on them without resolving a hit. See `RoundBlocker`.
-      roundBlockers: this.net === null ? undefined : () => netRoundBlockers(this.net),
-      /**
-       * Spend a streak by asking the server (Gate B, §8.22).
-       *
-       * Undefined in single-player, where `ClientMatch` activates locally against its own
-       * system — the branch is on the presence of this callback's owner rather than on a flag,
-       * so a local match cannot accidentally send.
-       */
-      onStreakRequest:
-        this.net === null
-          ? undefined
-          : (id, markX, markZ) => {
-              this.net?.client.sendStreak(streakKindIndex(id), markX, markZ);
-            },
-      cheats: deps.cheats,
-      scene: deps.scene,
-      characterAvatarProvider: deps.characterAvatarProvider,
-      weaponAssets: deps.weaponAssets,
-      viewmodel: deps.viewmodel,
-      cameraRig: deps.cameraRig,
-      cameraConfig: deps.cameraConfig,
-      audio: deps.audio,
-      input: deps.input,
-      world: map.collision,
-      player,
-      movementConfig: deps.movementConfig,
-      weaponDef: deps.weaponDef,
-      secondaryDef: deps.secondaryDef,
-      playerBaseDef: deps.playerBaseDef,
-      viewmodelConfig: deps.viewmodelConfig,
-      healthConfig: deps.healthConfig,
-      equipmentConfig: deps.equipmentConfig,
-      uiHost: deps.uiHost,
-      anisotropy: deps.textures.anisotropy,
-      map: deps.mapEntry,
-      mode: deps.modeEntry,
-      difficulty: deps.difficulty,
-      tiers: deps.tiers,
-      perceptionConfig: deps.perceptionConfig,
-      schedulerConfig: deps.schedulerConfig,
-      seed: AI_SEED,
-      loadout: deps.loadout,
-      profile: deps.profile,
-      banksProgress: deps.modeEntry.banksProgress,
-      /**
-       * Which instance this is (M11 §6.3; playtest round 4, F7 and F12).
-       *
-       * Off the welcome rather than off the mode: the arena runs `FFA`, and so does a live
-       * Free-for-All the ballot elected. `applyRotation` rebuilds this world from each new
-       * welcome, so a player migrating into a match and back again gets the answer for the
-       * instance they are actually in, both times, without anything having to be reset.
-       */
-      warmupArena: server !== null && isArenaInstance(server.welcome.matchId),
-      // The arena's last broadcast, the same one the vote overlay draws from.
-      ballotOpen: () => {
-        const vote = this.net?.lastVote;
-        return vote != null && (vote.phase === VotePhase.MODE_VOTE || vote.phase === VotePhase.MAP_VOTE);
-      },
-    });
-
-    /**
-     * Point the session at the match, now that both exist.
-     *
-     * These are the two places replicated state lands. They are assigned here rather than
-     * passed into the session's constructor because the session is built first — the match's
-     * renderer needs its actor list — so the reference can only be handed over afterwards.
-     */
-    const net = this.net;
-    if (net !== null) {
-      net.onMatchState = (state) => {
-        this.match.flow.applyReplicated(state);
-      };
-      net.onLocalState = (health, alive, spawnSerial) => {
-        this.match.applyReplicatedSelf(health, alive, spawnSerial);
-      };
-
-      /**
-       * The §7 divergence checker.
-       *
-       * Fed the raw header and the score this client derived *from replicated events* through
-       * its own `ScoreSystem` — two independent paths to the same number. See
-       * `DivergenceChecker` for why comparing against `MatchFlow` instead would be a test that
-       * cannot fail.
-       */
-      /**
-       * Objective state, straight into the zones the renderer already walks (Gate B, §6.8).
-       *
-       * `MatchObjectives` reads `mode.zones` for Domination and `mode.sites` for S&D, and on a
-       * networked client those objects exist but are never ticked — the local mode's roster is
-       * empty, so `recountZones` counts nobody and every flag stays neutral for ever. The server
-       * was capturing correctly the whole time; the client was drawing its own blank copy.
-       *
-       * Index is identity: both sides build their zone list from `MapDef.objectives`, in order.
-       * A length mismatch means the two runtimes disagree about the map, which is a far larger
-       * problem than a flag — so it is logged rather than silently truncated.
-       */
-      net.onObjectives = (states) => {
-        const zones = this.match.mode.objectiveZones;
-        if (states.length !== zones.length) {
-          netLog.warn(
-            `objective count mismatch: server sent ${states.length}, this map has ${zones.length}. ` +
-              'Client and server disagree about the map.',
-          );
-          return;
-        }
-        for (let i = 0; i < zones.length; i++) {
-          const zone = zones[i];
-          const state = states[i];
-          if (zone === undefined || state === undefined) continue;
-          zone.owner = ownerFromCode(state.owner);
-          zone.capturingTeam = ownerFromCode(state.capturing);
-          zone.progress = state.progress / 255;
-          zone.countA = state.countA;
-          zone.countB = state.countB;
-        }
-      };
-
-      /**
-       * Kill Confirmed's tags, and Search & Destroy's bomb (Gate B, §6.8).
-       *
-       * Both land in the mode objects `MatchObjectives` already walks, for the same reason the
-       * zones do: the renderer is correct and was being fed nothing. `updateTags` pools its
-       * meshes by `tag.id`, and the ids are the server's, so a tag keeps its mesh from the frame
-       * it lands to the frame it is collected.
-       *
-       * Guarded by a type test rather than assumed, because the mode a client holds is whatever
-       * the server told it to build — and a `Tags` frame arriving one tick after a migration
-       * into a TDM match would otherwise write tags onto a mode that has no floor for them.
-       */
-      net.onTags = (tags) => {
-        const mode = this.match.mode;
-        if (mode instanceof KillConfirmed) mode.applyReplicatedTags(tags);
-      };
-
-      net.onBomb = (info) => {
-        const mode = this.match.mode;
-        if (mode instanceof SearchAndDestroy) mode.applyReplicatedBomb(info);
-      };
-
-      /**
-       * Killstreaks (Gate B, §8.22).
-       *
-       * Straight into the match's replica, which the HUD, the minimap and the streak renderer
-       * are pointed at whenever the match is networked. Nothing is filtered here: the server
-       * already sent this seat exactly what it is entitled to see.
-       */
-      net.onStreaks = (view) => {
-        this.match.applyReplicatedStreaks(view);
-      };
-
-      /**
-       * Grenades and smoke (Gate B, §8.24).
-       *
-       * Broadcast rather than per recipient — a grenade has no secrets — and the split between
-       * "mine, predicted" and "theirs, replicated" happens inside the match, which is the only
-       * place that knows which entity id is this client's.
-       */
-      net.onProjectiles = (projectiles, smoke) => {
-        this.match.applyReplicatedProjectiles(projectiles, smoke);
-      };
-
-      net.onAuthoritativeState = (header) => {
-        this.divergence.check(header, this.match.flow);
-      };
-
-      /**
-       * The §7 state hash, which this client did not run until playtest round 5 (B7).
-       *
-       * `HeadlessClient` has compared these since Gate B and the browser compared nothing —
-       * so the comparator the gate exercised and the comparator a player ran were different
-       * code, and the browser's half was the broken one. What it had instead was a score
-       * comparison whose "independent" operand was `mode.teamScore`, which is a structural
-       * zero on a replicated client; that is B7, and `DivergenceChecker` carries the autopsy.
-       *
-       * The facts are built by the same shared function the instance builds its own with, off
-       * this client's mode and flow — the objects `onObjectives`, `onTags` and `onBomb` above
-       * have just finished writing. The hash message is sent **last** in the instance's tick,
-       * after every one of those channels, which is what makes "what do you think tick N
-       * looked like" a fair question rather than a guaranteed miss.
-       */
-      net.onStateHash = (tick, hash, sections) => {
-        const facts = modeStateFacts(this.match.mode, this.match.flow, this.hashScratch);
-        // The parts as well (part 5), so a confirmed mismatch says which channel it is in.
-        this.divergence.checkHash(tick, hashModeState(facts), hash, {
-          facts,
-          mine: hashModeStateSections(facts, this.hashSections),
-          server: sections,
-        });
-      };
-
-      /**
-       * The killfeed resolves ids to names, and on a networked client the only place those
-       * names exist is the snapshot. See `NetSession.directory`.
-       */
-      this.match.flow.setKillfeedDirectory(net.directory());
-      /**
-       * The scoreboard is the server's (M13 Phase B, bug 4.3).
-       *
-       * It used to be registered from the snapshot's bodies and counted from replicated events,
-       * which is how a player who joined or returned mid-match read zeros for everybody. The
-       * row set on the wire *is* the board: `applyReplicated` upserts what it carries and removes
-       * what it does not.
-       */
-      net.onScoreboard = (rows) => {
-        this.match.score.applyReplicated(rows);
-      };
-
-      /**
-       * Take up the connection the handshake already made.
-       *
-       * Nothing is awaited here any more, and that is the point: the socket was opened and
-       * the `Welcome` decoded *before* this constructor ran, which is what let `deps.mapEntry`
-       * be the server's map instead of the client's guess. A connection failure never reaches
-       * this far — `Game` catches it and stays in the menu with a reason on screen.
-       */
-      net.start();
-      netLog.info(`world built for ${net.welcome.modeId} on ${net.welcome.mapId} (server's choice).`);
-    }
+    this.net = this.createNetSession(deps, player);
+    this.match = this.createMatch(deps, map, player);
+    if (this.net !== null) this.wireNetSession(this.net);
 
     this.matchEndedSubscription = deps.bus.on(EV.MatchEnded, () => deps.onMatchEnded());
-
-    this.debug = new DebugSuite({
-      host: deps.debugHost,
-      bus: deps.bus,
-      loop: deps.loop,
-      renderer: deps.renderer,
-      scene: deps.scene,
-      audio: deps.audio,
-      player,
-      cameraRig: deps.cameraRig,
-      map,
-      mapEntry: deps.mapEntry,
-      transport: deps.transport,
-      // F14. The same two suppliers the match reads, so the panel, the codes and the
-      // simulation cannot hold three different opinions about one entitlement.
-      cheats: deps.cheats,
-      requestCheat: deps.requestCheat,
-      netSession: () => this.net,
-      match: this.match,
-      movementConfig: deps.movementConfig,
-      cameraConfig: deps.cameraConfig,
-      weaponDef: deps.weaponDef,
-      viewmodelConfig: deps.viewmodelConfig,
-      healthConfig: deps.healthConfig,
-      equipmentConfig: deps.equipmentConfig,
-      tiers: deps.tiers,
-      perceptionConfig: deps.perceptionConfig,
-      schedulerConfig: deps.schedulerConfig,
-      stats: deps.stats,
-      speedo: deps.speedo,
-      matchHarness: deps.matchHarness,
-      profile: deps.profile,
-      onConfigChanged: deps.onConfigChanged,
-      onWeaponConfigChanged: deps.onWeaponConfigChanged,
-      // M11 (§7). Owned by `Game` because they outlive a world: the build runs across the very
-      // transition that replaces this suite, and the migration windows span both sides of it.
-      divergence: this.divergence,
-      lastBuild: deps.lastBuild,
-      buildProgress: deps.buildProgress,
-      migrationWindows: deps.migrationWindows,
-    });
+    this.debug = this.createDebugSuite(deps, map, player);
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get botHarness(): BotHarness | null {
     return this.harness;
   }
@@ -670,16 +361,6 @@ export class MatchWorld {
     // The mortar's map is the client's, and the server has to be told it is up or it reads the
     // click that confirms a mark as a trigger pull (2026-09-28). See `Btn.Targeting`.
     return input.sample(tick, nowMsValue, this.match.targeting ? Btn.Targeting : 0);
-  }
-
-  /**
-   * Advance everything that consumes a command but must never be replayed.
-   *
-   * The weapon, and only the weapon. See `Prediction` for the full reasoning: replaying it
-   * would fire its rounds again and empty the magazine at the replay rate.
-   */
-  private applyWeaponForNet(cmd: InputCommand): void {
-    this.match.simulate(cmd);
   }
 
   /**
@@ -745,9 +426,6 @@ export class MatchWorld {
    * so it goes first. Everything added to the scene is removed and everything with a
    * `dispose` gets it — including the map's geometries and materials, which are the largest
    * thing a match allocates.
-   */
-  /**
-   * Take the world apart.
    *
    * `keepConnection` is for a **map rotation** (M10, playtest round 2). The server ending one
    * match and starting another is not a disconnect: the socket stays up, the seat stays
@@ -774,8 +452,402 @@ export class MatchWorld {
     this.deps.scene.fog = null;
     this.deps.scene.background = null;
   }
-}
+  //#endregion
 
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /**
+   * Adopt the background build if it produced the map we need (M11, §6.5).
+   *
+   * The identity check is not paranoia: the build is started when the map vote resolves and
+   * adopted when the migration lands, and between those two the allocation can fail or a
+   * different map can win a re-run cycle. Adopting a map for the wrong world would put the
+   * player in geometry the server is not simulating, which is the M10 map-desync bug —
+   * spawning outside the world, walking through walls that are not there — arriving by a
+   * new route.
+   */
+  private createMap(deps: MatchWorldDeps): LoadedMap {
+    const prebuilt = deps.server?.prebuiltMap ?? null;
+    return prebuilt !== null && prebuilt.def.id === deps.mapEntry.def.id
+      ? prebuilt
+      : loadMap(deps.mapEntry.def, deps.textures, deps.profile.settings.shadowQuality);
+  }
+
+  /**
+   * Added to the map's own root rather than to the scene, so the one `scene.remove` in
+   * `dispose` takes it with everything else and there is no second thing to forget.
+   */
+  private createParticulate(map: LoadedMap): Particulate | null {
+    const particulateDef = map.def.particulate;
+    if (particulateDef === undefined) return null;
+    const particulate = new Particulate(particulateDef);
+    map.root.add(particulate.points);
+    return particulate;
+  }
+
+  /**
+   * The resupply station's model, when it arrives.
+   *
+   * Added to the map's own root for the reason the particulate is, and *after* the match has
+   * started for a reason of its own: the download is not on the critical path. Until it lands
+   * the station is an invisible box that resupplies exactly as it does with it — a worse
+   * picture and an identical game — and a map that places none never asks for the file.
+   */
+  private preloadStationModel(map: LoadedMap): void {
+    if (MODELLED_PROP_SHAPES.has(STATION_SHAPE) && map.def.props.some((prop) => prop.shape === STATION_SHAPE)) {
+      void this.propModels.preloadStation().then(() => {
+        // The match may already be over; the root is the thing to ask, as everywhere else here.
+        if (map.root.parent === null) return;
+        this.propModels.addStations(map.root, map.def);
+      });
+    }
+  }
+
+  /** The controller, stood in the map's first spawn zone and looking down its yaw. */
+  private createPlayer(deps: MatchWorldDeps, map: LoadedMap): PlayerController {
+    const player = new PlayerController(deps.movementConfig, map.collision, deps.bus);
+    const spawn = map.spawns[0];
+    if (spawn === undefined) throw new Error('Map has no spawn zones');
+    player.spawn(spawn.position.x, spawn.position.y, spawn.position.z, spawn.facingYaw);
+    deps.input.setView(spawn.facingYaw, 0);
+    return player;
+  }
+
+  /**
+   * The session is built **before** the match, because the match's renderer needs to be
+   * pointed at the session's actor list at construction — and after the player, because the
+   * session predicts through that controller.
+   */
+  private createNetSession(deps: MatchWorldDeps, player: PlayerController): NetSession | null {
+    const server = deps.server;
+    if (server === null) return null;
+    return new NetSession({
+      link: server.link,
+      welcome: server.welcome,
+      receivedAtMs: server.receivedAtMs,
+      pending: server.pending,
+      displayName: server.displayName,
+      healthMax: () => deps.healthConfig.max,
+      bus: deps.bus,
+      controller: player,
+      identity: this.identity,
+      wantRewindDebug: server.wantRewindDebug,
+      onNewMatch: server.onNewMatch,
+      skirmish: server.skirmish,
+      loadout: server.loadout,
+      skinIndex: server.skinIndex,
+      reconnectToken: server.reconnectToken,
+      // Both of these are filled in properly the moment the match exists — see below.
+      // They are indirected through `this.match` rather than captured, because the
+      // match cannot exist before the session it is being handed to.
+      sample: (tick) => this.sampleCommand(tick),
+      applyWeapon: (cmd) => this.applyWeaponForNet(cmd),
+      moveScale: (cmd) => this.weaponMoveScale(cmd),
+    });
+  }
+
+  /**
+   * Advance everything that consumes a command but must never be replayed.
+   *
+   * The weapon, and only the weapon. See `Prediction` for the full reasoning: replaying it
+   * would fire its rounds again and empty the magazine at the replay rate.
+   */
+  private applyWeaponForNet(cmd: InputCommand): void {
+    this.match.simulate(cmd);
+  }
+
+  /** The match itself, and every supplier and callback it reads this world through. */
+  private createMatch(deps: MatchWorldDeps, map: LoadedMap, player: PlayerController): Match {
+    const server = deps.server;
+    return new Match({
+      bus: deps.bus,
+      networked: server !== null,
+      identity: this.identity,
+      localTeam: server?.welcome.team,
+      // The name the server seated us under, or — solo — the profile's callsign through the
+      // same sanitiser the join uses, so the two paths agree on what an empty name becomes.
+      localName: server?.displayName ?? resolveDisplayName(null, deps.profile.settings.callsign),
+      actors: this.net === null ? undefined : () => netSessionActors(this.net),
+      // The same bodies again, for the shot path rather than the renderer: a networked
+      // client's predicted round stops on them without resolving a hit. See `RoundBlocker`.
+      roundBlockers: this.net === null ? undefined : () => netRoundBlockers(this.net),
+      /**
+       * Spend a streak by asking the server (Gate B, §8.22).
+       *
+       * Undefined in single-player, where `ClientMatch` activates locally against its own
+       * system — the branch is on the presence of this callback's owner rather than on a flag,
+       * so a local match cannot accidentally send.
+       */
+      onStreakRequest:
+        this.net === null
+          ? undefined
+          : (id, markX, markZ) => {
+              this.net?.client.sendStreak(streakKindIndex(id), markX, markZ);
+            },
+      cheats: deps.cheats,
+      scene: deps.scene,
+      characterAvatarProvider: deps.characterAvatarProvider,
+      weaponAssets: deps.weaponAssets,
+      viewmodel: deps.viewmodel,
+      cameraRig: deps.cameraRig,
+      cameraConfig: deps.cameraConfig,
+      audio: deps.audio,
+      input: deps.input,
+      world: map.collision,
+      player,
+      movementConfig: deps.movementConfig,
+      weaponDef: deps.weaponDef,
+      secondaryDef: deps.secondaryDef,
+      playerBaseDef: deps.playerBaseDef,
+      viewmodelConfig: deps.viewmodelConfig,
+      healthConfig: deps.healthConfig,
+      equipmentConfig: deps.equipmentConfig,
+      uiHost: deps.uiHost,
+      anisotropy: deps.textures.anisotropy,
+      map: deps.mapEntry,
+      mode: deps.modeEntry,
+      difficulty: deps.difficulty,
+      tiers: deps.tiers,
+      perceptionConfig: deps.perceptionConfig,
+      schedulerConfig: deps.schedulerConfig,
+      seed: AI_SEED,
+      loadout: deps.loadout,
+      profile: deps.profile,
+      banksProgress: deps.modeEntry.banksProgress,
+      /**
+       * Which instance this is (M11 §6.3; playtest round 4, F7 and F12).
+       *
+       * Off the welcome rather than off the mode: the arena runs `FFA`, and so does a live
+       * Free-for-All the ballot elected. `applyRotation` rebuilds this world from each new
+       * welcome, so a player migrating into a match and back again gets the answer for the
+       * instance they are actually in, both times, without anything having to be reset.
+       */
+      warmupArena: server !== null && isArenaInstance(server.welcome.matchId),
+      ballotOpen: () => this.isBallotOpen(),
+    });
+  }
+
+  /** The arena's last broadcast, the same one the vote overlay draws from. */
+  private isBallotOpen(): boolean {
+    const vote = this.net?.lastVote;
+    return vote != null && (vote.phase === VotePhase.MODE_VOTE || vote.phase === VotePhase.MAP_VOTE);
+  }
+
+  /**
+   * Point the session at the match, now that both exist.
+   *
+   * These are the two places replicated state lands. They are assigned here rather than
+   * passed into the session's constructor because the session is built first — the match's
+   * renderer needs its actor list — so the reference can only be handed over afterwards.
+   */
+  private wireNetSession(net: NetSession): void {
+    net.onMatchState = (state) => {
+      this.match.flow.applyReplicated(state);
+    };
+    net.onLocalState = (health, alive, spawnSerial) => {
+      this.match.applyReplicatedSelf(health, alive, spawnSerial);
+    };
+
+    net.onObjectives = (states) => {
+      this.applyObjectiveStates(states);
+    };
+
+    /**
+     * Kill Confirmed's tags, and Search & Destroy's bomb (Gate B, §6.8).
+     *
+     * Both land in the mode objects `MatchObjectives` already walks, for the same reason the
+     * zones do: the renderer is correct and was being fed nothing. `updateTags` pools its
+     * meshes by `tag.id`, and the ids are the server's, so a tag keeps its mesh from the frame
+     * it lands to the frame it is collected.
+     *
+     * Guarded by a type test rather than assumed, because the mode a client holds is whatever
+     * the server told it to build — and a `Tags` frame arriving one tick after a migration
+     * into a TDM match would otherwise write tags onto a mode that has no floor for them.
+     */
+    net.onTags = (tags) => {
+      const mode = this.match.mode;
+      if (mode instanceof KillConfirmed) mode.applyReplicatedTags(tags);
+    };
+
+    net.onBomb = (info) => {
+      const mode = this.match.mode;
+      if (mode instanceof SearchAndDestroy) mode.applyReplicatedBomb(info);
+    };
+
+    /**
+     * Killstreaks (Gate B, §8.22).
+     *
+     * Straight into the match's replica, which the HUD, the minimap and the streak renderer
+     * are pointed at whenever the match is networked. Nothing is filtered here: the server
+     * already sent this seat exactly what it is entitled to see.
+     */
+    net.onStreaks = (view) => {
+      this.match.applyReplicatedStreaks(view);
+    };
+
+    /**
+     * Grenades and smoke (Gate B, §8.24).
+     *
+     * Broadcast rather than per recipient — a grenade has no secrets — and the split between
+     * "mine, predicted" and "theirs, replicated" happens inside the match, which is the only
+     * place that knows which entity id is this client's.
+     */
+    net.onProjectiles = (projectiles, smoke) => {
+      this.match.applyReplicatedProjectiles(projectiles, smoke);
+    };
+
+    /**
+     * The §7 divergence checker.
+     *
+     * Fed the raw header and the score this client derived *from replicated events* through
+     * its own `ScoreSystem` — two independent paths to the same number. See
+     * `DivergenceChecker` for why comparing against `MatchFlow` instead would be a test that
+     * cannot fail.
+     */
+    net.onAuthoritativeState = (header) => {
+      this.divergence.check(header, this.match.flow);
+    };
+
+    net.onStateHash = (tick, hash, sections) => {
+      this.checkStateHash(tick, hash, sections);
+    };
+
+    /**
+     * The killfeed resolves ids to names, and on a networked client the only place those
+     * names exist is the snapshot. See `NetSession.directory`.
+     */
+    this.match.flow.setKillfeedDirectory(net.directory());
+    /**
+     * The scoreboard is the server's (M13 Phase B, bug 4.3).
+     *
+     * It used to be registered from the snapshot's bodies and counted from replicated events,
+     * which is how a player who joined or returned mid-match read zeros for everybody. The
+     * row set on the wire *is* the board: `applyReplicated` upserts what it carries and removes
+     * what it does not.
+     */
+    net.onScoreboard = (rows) => {
+      this.match.score.applyReplicated(rows);
+    };
+
+    /**
+     * Take up the connection the handshake already made.
+     *
+     * Nothing is awaited here any more, and that is the point: the socket was opened and
+     * the `Welcome` decoded *before* this constructor ran, which is what let `deps.mapEntry`
+     * be the server's map instead of the client's guess. A connection failure never reaches
+     * this far — `Game` catches it and stays in the menu with a reason on screen.
+     */
+    net.start();
+    netLog.info(`world built for ${net.welcome.modeId} on ${net.welcome.mapId} (server's choice).`);
+  }
+
+  /**
+   * Objective state, straight into the zones the renderer already walks (Gate B, §6.8).
+   *
+   * `MatchObjectives` reads `mode.zones` for Domination and `mode.sites` for S&D, and on a
+   * networked client those objects exist but are never ticked — the local mode's roster is
+   * empty, so `recountZones` counts nobody and every flag stays neutral for ever. The server
+   * was capturing correctly the whole time; the client was drawing its own blank copy.
+   *
+   * Index is identity: both sides build their zone list from `MapDef.objectives`, in order.
+   * A length mismatch means the two runtimes disagree about the map, which is a far larger
+   * problem than a flag — so it is logged rather than silently truncated.
+   */
+  private applyObjectiveStates(states: readonly ObjectiveState[]): void {
+    const zones = this.match.mode.objectiveZones;
+    if (states.length !== zones.length) {
+      netLog.warn(
+        `objective count mismatch: server sent ${states.length}, this map has ${zones.length}. ` +
+          'Client and server disagree about the map.',
+      );
+      return;
+    }
+    for (let i = 0; i < zones.length; i++) {
+      const zone = zones[i];
+      const state = states[i];
+      if (zone === undefined || state === undefined) continue;
+      zone.owner = ownerFromCode(state.owner);
+      zone.capturingTeam = ownerFromCode(state.capturing);
+      zone.progress = state.progress / 255;
+      zone.countA = state.countA;
+      zone.countB = state.countB;
+    }
+  }
+
+  /**
+   * The §7 state hash, which this client did not run until playtest round 5 (B7).
+   *
+   * `HeadlessClient` has compared these since Gate B and the browser compared nothing —
+   * so the comparator the gate exercised and the comparator a player ran were different
+   * code, and the browser's half was the broken one. What it had instead was a score
+   * comparison whose "independent" operand was `mode.teamScore`, which is a structural
+   * zero on a replicated client; that is B7, and `DivergenceChecker` carries the autopsy.
+   *
+   * The facts are built by the same shared function the instance builds its own with, off
+   * this client's mode and flow — the objects `onObjectives`, `onTags` and `onBomb` above
+   * have just finished writing. The hash message is sent **last** in the instance's tick,
+   * after every one of those channels, which is what makes "what do you think tick N
+   * looked like" a fair question rather than a guaranteed miss.
+   */
+  private checkStateHash(tick: number, hash: number, sections: readonly number[]): void {
+    const facts = modeStateFacts(this.match.mode, this.match.flow, this.hashScratch);
+    // The parts as well (part 5), so a confirmed mismatch says which channel it is in.
+    this.divergence.checkHash(tick, hashModeState(facts), hash, {
+      facts,
+      mine: hashModeStateSections(facts, this.hashSections),
+      server: sections,
+    });
+  }
+
+  /** The F1 overlay and its panels, over this world and the instrumentation `Game` owns. */
+  private createDebugSuite(deps: MatchWorldDeps, map: LoadedMap, player: PlayerController): DebugSuite {
+    return new DebugSuite({
+      host: deps.debugHost,
+      bus: deps.bus,
+      loop: deps.loop,
+      renderer: deps.renderer,
+      scene: deps.scene,
+      audio: deps.audio,
+      player,
+      cameraRig: deps.cameraRig,
+      map,
+      mapEntry: deps.mapEntry,
+      transport: deps.transport,
+      // F14. The same two suppliers the match reads, so the panel, the codes and the
+      // simulation cannot hold three different opinions about one entitlement.
+      cheats: deps.cheats,
+      requestCheat: deps.requestCheat,
+      netSession: () => this.net,
+      match: this.match,
+      movementConfig: deps.movementConfig,
+      cameraConfig: deps.cameraConfig,
+      weaponDef: deps.weaponDef,
+      viewmodelConfig: deps.viewmodelConfig,
+      healthConfig: deps.healthConfig,
+      equipmentConfig: deps.equipmentConfig,
+      tiers: deps.tiers,
+      perceptionConfig: deps.perceptionConfig,
+      schedulerConfig: deps.schedulerConfig,
+      stats: deps.stats,
+      speedo: deps.speedo,
+      matchHarness: deps.matchHarness,
+      profile: deps.profile,
+      onConfigChanged: deps.onConfigChanged,
+      onWeaponConfigChanged: deps.onWeaponConfigChanged,
+      // M11 (§7). Owned by `Game` because they outlive a world: the build runs across the very
+      // transition that replaces this suite, and the migration windows span both sides of it.
+      divergence: this.divergence,
+      lastBuild: deps.lastBuild,
+      buildProgress: deps.buildProgress,
+      migrationWindows: deps.migrationWindows,
+    });
+  }
+  //#endregion
+}
+//#endregion
+
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
 /** Narrow the nullable field for the renderer's supplier without a cast at the call site. */
 function netSessionActors(net: NetSession | null): Iterable<RenderableActor> {
   return net === null ? EMPTY_ACTORS : net.renderables();
@@ -786,13 +858,10 @@ function netRoundBlockers(net: NetSession | null): readonly RoundBlocker[] {
   return net === null ? EMPTY_BLOCKERS : net.roundBlockers();
 }
 
-const EMPTY_ACTORS: readonly RenderableActor[] = [];
-const EMPTY_BLOCKERS: readonly RoundBlocker[] = [];
-
 /**
  * A streak id as its index in `STREAK_DEFS` (Gate B, §8.22).
  *
- * The mirror of the server's own lookup in `MatchInstance`. Both runtimes build the table from
+ * The mirror of the server's own lookup in `SnapshotRecords.streakKindIndex`. Both runtimes build the table from
  * the same module in the same order, so the index is identity — and a string on the wire for a
  * value drawn from a fixed six-entry table is fifteen bytes spent saying what one says.
  */
@@ -800,3 +869,4 @@ function streakKindIndex(id: StreakId): number {
   const at = STREAK_DEFS.findIndex((d) => d.id === id);
   return at < 0 ? 0 : at;
 }
+//#endregion

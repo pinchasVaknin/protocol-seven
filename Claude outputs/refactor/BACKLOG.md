@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**61 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**62 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -106,6 +106,17 @@ And it is the first unit to replace an `instanceof` chain under §4.4 with a reg
 initialiser runs when the class is *defined*, so the `const` it read was still in its temporal
 dead zone. The constant is above the class now, with a comment saying why.
 
+**C22 closed the last client reference in #50 on 2026-11-15** and opened **#84**. It is the
+one-file unit at the end of division C's match plumbing, and its whole subject was a single
+function: a 198-line constructor at a cognitive complexity of 37 — the second largest the
+programme has reduced — which built five collaborators and hung ten replication channels in one
+body. It is **seventeen lines** now, and every one of them is a name. C22 is also the first unit
+in the division to put a *constructor* under test rather than a screen: `ClientMatch`,
+`DebugSuite`, `BotHarness` and `NetSession` are doubled and everything else is real — a real
+scene, the real `loadMap`, the real `PlayerController`, the real `DivergenceChecker` — so its 51
+tests assert the thing this file actually decides, which is what each collaborator is handed and
+in what order.
+
 That accounts for 22 of the chat list's items against a count of 24, so **one item from the
 original list is missing**; §6 records where to look for it. (#22, #24, #26, #27, #28, #29, #30 and #31 were
 opened by units since and are not from that list.)
@@ -159,6 +170,7 @@ and belong in its Step 2 plan.
 | ~~C19~~ | `client/ui/` Frame, ScreenChrome, LoadingScreen, SpaceSkip, Splash, PlaySolo, Menus, VoteOverlay | **closed** — one entry was bound to it, **#74**, whose own instruction was *"watch for C19, which owns the other two"*. C19 **corrected it**: there are three copies of the pager arrow, not four, because `VoteOverlay` has no pager and no arrow at all — its options are disabled `op-vote__option` buttons with a fill bar. So C19 owns **one** of the three, which is the one case the entry said would not settle it, and #74 stays open, re-scoped. Eighteen words were swept; every other hit is elsewhere (`vote` is B4's `VoteCycle` row, `the menu` is **#35**'s *"warm it behind the menu"*, and `chrome` is mostly **Chrome the browser** inside #34's mouse-path analysis). **C19 opened #78 and #79**, both duplication that spans the division |
 | ~~C20~~ | `client/ui/` CharacterStage, WeaponPreview, Lineup, Emblem, CategoryIcons, WeaponIcons, FpsCounter | **closed** — one entry names a file of its: **#35**, which cites `WeaponPreview.ts:245`. The fix it asks for is in `Game.warmWeaponAssets`, outside this fence, so it stays `bound to C23`; the line moved to **336** when `show` came apart, and the entry now says so. Twenty words were swept and the rest is elsewhere: every *renderer* hit is the main one, *camo* is the finish table's, *skin* is the catalogue's, and *CharacterStage*, *Lineup*, *Emblem*, *CategoryIcons*, *WeaponIcons* and *FpsCounter* return nothing at all. **C20 opened #80, #81 and #82** — the first from a number its own tests measured, the second and third from running its own oracles |
 | ~~C21~~ | `client/` MatchEquipment, MatchFeedback, MatchMeta, MatchObjectives, GameLoadout, GameScreens, main | **closed** — nothing was bound to it: no §1 row, and **none of the seven file names appears anywhere in this file** — not one, which no earlier unit could say of all of its files. Thirteen words were swept and every hit is somewhere else: all 37 *equipment* hits are `shared/equipment` (#13's `equipment.simulate` argument, #16's three body heights, #17, #18) or C12's `client/equipment/`; *objectives* is one hit, `ObjectiveStat` in #14/#15's scoreboard cluster; *bomb* is one, `MatchInstance.sendBomb` in #50's comment list; *feedback* is one, the English word inside #33; the 20 *loadout* hits are #71 and #72 in C16's finished editor and the `shared/meta/` rules; and `client/Match` finds only `MatchWorld.ts:795`, which is C22's file and not this unit's. **C21 opened #83**, from the one file in the unit that writes its rule down |
+| ~~C22~~ | `client/MatchWorld.ts` | **closed** — **#50's fifth reference was absorbed**: `MatchWorld.ts:795` is this unit's own file and the one bullet of that entry no session had a fence for, so the client's streak-index table now names `SnapshotRecords.streakKindIndex`. Nothing else was bound: there was no §1 row, and *MatchWorld* has no other hit in this file outside #50 and C21's row above. Eleven words were swept and every hit is elsewhere — *Particulate* and *PropModels* are C10's row and **#64**'s pair of matrix freezes, *NetSession* is C13's row, *LocalIdentity* is **#13**'s `shared/combat` move, *loadMap* is **#7**'s misplaced JSDoc on `loadMapCollision` in A4's `MapLoader.ts`, every *station* hit is **#4**'s generator comment or #64, and all three *divergence* hits are the leg and arm figures in `HitboxDef`, not the checker this file owns; *prebuilt*, *BotHarness*, *DebugSuite* and *resupply* return nothing at all. **C22 opened #84**, from its own Step 1 |
 | C23 | `client/Game.ts` | #35 (preload the arsenal's viewmodels) |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
@@ -1917,6 +1929,31 @@ C23, so the entry stays bound there, with the decision still the user's.
 
 ## 6. Documentation and housekeeping
 
+### #84 — `MatchWorld`'s overview says the file has no optional chaining, and it has ten · `open` *(opened 2026-11-15 by C22)*
+
+**Files** `src/client/MatchWorld.ts`, the file overview — the sentence ending *"which is why this
+file has no `?.` in it and why `Game.simulate` no longer has four."* **Origin** C22's Step 1.
+
+The paragraph is making a real point, and most of it is still exactly true: M7 moved the
+*nullability* out of `Game` by turning six always-null-together fields into one world that either
+exists or does not, so the four things a world always has — `map`, `player`, `match`, `debug` —
+are never asked `?.`. The sentence then overstates it into a claim about the file. The file
+carries **ten** optional chains, and every one is on something genuinely optional:
+`deps.server?.prebuiltMap`, `this.net?.` five times, `this.match.range?.dummies`,
+`this.harness?.stop()` and `this.particulate?.dispose()`.
+
+**Why C22 could not do it.** R8 lets a unit delete a comment *its own refactor* made false. This
+one was false before the unit started, the split did not touch the claim and did not move the
+paragraph, and rewriting it is not a deletion — it is choosing what the sentence should say, of
+which "no `?.` on the four a world always has" is only one option. That is a judgement about the
+file's documented design rather than a refactor, which is what this list is for.
+
+**Decide** whether the clause is narrowed to the four fields it is actually about, dropped, or
+left as the loose shorthand it is. One sentence either way, and the next reader stops counting
+question marks.
+
+**Verify** reading. No oracle sees a comment.
+
 ### #81 — A passing `npm run layout` can still exit 1, on its own teardown · `open` *(opened 2026-11-11 by C20)*
 
 **Files** `scripts/headless-chrome.mjs` (`withPage`, the `rmSync` at the end).
@@ -2515,10 +2552,12 @@ in the `check:style` ratchet, so this needs a session of its own either way.
 **Verify** `npm run check` + SIM snapshot/compare → `PASS`, plus `Snapshot.test.ts`'s *"names
 every piece of equipment and nothing else"*.
 
-### #50 — Five references to members that moved out of `MatchInstance` · `open` *(opened 2026-10-20 by B5)*
+### #50 — Four references to members that moved out of `MatchInstance` · `open` *(opened 2026-10-20 by B5)*
 
 **Files** `src/server/net/Session.ts:634`, `src/server/Router.ts:15`,
-`docs/VISIBILITY.md:37` and `:323`, `src/client/MatchWorld.ts:795`. **Origin** B5.
+`docs/VISIBILITY.md:37` and `:323`. **Origin** B5. **The fifth was closed by C22** on
+2026-11-15: `src/client/MatchWorld.ts` is that unit's own file, and its `streakKindIndex` now
+names `SnapshotRecords.streakKindIndex`, which is where that lookup went.
 
 B5 split `MatchInstance.ts` into four files, and four comments elsewhere still name the old
 address:
@@ -2529,11 +2568,6 @@ address:
   an entry in each of seven maps.
 - `VISIBILITY.md:37` — `MatchInstance.sendStreaks` → `SeatChannels.sendStreaks`.
 - `VISIBILITY.md:323` — `MatchInstance.sendBomb` → `SeatChannels.sendBomb`.
-- `src/client/MatchWorld.ts:795` — *"The mirror of the server's own lookup in `MatchInstance`"*,
-  on the client's streak-index table. That lookup is `SnapshotRecords.streakKindIndex` now.
-  Found by B6 on 2026-10-24 while checking its own split for the same defect; B5 missed it
-  because it grepped for `MatchInstance.<member>` and this one names the file alone.
-
 Everything else that names a member still names one: `buildEntities`, `sendSnapshots`, `step`,
 `seat`, `unseat`, `releaseEntity` and `isArena` all stayed, and `writePlayer`, `writeBot` and
 `describeStreak` kept their names in `SnapshotRecords.ts`, so the comments in `NetPlayer.ts`,
@@ -2541,8 +2575,9 @@ Everything else that names a member still names one: `buildEntities`, `sendSnaps
 
 **Why B5 could not do it.** `Session.ts` is B3's file and in the `check:style` ratchet, `docs/`
 is out of scope for the whole programme (§10), and R3 fences a unit to its own files. The
-`Router.ts` line is **bound to B8**, which owns that file and has not run yet; the other three
-need a session of their own, as #32 and #48 did.
+`Router.ts` line is **bound to B8**, which owns that file and has not run yet; the other two
+need a session of their own, as #32 and #48 did. The client one needed neither: C22 owns
+`MatchWorld.ts`, so it fell inside that unit's fence and was done there.
 
 **Verify** reading. No oracle sees a comment.
 

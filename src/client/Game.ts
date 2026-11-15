@@ -12,7 +12,7 @@ import { EV, createGameBus, type GameBus } from '../shared/core/Events';
 import { Input } from './input/Input';
 import type { BindingMap } from '../shared/core/Keybinds';
 import type { InputCommand } from '../shared/core/InputCommand';
-import { DT, MAX_STEPS_PER_FRAME, type FrameSample } from '../shared/core/Loop';
+import { MAX_STEPS_PER_FRAME, type FrameSample } from '../shared/core/Loop';
 import { Loop } from './engine/FrameLoop';
 import { ChopperCamera } from './streaks/ChopperCamera';
 import { IntroCamera } from './cinematic/IntroCamera';
@@ -20,22 +20,15 @@ import { makeSnapshot, type PlayerSnapshot } from '../shared/player/PlayerState'
 import { DEG2RAD } from '../shared/core/MathUtil';
 import { Rng } from '../shared/core/Rng';
 import { LocalBotTransport, type ICommandQueue } from '../shared/net/Transport';
-import { foreignServerHost, isServerConfigured, multiplayerJoinOptions } from './net/JoinOptions';
-import { BYE_IDLE } from '../shared/net/Protocol';
-import { handshake, HandshakeError, type HandshakeOptions } from './net/Handshake';
+import { foreignServerHost, isServerConfigured } from './net/JoinOptions';
 import { logger } from '../shared/core/Log';
-import type { SummaryInfo, WelcomeInfo } from '../shared/net/Messages';
-import type { SkirmishSink } from '../shared/net/NetClient';
-import { isArenaInstance, toNetLoadout, type NetLoadout } from '../shared/net/Skirmish';
-import { skinIndexOf } from '../shared/meta/Skins';
 import { applyFrameScale } from './ui/Frame';
 import { viewport } from './ui/Viewport';
 import { LoadingScreen } from './ui/LoadingScreen';
 import { VoteOverlay } from './ui/VoteOverlay';
 import { QuickLoadout } from './ui/QuickLoadout';
-import { MapBuildQueue, type BuildReport } from './world/MapBuildQueue';
+import { MapBuildQueue } from './world/MapBuildQueue';
 import { MenuBackdrop } from './world/MenuBackdrop';
-import type { NetworkedMatchOptions } from './MatchWorld';
 import { CameraRig, type CameraDrive } from './engine/CameraRig';
 import { ProceduralAudio } from './engine/ProceduralAudio';
 import { ProceduralTextures } from './engine/ProceduralTextures';
@@ -82,16 +75,9 @@ import {
 import { grantEverything } from '../shared/meta/Unlocks';
 import type { Match } from './ClientMatch';
 import { isHostile } from '../shared/combat/Hostility';
-import type { MatchResult } from '../shared/modes/GameMode';
 import { wonBy } from '../shared/modes/MatchOutcome';
-import {
-  matchFloorLine,
-  xpSourceAt,
-  type XpLine,
-  type XpLines,
-  type XpReport,
-} from '../shared/meta/XpRules';
 import { MatchWorld } from './MatchWorld';
+import { GameSession } from './GameSession';
 import { CharacterAssetService } from './characters/CharacterAssetService';
 import { WeaponAssetService } from './weapons/WeaponAssetService';
 import {
@@ -173,42 +159,6 @@ const EMPTY_HEADER: readonly HeaderSlot[] = [];
 
 const netLog = logger('join');
 
-/**
- * Milliseconds of building per frame once the loading screen is up (§4.18).
- *
- * Two orders of magnitude above the background budget, and deliberately: the match has already
- * started without this client, the screen is covering the world, and every frame spent
- * trickling chunks is a frame they are not playing. The background path optimises for not being
- * noticed; this one optimises for being over.
- */
-const LOADING_DRAIN_BUDGET_MS = 200;
-
-/** The §7 window: *"misprediction count in the first 60 ticks after migration"*. */
-const POST_MIGRATION_WINDOW_TICKS = 60;
-
-/** Windows kept for the panel. A long session migrates twice a minute; this is an hour of them. */
-const MAX_MIGRATION_WINDOWS = 120;
-
-/**
- * The server's authoritative summary, in the shape the M6 summary screen already renders.
- *
- * A projection and nothing more: no number is recomputed, no winner is re-derived. The point
- * is that the screen built in M6 for single-player renders a networked result without knowing
- * it is one, which is the same seam S3 asks for on the event bus.
- */
-function netMatchResult(net: SummaryInfo): MatchResult {
-  return {
-    kind: 'match',
-    winner: net.winner as MatchResult['winner'],
-    winnerEntityId: net.winnerEntityId,
-    reason: net.reason,
-    scoreA: net.scoreA,
-    scoreB: net.scoreB,
-    roundsA: 0,
-    roundsB: 0,
-  };
-}
-
 /** Keys the skin deck's RNG apart from every other seeded stream in the client. */
 const CHARACTER_DECK_SALT = 0x5c1a_9e77;
 
@@ -287,55 +237,14 @@ export class Game {
   private readonly transport: ICommandQueue = new LocalBotTransport(64);
 
   /**
-   * The server to join, or null for single-player (M10).
+   * Everything about having a server: the dial, the seat, and the transitions it starts
+   * (C23a).
    *
-   * Read once at construction from the query string. Null is the default and is what every
-   * path built in M1-M8 still takes — HARD RULE 8 requires opening the page to behave exactly
-   * as it did, and it does.
+   * Built last of the fields it reads, and handed the three app-lifetime surfaces this
+   * constructor builds rather than building them itself — they are DOM appended to one host
+   * and the order they are appended in is the order they paint in.
    */
-
-  /**
-   * The connection and the `Welcome`, once the handshake has completed (M10, playtest
-   * round 2).
-   *
-   * `buildWorld` reads the map and the mode **out of this** rather than out of
-   * `this.selection`. That inversion is the fix for the reported map/mode desync: the client
-   * used to load whatever the front end had selected and then dial a server that was running
-   * something else, and every consequence of the two disagreeing — spawning outside the
-   * world, walking through walls, a rubber-band on every step — looked like a netcode fault
-   * and was a loading fault.
-   *
-   * Null in single-player and while nothing is connected.
-   */
-  private server: NetworkedMatchOptions | null = null;
-
-  /** True while the handshake is in flight, so a second click cannot start a second one. */
-  private joining = false;
-
-  // ---- M11: the skirmish flow ----------------------------------------------
-
-  /** Set by the Play Multiplayer button. Wins over `?server=`. See `launchMatch`. */
-  private multiplayerJoin: HandshakeOptions | null = null;
-
-  /**
-   * The seat this client may still be able to get back (M11 Gate B, playtest round 4, F8).
-   *
-   * **State that outlives the world it describes**, which is the whole reason it is a field on
-   * `Game` rather than something read off the netcode when it is needed: by the time a
-   * reconnect is worth attempting the socket is closed and `MatchWorld` is about to be torn
-   * down, so a token fetched at that moment would be fetched from an object that is going away.
-   * It is captured at the handshake and refreshed from `NetClient` — which updates it on every
-   * seat assignment — while the world still exists.
-   *
-   * In memory only, deliberately. A page reload is the one reconnect case this does not cover,
-   * and `sessionStorage` would cover it at the cost of leaving a live seat capability sitting in
-   * the tab where any script on the origin can read it. That is a trade worth making
-   * consciously rather than by default, and it is on the list for the human.
-   */
-  private reconnectToken: Uint8Array | null = null;
-
-  /** True while a reconnect dial is in flight, so a second frame cannot start a second one. */
-  private reconnecting = false;
+  private readonly session: GameSession;
 
   /** The non-blocking vote overlay (§4.20). Built at boot, shown only while balloting. */
   private readonly voteOverlay: VoteOverlay;
@@ -355,64 +264,6 @@ export class Game {
   /** The §4.18 fallback, for a client whose build did not finish before the migration. */
   private readonly loadingScreen: LoadingScreen;
 
-  /** Frames the migration is held so the loading screen can paint. See the migration branch. */
-  private loadingHeldFrames = 0;
-
-  /** The last completed background build, for the §7 panel. */
-  private lastBuildReport: BuildReport | null = null;
-
-  /**
-   * Post-migration misprediction windows (§7, §8.9).
-   *
-   * *"Misprediction count in the first 60 ticks after migration, which is the direct regression
-   * test for Tier 1 #20."* One entry per migration, opened when the move lands and closed sixty
-   * ticks later. Bounded, because a long session migrates twice a minute and an unbounded array
-   * in a diagnostic is a slow leak in the tool built to find them.
-   */
-  private readonly migrationWindows: { matchId: number; tick: number; mispredictions: number }[] = [];
-  private openWindow: { untilTick: number; baseline: number; index: number } | null = null;
-
-  /**
-   * A migration the server has announced, acted on from the render pass.
-   *
-   * Same reasoning as `pendingRotation`: it arrives inside a snapshot decode, and tearing the
-   * world down from there is a null dereference in the middle of an event dispatch.
-   */
-  private pendingMigration: WelcomeInfo | null = null;
-
-  /** The most recent summary from a live match, held until SUMMARY renders it (§6.9). */
-  private pendingNetSummary: SummaryInfo | null = null;
-
-  /** The instance a `Prepare` named, so the readiness report is addressed to it (§6.5). */
-  private pendingMatchId = -1;
-
-  /**
-   * The server tick the summary hold expires on (§6.9, playtest round 4).
-   *
-   * A deadline rather than a duration, and -1 for "nobody is holding this screen". The screen
-   * uses it to *say* how long is left, never to act: the server migrates everybody back on its
-   * own clock, and a client that decided for itself when the summary was over would leave early
-   * and sit in a world that has been torn down.
-   *
-   * It used to be `holdSeconds`, integrated frame by frame by `EndOfMatch`. Two things were
-   * wrong with that and only one of them was the arithmetic: the count started when the *client*
-   * reached the screen rather than when the *server* started holding it, and it kept running
-   * perfectly happily on a connection that had already been closed.
-   */
-  private summaryEndsTick = -1;
-
-  /**
-   * Set when the server rotates to a new match while we are in one.
-   *
-   * Acted on from the render pass rather than from inside the network update, for the same
-   * reason `pendingSummary` is: tearing down the world from inside a callback the world is
-   * currently iterating is how you get a null dereference in the middle of an event dispatch.
-   */
-  private pendingRotation: WelcomeInfo | null = null;
-
-  /** True for the duration of `applyRotation`. See `teardownWorld`. */
-  private rotating = false;
-
   /**
    * Which class the editor opens on: the range's, from the testbed plate, or the five, from the
    * main menu. Set by the door that was used, never by the mode selection — see
@@ -423,24 +274,6 @@ export class Game {
   /** The menu page the next MENU entry opens at. Play Solo once, after the range's editor. */
   private menuReturnPage: 'MAIN' | 'PLAY' = 'MAIN';
 
-  /**
-   * Keeps the connection alive while the tab is hidden (M10).
-   *
-   * `requestAnimationFrame` is **completely suspended** in a background tab — not throttled,
-   * suspended — so the frame loop stops, `simulate` stops, and with it every ping and every
-   * command. Measured: a hidden tab sends nothing at all, and the server's 10-second
-   * inactivity timeout (S6.1) drops it. Alt-tabbing for fifteen seconds would disconnect you.
-   *
-   * So when the page goes hidden the network gets its own timer. It pumps the same
-   * `NetSession.update()` the frame loop would have — polling, acking and pinging — and the
-   * commands it samples are empty, because `Input.clearHeld` fires on blur. The player stands
-   * still and stays connected, which is what everyone expects alt-tab to do.
-   *
-   * The *simulation* deliberately does not run on this timer. The client's tick number comes
-   * from the synced server clock (S4.11), so on returning it resynchronises by itself rather
-   * than trying to catch up on a minute of missed ticks.
-   */
-  private hiddenNetTimer: ReturnType<typeof setInterval> | null = null;
   private readonly input: Input;
   private readonly loop: Loop;
   private readonly selection: MenuSelection;
@@ -507,8 +340,6 @@ export class Game {
     adsViewmodelFovScale: 1,
   };
   private lastRenderMs = performance.now();
-  /** Set when the mode declares the match over; SUMMARY is entered from the render pass. */
-  private pendingSummary = false;
   /**
    * The player's standing request for the debug overlay (playtest round 4, B1).
    *
@@ -640,10 +471,10 @@ export class Game {
        * dialled straight back into the arena by the leftover options.
        */
       onLaunch: () => {
-        this.multiplayerJoin = null;
-        void this.launchMatch();
+        this.session.forgetMultiplayerJoin();
+        void this.session.launchMatch();
       },
-      onPlayMultiplayer: () => void this.playMultiplayer(),
+      onPlayMultiplayer: () => void this.session.playMultiplayer(),
       serverConfigured: () => isServerConfigured(window.location.search),
       foreignServer: () => foreignServerHost(window.location.search, window.location.host),
       onDisplayName: (name) => this.profile.patchSettings({ callsign: name }),
@@ -716,38 +547,16 @@ export class Game {
     this.voteOverlay = new VoteOverlay({
       host: uiHost,
       onVote: (phase, option) => this.world?.net?.client.sendVote(phase, option),
-      currentTick: () => this.syncedServerTick(),
+      currentTick: () => this.session.syncedServerTick(),
       audio: this.audio,
     });
 
     this.buildQueue = new MapBuildQueue({
       textures: this.textures,
       shadowQuality: () => this.profile.settings.shadowQuality,
-      onComplete: (mapId, _built, report) => {
-        this.lastBuildReport = report;
-        // Report ready the moment the build lands, which is what `READY_WAIT` is waiting on.
-        // The map itself is held by the queue until the migration that needs it arrives.
-        const client = this.world?.net?.client;
-        /**
-         * Addressed to the match being prepared, not the one we are seated in — the whole point
-         * is that we are still in the arena while this builds. The server rejects and logs a
-         * `Ready` for any other instance (§8.15).
-         *
-         * **Except when the thing being prepared is the arena** (playtest round 5, F13). Round
-         * five gave the return trip its own `Prepare` so the arena is built during the summary
-         * hold instead of at the migration, and reporting readiness for it would be exactly the
-         * rejection that paragraph describes: `Router.mayAddress` counts a message addressed to
-         * an instance you are not seated in as **misrouted**, and `npm run skirmish` asserts
-         * that count is zero. There is also nothing to tell — the arena is `RUNNING` from boot
-         * and has no `READY_WAIT` to satisfy. A build with no reader is the whole difference
-         * between the two paths, and it is one condition rather than a second code path.
-         */
-        if (!isArenaInstance(this.pendingMatchId)) client?.sendReady(this.pendingMatchId);
-        netLog.info(
-          `background build for ${mapId}: ${report.elapsedMs}ms wall, ${report.workMs}ms work, ` +
-            `${report.chunks} chunks, worst chunk ${report.worstChunkMs}ms.`,
-        );
-      },
+      // The report, and the readiness it may be worth telling the server about, are the
+      // session's: the whole point of a background build is that it spans the transition.
+      onComplete: (mapId, _built, report) => this.session.onBackgroundBuildComplete(mapId, report),
     });
     this.settingsScreen = new Settings({
       host: uiHost,
@@ -762,6 +571,25 @@ export class Game {
       profile: this.profile,
       serverConfigured: () => isServerConfigured(window.location.search),
       onDisplayName: (name) => this.profile.patchSettings({ callsign: name }),
+    });
+
+    this.session = new GameSession({
+      screens: this.screens,
+      profile: this.profile,
+      stats: this.stats,
+      input: this.input,
+      loadingScreen: this.loadingScreen,
+      voteOverlay: this.voteOverlay,
+      buildQueue: this.buildQueue,
+      world: () => this.world,
+      currentState: () => this.state,
+      transitionTo: (next) => this.transitionTo(next),
+      buildWorld: () => this.buildWorld(),
+      teardownWorld: (options) => this.teardownWorld(options),
+      modeEntry: () => this.modeEntry(),
+      locationSearch: () => window.location.search,
+      onCheatsAnswered: (outcome) => this.onCheatsAnswered(outcome),
+      onMigrationDiscard: () => this.clearInstantCheat(),
     });
 
     this.loop = new Loop({
@@ -1133,10 +961,7 @@ export class Game {
          *
          * The local one is still the fallback, because single-player has no other.
          */
-        const net = this.pendingNetSummary;
-        this.pendingNetSummary = null;
-        const result = net !== null ? netMatchResult(net) : (match?.flow.result ?? null);
-        this.summaryEndsTick = net?.endsTick ?? -1;
+        const result = this.session.takeNetSummary() ?? match?.flow.result ?? null;
         if (match === null || result === null) {
           // Nothing to summarise: this can only happen if SUMMARY is entered by hand.
           this.transitionTo('MENU');
@@ -1161,7 +986,7 @@ export class Game {
          *
          * Both paths end at `Profile.bankMatch`, which is the one place XP becomes durable.
          */
-        const report = net !== null ? this.bankServerXp(net, won) : match.bankProgression(won);
+        const report = this.session.bankServerXp(won) ?? match.bankProgression(won);
         const mapEntry = this.mapEntry();
         this.screens.showSummary(
           match,
@@ -1171,15 +996,15 @@ export class Game {
             mapPicture: mapEntry.picture,
             modeName: this.modeEntry().name,
             // The tier is this client's choice in single-player; connected, the roster is the server's.
-            difficulty: this.server === null ? BOT_DIFFICULTY_NAMES[this.selection.difficulty] : null,
+            difficulty: this.session.isConnected ? null : BOT_DIFFICULTY_NAMES[this.selection.difficulty],
           },
           banks ? report : null,
           this.profile.prestige,
           this.lineupSource(match),
           // The connection decides this, not the hold. See `GameScreens.showSummary`.
-          this.server !== null,
+          this.session.isConnected,
         );
-        this.screens.summary.setRemainingSeconds(this.summaryRemainingSeconds());
+        this.screens.summary.setRemainingSeconds(this.session.summaryRemainingSeconds());
       },
       exit: (to) => {
         this.screens.hideSummary();
@@ -1455,6 +1280,32 @@ export class Game {
     this.instantCheatUntilMs = nowMs() + CHEAT_NOTICE_SECONDS * 1000;
   }
 
+  /**
+   * The server answered a cheat code (playtest round 4, F14).
+   *
+   * Only the sentence arrives: the entitlements are already in `NetClient.cheatMask` —
+   * replicated state, applied before this fires — so there is nothing here to write and
+   * nothing that could disagree with what the simulation is doing.
+   *
+   * It goes to a code field's own line rather than through `voteOverlay.notice`, and
+   * that is not a preference: the vote overlay lives under `.op-screen`'s backdrop, so a
+   * notice raised while the player is looking at the field they typed into would be painted
+   * over by the screen it is answering. `setCodeResult` writes both fields, which is the
+   * one rule this feature has about captions now — an answer goes where the question could
+   * have been asked, not where the code happens to think the player is standing.
+   */
+  private onCheatsAnswered(outcome: number): void {
+    this.setCodeResult(cheatOutcomeText(outcome));
+    // An instant cheat is announced on the reply and never before it: the payment is the
+    // server's, and a caption raised on the send would be claiming one that may be refused.
+    const pending = this.pendingInstant;
+    this.pendingInstant = null;
+    if (outcome === CheatOutcome.InstantApplied && pending !== null) {
+      this.raiseInstantCheat(pending);
+    }
+    netLog.info(`cheat code answered: outcome ${outcome}.`);
+  }
+
   /** Drop it. Called on migration, beside the streak and ballot discards. */
   private clearInstantCheat(): void {
     this.pendingInstant = null;
@@ -1585,7 +1436,7 @@ export class Game {
   /** Tell the server about the equipped class. It applies on this player's next spawn (§6.6). */
   private sendLoadoutToServer(): void {
     const client = this.world?.net?.client;
-    const loadout = this.netLoadout();
+    const loadout = this.session.netLoadout();
     if (client === undefined || loadout === null) return;
     client.sendLoadout(loadout);
     netLog.info(`sent class "${loadout.name}" to the server; applies on next spawn.`);
@@ -1602,7 +1453,7 @@ export class Game {
    */
   private leaveSummary(): void {
     if (this.state !== 'SUMMARY') return;
-    if (this.server !== null && this.world !== null) {
+    if (this.session.isConnected && this.world !== null) {
       this.transitionTo('MATCH');
       return;
     }
@@ -1630,28 +1481,6 @@ export class Game {
   private exitSummary(): void {
     if (this.state !== 'SUMMARY') return;
     this.transitionTo('MENU');
-  }
-
-  /**
-   * Seconds left on the server's summary hold, or null when nobody is holding it.
-   *
-   * `(endsTick - currentTick) * DT` against the synced server clock — the same expression
-   * `VoteOverlay.tick` uses for the ballot, deliberately, so the two countdowns on this client
-   * cannot mean different things. Null in single-player and null while `stats.clientTick` is
-   * still zero, which is a client that has not been told what tick it is rather than one whose
-   * hold has expired.
-   */
-  private summaryRemainingSeconds(): number | null {
-    const endsTick = this.summaryEndsTick;
-    if (endsTick < 0) return null;
-    const now = this.syncedServerTick();
-    if (now <= 0) return null;
-    return Math.max(0, (endsTick - now) * DT);
-  }
-
-  /** The tick this client is simulating, from the synced server clock. Zero with no session. */
-  private syncedServerTick(): number {
-    return this.world?.net?.client.stats.clientTick ?? 0;
   }
 
   private enterState(id: GameStateId): void {
@@ -1728,7 +1557,7 @@ export class Game {
    * different geometry and being corrected by a server that could see through its walls.
    */
   private mapEntry(): ReturnType<typeof findMap> {
-    const server = this.server;
+    const server = this.session.server;
     if (server !== null) return findMap(server.welcome.mapId);
     // A mode may pin its map — the Shooting Range only exists on the grey-box testbed,
     // because that is where the target dummies are built.
@@ -1738,7 +1567,7 @@ export class Game {
 
   /** The mode. The server's when connected, for the same reason as the map. */
   private modeEntry(): ReturnType<typeof findMode> {
-    const server = this.server;
+    const server = this.session.server;
     if (server !== null) return findMode(asModeId(server.welcome.modeId));
     return findMode(this.selection.modeId);
   }
@@ -1805,7 +1634,7 @@ export class Game {
       input: this.input,
       loop: this.loop,
       transport: this.transport,
-      server: this.server,
+      server: this.session.server,
       uiHost: this.uiHost,
       debugHost: this.debugHost,
       stats: this.stats,
@@ -1827,9 +1656,7 @@ export class Game {
       modeEntry,
       difficulty: this.selection.difficulty,
       loadout: this.applyLoadout(),
-      onMatchEnded: () => {
-        this.pendingSummary = true;
-      },
+      onMatchEnded: () => this.session.noteMatchEnded(),
       // The screen, read at the moment a command is built. See `MatchWorldDeps.inMatch`.
       inMatch: () => this.state === 'MATCH',
       // F14. The same merge every surface reads, so the simulation and the tag cannot disagree.
@@ -1839,9 +1666,9 @@ export class Game {
       onWeaponConfigChanged: () => this.onWeaponConfigChanged(),
       // M11 (§7). Suppliers rather than values: all three outlive this world, which is the
       // whole point of them — the build spans the transition that replaces it.
-      lastBuild: () => this.lastBuildReport,
+      lastBuild: () => this.session.buildReport,
       buildProgress: () => this.buildQueue.progress,
-      migrationWindows: () => this.migrationWindows,
+      migrationWindows: () => this.session.windows,
     });
     // A new map is a new light setup, and every program in the scene is compiled for one: the
     // first frame of the world prepares them instead of stalling on them. See `GpuWarmup`.
@@ -1874,8 +1701,9 @@ export class Game {
    * closes the link, which is what frees the seat on the server without waiting for a timeout.
    */
   private teardownWorld(options: { keepConnection?: boolean } = {}): void {
-    this.pendingSummary = false;
-    this.pendingRotation = null;
+    // A rotation keeps the socket no matter which teardown runs. The SUMMARY state tears the
+    // world down on its way out and has no way to know a rotation is why it is leaving.
+    const keep = this.session.forgetPendingTransitions(options.keepConnection === true);
     /**
      * The offline authority's own seat boundary (round 4, F14).
      *
@@ -1889,484 +1717,14 @@ export class Game {
      */
     this.offlineCheats = 0;
     this.clearInstantCheat();
-    // A rotation keeps the socket no matter which teardown runs. The SUMMARY state tears the
-    // world down on its way out and has no way to know a rotation is why it is leaving.
-    const keep = options.keepConnection === true || this.rotating;
     this.world?.dispose({ keepConnection: keep });
     this.world = null;
     this.characterSelector = null;
     // The intro's plan was for that world; the next one plans afresh on its first frame.
     this.introCamera.reset();
     this.speedo.reset();
-    if (!keep) this.server = null;
-    /**
-     * The ballot goes with the socket (2026-09-14, reported as "NEXT VOTE IN 447.4" over a solo
-     * match).
-     *
-     * The vote overlay is app-lifetime — one instance, built with the UI host, hidden on
-     * migration by `onMigrated` — and the arena's 4 Hz broadcast is the only writer of its
-     * state. Quitting to the menu tore the world and the session down here and left the last
-     * `PLAY` broadcast on the overlay: still on screen, still saying NEXT VOTE IN, and every
-     * frame `tick()` computed `(phaseEndsTick - syncedServerTick()) * DT` with no session behind
-     * `syncedServerTick()`, which is zero. So the clock showed `phaseEndsTick / 60` — 26 844
-     * ticks is the reported 447.4 s — through the whole of the next single-player match.
-     *
-     * Same rule as `onMigrated`'s: state from an instance you have left is discarded. A
-     * teardown that keeps the connection (a rotation, a reconnect) is not a session exit, and
-     * the arena will re-state the ballot within a broadcast anyway; a notice up during one must
-     * survive it, which is why this is under `!keep` rather than unconditional.
-     */
-    if (!keep) this.voteOverlay.hide();
-    /**
-     * Leaving on purpose gives up the seat as well as the socket (round 4, F8).
-     *
-     * The server already refuses to hold a seat for a clean `Bye` — see `LeaveCause` — and this
-     * is the same rule stated on the side that knows *why* the world is going away. Without it,
-     * quitting to the menu and pressing Play Multiplayer again inside the grace would present a
-     * claim on the match just quit; with only the server's half, the client would be asking for
-     * something it should not want.
-     *
-     * `reconnecting` is the exception and is the whole reason the flag exists: `tryReconnect`
-     * tears the world down through this very path on its way to dialling back in, and clearing
-     * the token there would throw away the thing it is about to present. Same shape as
-     * `rotating` two lines above.
-     */
-    if (!keep && !this.reconnecting) this.reconnectToken = null;
-  }
-
-  /**
-   * Start a match: connect first if there is a server, and only then build a world (M10,
-   * playtest round 2).
-   *
-   * The ordering is the entire fix for the map/mode desync. `MatchWorld`'s constructor loads
-   * a map and spawns the player into it, and it used to run *before* anything was dialled —
-   * so the map came from the local menu selection and could not possibly have been the
-   * server's. Now nothing is built until the server has said what it is running.
-   *
-   * A failed join stays in the menu with the reason on screen. It deliberately does **not**
-   * fall back to single-player: a player who asked to join a server and silently got a bot
-   * match instead would have no way to tell, and would report it as "the server is empty".
-   */
-  /**
-   * Open the sixty-tick misprediction window for a migration that has just landed (§7).
-   *
-   * The baseline is the running misprediction total at the moment of the move, so what is
-   * reported is what happened *inside* the window rather than the count since the page loaded.
-   * See `SkirmishPanel` for what a non-zero value means.
-   */
-  private openMigrationWindow(matchId: number): void {
-    const client = this.world?.net?.client;
-    if (client === undefined) return;
-    const tick = client.effectiveTick;
-    this.migrationWindows.push({ matchId, tick, mispredictions: 0 });
-    if (this.migrationWindows.length > MAX_MIGRATION_WINDOWS) this.migrationWindows.shift();
-    this.openWindow = {
-      untilTick: client.stats.clientTick + POST_MIGRATION_WINDOW_TICKS,
-      baseline: client.prediction.stats.mispredictions,
-      index: this.migrationWindows.length - 1,
-    };
-  }
-
-  /** Close the window once it has run its sixty ticks. Called from the render pass. */
-  private pumpMigrationWindow(): void {
-    const open = this.openWindow;
-    const client = this.world?.net?.client;
-    if (open === null || client === undefined) return;
-    const entry = this.migrationWindows[open.index];
-    if (entry === undefined) {
-      this.openWindow = null;
-      return;
-    }
-    entry.mispredictions = client.prediction.stats.mispredictions - open.baseline;
-    if (client.stats.clientTick >= open.untilTick) this.openWindow = null;
-  }
-
-  /**
-   * Bank the server's XP award, and shape it for the M6 summary bar (§6.9).
-   *
-   * The lines come from the instance, which built them from authoritative events before it was
-   * torn down. Everything else — the level before and after, the lifetime total the bar
-   * animates from — is local, because progression is client-side and there is no account on the
-   * server to ask (§6.9: *"no accounts, no server-side database"*).
-   *
-   * That trade-off is deliberate and is documented in `README.md`: a player can edit their own
-   * unlocks, and it affects only them.
-   */
-  private bankServerXp(net: SummaryInfo, won: boolean): XpReport {
-    const decoded: XpLine[] = [];
-    for (const line of net.xp) {
-      // The row is named by its index into `XP_SOURCES` (M13 Phase B): id, label and kind come
-      // from the table this client compiled, count and amount from the server's ledger. A byte
-      // outside the table is a server one build ahead; the row is dropped rather than drawn as
-      // something it is not.
-      const source = xpSourceAt(line.source);
-      if (source === undefined) continue;
-      decoded.push({ id: source.id, label: source.label, count: line.count, xp: line.amount, kind: source.kind });
-    }
-    /**
-     * The floor, on this path too (playtest round 5, B6).
-     *
-     * A live instance always sends a `MATCH COMPLETE` line, so in practice the fallback never
-     * fires — but `net.xp` is decoded from bytes this client did not write, and B6's fix is that
-     * a summary *cannot* be handed an empty tally rather than that it copes with one. The
-     * fallback is the same row single-player builds, from the same table, so the two paths
-     * cannot disagree about what an unplayable-to-zero match is worth.
-     */
-    const [head, ...rest] = decoded;
-    const lines: XpLines = head === undefined ? [matchFloorLine()] : [head, ...rest];
-    // Summed from the lines rather than from the wire, so what the bar animates and what the
-    // profile banks are the same arithmetic over the same list.
-    const total = lines.reduce((sum, line) => sum + line.xp, 0);
-    const xpBefore = this.profile.xp;
-    const { levelBefore, levelAfter } = this.profile.bankMatch(total, won);
-    return {
-      lines,
-      total,
-      xpBefore,
-      levelBefore,
-      levelAfter,
-      // Weapon levels, challenges and camos stay client-side and are not awarded over the wire.
-      // The server tracks no per-weapon progression, and inventing one here would be a number
-      // with no authority behind it.
-      weaponLevelUps: [],
-      challengesCompleted: [],
-      camosUnlocked: [],
-    };
-  }
-
-  /**
-   * This client's class, as ids on the wire (Tier 1 #20).
-   *
-   * Read from the profile every time rather than cached, so a class edited in the loadout
-   * editor is the class the next connection sends. The ids are the same ones `resolveLoadout`
-   * takes locally, which is what makes the server's resolution and the client's agree.
-   */
-  private netLoadout(): NetLoadout | null {
-    /**
-     * Sanitise **before** copying to the wire (M11 playtest).
-     *
-     * `resolveEquipped` sanitises the slot in place against the player's unlocks — a class
-     * carrying something they have not earned has it stripped — and it does that at *resolve*
-     * time, which is when the world is built. `toNetLoadout` reads the same slot at *handshake*
-     * time, which is earlier.
-     *
-     * So the raw slot went over the wire and the stripped slot was resolved locally, and the
-     * two sides ran different classes. If the difference touched a movement perk, client and
-     * server disagreed about speed on every tick for the whole session.
-     *
-     * Resolving first collapses that: the slot is sanitised, and the copy that crosses the wire
-     * is the one the client will itself resolve. The return value is discarded on purpose —
-     * what is wanted is the side effect on the slot, and the caller that needs the resolved
-     * form has `applyLoadout` for it.
-     */
-    this.profile.resolveEquipped(this.modeEntry().unrestricted);
-    return toNetLoadout(this.profile.equippedLoadout());
-  }
-
-  /**
-   * The server-to-client skirmish messages (§6.4, §6.5, §6.9).
-   *
-   * Every one of these is deferred to the render pass or handed to a screen; none of them
-   * touches the world directly, because all of them arrive inside a snapshot decode.
-   */
-  private skirmishSink(): SkirmishSink {
-    return {
-      onVoteState: (info) => this.voteOverlay.apply(info),
-      onPrepare: (matchId, mapId) => {
-        this.pendingMatchId = matchId;
-        /**
-         * Start building the chosen map now, while the player is still shooting (§6.5).
-         *
-         * This is the mechanism that removes the loading screen. The server has nothing to
-         * load — its maps were baked at boot — so the whole cost of a map transition is this,
-         * and it is paid during warmup rather than at the transition.
-         */
-        this.buildQueue.start(mapId);
-      },
-      onMigrated: (welcome) => {
-        /**
-         * Discard the streaks the instance we are leaving told us about (Gate B, §4.18).
-         *
-         * §4.18's obligation list on a migration is flush, discard, resync, clear — and this is
-         * the same rule applied to a channel that did not exist when it was written. The
-         * replica is overwritten wholesale by the next frame from the new instance, but "the
-         * next frame" is up to a snapshot interval away, and a sentry from the arena standing
-         * in the live match's opening frames is exactly the stale-state artefact the list is
-         * there to prevent.
-         */
-        this.world?.match.clearReplicatedStreaks();
-        this.world?.match.clearReplicatedProjectiles();
-        /**
-         * And the ballot, for the same §4.18 reason (playtest round 3).
-         *
-         * The vote cycle is the **arena's**, and the server broadcasts its state to arena
-         * sessions only. A migrated player is therefore never told the ballot closed: the
-         * overlay kept the last phase it heard and stayed on screen through the whole match,
-         * still answering for keys 1-5. Discard on migration, exactly like the streaks and the
-         * projectiles above — it is the same rule about state from an instance you have left.
-         */
-        this.voteOverlay.hide();
-        /**
-         * And the instant cheat's caption, for the third time and the same reason (F14 fix).
-         *
-         * It is *"state from an instance you have left"* exactly as the streaks and the ballot
-         * above are. The payment it announces was made against a streak ledger row that
-         * `removePlayer` has just forgotten, so a caption that crossed the migration would be
-         * describing a balance that no longer exists — which is what the regression looked like
-         * on screen.
-         *
-         * The toggles need nothing here: the server clears them at `unseat` and
-         * `NetClient.onWelcome` discards its replica, so by the time this runs there is no
-         * simulation bit left to drop. `debugRequest` is deliberately **not** cleared — it is a
-         * client surface with a session lifetime, and it survives a migration for the same
-         * reason it survives a rotation.
-         */
-        this.clearInstantCheat();
-        this.pendingMigration = welcome;
-        this.openMigrationWindow(welcome.matchId);
-      },
-      onSummary: (info) => {
-        this.pendingNetSummary = info;
-      },
-      /**
-       * The server's answer to a cheat code (playtest round 4, F14).
-       *
-       * Only the sentence. The entitlements are already in `NetClient.cheatMask` — replicated
-       * state, applied before this fires — so there is nothing here to write and nothing that
-       * could disagree with what the simulation is doing.
-       *
-       * It goes to a code field's own line rather than through `voteOverlay.notice`, and
-       * that is not a preference: the vote overlay lives under `.op-screen`'s backdrop, so a
-       * notice raised while the player is looking at the field they typed into would be painted
-       * over by the screen it is answering. `setCodeResult` writes both fields, which is the
-       * one rule this feature has about captions now — an answer goes where the question could
-       * have been asked, not where the code happens to think the player is standing.
-       */
-      onCheats: (outcome) => {
-        this.setCodeResult(cheatOutcomeText(outcome));
-        // An instant cheat is announced on the reply and never before it: the payment is the
-        // server's, and a caption raised on the send would be claiming one that may be refused.
-        const pending = this.pendingInstant;
-        this.pendingInstant = null;
-        if (outcome === CheatOutcome.InstantApplied && pending !== null) {
-          this.raiseInstantCheat(pending);
-        }
-        netLog.info(`cheat code answered: outcome ${outcome}.`);
-      },
-      onNotice: (text) => {
-        /**
-         * A line the server wants the player to read: allocation failed, the arena was
-         * rebuilt (§4.17, §4.18).
-         *
-         * Emitted onto the bus rather than drawn here, so it reaches the HUD's existing
-         * announcement channel and obeys the same timing and styling as every other piece of
-         * feedback. S3's rule that *"a networked event and a local one must be
-         * indistinguishable to the client"* applies to this too.
-         */
-        this.voteOverlay.notice(text);
-        netLog.info(`server notice: ${text}`);
-      },
-    };
-  }
-
-  /**
-   * Play Multiplayer (M11, §6.1).
-   *
-   * One click to shooting. There is no server picker, no ready-up and no lobby — the address
-   * is configuration (§4.9), the callsign is prefilled, and the only screen between the button
-   * and the arena is the word "connecting". Everything a traditional flow does in a static menu
-   * this one does later, while the player is holding a gun.
-   *
-   * It reuses `launchMatch` rather than duplicating the connect path, so the map/mode desync
-   * fix from M10's playtest — *build nothing until the server has said what it is running* —
-   * covers this entry too by construction.
-   */
-  private async playMultiplayer(): Promise<void> {
-    const join = multiplayerJoinOptions(window.location.search, this.profile.settings.callsign);
-    if (join === null) {
-      // The button is disabled in this case, so reaching here means the config changed under
-      // us. Say so rather than failing silently.
-      this.screens.menus.showBoot('NO SERVER CONFIGURED — SET VITE_SERVER_URL OR ?SERVER=');
-      window.setTimeout(() => {
-        if (this.state === 'MENU') this.screens.menus.show();
-      }, 3000);
-      return;
-    }
-    this.multiplayerJoin = join;
-    await this.launchMatch();
-  }
-
-  /**
-   * The socket died mid-match: dial back in and present the seat we held (round 4, F8).
-   *
-   * Returns whether an attempt was started. False means there is nothing to try — a
-   * single-player match, a client that never got a token, or a dial already in flight — and the
-   * caller falls back to the menu, which is what happened unconditionally before this.
-   *
-   * ## Why it reuses `launchMatch` rather than doing anything of its own
-   *
-   * Because a reconnect is a join. The server decides whether it is a *return* — that is what
-   * the token is for — and every step on this side is identical either way: handshake, learn
-   * which map and mode are running, build that world, enter `MATCH`. Writing a second path
-   * would be writing a second copy of the ordering fix from M10's playtest, which is exactly
-   * the class of duplication that produced the map/mode desync in the first place.
-   *
-   * The world is torn down **completely**, socket included, through the ordinary `MATCH -> MENU`
-   * exit handler rather than by hand — it describes an instance this client has already been
-   * thrown out of, and the returning `Welcome` may name a different map (the arena's, if the
-   * grace has expired). Clearing `this.server` is what that teardown does and what makes
-   * `launchMatch` dial rather than return early, so the transition is doing three jobs and none
-   * of them is duplicated here.
-   */
-  private tryReconnect(): boolean {
-    if (this.reconnecting || this.joining) return false;
-    if (this.multiplayerJoin === null || this.reconnectToken === null) return false;
-
-    this.reconnecting = true;
-    netLog.info('lost the connection mid-match — dialling back in with the seat we held.');
-    this.transitionTo('MENU');
-    this.screens.menus.showBoot('RECONNECTING…');
-    void this.launchMatch().finally(() => {
-      this.reconnecting = false;
-    });
-    return true;
-  }
-
-  private async launchMatch(): Promise<void> {
-    /**
-     * **Only the Play Multiplayer button connects** (M11 playtest, §6.2).
-     *
-     * This used to fall back to `this.joinOptions`, which is non-null whenever `?server=` is on
-     * the URL or `VITE_SERVER_URL` is baked in — so on any build configured for multiplayer,
-     * **Play Solo connected to the server too**. The player got a warmup arena and a vote cycle
-     * from a button that promised neither.
-     *
-     * §6.2 is explicit that Play Solo is *"the existing local path: the client drives the shared
-     * simulation locally, exactly as it did before M9"*. So the address is now configuration for
-     * the multiplayer button and nothing else: `?server=` decides where that button dials and
-     * whether it is enabled, and never what Play Solo does.
-     */
-    const join = this.multiplayerJoin;
-    if (join === null || this.server !== null) {
-      // Single-player, or a connection that is already up (resuming, or a rotation).
-      this.transitionTo('MATCH');
-      return;
-    }
-    if (this.joining) return;
-
-    this.joining = true;
-    this.screens.menus.showBoot(`CONNECTING TO ${hostOf(join.url)}…`);
-    try {
-      // The class goes with the `Hello`, not after it. See `handshake` and Tier 1 #20.
-      const result = await handshake({
-        ...join,
-        loadout: this.netLoadout(),
-        // The body too (M16, B6): the profile's pick, as the table's index. Once per
-        // connection; a pick made after this is the next connection's.
-        skinIndex: skinIndexOf(this.profile.skinId),
-        // Present whatever seat this client last held. Null on a first join, and a token the
-        // server does not recognise is an ordinary join rather than a refusal — see
-        // `ReconnectRegistry.claim`.
-        reconnectToken: this.reconnectToken,
-      });
-      this.reconnectToken = result.reconnectToken;
-      this.server = {
-        link: result.link,
-        welcome: result.welcome,
-        receivedAtMs: result.receivedAtMs,
-        pending: result.pending,
-        reconnectToken: result.reconnectToken,
-        displayName: join.displayName,
-        wantRewindDebug: join.wantRewindDebug,
-        onNewMatch: (welcome) => {
-          this.pendingRotation = welcome;
-        },
-        // The class rides the handshake so the seat is built with it (Tier 1 #20). By this
-        // point `handshake` has already sent the `Hello`, so this copy is what a *rebuilt*
-        // session — a rotation or a migration — will send if it ever reconnects.
-        loadout: this.netLoadout(),
-        skinIndex: skinIndexOf(this.profile.skinId),
-        skirmish: this.skirmishSink(),
-        prebuiltMap: null,
-      };
-      this.joining = false;
-      this.transitionTo('MATCH');
-    } catch (err) {
-      this.joining = false;
-      const reason = err instanceof HandshakeError ? err.message : String(err);
-      netLog.error(`could not join ${join.url}: ${reason}`);
-      this.screens.menus.showBoot(`COULD NOT JOIN — ${reason.toUpperCase()}`);
-      // Back to a usable menu rather than leaving the player on a dead screen.
-      window.setTimeout(() => {
-        if (this.state === 'MENU') this.screens.menus.show();
-      }, 4000);
-    }
-  }
-
-  /**
-   * The server rotated to another match on the connection we already hold.
-   *
-   * Called from the render pass, never from inside the network update — see
-   * `pendingRotation`. The world is destroyed and rebuilt because the *map may have changed*,
-   * and a client that merely reset its state would keep the previous map's colliders. That is
-   * the same desync as joining the wrong map, arriving by a different route.
-   *
-   * The link survives the teardown (`keepConnection`), because the server has not disconnected
-   * us — it has reseated us in a new match and told us so with a second `Welcome`.
-   */
-  private applyRotation(welcome: WelcomeInfo): void {
-    const previous = this.server;
-    if (previous === null) return;
-    netLog.info(`server rotated to ${welcome.modeId} on ${welcome.mapId} — rebuilding the world.`);
-
-    /**
-     * `rotating` makes every teardown on this path keep the socket, including the one the
-     * SUMMARY state runs on its way out, which has no idea a rotation is why it is leaving.
-     */
-    this.rotating = true;
-    try {
-      // The new match, adopted *before* anything rebuilds — `buildWorld` reads the map and
-      // mode straight off it, and the MATCH state's own enter handler is one of the callers.
-      // `pending` is cleared rather than carried: it belongs to the drain that produced the
-      // *first* welcome, and replaying those frames into a new match would apply state from
-      // the previous one. A rotation's own welcome arrives through `NetClient.receive`, which
-      // never drops what follows it.
-      /**
-       * Adopt the background build, if it is for the map we are moving to (§6.5).
-       *
-       * `take` hands over ownership and clears the queue, so the map is disposed by the world
-       * that adopts it rather than by two owners or none. A miss — no build, or a build for a
-       * different map — leaves this null and `MatchWorld` builds synchronously, which is the
-       * §4.18 slow-client path: a visible hitch instead of a seamless transition, and correct.
-       */
-      const prebuiltMap = this.buildQueue.take(welcome.mapId);
-      if (prebuiltMap === null && welcome.mapId !== previous.welcome.mapId) {
-        netLog.warn(
-          `no background build ready for ${welcome.mapId}; building it now (expect a hitch).`,
-        );
-      }
-      this.server = {
-        ...previous,
-        welcome,
-        receivedAtMs: performance.now(),
-        pending: undefined,
-        prebuiltMap,
-      };
-      this.teardownWorld({ keepConnection: true });
-
-      if (this.state === 'MATCH') {
-        this.buildWorld();
-        this.world?.match.setActive(true);
-      } else {
-        // From SUMMARY (the usual case — a rotation follows a match ending) or from PAUSED.
-        // Re-entering MATCH builds the world through the state's own enter handler rather
-        // than duplicating it here.
-        this.transitionTo('MATCH');
-      }
-      this.input.clearHeld();
-    } finally {
-      this.rotating = false;
-    }
+    // The socket, the ballot and the seat token, which are the session's to give up.
+    this.session.leaveSession(keep);
   }
 
   /**
@@ -2486,147 +1844,8 @@ export class Game {
    * Start or stop the background-tab network heartbeat. Bound to `visibilitychange`.
    */
   private readonly onVisibility = (): void => {
-    this.onVisibilityChanged();
+    this.session.onVisibilityChanged();
   };
-
-  private onVisibilityChanged(): void {
-    const hidden = document.hidden;
-    if (hidden && this.hiddenNetTimer === null) {
-      this.hiddenNetTimer = setInterval(() => this.pumpNetworkWhileHidden(), 50);
-      return;
-    }
-    if (!hidden && this.hiddenNetTimer !== null) {
-      clearInterval(this.hiddenNetTimer);
-      this.hiddenNetTimer = null;
-    }
-  }
-
-  private pumpNetworkWhileHidden(): void {
-    const world = this.world;
-    if (world === null) return;
-    const net = world.net;
-    if (net === null) return;
-    world.match.netFrozen = net.frozen;
-    net.update();
-    /**
-     * Serviced here as well as in the render pass, because the render pass is not running.
-     *
-     * `requestAnimationFrame` is *suspended* in a hidden tab, so `draw` — where these
-     * transitions used to be handled and nowhere else — simply never happens. The network
-     * keeps running on this timer by design, which means a client could be told the server
-     * had rotated to a different map, acknowledge it, and then sit on the previous map's
-     * world indefinitely: alt-tab through the post-match hold and you come back to a client
-     * playing Foundry against a server running Depot. That is the same desync the handshake
-     * fix removed, arriving by a different route.
-     */
-    this.servicePendingTransitions();
-  }
-
-  /**
-   * Apply state changes that were requested from inside a callback, now that the callback
-   * has returned.
-   *
-   * Both of these tear down or replace the world, and both are raised from deep inside
-   * something that is currently iterating it — a bus dispatch for the match ending, a
-   * snapshot decode for the rotation. Doing the work in place is how you get a null
-   * dereference half-way through an event dispatch, so they are flags, and this is where
-   * they are cashed.
-   */
-  private servicePendingTransitions(): void {
-    // The match ended during a sim tick. A paused match cannot end, so the flag simply
-    // survives until the match resumes.
-    if (this.pendingSummary && this.state === 'MATCH') {
-      this.pendingSummary = false;
-      this.transitionTo('SUMMARY');
-    }
-
-    /**
-     * The server started a new match on this connection. Rebuild.
-     *
-     * Deliberately after the summary transition and not before: a rotation follows a match
-     * ending, and the player should get to see the result of the one they just played rather
-     * than have it replaced by the next map loading underneath them. The post-match hold on
-     * the server (`MATCH_END_HOLD_SECONDS`) is what buys the time for that.
-     */
-    const rotation = this.pendingRotation;
-    if (rotation !== null) {
-      this.pendingRotation = null;
-      this.applyRotation(rotation);
-    }
-
-    /**
-     * A migration (M11, §4.18, §6.7).
-     *
-     * Handled through `applyRotation`, because from this class's point of view the two are the
-     * same event: *"the server has put you in a different world; rebuild."* Sharing the path is
-     * what guarantees a migration also does the things a rotation learned to do — keep the
-     * socket, clear the prediction state, adopt the new entity id — rather than a second
-     * implementation that has to remember all of them.
-     *
-     * What is different is the map: a migration usually has one waiting from the background
-     * build, and `applyRotation` picks it up through `takePrebuilt`.
-     */
-    const migration = this.pendingMigration;
-    if (migration !== null) {
-      /**
-       * The background build won: adopt it and move, all in this frame (§6.5).
-       *
-       * This is the path the whole design exists to produce — a brief fade and you are in the
-       * new map, with no loading screen and no stall, because the meshing happened while you
-       * were still shooting in the arena.
-       */
-      if (this.buildQueue.hasReady(migration.mapId) || migration.mapId === this.currentMapId()) {
-        this.pendingMigration = null;
-        this.applyRotation(migration);
-        return;
-      }
-
-      /**
-       * The background build did not finish: show the screen, **then** build (§4.18).
-       *
-       * The migration is held for one frame rather than acted on now. That frame is what lets
-       * the browser paint the loading screen; showing it and building in the same task paints
-       * nothing, and the player gets a frozen frame of the world they have already left — which
-       * is indistinguishable from a crash.
-       *
-       * `loadingHeldFrames` is the deferral. One frame is enough for a paint and is the least
-       * this can cost.
-       */
-      if (!this.loadingScreen.visible) {
-        this.loadingScreen.show(migration.mapId);
-        this.loadingHeldFrames = 1;
-        return;
-      }
-      this.loadingScreen.update(this.buildQueue.progress);
-      if (this.loadingHeldFrames > 0) {
-        this.loadingHeldFrames--;
-        return;
-      }
-
-      /**
-       * Drain whatever is left of the build in one go, then move.
-       *
-       * A large budget on purpose: the match has already started without this client and every
-       * further frame spent trickling chunks is a frame they are not in it. The screen is up,
-       * so a long task here costs nothing visually — which is exactly the trade the chunked
-       * path refuses to make during warmup and the right one to make here.
-       */
-      if (this.buildQueue.building) {
-        this.buildQueue.pump(LOADING_DRAIN_BUDGET_MS);
-        this.loadingScreen.update(this.buildQueue.progress);
-        return;
-      }
-
-      this.pendingMigration = null;
-      this.applyRotation(migration);
-      this.loadingScreen.hide();
-    }
-  }
-
-  /** The map the world is currently built on, or '' when there is none. */
-  private currentMapId(): string {
-    return this.world?.map.def.id ?? '';
-  }
 
   private simulate(tick: number): void {
     const world = this.world;
@@ -2671,49 +1890,9 @@ export class Game {
       world.match.netFrozen = net.frozen;
       net.update();
       world.debug.simulate(world.player, this.movementConfig);
-
-      // Refreshed every frame from the netcode, which rewrites it on every seat assignment.
-      // Read here rather than at the moment of the drop, because by then the world holding the
-      // netcode is the thing being torn down. See `reconnectToken`.
-      const seatToken = net.client.reconnectToken;
-      if (seatToken !== null) this.reconnectToken = seatToken;
-
-      /**
-       * The connection died. Try to get back in; failing that, leave.
-       *
-       * Without either, a dropped client keeps its map, its HUD and its last snapshot on screen
-       * forever: the local flow is inert by design, so nothing ticks, nothing changes, and it is
-       * indistinguishable from a frozen game.
-       *
-       * **`rejected` is not tried again** (round 4, F8). A rejection is the server answering —
-       * wrong protocol version, server full — and re-dialling into the same answer is a loop
-       * with a loading screen on it. A `disconnected` is the server *not* answering, which is
-       * exactly the case a reconnect exists for.
-       */
-      if (net.state === 'rejected') {
-        netLog.warn(`connection refused: ${net.client.closeReason}`);
-        this.transitionTo('MENU');
-        return;
-      }
-      if (net.state === 'disconnected') {
-        netLog.warn(`connection ended: ${net.client.closeReason}`);
-        /**
-         * Freed for inactivity (security audit S6): the server's decision about the player, not
-         * a lost connection, so it is **not** dialled back — a reconnect would seat the idle tab
-         * again and repeat this at the next timeout. Said on screen, then the menu, the same way a
-         * failed join is.
-         */
-        if (net.client.closeReason === BYE_IDLE) {
-          this.reconnectToken = null;
-          this.transitionTo('MENU');
-          this.screens.menus.showBoot('DISCONNECTED FOR INACTIVITY');
-          window.setTimeout(() => {
-            if (this.state === 'MENU') this.screens.menus.show();
-          }, 4000);
-          return;
-        }
-        if (!this.tryReconnect()) this.transitionTo('MENU');
-      }
+      // The seat token and the two ways a link ends are the session's. See
+      // `GameSession.afterNetworkUpdate`.
+      this.session.afterNetworkUpdate(net);
       return;
     }
 
@@ -2775,11 +1954,10 @@ export class Game {
      * with the frame loop rather than running on in a background tab.
      */
     if (this.state === 'SUMMARY') {
-      this.screens.summary.setRemainingSeconds(this.summaryRemainingSeconds());
+      this.screens.summary.setRemainingSeconds(this.session.summaryRemainingSeconds());
     }
-    this.pumpMigrationWindow();
-    const buildMs = this.buildQueue.pump();
-    if (buildMs > 0) this.stats.noteBackgroundBuildMs(buildMs);
+    this.session.pumpMigrationWindow();
+    this.session.pumpBackgroundBuild();
 
     const world = this.world;
     if (world === null) {
@@ -2919,7 +2097,7 @@ export class Game {
     if (gpuWarmup.hold(this.scene, intro ?? takeover ?? cam, { scene: this.viewmodel.scene, camera: this.viewmodel.camera })) {
       // Nothing drawn this frame; the debug overlay's own clock still runs.
       world.debug.update(dt);
-      this.servicePendingTransitions();
+      this.session.servicePendingTransitions();
       return;
     }
     if (intro !== null) {
@@ -2957,7 +2135,7 @@ export class Game {
 
     // Between frames, with nothing part-way through a dispatch. Also serviced from the
     // hidden-tab heartbeat, because this pass does not run in a background tab at all.
-    this.servicePendingTransitions();
+    this.session.servicePendingTransitions();
   }
 
   private onFrame(sample: FrameSample): void {
@@ -3110,9 +2288,3 @@ function clampFov(v: number): number {
   return Math.min(FOV_MAX, Math.max(FOV_MIN, v));
 }
 
-/** Just the host, for a "connecting to…" line. A whole `ws://` URL is noise on a title card. */
-function hostOf(url: string): string {
-  const withoutScheme = url.replace(/^wss?:\/\//i, '');
-  const end = withoutScheme.indexOf('/');
-  return (end < 0 ? withoutScheme : withoutScheme.slice(0, end)).toUpperCase();
-}

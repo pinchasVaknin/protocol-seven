@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**61 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**62 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -1847,6 +1847,35 @@ terrain, near-black team-mates, orange enemies.
 ---
 
 ## 6. Documentation and housekeeping
+
+### #86 — `public/verify/gunplay.js` reaches `match.hud`, which `Match` does not have · `open` *(opened 2026-11-16 by C24a)*
+
+**Files** `public/verify/gunplay.js` (lines 165, 180, 185). **Origin** C24a's Step 0 reach-in
+sweep (§4.2), which exists to find the *opposite* case — a script that depends on a private
+member a refactor is about to move.
+
+Three lines of that harness read and write `match.hud`:
+
+```js
+match.hud.lastHitLatencyMs = -1;                      // L165, L180
+if (match.hud.lastHitLatencyMs >= 0) markers.push(…); // L185
+```
+
+**`Match` has no `hud` member.** The HUD is `match.ui.hud` — `ui` is the `MatchHud`, and the
+`Hud` under it is what carries `lastHitLatencyMs`. So the assignment is a write to a property
+of `undefined` and throws a `TypeError`, which means that script's **criteria 5 and 8** — the
+hitmarker check and the whole input-latency distribution — have not run since whenever the
+`ui` indirection was introduced. Everything above them in the file still ran, so the script
+has been reporting partial results rather than failing visibly.
+
+The fix is three characters (`match.ui.hud`) and C24a could not make it: `public/` is §10's,
+out of the reach of every unit in the programme, and R3 fences this unit at
+`src/client/ClientMatch.ts` and its own new files. It is also worth re-running the whole
+script afterwards rather than assuming the two criteria pass once they execute — nobody has
+seen their output.
+
+**Verify** load the client with the harness and watch criteria 5 and 8 produce numbers rather
+than being absent from the report.
 
 ### #85 — A live check in the browser pane under-reports whenever Claude's window is behind another · `open` *(opened 2026-11-16 by C23b)*
 

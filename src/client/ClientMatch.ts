@@ -18,7 +18,6 @@ import { insideDrawnBody } from './combat/BodyVolume';
 import { TargetRange } from './combat/TargetRange';
 import { EV, type GameBus } from '../shared/core/Events';
 import type { Input } from './input/Input';
-import { inputLabel } from '../shared/core/Keybinds';
 import { Btn, isDown, justPressed, type InputCommand } from '../shared/core/InputCommand';
 import { DT } from '../shared/core/Loop';
 import { DEG2RAD } from '../shared/core/MathUtil';
@@ -35,15 +34,15 @@ import { MatchFeedback, type BodyPose } from './MatchFeedback';
 import { WAKE_WAIT_MS } from './net/WakeWait';
 import { MatchMeta } from './MatchMeta';
 import { MatchObjectives } from './MatchObjectives';
+import { MatchStreakLedger } from './MatchStreakLedger';
+import { MatchSurfaces } from './MatchSurfaces';
 import { MortarOverlay } from './ui/MortarOverlay';
-import { Domination } from '../shared/modes/Domination';
 import { SearchAndDestroy } from '../shared/modes/SearchAndDestroy';
 import { StreakAudio } from './streaks/StreakAudio';
 import { ClientStreakPresentation } from './streaks/ClientStreakPresentation';
 import { StreakRenderer } from './streaks/StreakRenderer';
 import { preloadSentry } from './streaks/SentryModel';
 import { StreakSystem } from '../shared/streaks/StreakSystem';
-import { ReplicatedStreaks } from './streaks/ReplicatedStreaks';
 import {
     NO_SPECTATOR_TARGET,
     nextSpectatorTarget,
@@ -60,13 +59,9 @@ const EMPTY_SMOKE: readonly SmokeState[] = [];
 import {
     ALL_STREAK_IDS,
     DEFAULT_STREAK_CONFIG,
-    STREAK_DEFS,
-    streakDef,
     type StreakConfig,
-    type StreakDef,
     type StreakId,
 } from '../shared/streaks/StreakDefs';
-import { sentryInDismantleReach } from '../shared/streaks/SentryGun';
 import type { CamoId } from '../shared/meta/Camos';
 import type { ResolvedLoadout } from '../shared/meta/Loadouts';
 import type { Profile } from './meta/Profile';
@@ -80,7 +75,7 @@ import { Health, type HealthConfig } from '../shared/player/Health';
 import type { MovementConfig } from '../shared/player/MovementConfig';
 import type { PlayerController } from '../shared/player/PlayerController';
 import { eyeHeightFor } from '../shared/player/Stance';
-import { NO_SUPPLY_POINT, SupplySystem, type SupplyState } from '../shared/world/SupplySystem';
+import { SupplySystem, type SupplyState } from '../shared/world/SupplySystem';
 import { BurnSystem } from '../shared/combat/BurnSystem';
 
 /** Seconds between puffs on a burning body, and how far up them they are drawn. */
@@ -104,7 +99,6 @@ import { SCOPE_VIEWMODEL_HIDDEN } from './ui/HudTactical';
 import { MatchHud } from './ui/MatchHud';
 import type { CollisionWorld } from '../shared/world/CollisionWorld';
 import { makeRayHit, type RayHit } from '../shared/world/Geometry';
-import type { ObjectiveKind } from '../shared/world/maps/types';
 import { ViewmodelAnim, makeViewmodelDrive, type ViewmodelDrive } from './weapons/ViewmodelAnim';
 import type { RoundBlocker } from '../shared/weapons/Ballistics';
 import type { ViewmodelConfig } from '../shared/weapons/ViewmodelConfig';
@@ -561,13 +555,10 @@ export class Match {
     private spectatorTarget = NO_SPECTATOR_TARGET;
 
     /**
-     * The server's streak state (M11 Gate B, §8.22).
-     *
-     * Populated only in a networked match, where `this.streaks` is constructed but never
-     * simulated. See `ReplicatedStreaks` for why the client does not simply fold its own
-     * replicated kill events into its own counter.
+     * Whose streaks these are, and everything that follows: the balance, the price, the lockout,
+     * the carried weapon and the server's own entity list. See `MatchStreakLedger`.
      */
-    private readonly replicatedStreaks = new ReplicatedStreaks();
+    private readonly ledger: MatchStreakLedger;
     /**
      * Where a mortar will land if one is called in.
      *
@@ -576,17 +567,8 @@ export class Match {
      */
     mortarMarkX = 0;
     mortarMarkZ = 0;
-    /** The player's three equipped streaks, refreshed whenever the class changes. */
-    private equippedStreakIds: readonly StreakId[] = [];
-    /**
-     * The three equipped streaks **in key order**, nulls kept (M11 Gate B playtest).
-     *
-     * `equippedStreakIds` drops the empty slots because `StreakSystem` wants a set to decide what
-     * this player may earn. The keys want the opposite: position is the whole meaning, because key
-     * 3 is slot 0 and key 5 is slot 2 whatever is or is not in between. Packing the two together
-     * is what made key 5 dead for a player carrying one streak.
-     */
-    private streakSlots: readonly (StreakId | null)[] = [null, null, null];
+    /** Every surface the HUD is told about once a frame. See `MatchSurfaces`. */
+    private readonly surfaces: MatchSurfaces;
     /** Look angles when the overlay opened, so the mark is steered by the delta. */
     private overlayYaw = 0;
     private overlayPitch = 0;
@@ -1032,7 +1014,7 @@ export class Match {
             streakDiscount: (id) => (this.identity.is(id) ? this.meta.state.streakDiscount : 0),
             // The player earns only what their class equips; bots have no class, so they keep the
             // full list and behave exactly as they did before.
-            equippedStreaks: (id) => (this.identity.is(id) ? this.equippedStreakIds : ALL_STREAK_IDS),
+            equippedStreaks: (id) => (this.identity.is(id) ? this.ledger.equippedStreakIds : ALL_STREAK_IDS),
             context: {
                 bus: deps.bus,
                 world: deps.world,
@@ -1054,6 +1036,12 @@ export class Match {
                 // The same fact `bots.freeForAll` carries, from the same registry flag (M13 Phase A).
                 freeForAll: deps.mode.freeForAll === true,
             },
+        });
+        // Built here rather than as a field initialiser because it is handed the system above.
+        this.ledger = new MatchStreakLedger({
+            streaks: this.streaks,
+            identity: this.identity,
+            networked: deps.networked === true,
         });
         this.streakRenderer = new StreakRenderer(
             this.streaks,
@@ -1078,15 +1066,11 @@ export class Match {
          * are supposed to reach the same answer from the same command stream (S4.15), and a client
          * whose door refused nothing would predict a hitmarker on a body the server never moved.
          */
-        this.damage.shieldOf = (id) =>
-            (this.isNetworked
-                ? this.replicatedStreaks.carriedWeaponFor(id)
-                : this.streaks.carriedWeaponFor(id)
-            )?.shield ?? null;
+        this.damage.shieldOf = (id) => this.ledger.carriedWeaponFor(id)?.shield ?? null;
         // Care packages are contestable in every mode, so they ride the second provider slot
         // rather than the mode's (see `BotDirector.streakObjectives`).
         this.bots.streakObjectives = this.streaks;
-        this.setStreakLoadout(deps.loadout.streaks);
+        this.ledger.setStreakLoadout(deps.loadout.streaks);
 
         this.objectives = new MatchObjectives({
             bus: deps.bus,
@@ -1118,9 +1102,16 @@ export class Match {
         // Flags and bomb sites are worth drawing on the minimap; a TDM map is not (M4's note).
         // The *kinds* matter too: Foundry authors flags and bomb sites together, so a mode that
         // does not filter shows both at once.
-        const kinds = objectiveKindsFor(this.mode);
+        const kinds = MatchSurfaces.objectiveKindsFor(this.mode);
         this.ui.hud.minimap.objectiveKinds = kinds;
         this.ui.hud.minimap.showObjectives = kinds.length > 0;
+        // Last, because it reads the ledger, the HUD and the mode, all of which are above it.
+        this.surfaces = new MatchSurfaces({
+            match: this,
+            ledger: this.ledger,
+            keybinds: deps.input.keybinds,
+            streakConfig: deps.streakConfig ?? DEFAULT_STREAK_CONFIG,
+        });
 
         // Occlusion low-pass through the same spatial-hash raycaster the sim uses (S6.7).
         deps.audio.setOccluder((x, y, z) =>
@@ -1910,7 +1901,7 @@ export class Match {
 
     /** The actual swap. Both weapons rebuilt, grenades replaced and refilled, perks re-derived. */
     private applyLoadoutNow(loadout: ResolvedLoadout): void {
-        this.setStreakLoadout(loadout.streaks);
+        this.ledger.setStreakLoadout(loadout.streaks);
         this.equip(0, loadout.primary, loadout.primaryCamo, loadout.primaryAttachments);
         this.equip(1, loadout.secondary, loadout.secondaryCamo, loadout.secondaryAttachments);
         this.equipment.inventory.lethal = loadout.lethal;
@@ -2297,12 +2288,12 @@ export class Match {
             const bit = bits[i];
             if (bit === undefined) continue;
             if (!justPressed(cmd.buttons, this.prevButtons, bit)) continue;
-            const id = this.streakSlots[i];
+            const id = this.ledger.streakSlots[i];
             if (id === undefined || id === null) continue;
             // Affordable, cool, and not already in the sky, or the press is simply not honoured. The
             // slot has already said which — a price it cannot meet, or a fill draining — so a press
             // that does nothing is a press the player was told about before they made it.
-            if (!this.canAffordStreak(id)) continue;
+            if (!this.ledger.canAffordStreak(id)) continue;
 
             const sim = this.deps.player.sim;
             // A mortar is *marked* before it is spent: the overlay opens, and the streak is only
@@ -2350,50 +2341,6 @@ export class Match {
             id === 'mortar' ? markZ : useAhead ? pz : sim.z,
             sim.yaw,
         );
-    }
-
-    /** Record the class's streaks, in both the shapes the rest of the match asks for. */
-    private setStreakLoadout(streaks: ReadonlyArray<StreakId | null>): void {
-        this.streakSlots = [streaks[0] ?? null, streaks[1] ?? null, streaks[2] ?? null];
-        this.equippedStreakIds = this.streakSlots.filter((id): id is StreakId => id !== null);
-    }
-
-    /**
-     * The three questions the streak strip and the keys ask, each behind one accessor.
-     *
-     * The server's answer in a networked match and the local system's otherwise. Routed through
-     * these rather than branched at each call site, because the failure when one of them is
-     * missed is a HUD that offers a streak the server will refuse, or a key that charges a price
-     * the screen never showed. There were two of these before round 4; the balance model added
-     * price and availability, and the pivot turned availability from a bit into a duration.
-     */
-    private streakBalance(): number {
-        return this.isNetworked ? this.replicatedStreaks.balance : this.streaks.balanceOf(this.localId);
-    }
-
-    private streakPrice(id: StreakId): number {
-        return this.isNetworked ? this.replicatedStreaks.priceOf(id) : this.streaks.priceOf(id, this.localId);
-    }
-
-    /**
-     * Seconds until this key works again, or 0 (round 4, the pivot).
-     *
-     * One number for the cooldown and for a previous instance still being in the world, because
-     * the strip draws them the same way and the player experiences them as the same thing: the
-     * key does nothing, and the slot says how long for without saying it in words.
-     */
-    private streakLockout(id: StreakId): number {
-        return this.isNetworked
-            ? this.replicatedStreaks.lockoutSeconds(id)
-            : this.streaks.lockoutSecondsFor(this.localId, id);
-    }
-
-    private canAffordStreak(id: StreakId): boolean {
-        return this.isNetworked ? this.replicatedStreaks.canAfford(id) : this.streaks.canAfford(this.localId, id);
-    }
-
-    private nextStreak(): { def: StreakDef; price: number } | null {
-        return this.isNetworked ? this.replicatedStreaks.next : this.streaks.nextFor(this.localId);
     }
 
     /**
@@ -2478,10 +2425,7 @@ export class Match {
      * that called it in, so the answer here goes to null on the same tick without a second rule.
      */
     private syncCarriedStreakWeapon(): void {
-        const weapon = this.isNetworked
-            ? this.replicatedStreaks.carriedWeaponFor(this.localId)
-            : this.streaks.carriedWeaponFor(this.localId);
-        this.weapons.holdStreakWeapon(weapon);
+        this.weapons.holdStreakWeapon(this.ledger.carriedWeaponFor(this.localId));
         this.syncStreakModel();
     }
 
@@ -2715,12 +2659,12 @@ export class Match {
 
     /** Adopt one `Streaks` frame (§8.22). Called by `MatchWorld` from the net session. */
     applyReplicatedStreaks(view: StreakView): void {
-        this.replicatedStreaks.apply(view);
+        this.ledger.applyReplicated(view);
     }
 
     /** Drop every replicated streak. Called on migration, per §4.18's obligation list. */
     clearReplicatedStreaks(): void {
-        this.replicatedStreaks.clear();
+        this.ledger.clearReplicated();
     }
 
     /**
@@ -2911,7 +2855,7 @@ export class Match {
          * above just built.
          */
         if (this.isNetworked) {
-            this.streakRenderer.updateReplicated(this.replicatedStreaks.entities);
+            this.streakRenderer.updateReplicated(this.ledger.replicatedEntities);
         } else {
             this.streaks.render(dt, alpha);
             this.streakRenderer.update();
@@ -2990,9 +2934,9 @@ export class Match {
         // living player how they died a minute ago (round 5, F9).
         if (this.playerDead) this.settleDeathDistance();
         state.deathReport = this.playerDead ? this.deathReport : null;
-        this.fillTacticalState();
-        this.fillStreakHud();
-        this.fillMinimapStreaks();
+        this.surfaces.fillTacticalState();
+        this.surfaces.fillStreakHud();
+        this.surfaces.fillMinimapStreaks();
         this.objectives.update(dt);
         // Straight from the pass that just decided where the bomb mesh goes, so the arrow and
         // the object it points at are the same frame's answer (round 4, F2).
@@ -3001,383 +2945,6 @@ export class Match {
         this.mortarOverlay.update(dt, MORTAR_MARK_RADIUS);
         this.ui.update(this.flow, sim.x, sim.z, sim.yaw, dt);
         this.feedback.render(camera);
-    }
-
-    /**
-     * The streak strip and the objective banner (M7).
-     *
-     * Everything here is read straight off `StreakSystem` and the mode. The requirement shown is
-     * already Hardline-discounted, so the HUD never learns that a perk exists.
-     */
-    private fillStreakHud(): void {
-        const hud = this.ui.streakState;
-        for (let i = 0; i < hud.slots.length; i++) {
-            const slot = hud.slots[i];
-            if (slot === undefined) continue;
-            const id = this.streakSlots[i] ?? null;
-            slot.name = id === null ? '' : streakDef(id).name;
-            // Four states, and the fourth is now a duration rather than a flag (round 4, the pivot).
-            // A slot dark because the player cannot afford it shows a price; a slot dark because the
-            // key is locked out shows how much of the wait is left, as a fill. The key does nothing in
-            // both, and the strip has to say which.
-            slot.price = id === null ? 0 : this.streakPrice(id);
-            slot.lockoutSeconds = id === null ? 0 : this.streakLockout(id);
-            slot.ready = id !== null && this.canAffordStreak(id);
-        }
-        // The **balance**, and the server's when there is one: it is the number a purchase is
-        // charged against, and two opinions about it is two opinions about whether a key works.
-        hud.balance = this.streakBalance();
-        const next = this.nextStreak();
-        hud.nextName = next?.def.name ?? '';
-        hud.nextPrice = next?.price ?? 0;
-
-        this.fillObjectiveBanner(hud);
-        this.fillFreeForAllBanner();
-    }
-
-    /**
-     * Free-for-All shows the leader and you, not team A and team B.
-     *
-     * Driven from `ScoreSystem.rows`, which is populated on a networked client the same way the
-     * scoreboard is. Recomputed per frame rather than cached on a score event — it is a scan of
-     * ten rows on a screen that is already walking them for the scoreboard.
-     */
-    private fillFreeForAllBanner(): void {
-        const banner = this.ui.state.banner;
-        banner.ffa = this.deps.mode.freeForAll === true;
-        if (!banner.ffa) return;
-
-        /**
-         * **Kills, not points** (M11 Gate B playtest).
-         *
-         * This read `row.score`, and over the network that column is zero for everybody, for ever:
-         * `MatchFlow`'s replicated branch records kills with **zero points** on purpose — what a
-         * kill is worth is a mode decision and the mode is not running on a client. So the banner
-         * showed `0` against a leader of `0` for the whole match, which is the reported "the kill
-         * counter isn't working in FFA over the network".
-         *
-         * Kills are the right number anyway, and not merely the available one: `checkWinCondition`
-         * decides Free-for-All on `row.kills` and the bar counts toward `scoreLimit`, which is a
-         * kill count. Showing points beside a limit measured in kills was a bar that could not
-         * reach its own end.
-         */
-        let leader: { name: string; score: number } | null = null;
-        let self = 0;
-        for (const row of this.score.rows) {
-            if (row.entityId === this.localId) self = row.kills;
-            if (leader === null || row.kills > leader.score) {
-                leader = { name: row.displayName, score: row.kills };
-            }
-        }
-        banner.leaderName = leader?.name ?? '';
-        banner.leaderScore = leader?.score ?? 0;
-        banner.selfScore = self;
-    }
-
-    /**
-     * The bomb timer, the plant/defuse ring and the capture prompt.
-     *
-     * Only one thing is ever shown, and the order is by urgency: a ticking bomb outranks an
-     * interaction, which outranks standing on a flag. A banner that tried to show all three
-     * would show none of them.
-     */
-    private fillObjectiveBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
-        hud.showAlive = false;
-        hud.objectiveLabel = '';
-        hud.objectiveSeconds = -1;
-        hud.interactFraction = -1;
-        hud.interactLabel = '';
-        hud.urgent = false;
-
-        this.fillModeBanner(hud);
-        this.fillDismantleBanner(hud);
-        this.fillSupplyBanner(hud);
-    }
-
-    /**
-     * The prompt at the player's own sentry (2026-09-28): stand at it, face it, hold the use key.
-     *
-     * Between the mode and the crate in urgency: an objective is the match, and a turret the player
-     * chose to go and stand at is a decision they are in the middle of, which a crate beside it is
-     * not. The reach test is `sentryInDismantleReach` — the function `SentryGun.stepDismantle`
-     * decides with — so the key is never offered where the simulation would refuse it. The ring is
-     * the simulation's own progress: the local sentry's in a solo match, the replicated `fraction`
-     * over the network, so it fills at the rate the server is actually counting.
-     */
-    private fillDismantleBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
-        if (hud.interactLabel.length > 0 || this.playerDead) return;
-        const sim = this.deps.player.sim;
-        const cfg = this.deps.streakConfig ?? DEFAULT_STREAK_CONFIG;
-        const reach = (x: number, y: number, z: number): boolean =>
-            sentryInDismantleReach(x, y, z, sim.x, sim.y, sim.z, sim.yaw, cfg);
-
-        let progress = -1;
-        if (this.isNetworked) {
-            for (const e of this.replicatedStreaks.entities) {
-                if (STREAK_DEFS[e.kind]?.id !== 'sentry' || !this.identity.is(e.ownerId)) continue;
-                if (!reach(e.x, e.y, e.z)) continue;
-                progress = e.fraction / 255;
-                break;
-            }
-        } else {
-            for (const sentry of this.streaks.sentries()) {
-                if (!this.identity.is(sentry.ownerId) || !reach(sentry.x, sentry.y, sentry.z)) continue;
-                progress = sentry.dismantleFraction;
-                break;
-            }
-        }
-        if (progress < 0) return;
-
-        if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'YOUR SENTRY';
-        hud.interactFraction = progress;
-        hud.interactLabel = progress > 0 ? 'DISMANTLING' : `HOLD ${this.useKeyLabel()} TO DISMANTLE`;
-    }
-
-    /**
-     * The resupply prompt, which is every mode's and therefore nobody's mode's.
-     *
-     * Written after the mode and only into a slot the mode left empty. The order is the same
-     * urgency rule `fillModeBanner` is built on: a bomb being planted, defused or counting down is
-     * the most important thing on the screen, and a crate is the least — and on a map where a
-     * station sits inside an objective the player is told about the objective.
-     *
-     * Three states rather than one, because the rule has to be teachable without a tutorial: near
-     * it and standing, kneeling and taking, and kneeling with nothing left to take. There is no key
-     * in any of them since 2026-09-28 — the crouch is the instruction. The ring is the held weapon's
-     * reserve rather than progress toward the next beat, which would be a quarter-second sawtooth;
-     * what the player watches climb is the ammunition counter.
-     */
-    private fillSupplyBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
-        if (hud.interactLabel.length > 0) return;
-        const state = this.supplyState;
-        if (state.pointId === NO_SUPPLY_POINT) return;
-
-        /**
-         * The banner carries the ring, and `HudStreaks.updateBanner` draws neither without a label:
-         * a ring with nothing above it is a progress bar for an unnamed thing, so the surface makes
-         * the two one decision. Written only into an empty slot, so a bomb that is counting down
-         * keeps the strip and this keeps the ring under it.
-         */
-        if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'RESUPPLY';
-
-        if (state.needsCrouch) {
-            hud.interactFraction = state.stock;
-            hud.interactLabel = 'CROUCH TO RESUPPLY';
-            return;
-        }
-        hud.interactFraction = state.stock;
-        // Kneeling and not yet `working` is the one tick before the first beat is counted.
-        hud.interactLabel = state.full ? 'RESUPPLIED' : 'RESUPPLYING';
-    }
-
-    /** The bomb timer, the plant/defuse ring and the capture prompt. See `fillObjectiveBanner`. */
-    private fillModeBanner(hud: import('./ui/HudStreaks').StreakHudState): void {
-        const mode = this.mode;
-        if (mode instanceof SearchAndDestroy) {
-            // Alive counts, top of screen, every round (M7 playtest). Counted here rather than by
-            // the mode, and against the side the server actually assigned rather than the constant.
-            const friendly = this.localTeam;
-            hud.aliveFriendly = this.countAlive(friendly);
-            hud.aliveEnemy = this.countAlive(friendly === 'A' ? 'B' : 'A');
-            hud.showAlive = true;
-
-            if (mode.bomb === 'PLANTED') {
-                hud.objectiveLabel = `BOMB · SITE ${mode.plantedSite?.label ?? ''}`;
-                hud.objectiveSeconds = mode.bombSecondsLeft;
-                hud.urgent = true;
-            }
-            if (mode.interactEntity === this.localId && mode.interactFraction > 0) {
-                hud.interactFraction = mode.interactFraction;
-                hud.interactLabel = mode.bomb === 'PLANTED' ? 'DEFUSING' : 'PLANTING';
-                if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'OBJECTIVE';
-                return;
-            }
-            /**
-             * Somebody else already has it (post-M8 playtest).
-             *
-             * Telling a second defender to "hold T to defuse" while a team-mate is three seconds
-             * into the defuse is telling them to do something the mode will refuse —
-             * `beginInteract` ignores a newcomer while a live actor owns the interaction. The
-             * prompt is replaced by what is actually happening, which is the thing worth knowing:
-             * somebody is on it, so go and cover them.
-             */
-            const busyWith = mode.interactingEntity;
-            if (busyWith >= 0 && busyWith !== this.localId) {
-                hud.interactFraction = mode.interactFraction;
-                hud.interactLabel = mode.interactIsDefusing ? 'TEAMMATE DEFUSING' : 'PLANT IN PROGRESS';
-                if (hud.objectiveLabel.length === 0) hud.objectiveLabel = 'OBJECTIVE';
-                return;
-            }
-            if (mode.bomb === 'PLANTED' && this.playerCombatant.team === mode.defenders) {
-                const site = mode.plantedSite;
-                if (site !== null && site.contains(this.playerCombatant)) {
-                    hud.interactFraction = 0;
-                    hud.interactLabel = `HOLD ${this.useKeyLabel()} TO DEFUSE`;
-                }
-                return;
-            }
-            if (mode.bomb !== 'CARRIED') return;
-            if (this.playerCombatant.team !== mode.attackers) return;
-            if (!mode.isCarrier(this.localId)) {
-                // Tell them where the bomb is, because without it the round cannot be won.
-                if (mode.carrierId < 0) {
-                    hud.objectiveLabel = 'RECOVER THE BOMB';
-                    // Standing on it: the pick-up is a key press now, so it needs a prompt like any
-                    // other interaction. Without one, "auto-pickup is off" reads as "the bomb is broken".
-                    if (mode.tryPickupPrompt(this.playerCombatant)) {
-                        hud.interactFraction = 0;
-                        hud.interactLabel = `HOLD ${this.useKeyLabel()} TO TAKE THE BOMB`;
-                    }
-                } else {
-                    hud.objectiveLabel = 'BOMB CARRIER OUT';
-                }
-                return;
-            }
-            const site = mode.siteContaining(this.playerCombatant);
-            hud.objectiveLabel = site === null ? 'CARRYING THE BOMB' : `SITE ${site.label}`;
-            if (site !== null) {
-                hud.interactFraction = 0;
-                hud.interactLabel = `HOLD ${this.useKeyLabel()} TO PLANT`;
-            }
-            return;
-        }
-
-        if (mode instanceof Domination) {
-            for (const zone of mode.zones) {
-                if (!zone.contains(this.playerCombatant)) continue;
-                hud.objectiveLabel = `FLAG ${zone.label}`;
-                hud.interactFraction = zone.progress;
-                hud.interactLabel = zone.contested
-                    ? 'CONTESTED'
-                    : zone.owner === this.localTeam
-                        ? 'HELD'
-                        : 'CAPTURING';
-                return;
-            }
-        }
-    }
-
-    /**
-     * What the Use key is actually bound to, for the objective prompts (post-M8).
-     *
-     * The prompts used to read "HOLD P", hard-coded, which was wrong the moment M8 shipped
-     * rebinding and wrong again when the default moved to T. Asked of the live binding table
-     * so the HUD says the key the player will actually press, whatever they set it to.
-     */
-    private useKeyLabel(): string {
-        const bound = this.deps.input.keybinds.inputsFor('use')[0];
-        return bound === undefined ? 'USE' : inputLabel(bound).toUpperCase();
-    }
-
-    /**
-     * Push UAV contacts, the sweep bearing, the scramble flag and flag ownership at the minimap.
-     *
-     * Written into preallocated records rather than rebuilt, so a UAV costs no allocation per
-     * frame — the minimap sizes both arrays at construction for exactly this.
-     */
-    private fillMinimapStreaks(): void {
-        const map = this.ui.hud.minimap;
-        // Whose UAV this is, and whose minimap is being scrambled, is "which side am I on".
-        const friendly = this.localTeam;
-        for (const slot of map.contacts) slot.active = false;
-        map.contactFadeSeconds = this.streaks.contactFadeSeconds;
-
-        if (this.isNetworked) {
-            /**
-             * The server's intel, and only ever this team's (M11 Gate B, §8.22).
-             *
-             * The client is not filtering here — there is nothing to filter. `MatchInstance` sends
-             * each seat only the contacts its own team's UAV recorded, and a Ghost player was never
-             * recorded in the first place. What arrives is already the whole truth this player is
-             * entitled to, which is the point: a client that received both teams' contacts and chose
-             * to draw one would be one edited line away from a wallhack.
-             */
-            const rep = this.replicatedStreaks;
-            map.sweepAngle = rep.sweepAngle < 0 ? null : rep.sweepAngle;
-            map.scrambled = rep.scrambled;
-            let n = 0;
-            for (const contact of rep.contacts) {
-                if (n >= map.contacts.length) break;
-                const slot = map.contacts[n];
-                if (slot === undefined) continue;
-                slot.x = contact.x;
-                slot.z = contact.z;
-                slot.age = contact.ageCs / 100;
-                slot.active = true;
-                n++;
-            }
-        } else {
-            const uav = this.streaks.uavFor(friendly);
-            map.sweepAngle = uav === null ? null : uav.sweepAngle;
-            map.scrambled = this.streaks.minimapScrambledFor(friendly);
-            if (uav !== null) {
-                let i = 0;
-                for (const contact of uav.contacts) {
-                    if (!contact.active || i >= map.contacts.length) continue;
-                    const slot = map.contacts[i];
-                    if (slot === undefined) continue;
-                    slot.x = contact.x;
-                    slot.z = contact.z;
-                    slot.age = contact.age;
-                    slot.active = true;
-                    i++;
-                }
-            }
-        }
-
-        if (!(this.mode instanceof Domination)) return;
-        const states = map.objectiveStates;
-        if (states.length !== this.mode.zones.length) {
-            states.length = 0;
-            for (const zone of this.mode.zones) {
-                states.push({ id: zone.id, owner: 'NONE', progress: 0, contested: false });
-            }
-        }
-        for (let i = 0; i < this.mode.zones.length; i++) {
-            const zone = this.mode.zones[i];
-            const state = states[i];
-            if (zone === undefined || state === undefined) continue;
-            // The constant is team A, so a networked player the server put on team B had every flag
-            // on their minimap coloured backwards: their own held zones read as enemy and the
-            // enemy's as theirs.
-            const friendly = this.localTeam;
-            state.owner = zone.owner === 'NONE' ? 'NONE' : zone.owner === friendly ? 'FRIENDLY' : 'ENEMY';
-            state.progress = zone.progress;
-            state.contested = zone.contested;
-        }
-    }
-
-    /**
-     * The M5 half of the HUD state: which weapons are in hand, what equipment is left, the
-     * scope, and the cook timer. Read straight off the systems that own them.
-     */
-    private fillTacticalState(): void {
-        const tac = this.ui.state.tactical;
-        const inventory = this.weapons.inventory;
-        const def = inventory.active.definition;
-        const otherIndex = inventory.activeSlotIndex === 0 ? 1 : 0;
-
-        tac.weaponName = def.name;
-        tac.slotIndex = inventory.activeSlotIndex;
-        tac.otherName = inventory.at(otherIndex)?.definition.name ?? '';
-
-        const inv = this.equipment.inventory;
-        tac.lethalId = inv.lethal;
-        tac.lethalCount = inv.lethalCount;
-        tac.tacticalId = inv.tactical;
-        tac.tacticalCount = inv.tacticalCount;
-
-        const thrower = this.equipment.thrower;
-        tac.cookRemaining = thrower.remainingFuse(inv);
-        tac.cookTotal = EquipmentSystem.slotDef(inv, thrower.slot).fuseSeconds;
-
-        tac.hasScope = def.scope !== undefined;
-        tac.scopeFraction = tac.hasScope ? this.visual.adsFraction : 0;
-        tac.breath = this.weapons.scope.breath;
-        tac.breathHeld = this.weapons.scope.holding;
-
-        tac.fieldUpgradeName = this.meta.fieldUpgrade.name;
-        tac.fieldUpgradeCharge = this.meta.fieldUpgrade.charge;
     }
 
     /**
@@ -3492,19 +3059,6 @@ export class Match {
     get lowHealthThreshold(): number {
         return LOW_HEALTH_THRESHOLD;
     }
-}
-
-/**
- * Which objective kinds the minimap should draw for this mode (M7).
- *
- * Empty for a mode with none, which also switches the objective layer off entirely — a
- * Domination flag on a Team Deathmatch minimap is noise, and an S&D bomb site on a Domination
- * one is worse than noise because it looks like something you can capture.
- */
-function objectiveKindsFor(mode: GameMode): readonly ObjectiveKind[] {
-    if (mode instanceof Domination) return ['flag'];
-    if (mode instanceof SearchAndDestroy) return ['bombsite'];
-    return [];
 }
 
 /** Shortest signed angle from `a` to `b`, radians. */

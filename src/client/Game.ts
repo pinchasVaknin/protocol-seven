@@ -1,3 +1,43 @@
+/**
+ * Application root and the top-level state machine (S6.3): BOOT -> MENU -> MATCH -> SUMMARY.
+ *
+ * ## The world is per-match, and it lives next door
+ *
+ * M1-M3 built the map, the player and the match once at boot and kept them for the life of
+ * the page, because there was only ever one of each. M4 has a map *choice* and a summary
+ * screen you come back from, so the world is built on entering MATCH and **fully disposed on
+ * leaving SUMMARY** — S6.3's "loading a map twice must not double anything".
+ *
+ * M4 put that in this file as `buildWorld` / `teardownWorld` plus six nullable fields, and by
+ * M6 those fields were threaded through `simulate`, `draw`, five state handlers and eight
+ * getters. M7 moved the whole lifecycle to `MatchWorld`, so the six fields that were always
+ * null together became one field that is sometimes null. Every method below asks once, at the
+ * top.
+ *
+ * What survives a match is what is genuinely process-wide: the renderer, the textures, the
+ * audio graph, the input listener, the frame-stats buffer, the profile and the config objects
+ * the tuning panel holds references to. All of them are fields here and are handed to
+ * `MatchWorld` rather than owned by it. `MatchHarness` runs the build/teardown cycle
+ * repeatedly and logs the heap at each boundary, which is the test that the split is honest.
+ *
+ * ## What is left here, and what went next door (C23)
+ *
+ * Three collaborators, each named for the thing it decides, and this class owns the screen the
+ * player is on and the world they are in:
+ *
+ * - `GameSession` — the dial, the seat and every transition a server starts (C23a).
+ * - `GameSurfaces` — every HUD surface decided once a frame, and the two client-side stores
+ *   they read: the debug-overlay request and this process's offline entitlements (C23b).
+ * - `GameFrame` — whose eye the camera is at, which lens it looks through, and which of the
+ *   three passes draws it (C23b).
+ *
+ * The loop still belongs here, because the loop is the thing that drives all three: `simulate`
+ * takes the local step and hands the networked one to the session, and `draw` pumps the front
+ * end and hands the picture to the frame.
+ */
+
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
 import * as THREE from 'three';
 import { DEFAULT_SCHEDULER, type SchedulerConfig } from '../shared/ai/AiScheduler';
 import {
@@ -14,10 +54,7 @@ import type { BindingMap } from '../shared/core/Keybinds';
 import type { InputCommand } from '../shared/core/InputCommand';
 import { MAX_STEPS_PER_FRAME, type FrameSample } from '../shared/core/Loop';
 import { Loop } from './engine/FrameLoop';
-import { ChopperCamera } from './streaks/ChopperCamera';
 import { IntroCamera } from './cinematic/IntroCamera';
-import { makeSnapshot, type PlayerSnapshot } from '../shared/player/PlayerState';
-import { DEG2RAD } from '../shared/core/MathUtil';
 import { Rng } from '../shared/core/Rng';
 import { LocalBotTransport, type ICommandQueue } from '../shared/net/Transport';
 import { foreignServerHost, isServerConfigured } from './net/JoinOptions';
@@ -29,7 +66,7 @@ import { VoteOverlay } from './ui/VoteOverlay';
 import { QuickLoadout } from './ui/QuickLoadout';
 import { MapBuildQueue } from './world/MapBuildQueue';
 import { MenuBackdrop } from './world/MenuBackdrop';
-import { CameraRig, type CameraDrive } from './engine/CameraRig';
+import { CameraRig } from './engine/CameraRig';
 import { ProceduralAudio } from './engine/ProceduralAudio';
 import { ProceduralTextures } from './engine/ProceduralTextures';
 import { Renderer } from './engine/Renderer';
@@ -43,41 +80,17 @@ import { consoleApiWanted } from './debug/ConsoleGate';
 import { Harness } from './debug/Harness';
 import { MatchHarness } from './debug/MatchHarness';
 import { Speedometer } from './debug/Speedometer';
-import { nowMs } from '../shared/core/Clock';
 import { isLegalGameTransition, type GameStateId } from '../shared/core/GameStates';
-import type { HeaderSlot } from '../shared/modes/GameMode';
 import { playability } from '../shared/ui/Capabilities';
 import { readDeviceCapabilities } from './input/DeviceCapabilities';
-import {
-  aimWarningText,
-  cheatTag,
-  debugOverlayVisible,
-  debugUnlocked,
-  quickLoadoutWindow,
-  resultSurfacesVisible,
-  scoreboardOpen,
-  type DebugOverlayRequest,
-  type HudSurfaceState,
-} from '../shared/ui/HudSurfaces';
-import {
-  CHEAT_NOTICE_SECONDS,
-  CHEAT_SIMULATION,
-  CheatOutcome,
-  cheatCodeToggling,
-  cheatOutcomeText,
-  instantCheatLabel,
-  isSurfaceCheat,
-  isUnlockCheat,
-  parseCheatCode,
-  toggleCheat,
-  type CheatCode,
-} from '../shared/cheats/Cheats';
-import { grantEverything } from '../shared/meta/Unlocks';
 import type { Match } from './ClientMatch';
-import { isHostile } from '../shared/combat/Hostility';
+import type { MatchResult } from '../shared/modes/GameMode';
 import { wonBy } from '../shared/modes/MatchOutcome';
-import { MatchWorld } from './MatchWorld';
+import type { XpReport } from '../shared/meta/XpRules';
+import { MatchWorld, type MatchWorldDeps } from './MatchWorld';
 import { GameSession } from './GameSession';
+import { GameSurfaces } from './GameSurfaces';
+import { GameFrame } from './GameFrame';
 import { CharacterAssetService } from './characters/CharacterAssetService';
 import { WeaponAssetService } from './weapons/WeaponAssetService';
 import {
@@ -123,50 +136,31 @@ import { preloadSentry } from './streaks/SentryModel';
 import { preloadStation } from './world/PropModels';
 import { cloneViewmodelConfig, DEFAULT_VIEWMODEL_CONFIG, type ViewmodelConfig } from '../shared/weapons/ViewmodelConfig';
 import type { LoadedMap } from './world/MapRender';
+//#endregion
 
-/**
- * Application root and the top-level state machine (S6.3): BOOT -> MENU -> MATCH -> SUMMARY.
- *
- * ## The world is per-match, and it lives next door
- *
- * M1-M3 built the map, the player and the match once at boot and kept them for the life of
- * the page, because there was only ever one of each. M4 has a map *choice* and a summary
- * screen you come back from, so the world is built on entering MATCH and **fully disposed on
- * leaving SUMMARY** — S6.3's "loading a map twice must not double anything".
- *
- * M4 put that in this file as `buildWorld` / `teardownWorld` plus six nullable fields, and by
- * M6 those fields were threaded through `simulate`, `draw`, five state handlers and eight
- * getters. M7 moved the whole lifecycle to `MatchWorld`, so what is left here is the state
- * machine, the loop and the front end — and the six fields that were always null together
- * became one field that is sometimes null. Every method below asks once, at the top.
- *
- * What survives a match is what is genuinely process-wide: the renderer, the textures, the
- * audio graph, the input listener, the frame-stats buffer, the profile and the config objects
- * the tuning panel holds references to. All of them are fields here and are handed to
- * `MatchWorld` rather than owned by it. `MatchHarness` runs the build/teardown cycle
- * repeatedly and logs the heap at each boundary, which is the test that the split is honest.
- */
-
+// =========================================== TYPES ============================================ \\
+//#region Types
 interface StateHandlers {
   enter?: (from: GameStateId) => void;
   exit?: (to: GameStateId) => void;
 }
+//#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
 const stateChangePayload = { from: 'BOOT' as GameStateId, to: 'BOOT' as GameStateId };
-
-/** F8. Shared rather than a fresh literal per frame; nothing mutates it. */
-const EMPTY_HEADER: readonly HeaderSlot[] = [];
 
 const netLog = logger('join');
 
 /** Keys the skin deck's RNG apart from every other seeded stream in the client. */
 const CHARACTER_DECK_SALT = 0x5c1a_9e77;
+//#endregion
 
-/** The gunship pass's two body lists, reused per frame so the takeover allocates nothing. */
-const gunshipHot: THREE.Object3D[] = [];
-const gunshipCold: THREE.Object3D[] = [];
-
+// ========================================= CLASS Game ========================================= \\
+//#region Class Game
 export class Game {
+  // ========================================== FIELDS ========================================== \\
+  //#region Fields
   readonly bus: GameBus = createGameBus();
   readonly movementConfig: MovementConfig = cloneMovementConfig(DEFAULT_MOVEMENT_CONFIG);
   readonly cameraConfig: CameraConfig = { ...DEFAULT_CAMERA_CONFIG };
@@ -246,6 +240,18 @@ export class Game {
    */
   private readonly session: GameSession;
 
+  /**
+   * Every HUD surface this class owns, and the two client-side stores they read (C23b).
+   *
+   * The debug-overlay request and this process's offline entitlements live there rather than
+   * here because the object that decides from them is the object that should hold them —
+   * and the cheat door, which is their only writer, went with them.
+   */
+  private readonly surfaces: GameSurfaces;
+
+  /** One frame's camera and picture (C23b). Everything per-frame, and nothing allocating. */
+  private readonly frame: GameFrame;
+
   /** The non-blocking vote overlay (§4.20). Built at boot, shown only while balloting. */
   private readonly voteOverlay: VoteOverlay;
 
@@ -277,8 +283,6 @@ export class Game {
   private readonly input: Input;
   private readonly loop: Loop;
   private readonly selection: MenuSelection;
-  /** M9. Process-wide: the takeover is per-match, the camera object need not be. */
-  private readonly chopperCamera = new ChopperCamera();
   /** The match intro's camera (M15, Phase C): asked for once per render frame, before the chopper's. */
   private readonly introCamera: IntroCamera;
   /** The splash over the boot (M17, C6), while it plays; null before and after. */
@@ -306,88 +310,40 @@ export class Game {
   private state: GameStateId = 'BOOT';
 
   private readonly drainBuffer: InputCommand[] = [];
-  /**
-   * The pose handed to the rig while spectating (§6.8).
-   *
-   * One object, rewritten each frame. Every motion field is left at rest: a spectated body's bob
-   * and lean are *its* owner's, arriving interpolated in its mesh, and driving the camera from
-   * them as well would double the motion the viewer sees.
-   */
-  private readonly spectatePose: PlayerSnapshot = makeSnapshot();
-
-  /**
-   * The camera drive while spectating: everything off.
-   *
-   * A spectator is not sprinting, not sliding and not aiming down sights, whatever the body they
-   * are watching is doing — those drive *this* camera's FOV and roll, and inheriting them would
-   * make the view lurch on somebody else's input.
-   */
-  private readonly spectateDrive: CameraDrive = {
-    sprint: false,
-    tacSprint: false,
-    slide: false,
-    adsFraction: 0,
-    adsFovScale: 1,
-    adsViewmodelFovScale: 1,
-  };
-
-  private readonly drive: CameraDrive = {
-    sprint: false,
-    tacSprint: false,
-    slide: false,
-    adsFraction: 0,
-    adsFovScale: 1,
-    adsViewmodelFovScale: 1,
-  };
   private lastRenderMs = performance.now();
-  /**
-   * The player's standing request for the debug overlay (playtest round 4, B1).
-   *
-   * **The only copy of "is the overlay wanted" there is.** It replaces
-   * `overlayWasOpenBeforePause`, which was a second copy of `DebugOverlay.visible` that the ×
-   * did not write — so the pause bookkeeping restored an intent the player had cancelled and
-   * the panel came back on the way into the game. It lives here rather than on the overlay
-   * because it has to outlive the surface: the overlay belongs to the world and a rotation
-   * throws the world away.
-   *
-   * Written from exactly four inputs — the pause menu's button, the overlay's ×, Escape, and
-   * the demotion on resume — and read by `updateHudSurfaces`, which is the one caller of
-   * `setVisible`. See `shared/ui/HudSurfaces.ts`.
-   */
-  private debugRequest: DebugOverlayRequest = 'none';
-  /**
-   * The entitlements this process has granted itself **while offline** (round 4, F14).
-   *
-   * Only ever read when there is no server, where this process is the authority and the QA
-   * spectator has worked exactly this way since M8. Renamed from `localCheats` when the debug
-   * bit was deleted: with that gone there is nothing client-authored left in the mask, so this
-   * holds simulation bits and nothing else, and the name may as well say when it applies.
-   *
-   * Cleared by `teardownWorld`, which is the offline mirror of `MatchInstance.unseat` — the
-   * entitlement belongs to the world it was granted in, offline exactly as on a server.
-   */
-  private offlineCheats = 0;
-  /**
-   * The instant cheat this client is currently announcing, and when the announcement ends.
-   *
-   * A **deadline** rather than a countdown, which is B4's lesson taken at its word: a duration is
-   * only true at the instant it was created, and one integrated per frame goes on counting
-   * through a pause, a rotation and a migration. `nowMs` against a deadline cannot.
-   *
-   * `pendingInstant` is the client half of one request/reply exchange — the code that was sent,
-   * held until the server answers, because the answer carries an outcome and not a label. It is
-   * not a second copy of anything: nothing else knows what was typed, the next send replaces it,
-   * and a reply that never arrives leaves a field nothing reads. Both are cleared on migration,
-   * beside the streak and ballot discards.
-   */
-  private pendingInstant: CheatCode | null = null;
-  private instantCheatLabelText = '';
-  private instantCheatUntilMs = 0;
   /** Where the settings screen's Back button goes. Captured on entry (M8). */
   private settingsReturn: GameStateId = 'MENU';
   /** The binding table last handed to `Input`, so `previewSettings` swaps it only when it is a new one. */
   private appliedBindings: BindingMap | null = null;
 
+  /**
+   * Start or stop the background-tab network heartbeat. Bound to `visibilitychange`.
+   */
+  private readonly onVisibility = (): void => {
+    this.session.onVisibilityChanged();
+  };
+
+  private readonly onResize = (): void => {
+    viewport.set(window.innerWidth, window.innerHeight);
+    this.renderer.setSize(viewport.width, viewport.height, this.profile.settings.renderScale);
+    applyFrameScale(this.uiHost, viewport.width, viewport.height);
+    this.cameraRig.resize(this.renderer.aspect);
+    this.viewmodel.resize(this.renderer.aspect);
+  };
+
+  private readonly onPageHide = (): void => {
+    this.profile.patchSettings({
+      modeId: this.selection.modeId,
+      mapId: this.selection.mapId,
+      botDifficulty: this.selection.difficulty,
+    });
+    this.profile.flush();
+    this.audio.suspend();
+  };
+  //#endregion
+
+  // ======================================= CONSTRUCTOR ======================================== \\
+  //#region Constructor
   constructor(canvas: HTMLCanvasElement, uiHost: HTMLElement, debugHost: HTMLElement) {
     // M6: one save object for everything (S6.6). Settings used to live in their own store;
     // `Profile` carries the old blob across on first load so nobody's FOV resets.
@@ -396,31 +352,11 @@ export class Game {
     });
     const settings = this.profile.settings;
     this.cameraConfig.fov = clampFov(settings.fov);
-    /**
-     * The saved selection, resolved against the registry rather than trusted.
-     *
-     * `normaliseSave` validates every other field of the save but stores `mapId` and
-     * `modeId` as bare strings, so a save written before the map ids were prefixed carries
-     * `foundry` where the registry now has `mp_foundry`. Resolving here rather than at each
-     * of the six `findMap`/`findMode` call sites means the selection is *known good* from
-     * construction on, and those calls keep throwing — which is correct for a code path
-     * that asks for a map that does not exist.
-     */
-    this.selection = {
-      modeId: resolveModeId(asModeId(settings.modeId)).id,
-      mapId: resolveMapId(settings.mapId).id,
-      // Already validated against the union by `normaliseSave`, which is where every other
-      // enumerated setting is checked. No resolve step, because unlike a map id it has never
-      // had a rename to survive.
-      difficulty: settings.botDifficulty,
-    };
+    this.selection = resolveSelection(settings);
 
     // The shader-error check costs four synchronous GPU round trips per program on its first
     // draw, so it follows the debug gate rather than shipping on. See `Renderer`'s constructor.
-    this.renderer = new Renderer(
-      canvas,
-      consoleApiWanted(window.location.search, import.meta.env.DEV),
-    );
+    this.renderer = new Renderer(canvas, consoleApiWanted(window.location.search, import.meta.env.DEV));
     // One measurement of the window, for the three things that are the same fact: the canvas,
     // the front end's frame, and the HUD's own pixels. Everything downstream reads `viewport`
     // rather than the window, so nothing forces a reflow mid-frame — see `ui/Viewport.ts`.
@@ -430,15 +366,7 @@ export class Game {
     // The same fact for the DOM: the front end's 1920x1080 frame scales to this window (M15, A1).
     applyFrameScale(uiHost, viewport.width, viewport.height);
     this.textures = new ProceduralTextures(this.renderer.three);
-    this.backdrop = new MenuBackdrop({
-      scene: this.scene,
-      textures: this.textures,
-      shadowQuality: () => this.profile.settings.shadowQuality,
-      // The fight behind the menu (M15, E) draws its bodies from the same service and with the
-      // same filtering as a match does.
-      characterAssets: this.characterAssets,
-      anisotropy: () => this.textures.anisotropy,
-    });
+    this.backdrop = this.createBackdrop();
     // Warm one representative bundle while BOOT/MENU are visible. Other skins load only when
     // an actor receives them, so a match does not reserve the whole cosmetic catalogue on the
     // GPU just because those files exist in public/.
@@ -449,148 +377,24 @@ export class Game {
     this.viewmodel.resize(this.renderer.aspect);
     // The capsule radius is what bounds how close the eye can get to a wall, and therefore
     // how far out the near plane may sit before it clips one. See `CameraRig.nearFor`.
-    this.cameraRig = new CameraRig(
-      this.cameraConfig,
-      this.renderer.aspect,
-      this.movementConfig.capsuleRadius,
-    );
+    this.cameraRig = new CameraRig(this.cameraConfig, this.renderer.aspect, this.movementConfig.capsuleRadius);
     // Shaders and textures ahead of the frame that needs them (part 5). See `GpuWarmup`.
     gpuWarmup.attach(this.renderer.three, this.scene, this.cameraRig.camera);
 
-    this.screens = new GameScreens({
-      host: uiHost,
-      profile: this.profile,
-      audio: this.audio,
-      selection: this.selection,
-      // Connect before building anything, so the server dictates the map. See `launchMatch`.
-      /**
-       * Play Solo's Start button. Never connects — see `launchMatch`.
-       *
-       * `multiplayerJoin` is cleared first because it survives a return to the menu: a player
-       * who played multiplayer, quit to the menu and then chose Play Solo would otherwise be
-       * dialled straight back into the arena by the leftover options.
-       */
-      onLaunch: () => {
-        this.session.forgetMultiplayerJoin();
-        void this.session.launchMatch();
-      },
-      onPlayMultiplayer: () => void this.session.playMultiplayer(),
-      serverConfigured: () => isServerConfigured(window.location.search),
-      foreignServer: () => foreignServerHost(window.location.search, window.location.host),
-      onDisplayName: (name) => this.profile.patchSettings({ callsign: name }),
-      onLoadout: (range) => {
-        this.loadoutRange = range;
-        this.transitionTo('LOADOUT');
-      },
-      onSettings: () => this.transitionTo('SETTINGS'),
-      onLoadoutSaveAndExit: () => this.transitionTo('MENU'),
-      onQuitToMenu: () => this.transitionTo('MENU'),
-      onResume: () => this.resumeFromPause(),
-      onToggleOverlay: () => this.toggleOverlayFromPause(),
-      onCheatCode: (code) => this.requestCheat(code),
-      onLeaveSummary: () => this.leaveSummary(),
-      onExitSummary: () => this.exitSummary(),
-      pauseStatusLine: () => this.pauseStatusLine(),
-      anisotropy: () => this.textures.anisotropy,
-      characterAssets: this.characterAssets,
-      weaponAssets: this.weaponAssets,
-    });
-
-    this.input = new Input({
-      canvas,
-      sensitivity: settings.sensitivity,
-      invertY: settings.invertY,
-      bindings: settings.bindings,
-    });
-    this.input.onLockChange((locked) => this.onPointerLockChange(locked));
-    this.input.onEscape(() => this.onEscape());
-    /**
-     * Digit keys vote while a ballot is open (M11, §6.4).
-     *
-     * Returning true consumes the key, so 1-5 do not also swap weapons and call in killstreaks
-     * during the twenty seconds a ballot is up. The overlay answers false whenever no ballot is
-     * open, which is every other moment of the game.
-     */
-    this.input.onDigit((digit) => this.voteOverlay.handleDigit(digit));
-    /**
-     * Then the quick class selector, second (M11 Gate B).
-     *
-     * Order is the rule: a ballot is up for twenty seconds and takes the digits while it is,
-     * and the selector only ever appears in the pre-match freeze or on the death screen —
-     * moments a ballot cannot be open. Registering it after the overlay makes that ordering
-     * explicit rather than relying on the two windows never overlapping.
-     *
-     * Returning true consumes the key, so picking class 2 does not also pull out the pistol and
-     * picking class 5 does not call in a Chopper Gunner.
-     */
-    this.input.onDigit((digit) => this.quickLoadout.handleDigit(digit));
-
+    // The front end, in the order it is appended to the one host: that order is the order it
+    // paints in, and three of these overlay each other.
+    this.screens = this.createScreens(uiHost);
+    this.input = this.createInput(canvas, settings);
     this.fpsCounter = new FpsCounter(uiHost, this.stats);
-
-    /**
-     * The vote overlay and the background build, both process-wide (M11).
-     *
-     * Built at boot and kept, like every other front-end surface: they outlive a match by
-     * design. The build queue in particular *must* — its whole purpose is to be working on the
-     * next map while the current world is still up, and a queue owned by the world would be
-     * disposed by the transition it exists to make seamless.
-     */
     this.loadingScreen = new LoadingScreen(uiHost);
+    this.quickLoadout = this.createQuickLoadout(uiHost);
+    this.voteOverlay = this.createVoteOverlay(uiHost);
+    this.buildQueue = this.createBuildQueue();
+    this.settingsScreen = this.createSettingsScreen(uiHost);
 
-    this.quickLoadout = new QuickLoadout({
-      host: uiHost,
-      slots: () => this.profile.loadouts,
-      equipped: () => this.profile.equippedIndex,
-      onPick: (index) => this.pickQuickClass(index),
-    });
-
-    this.voteOverlay = new VoteOverlay({
-      host: uiHost,
-      onVote: (phase, option) => this.world?.net?.client.sendVote(phase, option),
-      currentTick: () => this.session.syncedServerTick(),
-      audio: this.audio,
-    });
-
-    this.buildQueue = new MapBuildQueue({
-      textures: this.textures,
-      shadowQuality: () => this.profile.settings.shadowQuality,
-      // The report, and the readiness it may be worth telling the server about, are the
-      // session's: the whole point of a background build is that it spans the transition.
-      onComplete: (mapId, _built, report) => this.session.onBackgroundBuildComplete(mapId, report),
-    });
-    this.settingsScreen = new Settings({
-      host: uiHost,
-      read: () => this.profile.settings,
-      // The draft, live (M17 C4, decision 2): applied, not persisted.
-      onPreview: (settings) => this.previewSettings(settings),
-      // APPLY: persisted through the one apply path.
-      onCommit: (settings) => this.applySettings(settings),
-      onBack: () => this.transitionTo(this.settingsReturn),
-      // M15 A4: the reset control lives on the INFO tab now; the wipe is still `Profile`'s.
-      onResetProgress: () => this.profile.resetProgress(),
-      profile: this.profile,
-      serverConfigured: () => isServerConfigured(window.location.search),
-      onDisplayName: (name) => this.profile.patchSettings({ callsign: name }),
-    });
-
-    this.session = new GameSession({
-      screens: this.screens,
-      profile: this.profile,
-      stats: this.stats,
-      input: this.input,
-      loadingScreen: this.loadingScreen,
-      voteOverlay: this.voteOverlay,
-      buildQueue: this.buildQueue,
-      world: () => this.world,
-      currentState: () => this.state,
-      transitionTo: (next) => this.transitionTo(next),
-      buildWorld: () => this.buildWorld(),
-      teardownWorld: (options) => this.teardownWorld(options),
-      modeEntry: () => this.modeEntry(),
-      locationSearch: () => window.location.search,
-      onCheatsAnswered: (outcome) => this.onCheatsAnswered(outcome),
-      onMigrationDiscard: () => this.clearInstantCheat(),
-    });
+    this.surfaces = this.createSurfaces();
+    this.frame = this.createFrame();
+    this.session = this.createSession();
 
     this.loop = new Loop({
       sim: (tick) => this.simulate(tick),
@@ -599,11 +403,7 @@ export class Game {
     });
 
     this.harness = new Harness(this.movementConfig);
-    this.matchHarness = new MatchHarness({
-      game: this,
-      loop: this.loop,
-      stats: this.stats,
-    });
+    this.matchHarness = new MatchHarness({ game: this, loop: this.loop, stats: this.stats });
 
     this.registerStates();
     // M8: push the loaded settings through the one apply path, so what is on screen at boot
@@ -617,7 +417,10 @@ export class Game {
     // happened is what makes that case work rather than silently never connecting.
     this.onVisibility();
   }
+  //#endregion
 
+  // ====================================== PUBLIC METHODS ====================================== \\
+  //#region Public Methods
   get currentState(): GameStateId {
     return this.state;
   }
@@ -747,285 +550,565 @@ export class Game {
 
   // -- state wiring --------------------------------------------------------
 
-  private registerStates(): void {
-    this.states.set('BOOT', {
-      enter: () => {
-        this.screens.menus.showBoot('Loading…');
-        // The loop runs from boot so the menu is composited and the frame source is live
-        // before any map exists. Deliberately a timeout rather than requestAnimationFrame:
-        // rAF never fires in a background tab, and booting into a tab the user has not
-        // focused yet would hang forever.
-        this.loop.start();
-        this.transport.open();
-        // Development, `?debug=1` or the bot harness only — see `consoleApiWanted`.
-        if (consoleApiWanted(window.location.search, import.meta.env.DEV)) {
-          installConsoleApi(this, this.harness, this.matchHarness);
-        }
-        window.setTimeout(() => {
-          /**
-           * The device gate (playtest round 5, F1).
-           *
-           * A phone loaded the menu, was shown a table of keyboard bindings and a note about
-           * F11, and could start a match it had no way to play. The check is here rather than
-           * inside the menu because *not transitioning* is the gate: there is no button to
-           * disable, no state to be in, and nothing downstream has to know about it.
-           *
-           * The loop is left running on purpose — the screen is composited by it, and stopping
-           * it would leave a message nobody can see.
-           */
-          const device = playability(readDeviceCapabilities());
-          if (!device.ok) {
-            netLog.warn(`refusing to start: ${device.id} — ${device.headline}`);
-            this.screens.menus.showUnsupported(device.headline, device.detail);
-            return;
-          }
-          /**
-           * The splash (M17, C6), unless something is driving the page: the bot harness
-           * starts its match from the menu and cannot press a key, and `?nosplash` is for
-           * the developer who has seen it. The menu's map is rolled and built *behind* the
-           * splash, so the menu lands on a built map rather than a bare canvas — the one
-           * loading screen this project has ever needed, hiding the one build it has.
-           */
-          if (splashWanted(window.location.search)) {
-            this.prepareBackdrop();
-            this.splash = new Splash({
-              host: this.uiHost,
-              audio: this.audio,
-              // The key or the click is the user gesture the AudioContext needs (decision 1).
-              onGesture: () => this.audio.start(),
-              onReveal: () => this.transitionTo('MENU'),
-              onDone: () => {
-                this.splash = null;
-              },
-            });
-            this.splash.play();
-            return;
-          }
-          this.transitionTo('MENU');
-          this.startBotHarnessIfRequested();
-        }, 32);
-      },
-    });
+  /**
+   * Apply a settings change, live, and persist it (M8, brief S6.3).
+   *
+   * **One function, called with a patch, that re-applies everything.** The alternative — a
+   * switch on which key changed — is eleven branches that each have to be kept in step with
+   * the screen, and the first one anybody forgets is a setting that silently does nothing,
+   * which is the exact failure S6.3 opens by naming. Re-applying all of them costs a
+   * handful of property writes on a user gesture and cannot drift.
+   *
+   * Persistence is separate and deliberately lazy: `Profile.patchSettings` marks the save
+   * dirty and `SaveStore` coalesces the burst a slider drag produces into one write 250 ms
+   * later. Live is immediate; written is a quarter of a second behind.
+   */
+  applySettings(patch: Partial<SettingsV1>): void {
+    this.profile.patchSettings(patch);
+    this.previewSettings(this.profile.settings);
+  }
 
-    this.states.set('MENU', {
-      enter: () => {
-        this.screens.menus.show(this.menuReturnPage);
-        this.menuReturnPage = 'MAIN';
-        this.input.clearHeld();
-        /**
-         * The map behind the menu (M15, A3; rolled since M17, C2): one of the real maps at
-         * random, built a chunk a frame from here. It used to be the solo picker's map — so
-         * the menu showed the last thing picked, across a reload, and showed the greybox
-         * whenever that was it. Rolled **when there is none**: at boot, and on the way back
-         * from a match, which disposed it (`buildWorld` does, so that the scene never holds
-         * two maps). A return from Settings or Create-a-Class finds the one already there and
-         * keeps it — a re-roll is a rebuild, and a rebuild is a few hundred frames of bare
-         * canvas for a hop to a sibling screen and back.
-         */
-        this.prepareBackdrop();
-      },
-      exit: () => this.screens.menus.hide(),
-    });
+  /**
+   * Apply a settings record to the live systems without persisting it (M17 C4, decision 2).
+   *
+   * The settings screen edits a draft and previews it here on every change, so a sensitivity
+   * is felt on the frame the slider moves; APPLY hands the draft to `applySettings`, BACK
+   * previews the saved record again. The one description of what a setting *does* lives here,
+   * and the persisted path is that description on the saved record.
+   */
+  previewSettings(s: SettingsV1): void {
+    // ---- look ------------------------------------------------------------
+    this.input.setSensitivity(s.sensitivity);
+    this.input.setAdsSensitivity(s.adsSensitivity);
+    this.input.setInvertY(s.invertY);
+    // By identity: a rebind hands over a new table, a slider does not, and `setBindings`
+    // clears the held keys and re-arms the keyboard lock — not something to do per tick.
+    if (s.bindings !== this.appliedBindings) {
+      this.appliedBindings = s.bindings;
+      this.input.setBindings(s.bindings);
+    }
+    this.cameraConfig.fov = clampFov(s.fov);
 
-    /**
-     * LOADOUT (M6). Declared in `GameStates.ts` since M1 with no handler; this is it.
-     *
-     * No world is built and no simulation runs — Create-a-Class is a front-end screen that
-     * reads and writes the profile, and every edit persists through `Profile` as it is made
-     * rather than on the way out. **Reachable from the menu and from nowhere else** since
-     * playtest round 4 (B8); S6.3's "between spawns" is served by the quick class selector's
-     * 1-5, which is what the report asked for. See the doctrine note further down this file.
-     */
-    this.states.set('LOADOUT', {
-      enter: () => {
-        this.input.clearHeld();
-        this.screens.loadoutEditor.show(this.loadoutRange);
-      },
+    // ---- audio -----------------------------------------------------------
+    this.audio.setMasterVolume(s.masterVolume);
+    this.audio.setBusVolume('sfx', s.sfxVolume);
+    this.audio.setBusVolume('music', s.musicVolume);
+    this.audio.setBusVolume('ui', s.uiVolume);
+
+    // ---- video -----------------------------------------------------------
+    this.renderer.setSize(window.innerWidth, window.innerHeight, s.renderScale);
+    this.cameraRig.resize(this.renderer.aspect);
+    this.viewmodel.resize(this.renderer.aspect);
+    this.renderer.setShadowQuality(s.shadowQuality, this.scene);
+    this.renderer.setMotionBlur(s.motionBlur);
+    // A trail of the frame before a resolution change is a smear at the wrong size.
+    this.renderer.resetMotionBlur();
+
+    // ---- presentation ----------------------------------------------------
+    // The palette writes CSS custom properties and notifies the canvases; everything that
+    // draws a gameplay colour reads one of the two. See `ui/Palette.ts`.
+    palette.set(s.colorblind);
+    this.fpsCounter.setVisible(s.showFps);
+  }
+  //#endregion
+
+  // ===================================== PRIVATE METHODS ====================================== \\
+  //#region Private Methods
+  /** The map behind the menu (M15, A3), and on it the fight (E). */
+  private createBackdrop(): MenuBackdrop {
+    return new MenuBackdrop({
+      scene: this.scene,
+      textures: this.textures,
+      shadowQuality: () => this.profile.settings.shadowQuality,
+      // The fight behind the menu (M15, E) draws its bodies from the same service and with the
+      // same filtering as a match does.
+      characterAssets: this.characterAssets,
+      anisotropy: () => this.textures.anisotropy,
+    });
+  }
+
+  /** Every front-end screen, and the intent each of its controls raises. */
+  private createScreens(uiHost: HTMLElement): GameScreens {
+    return new GameScreens({
+      host: uiHost,
+      profile: this.profile,
+      audio: this.audio,
+      selection: this.selection,
       /**
-       * One exit, one destination, and the save happens here (playtest round 4, B5).
+       * Play Solo's Start button. Never connects — see `GameSession.launchMatch`.
        *
-       * `LEGAL_TRANSITIONS` admits `LOADOUT -> MENU` and nothing else, so this handler is the
-       * whole of "no route leaves the editor without saving" — the button, Escape and anything
-       * added later all pass through it. Putting the flush on the button instead would have
-       * been a second writer waiting for a third route.
-       *
-       * `Profile.editLoadout` already persists every edit as it is made, but through
-       * `SaveStore.touch`, which debounces the actual write. Leaving the screen is exactly the
-       * moment that debounce stops being a kindness: a player who edits a class and closes the
-       * tab a second later has made a decision, and `flush` is what makes it a saved one.
+       * `multiplayerJoin` is cleared first because it survives a return to the menu: a player
+       * who played multiplayer, quit to the menu and then chose Play Solo would otherwise be
+       * dialled straight back into the arena by the leftover options.
        */
-      exit: () => {
-        this.screens.loadoutEditor.hide();
-        this.profile.flush();
-        // Back to the page the editor was opened from: the range's class is the testbed
-        // plate's, so it returns to Play Solo; the five classes return to the main page.
-        this.menuReturnPage = this.loadoutRange ? 'PLAY' : 'MAIN';
+      onLaunch: () => {
+        this.session.forgetMultiplayerJoin();
+        void this.session.launchMatch();
+      },
+      onPlayMultiplayer: () => void this.session.playMultiplayer(),
+      serverConfigured: () => isServerConfigured(window.location.search),
+      foreignServer: () => foreignServerHost(window.location.search, window.location.host),
+      onDisplayName: (name) => this.profile.patchSettings({ callsign: name }),
+      onLoadout: (range) => {
+        this.loadoutRange = range;
+        this.transitionTo('LOADOUT');
+      },
+      onSettings: () => this.transitionTo('SETTINGS'),
+      onLoadoutSaveAndExit: () => this.transitionTo('MENU'),
+      onQuitToMenu: () => this.transitionTo('MENU'),
+      onResume: () => this.resumeFromPause(),
+      onToggleOverlay: () => this.toggleOverlayFromPause(),
+      onCheatCode: (code) => this.surfaces.requestCheat(code),
+      onLeaveSummary: () => this.leaveSummary(),
+      onExitSummary: () => this.exitSummary(),
+      pauseStatusLine: () => this.pauseStatusLine(),
+      anisotropy: () => this.textures.anisotropy,
+      characterAssets: this.characterAssets,
+      weaponAssets: this.weaponAssets,
+    });
+  }
+
+  /**
+   * The input listener, and the two readers of the digit keys in the order they are offered
+   * them.
+   *
+   * **Order is the rule** (M11 Gate B). A ballot is up for twenty seconds and takes the digits
+   * while it is, and the quick class selector only ever appears in the pre-match freeze or on
+   * the death screen — moments a ballot cannot be open. Registering the selector after the
+   * overlay makes that ordering explicit rather than relying on the two windows never
+   * overlapping.
+   *
+   * Returning true consumes the key either way, so 1-5 do not also swap weapons and call in
+   * killstreaks: picking class 2 does not pull out the pistol, and picking class 5 does not
+   * call in a Chopper Gunner.
+   */
+  private createInput(canvas: HTMLCanvasElement, settings: SettingsV1): Input {
+    const input = new Input({
+      canvas,
+      sensitivity: settings.sensitivity,
+      invertY: settings.invertY,
+      bindings: settings.bindings,
+    });
+    input.onLockChange((locked) => this.onPointerLockChange(locked));
+    input.onEscape(() => this.onEscape());
+    // Digit keys vote while a ballot is open (M11, §6.4). The overlay answers false whenever
+    // no ballot is open, which is every other moment of the game.
+    input.onDigit((digit) => this.voteOverlay.handleDigit(digit));
+    input.onDigit((digit) => this.quickLoadout.handleDigit(digit));
+    return input;
+  }
+
+  /**
+   * The quick class selector (M11 Gate B), on keys 1-5.
+   *
+   * Process-wide like every other front-end surface, and for the same reason: it outlives the
+   * world it is drawn over, so a migration cannot dispose the panel out from under the player
+   * mid-countdown.
+   */
+  private createQuickLoadout(uiHost: HTMLElement): QuickLoadout {
+    return new QuickLoadout({
+      host: uiHost,
+      slots: () => this.profile.loadouts,
+      equipped: () => this.profile.equippedIndex,
+      onPick: (index) => this.pickQuickClass(index),
+    });
+  }
+
+  /** The non-blocking vote overlay (§4.20), on the session's own clock. */
+  private createVoteOverlay(uiHost: HTMLElement): VoteOverlay {
+    return new VoteOverlay({
+      host: uiHost,
+      onVote: (phase, option) => this.world?.net?.client.sendVote(phase, option),
+      currentTick: () => this.session.syncedServerTick(),
+      audio: this.audio,
+    });
+  }
+
+  /**
+   * The chunked background map build (§6.5). Pumped from the render pass.
+   *
+   * Built at boot and kept, like every other front-end surface, and this one in particular
+   * *must* be: its whole purpose is to be working on the next map while the current world is
+   * still up, and a queue owned by the world would be disposed by the transition it exists to
+   * make seamless.
+   */
+  private createBuildQueue(): MapBuildQueue {
+    return new MapBuildQueue({
+      textures: this.textures,
+      shadowQuality: () => this.profile.settings.shadowQuality,
+      // The report, and the readiness it may be worth telling the server about, are the
+      // session's: the whole point of a background build is that it spans the transition.
+      onComplete: (mapId, _built, report) => this.session.onBackgroundBuildComplete(mapId, report),
+    });
+  }
+
+  /** M8. The settings screen. Built at boot and kept, like every other front-end screen. */
+  private createSettingsScreen(uiHost: HTMLElement): Settings {
+    return new Settings({
+      host: uiHost,
+      read: () => this.profile.settings,
+      // The draft, live (M17 C4, decision 2): applied, not persisted.
+      onPreview: (settings) => this.previewSettings(settings),
+      // APPLY: persisted through the one apply path.
+      onCommit: (settings) => this.applySettings(settings),
+      onBack: () => this.transitionTo(this.settingsReturn),
+      // M15 A4: the reset control lives on the INFO tab now; the wipe is still `Profile`'s.
+      onResetProgress: () => this.profile.resetProgress(),
+      profile: this.profile,
+      serverConfigured: () => isServerConfigured(window.location.search),
+      onDisplayName: (name) => this.profile.patchSettings({ callsign: name }),
+    });
+  }
+
+  /** The HUD surfaces and the two stores they read (C23b). */
+  private createSurfaces(): GameSurfaces {
+    return new GameSurfaces({
+      screens: this.screens,
+      profile: this.profile,
+      input: this.input,
+      quickLoadout: this.quickLoadout,
+      world: () => this.world,
+      currentState: () => this.state,
+    });
+  }
+
+  /** One frame's camera and picture (C23b). */
+  private createFrame(): GameFrame {
+    return new GameFrame({
+      scene: this.scene,
+      renderer: this.renderer,
+      cameraRig: this.cameraRig,
+      viewmodel: this.viewmodel,
+      audio: this.audio,
+      input: this.input,
+      backdrop: this.backdrop,
+      cameraConfig: this.cameraConfig,
+      weaponDef: this.weaponDef,
+      introCamera: this.introCamera,
+    });
+  }
+
+  /** Everything about having a server (C23a), handed the surfaces it drives. */
+  private createSession(): GameSession {
+    return new GameSession({
+      screens: this.screens,
+      profile: this.profile,
+      stats: this.stats,
+      input: this.input,
+      loadingScreen: this.loadingScreen,
+      voteOverlay: this.voteOverlay,
+      buildQueue: this.buildQueue,
+      world: () => this.world,
+      currentState: () => this.state,
+      transitionTo: (next) => this.transitionTo(next),
+      buildWorld: () => this.buildWorld(),
+      teardownWorld: (options) => this.teardownWorld(options),
+      modeEntry: () => this.modeEntry(),
+      locationSearch: () => window.location.search,
+      onCheatsAnswered: (outcome) => this.surfaces.onCheatsAnswered(outcome),
+      onMigrationDiscard: () => this.surfaces.clearInstantCheat(),
+    });
+  }
+
+  /**
+   * The seven screens, each wired to the pair of handlers that is its whole definition.
+   *
+   * Wiring only, so the table of what states exist reads as a table. Every body below is a
+   * named method, in the order the machine reaches them.
+   */
+  private registerStates(): void {
+    this.states.set('BOOT', { enter: () => this.onEnterBoot() });
+    this.states.set('MENU', { enter: () => this.onEnterMenu(), exit: () => this.screens.menus.hide() });
+    this.states.set('LOADOUT', { enter: () => this.onEnterLoadout(), exit: () => this.onExitLoadout() });
+    this.states.set('SETTINGS', { enter: (from) => this.onEnterSettings(from), exit: (to) => this.onExitSettings(to) });
+    this.states.set('MATCH', { enter: () => this.onEnterMatch(), exit: (to) => this.onExitMatch(to) });
+    this.states.set('PAUSED', { enter: () => this.onEnterPaused(), exit: (to) => this.onExitPaused(to) });
+    this.states.set('SUMMARY', { enter: () => this.onEnterSummary(), exit: (to) => this.onExitSummary(to) });
+  }
+
+  /**
+   * BOOT. The loop runs from boot so the menu is composited and the frame source is live
+   * before any map exists.
+   */
+  private onEnterBoot(): void {
+    this.screens.menus.showBoot('Loading…');
+    // The loop runs from boot so the menu is composited and the frame source is live
+    // before any map exists. Deliberately a timeout rather than requestAnimationFrame:
+    // rAF never fires in a background tab, and booting into a tab the user has not
+    // focused yet would hang forever.
+    this.loop.start();
+    this.transport.open();
+    // Development, `?debug=1` or the bot harness only — see `consoleApiWanted`.
+    if (consoleApiWanted(window.location.search, import.meta.env.DEV)) {
+      installConsoleApi(this, this.harness, this.matchHarness);
+    }
+    window.setTimeout(() => this.openFrontEnd(), 32);
+  }
+
+  /**
+   * One tick after boot: refuse the device, or play the splash, or land on the menu.
+   *
+   * ## The device gate (playtest round 5, F1)
+   *
+   * A phone loaded the menu, was shown a table of keyboard bindings and a note about
+   * F11, and could start a match it had no way to play. The check is here rather than
+   * inside the menu because *not transitioning* is the gate: there is no button to
+   * disable, no state to be in, and nothing downstream has to know about it.
+   *
+   * The loop is left running on purpose — the screen is composited by it, and stopping
+   * it would leave a message nobody can see.
+   */
+  private openFrontEnd(): void {
+    const device = playability(readDeviceCapabilities());
+    if (!device.ok) {
+      netLog.warn(`refusing to start: ${device.id} — ${device.headline}`);
+      this.screens.menus.showUnsupported(device.headline, device.detail);
+      return;
+    }
+    if (splashWanted(window.location.search)) {
+      this.playSplash();
+      return;
+    }
+    this.transitionTo('MENU');
+    this.startBotHarnessIfRequested();
+  }
+
+  /**
+   * The splash (M17, C6), unless something is driving the page: the bot harness
+   * starts its match from the menu and cannot press a key, and `?nosplash` is for
+   * the developer who has seen it. The menu's map is rolled and built *behind* the
+   * splash, so the menu lands on a built map rather than a bare canvas — the one
+   * loading screen this project has ever needed, hiding the one build it has.
+   */
+  private playSplash(): void {
+    this.prepareBackdrop();
+    this.splash = new Splash({
+      host: this.uiHost,
+      audio: this.audio,
+      // The key or the click is the user gesture the AudioContext needs (decision 1).
+      onGesture: () => this.audio.start(),
+      onReveal: () => this.transitionTo('MENU'),
+      onDone: () => {
+        this.splash = null;
       },
     });
+    this.splash.play();
+  }
 
+  private onEnterMenu(): void {
+    this.screens.menus.show(this.menuReturnPage);
+    this.menuReturnPage = 'MAIN';
+    this.input.clearHeld();
     /**
-     * SETTINGS (M8). A front-end screen with no world, like LOADOUT.
-     *
-     * `settingsReturn` is where Back goes, captured on the way in — the screen is reachable
-     * from the menu and from the pause screen and must come back to whichever one sent it,
-     * because a player who paused a match to fix their sensitivity has a match waiting.
+     * The map behind the menu (M15, A3; rolled since M17, C2): one of the real maps at
+     * random, built a chunk a frame from here. It used to be the solo picker's map — so
+     * the menu showed the last thing picked, across a reload, and showed the greybox
+     * whenever that was it. Rolled **when there is none**: at boot, and on the way back
+     * from a match, which disposed it (`buildWorld` does, so that the scene never holds
+     * two maps). A return from Settings or Create-a-Class finds the one already there and
+     * keeps it — a re-roll is a rebuild, and a rebuild is a few hundred frames of bare
+     * canvas for a hop to a sibling screen and back.
      */
-    this.states.set('SETTINGS', {
-      enter: (from) => {
-        this.settingsReturn = from === 'PAUSED' ? 'PAUSED' : 'MENU';
-        this.input.clearHeld();
-        this.settingsScreen.show();
-      },
-      exit: (to) => {
-        this.settingsScreen.hide();
-        if (to === 'MENU') this.teardownWorld();
-      },
-    });
+    this.prepareBackdrop();
+  }
 
-    this.states.set('MATCH', {
-      enter: () => {
-        this.audio.start();
-        this.buildWorld();
-        this.world?.match.setActive(true);
-        // The click that started the match must not also pull the trigger.
-        this.input.clearHeld();
-        // The AFK harness has nobody to capture the cursor for, and asking for it without
-        // a user gesture logs a rejection — which would put noise in the console the soak
-        // run is there to prove is quiet.
-        if (this.world?.botHarness == null && !this.matchHarness.isRunning) {
-          // Armed rather than merely requested: resuming from the pause screen with Escape
-          // has no user gesture, and resuming with the button can land inside Chrome's
-          // post-Escape cooldown. Armed, the next click gets the cursor back either way.
-          this.input.armPointerLock(true);
-          // Only bites while the page is fullscreen; see Input.lockKeyboard and PLAN.md.
-          this.input.lockKeyboard();
-        }
-      },
-      exit: (to) => {
-        this.input.unlockKeyboard();
-        this.input.armPointerLock(false);
-        this.audio.setSlide(false, 0, 0, 0, 0);
-        // Pausing keeps the match active and the world built: it is the same match, simply
-        // not advancing. Only leaving for good deactivates it.
-        if (to === 'PAUSED') return;
-        this.input.exitPointerLock();
-        this.world?.match.setActive(false);
-        // Going back to the menu without a result tears down here; going to SUMMARY keeps
-        // the world alive so the scene is still behind the summary screen.
-        if (to === 'MENU') this.teardownWorld();
-      },
-    });
+  /**
+   * LOADOUT (M6). Declared in `GameStates.ts` since M1 with no handler; this is it.
+   *
+   * No world is built and no simulation runs — Create-a-Class is a front-end screen that
+   * reads and writes the profile, and every edit persists through `Profile` as it is made
+   * rather than on the way out. **Reachable from the menu and from nowhere else** since
+   * playtest round 4 (B8); S6.3's "between spawns" is served by the quick class selector's
+   * 1-5, which is what the report asked for. See the doctrine note further down this file.
+   */
+  private onEnterLoadout(): void {
+    this.input.clearHeld();
+    this.screens.loadoutEditor.show(this.loadoutRange);
+  }
 
+  /**
+   * One exit, one destination, and the save happens here (playtest round 4, B5).
+   *
+   * `LEGAL_TRANSITIONS` admits `LOADOUT -> MENU` and nothing else, so this handler is the
+   * whole of "no route leaves the editor without saving" — the button, Escape and anything
+   * added later all pass through it. Putting the flush on the button instead would have
+   * been a second writer waiting for a third route.
+   *
+   * `Profile.editLoadout` already persists every edit as it is made, but through
+   * `SaveStore.touch`, which debounces the actual write. Leaving the screen is exactly the
+   * moment that debounce stops being a kindness: a player who edits a class and closes the
+   * tab a second later has made a decision, and `flush` is what makes it a saved one.
+   */
+  private onExitLoadout(): void {
+    this.screens.loadoutEditor.hide();
+    this.profile.flush();
+    // Back to the page the editor was opened from: the range's class is the testbed
+    // plate's, so it returns to Play Solo; the five classes return to the main page.
+    this.menuReturnPage = this.loadoutRange ? 'PLAY' : 'MAIN';
+  }
+
+  /**
+   * SETTINGS (M8). A front-end screen with no world, like LOADOUT.
+   *
+   * `settingsReturn` is where Back goes, captured on the way in — the screen is reachable
+   * from the menu and from the pause screen and must come back to whichever one sent it,
+   * because a player who paused a match to fix their sensitivity has a match waiting.
+   */
+  private onEnterSettings(from: GameStateId): void {
+    this.settingsReturn = from === 'PAUSED' ? 'PAUSED' : 'MENU';
+    this.input.clearHeld();
+    this.settingsScreen.show();
+  }
+
+  private onExitSettings(to: GameStateId): void {
+    this.settingsScreen.hide();
+    if (to === 'MENU') this.teardownWorld();
+  }
+
+  private onEnterMatch(): void {
+    this.audio.start();
+    this.buildWorld();
+    this.world?.match.setActive(true);
+    // The click that started the match must not also pull the trigger.
+    this.input.clearHeld();
+    // The AFK harness has nobody to capture the cursor for, and asking for it without
+    // a user gesture logs a rejection — which would put noise in the console the soak
+    // run is there to prove is quiet.
+    if (this.world?.botHarness == null && !this.matchHarness.isRunning) {
+      // Armed rather than merely requested: resuming from the pause screen with Escape
+      // has no user gesture, and resuming with the button can land inside Chrome's
+      // post-Escape cooldown. Armed, the next click gets the cursor back either way.
+      this.input.armPointerLock(true);
+      // Only bites while the page is fullscreen; see Input.lockKeyboard and PLAN.md.
+      this.input.lockKeyboard();
+    }
+  }
+
+  private onExitMatch(to: GameStateId): void {
+    this.input.unlockKeyboard();
+    this.input.armPointerLock(false);
+    this.audio.setSlide(false, 0, 0, 0, 0);
+    // Pausing keeps the match active and the world built: it is the same match, simply
+    // not advancing. Only leaving for good deactivates it.
+    if (to === 'PAUSED') return;
+    this.input.exitPointerLock();
+    this.world?.match.setActive(false);
+    // Going back to the menu without a result tears down here; going to SUMMARY keeps
+    // the world alive so the scene is still behind the summary screen.
+    if (to === 'MENU') this.teardownWorld();
+  }
+
+  /**
+   * PAUSED (M5). The world stays built and `simulate` stops advancing it.
+   *
+   * Deliberately not a `Loop.stop()`: the render pass still has to run so the pause
+   * screen is composited over a live scene, and `FrameStats` should keep sampling so the
+   * histogram does not develop a hole every time somebody pauses.
+   */
+  private onEnterPaused(): void {
+    this.input.clearHeld();
+    // Disarmed while paused: a click belongs to the pause menu's buttons, not to
+    // recapturing the cursor the player just released.
+    this.input.armPointerLock(false);
+    this.input.exitPointerLock();
+    // The overlay is interactive DOM over a modal screen, which is exactly the clash the
+    // pause menu was reported for, so it goes off for the pause — and the pause menu has
+    // a button to bring it back deliberately. Nothing is written here to arrange that:
+    // `debugOverlayVisible` returns false for an `'inMatch'` request on this screen, and
+    // true again the moment the player resumes. The request is never touched, so there is
+    // nothing for the resume to have to remember.
+    this.screens.pauseMenu.show();
+  }
+
+  private onExitPaused(to: GameStateId): void {
+    this.screens.pauseMenu.hide();
+    if (to === 'MENU') {
+      this.world?.match.setActive(false);
+      this.teardownWorld();
+    }
+  }
+
+  /**
+   * SUMMARY. The result, the XP it is worth, and the board that shows both.
+   *
+   * **The server's result wins over the local one** (M11, §6.9). Over the network the
+   * authoritative outcome arrives as `MsgS.Summary`, built by the instance from its own
+   * `ScoreSystem` **before teardown**. The client's `MatchFlow` has a result too,
+   * reconstructed from replicated state, and where they disagree the server is right by
+   * definition — §4.15 puts scores and match flow on the replicated side of the table. The
+   * local one is still the fallback, because single-player has no other.
+   */
+  private onEnterSummary(): void {
+    const match = this.world?.match ?? null;
+    const result = this.session.takeNetSummary() ?? match?.flow.result ?? null;
+    if (match === null || result === null) {
+      // Nothing to summarise: this can only happen if SUMMARY is entered by hand.
+      this.transitionTo('MENU');
+      return;
+    }
+    // Bank the match here rather than in `MatchEnded`: by this point nothing else is
+    // going to change, and the profile is written exactly once (S6.6). `bankProgression`
+    // is idempotent, so a harness that re-enters SUMMARY cannot double-count.
+    const banks = findMode(this.selection.modeId).banksProgress;
+    // "Did I win" is the server's seat — side and entity — not the single-player constant,
+    // and it is `wonBy` rather than a side comparison because in Free-for-All only one
+    // entity won (M13 Phase A, bug 4.4).
+    const won = wonBy(result, match.localTeam, match.localId);
     /**
-     * PAUSED (M5). The world stays built and `simulate` stops advancing it.
+     * The server's XP, when there is a server (§6.9).
      *
-     * Deliberately not a `Loop.stop()`: the render pass still has to run so the pause
-     * screen is composited over a live scene, and `FrameStats` should keep sampling so the
-     * histogram does not develop a hole every time somebody pauses.
+     * *"XP and challenge progress are awarded by the instance from authoritative events and
+     * delivered with the summary, **before teardown**. The client persists them to its own
+     * `localStorage` save."* So the client does not compute the total over the network — it
+     * receives it, animates it, and banks it. Locally it still computes its own, because in
+     * single-player there is nobody else to.
+     *
+     * Both paths end at `Profile.bankMatch`, which is the one place XP becomes durable.
      */
-    this.states.set('PAUSED', {
-      enter: () => {
-        this.input.clearHeld();
-        // Disarmed while paused: a click belongs to the pause menu's buttons, not to
-        // recapturing the cursor the player just released.
-        this.input.armPointerLock(false);
-        this.input.exitPointerLock();
-        // The overlay is interactive DOM over a modal screen, which is exactly the clash the
-        // pause menu was reported for, so it goes off for the pause — and the pause menu has
-        // a button to bring it back deliberately. Nothing is written here to arrange that:
-        // `debugOverlayVisible` returns false for an `'inMatch'` request on this screen, and
-        // true again the moment the player resumes. The request is never touched, so there is
-        // nothing for the resume to have to remember.
-        this.screens.pauseMenu.show();
-      },
-      exit: (to) => {
-        this.screens.pauseMenu.hide();
-        if (to === 'MENU') {
-          this.world?.match.setActive(false);
-          this.teardownWorld();
-        }
-      },
-    });
+    const report = this.session.bankServerXp(won) ?? match.bankProgression(won);
+    this.showSummaryScreen(match, result, banks ? report : null);
+  }
 
-    this.states.set('SUMMARY', {
-      enter: () => {
-        const match = this.world?.match ?? null;
-        /**
-         * The server's result wins over the local one (M11, §6.9).
-         *
-         * Over the network the authoritative outcome arrives as `MsgS.Summary`, built by the
-         * instance from its own `ScoreSystem` **before teardown**. The client's `MatchFlow` has
-         * a result too, reconstructed from replicated state, and where they disagree the
-         * server is right by definition — §4.15 puts scores and match flow on the replicated
-         * side of the table.
-         *
-         * The local one is still the fallback, because single-player has no other.
-         */
-        const result = this.session.takeNetSummary() ?? match?.flow.result ?? null;
-        if (match === null || result === null) {
-          // Nothing to summarise: this can only happen if SUMMARY is entered by hand.
-          this.transitionTo('MENU');
-          return;
-        }
-        // Bank the match here rather than in `MatchEnded`: by this point nothing else is
-        // going to change, and the profile is written exactly once (S6.6). `bankProgression`
-        // is idempotent, so a harness that re-enters SUMMARY cannot double-count.
-        const banks = findMode(this.selection.modeId).banksProgress;
-        // "Did I win" is the server's seat — side and entity — not the single-player constant,
-        // and it is `wonBy` rather than a side comparison because in Free-for-All only one
-        // entity won (M13 Phase A, bug 4.4).
-        const won = wonBy(result, match.localTeam, match.localId);
-        /**
-         * The server's XP, when there is a server (§6.9).
-         *
-         * *"XP and challenge progress are awarded by the instance from authoritative events and
-         * delivered with the summary, **before teardown**. The client persists them to its own
-         * `localStorage` save."* So the client does not compute the total over the network — it
-         * receives it, animates it, and banks it. Locally it still computes its own, because in
-         * single-player there is nobody else to.
-         *
-         * Both paths end at `Profile.bankMatch`, which is the one place XP becomes durable.
-         */
-        const report = this.session.bankServerXp(won) ?? match.bankProgression(won);
-        const mapEntry = this.mapEntry();
-        this.screens.showSummary(
-          match,
-          result,
-          {
-            mapName: mapEntry.name,
-            mapPicture: mapEntry.picture,
-            modeName: this.modeEntry().name,
-            // The tier is this client's choice in single-player; connected, the roster is the server's.
-            difficulty: this.session.isConnected ? null : BOT_DIFFICULTY_NAMES[this.selection.difficulty],
-          },
-          banks ? report : null,
-          this.profile.prestige,
-          this.lineupSource(match),
-          // The connection decides this, not the hold. See `GameScreens.showSummary`.
-          this.session.isConnected,
-        );
-        this.screens.summary.setRemainingSeconds(this.session.summaryRemainingSeconds());
+  /** The board itself, with what the map, the mode and the roster were called. */
+  private showSummaryScreen(match: Match, result: MatchResult, report: XpReport | null): void {
+    const mapEntry = this.mapEntry();
+    this.screens.showSummary(
+      match,
+      result,
+      {
+        mapName: mapEntry.name,
+        mapPicture: mapEntry.picture,
+        modeName: this.modeEntry().name,
+        // The tier is this client's choice in single-player; connected, the roster is the server's.
+        difficulty: this.session.isConnected ? null : BOT_DIFFICULTY_NAMES[this.selection.difficulty],
       },
-      exit: (to) => {
-        this.screens.hideSummary();
-        /**
-         * Back into the game keeps the game (M11 Gate B playtest).
-         *
-         * The only two ways out of SUMMARY used to be "the server rotated us" and "tear
-         * everything down", and the Continue button took the second one — so a player who
-         * pressed it while connected did not go back to the lobby, they left the server: the
-         * world was disposed, `teardownWorld` cleared `this.server`, the socket closed, and
-         * they landed on the main menu. Reported as *"extra clicks throw the player completely
-         * out to the Main Menu instead of the lobby"*, which is exactly what it did.
-         *
-         * `to === 'MATCH'` covers both remaining routes — the button, and the rotation that
-         * `applyRotation` has already prepared a world for — and neither of them wants this
-         * world dropped here.
-         */
-        if (to === 'MATCH') return;
-        this.teardownWorld();
-      },
-    });
+      report,
+      this.profile.prestige,
+      this.lineupSource(match),
+      // The connection decides this, not the hold. See `GameScreens.showSummary`.
+      this.session.isConnected,
+    );
+    this.screens.summary.setRemainingSeconds(this.session.summaryRemainingSeconds());
+  }
+
+  /**
+   * Back into the game keeps the game (M11 Gate B playtest).
+   *
+   * The only two ways out of SUMMARY used to be "the server rotated us" and "tear
+   * everything down", and the Continue button took the second one — so a player who
+   * pressed it while connected did not go back to the lobby, they left the server: the
+   * world was disposed, `teardownWorld` cleared `this.server`, the socket closed, and
+   * they landed on the main menu. Reported as *"extra clicks throw the player completely
+   * out to the Main Menu instead of the lobby"*, which is exactly what it did.
+   *
+   * `to === 'MATCH'` covers both remaining routes — the button, and the rotation that
+   * `applyRotation` has already prepared a world for — and neither of them wants this
+   * world dropped here.
+   */
+  private onExitSummary(to: GameStateId): void {
+    this.screens.hideSummary();
+    if (to === 'MATCH') return;
+    this.teardownWorld();
   }
 
   /**
@@ -1123,299 +1206,6 @@ export class Game {
    * have to be cleared correctly on all of them. Asked every frame, there is nothing to get
    * stuck, and a panel stuck on screen is one eating the digit keys for the rest of the match.
    */
-  /**
-   * This client's entitlements, from the one authority that owns them (round 4, F14).
-   *
-   * Connected, it is the server's replicated answer and whatever this process may have granted
-   * itself offline is ignored — which is also what makes cheating offline and then joining a
-   * server clean up after itself. Offline, there is no server to ask and this process is the
-   * authority.
-   *
-   * It was a merge of two halves until the debug bit was deleted. With every bit in the table
-   * now server-authored there is one authority and one expression, which is the simplification
-   * that removing a redundant fact buys.
-   */
-  private get cheatMask(): number {
-    const net = this.world?.net?.client;
-    return (net === undefined ? this.offlineCheats : net.cheatMask) & CHEAT_SIMULATION;
-  }
-
-  /**
-   * A code was typed on the pause screen (playtest round 4, F14).
-   *
-   * **The one door**, and it is the same shape as `ClientMatch.spendStreak` for the same reason:
-   * what a code means is one question and who is entitled to answer it is another, and the
-   * second depends on which kind of match this is. Nothing downstream ever asks whether a code
-   * was typed — every effect reads the entitlement.
-   *
-   * Three routes out, and the ordering is the policy:
-   *
-   * - **Unrecognised** is answered here, with no round trip. It is a typo, and asking a server
-   *   about it would mean a server that has cheats off answering *"cheats are disabled"* about a
-   *   string that is not a code — sending somebody to find an operator they do not need.
-   * - **A local code** is applied here, because the client is its authority. It also moves
-   *   `debugRequest`, and that is not a second writer of one fact: *may they* and *do they want
-   *   it* are two facts, and the code is the only input that has an opinion about both.
-   * - **Everything else** is a request. Connected, it goes to the server and nothing changes
-   *   locally until the answer arrives — §4.16, and the same rule as an unoptimistic streak.
-   *   Offline, the shared table is applied against `localCheats`, which is this process being
-   *   the authority rather than a second copy of the rule.
-   */
-  /** The caption for whichever screen the code was typed on: the pause menu, or the menu. */
-  private setCodeResult(text: string): void {
-    this.screens.pauseMenu.setCodeResult(text);
-    this.screens.menus.setCodeResult(text);
-  }
-
-  private requestCheat(code: string): void {
-    const entry = parseCheatCode(code);
-    if (entry === null) {
-      this.setCodeResult(cheatOutcomeText(CheatOutcome.RefusedUnknown));
-      return;
-    }
-
-    if (isSurfaceCheat(entry)) {
-      /**
-       * `DEBUG666` writes `debugRequest` and nothing else, and that is the fix.
-       *
-       * F14 wrote an entitlement bit *and* the request, which made two copies of one fact — and
-       * the × writes only the request, so closing the panel left the bit saying "unlocked" and
-       * the code's next press read as "off". One store, four writers (the ×, Escape, the pause
-       * button and this), exactly as P1 built it for B1.
-       *
-       * Toggled against the **visible** state rather than against a flag of its own: if the
-       * overlay is up the code takes it down, and if it is not the code puts it up. `'onPause'`
-       * because this is where it was typed and the tuning sliders need a cursor — which is what
-       * that member of the tri-state means.
-       */
-      const wasVisible = debugOverlayVisible(this.hudSurfaceState());
-      this.debugRequest = wasVisible ? 'none' : 'onPause';
-      this.setCodeResult(cheatOutcomeText(wasVisible ? CheatOutcome.Revoked : CheatOutcome.Granted));
-      return;
-    }
-
-    if (isUnlockCheat(entry)) {
-      /**
-       * A grant against this client's own save, which is the one store it is the authority for.
-       *
-       * *What* everything means is `grantEverything`, in `shared/meta/Unlocks.ts` beside the
-       * gates it defeats — this handler's business is that the grant goes through `Profile`,
-       * the same writers progression itself uses, so the unlock state, the editor's chips and
-       * the loadout sanitiser see the result as earned rather than as a second rule about
-       * what is available. The list lived here once, and shipped twice missing a category.
-       *
-       * The per-weapon counters are deliberately left alone. Kills and headshots are what the
-       * camo *challenges* read, and inventing them would pay out the account's XP awards for
-       * work nobody did — the finish is the reward asked for, not the career that earned it.
-       */
-      grantEverything(this.profile);
-      this.setCodeResult(cheatOutcomeText(CheatOutcome.UnlockApplied));
-      this.screens.loadoutEditor.repaint();
-      // The level is on the header's card, and this is the one grant that moves it while the
-      // player is looking at that header.
-      this.screens.menus.refreshCard();
-      return;
-    }
-
-    const client = this.world?.net?.client;
-    if (client !== undefined) {
-      // Held so the reply can be captioned. The server answers with an outcome rather than a
-      // label, deliberately — a label on the wire would be the server deciding how a client
-      // words its own HUD — and this is the only thing that knows which code produced it.
-      this.pendingInstant = entry.effect.kind === 'instant' ? entry : null;
-      client.sendCheat(entry.code);
-      // No optimism, and no "asking..." either: the reply is one frame away at any playable
-      // ping, and a line that had to be corrected would be worse than a line that waits.
-      return;
-    }
-
-    const match = this.world?.match;
-    if (match === undefined) {
-      /**
-       * Typed on the main menu, where there is no match to apply it to (the human,
-       * 2026-09-24).
-       *
-       * Two things had to be true and only one of them was. Nothing *is* granted here —
-       * this returns before every writer, so a god mode typed at the menu was never going
-       * to follow anybody into a match — but the answer went to the pause screen's caption
-       * line, which is not the screen the player is looking at, so the field simply ate the
-       * code and said nothing. Both screens now, and `RefusedNoSeat`'s wording says which
-       * screen the code belongs on rather than merely that this is not it.
-       */
-      this.setCodeResult(cheatOutcomeText(CheatOutcome.RefusedNoSeat));
-      return;
-    }
-    if (entry.effect.kind === 'instant') {
-      // The same door the server uses, and the reason it is a door at all: P4's balance is
-      // credited from the score rather than read out of it, so unearned kills buy streaks
-      // without ever appearing in the match results.
-      match.streaks.creditKills(match.localId, entry.effect.kills);
-      this.raiseInstantCheat(entry);
-      this.setCodeResult(cheatOutcomeText(CheatOutcome.InstantApplied));
-      return;
-    }
-    if (entry.effect.kind !== 'toggle') return;
-    const after = toggleCheat(this.offlineCheats, entry.effect.bits);
-    this.offlineCheats = after;
-    const granted = (after & entry.effect.bits) !== 0;
-    this.setCodeResult(cheatOutcomeText(granted ? CheatOutcome.Granted : CheatOutcome.Revoked));
-  }
-
-  /**
-   * Ask for an entitlement by bits, for the surfaces that are not a text field (round 4, F14).
-   *
-   * The QA spectator panel and `__p7.spectate.*` want *"god mode on"* rather than a string
-   * to type, and they must not become a second way to grant one — so the bits are resolved to the
-   * code that toggles them and go through the same door a typed code does. A bit combination with
-   * no code is not a request anybody can make, which is the point rather than an edge case.
-   */
-  /**
-   * Start announcing an instant cheat (F14's fix).
-   *
-   * One writer of both fields, and it is idempotent in the way that matters: typing the code
-   * again while the caption is up restarts the four seconds rather than stacking anything.
-   */
-  private raiseInstantCheat(entry: CheatCode): void {
-    this.instantCheatLabelText = instantCheatLabel(entry);
-    this.instantCheatUntilMs = nowMs() + CHEAT_NOTICE_SECONDS * 1000;
-  }
-
-  /**
-   * The server answered a cheat code (playtest round 4, F14).
-   *
-   * Only the sentence arrives: the entitlements are already in `NetClient.cheatMask` —
-   * replicated state, applied before this fires — so there is nothing here to write and
-   * nothing that could disagree with what the simulation is doing.
-   *
-   * It goes to a code field's own line rather than through `voteOverlay.notice`, and
-   * that is not a preference: the vote overlay lives under `.op-screen`'s backdrop, so a
-   * notice raised while the player is looking at the field they typed into would be painted
-   * over by the screen it is answering. `setCodeResult` writes both fields, which is the
-   * one rule this feature has about captions now — an answer goes where the question could
-   * have been asked, not where the code happens to think the player is standing.
-   */
-  private onCheatsAnswered(outcome: number): void {
-    this.setCodeResult(cheatOutcomeText(outcome));
-    // An instant cheat is announced on the reply and never before it: the payment is the
-    // server's, and a caption raised on the send would be claiming one that may be refused.
-    const pending = this.pendingInstant;
-    this.pendingInstant = null;
-    if (outcome === CheatOutcome.InstantApplied && pending !== null) {
-      this.raiseInstantCheat(pending);
-    }
-    netLog.info(`cheat code answered: outcome ${outcome}.`);
-  }
-
-  /** Drop it. Called on migration, beside the streak and ballot discards. */
-  private clearInstantCheat(): void {
-    this.pendingInstant = null;
-    this.instantCheatLabelText = '';
-    this.instantCheatUntilMs = 0;
-  }
-
-  /**
-   * The caption, or `''` once the deadline has passed.
-   *
-   * Derived rather than cleared by a callback, so there is no expiry to get stuck: the answer is
-   * right on the frame the deadline passes whether or not anything happened on it. That is the
-   * same reasoning `updateHudSurfaces` gives about every other surface, applied to a value with
-   * a clock in it.
-   */
-  private get instantCheatCaption(): string {
-    if (this.instantCheatLabelText === '') return '';
-    return nowMs() < this.instantCheatUntilMs ? this.instantCheatLabelText : '';
-  }
-
-  private requestCheatBits(bits: number): void {
-    const code = cheatCodeToggling(bits);
-    if (code === null) return;
-    this.requestCheat(code);
-  }
-
-  private updateHudSurfaces(): void {
-    const state = this.hudSurfaceState();
-
-    // `classWindow`, not `window`: this file legitimately names the browser global in
-    // `onResize`, and shadowing it here would be a trap for the next person to add a line.
-    const classWindow = quickLoadoutWindow(state);
-    if (classWindow === 'none') {
-      this.quickLoadout.hide();
-    } else {
-      // The caption is not decoration: "SELECT CLASS" during the pre-match freeze and "SELECT
-      // NEXT CLASS" while dead are different promises about when the rifle arrives.
-      this.quickLoadout.show(classWindow === 'respawn' ? 'Select next class' : 'Select class');
-      this.quickLoadout.update();
-    }
-
-    const match = this.world?.match;
-    if (match !== undefined) match.setScoreboardOpen(scoreboardOpen(state));
-    /**
-     * The score banner and the streak strip, from the same predicate the board reads (F7).
-     *
-     * Pushed from here rather than decided inside the HUD, for the reason every other line in
-     * this method exists: one place evaluates the rules, once a frame, from one record. The
-     * alternative — each surface asking whether it is in the arena — is three copies of a
-     * comparison and a fourth surface that forgets to make it.
-     */
-    if (match !== undefined) match.setResultSurfacesVisible(resultSurfacesVisible(state));
-
-    const overlay = this.world?.debug.overlay;
-    if (overlay !== undefined) overlay.setVisible(debugOverlayVisible(state));
-
-    // F14. Both are surfaces in the round-4 sense — derived once per frame, from state that
-    // outlives them — and both are idempotent, which is what lets the pause screen's button
-    // appear on the frame the code is typed without anybody refreshing it.
-    if (match !== undefined) match.setCheatTag(cheatTag(state));
-    // B8. A surface in the same sense as every line above it — one writer, derived once a frame
-    // from state that outlives it — which is what makes it survive a pause and a rejoin without
-    // anything being remembered across either.
-    if (match !== undefined) match.setAimWarning(aimWarningText(state));
-    /**
-     * F8's mode header, on the same predicate the banner and the board share.
-     *
-     * `resultSurfacesVisible` is the arena test round 4 established: the waiting room has no
-     * objectives worth a strip, and a header showing three neutral flags in a room with no flags
-     * would be the fourth surface that forgot to ask. The slots themselves come from the mode
-     * and are drawn without interpretation — this line is the whole of the HUD's knowledge of
-     * what Domination is.
-     */
-    if (match !== undefined) {
-      match.setHeaderSlots(resultSurfacesVisible(state) ? match.headerSlots : EMPTY_HEADER);
-    }
-    this.screens.pauseMenu.setDebugAvailable(debugUnlocked(state));
-  }
-
-  /**
-   * This frame's answer to everything `shared/ui/HudSurfaces.ts` asks about.
-   *
-   * Rebuilt per frame rather than kept as a field, because every value in it is already owned
-   * somewhere else and a retained copy would be exactly the second writer this removed.
-   */
-  private hudSurfaceState(): HudSurfaceState {
-    const match = this.world?.match;
-    return {
-      screen: this.state,
-      hasWorld: match !== undefined,
-      playerDead: match?.isPlayerDead ?? false,
-      respawnSeconds: match?.playerRespawnSeconds ?? 0,
-      phase: match?.flow.currentPhase ?? 'WARMUP',
-      round: match?.flow.round ?? 1,
-      scoreboardHeld: match?.scoreboardHeld ?? false,
-      debugRequest: this.debugRequest,
-      cheatMask: this.cheatMask,
-      instantCheatLabel: this.instantCheatCaption,
-      // A fact about the world, not about this frame: `MatchWorld` asks `isArenaInstance` once,
-      // when the world is built, and a migration rebuilds the world.
-      inWarmupArena: match?.inWarmupArena ?? false,
-      // B8. Off `Input`, which this class owns rather than the world — so unlike every field
-      // above, these three do not go `undefined` between a teardown and the next build, and the
-      // banner is describing the same pointer across a rotation that it was before it.
-      wantsPointerLock: this.input.pointerLockArmed,
-      pointerLocked: this.input.isLocked,
-      lockRefused: this.input.pointerLockRefused,
-    };
-  }
-
   /**
    * The player pressed 1-5.
    *
@@ -1522,6 +1312,32 @@ export class Game {
     void this.weaponAssets.preloadKnife().catch(() => undefined);
     void this.weaponAssets.preloadHands().catch(() => undefined);
     this.warmWorldAssets();
+    this.warmArsenalViewmodels();
+  }
+
+  /**
+   * The rest of the arsenal's viewmodels, behind everything above (BACKLOG #35).
+   *
+   * The reported symptom: land on a weapon in Create-a-Class, or carry a class edited between
+   * spawns into a match, and the grey primitive fallback stands in for as long as the file
+   * takes to arrive. Nothing warmed these, so the editor and the preview asked per weapon as
+   * the player reached one — `LoadoutEditor.warmWeaponFile` and `WeaponPreview.showWhenLoaded`
+   * — and that request is what the grey was waiting on.
+   *
+   * **Last, and that is the whole of the decision.** Three answers were on the table: warm the
+   * arsenal at boot, warm it behind the menu once the equipped class is ready, or leave it on
+   * demand and spend the fix on a better placeholder. This is the middle one. A full template
+   * is roughly four times an LOD, so the arsenal is tens of megabytes — real on a connection
+   * that may not want them, and fetched once a version because the cache headers keep them.
+   * Asking for them *after* the two weapons the player is about to hold, the grenades, the
+   * knife, the arms and the world's LODs means the queue is already satisfied by the time
+   * these start, and the moment the player presses Play costs exactly what it cost before.
+   *
+   * `preload` is a no-op for a weapon that already has its template, so the two equipped ones
+   * are not fetched twice and this is cheap to call on every screen the player passes through.
+   */
+  private warmArsenalViewmodels(): void {
+    for (const def of ALL_WEAPONS) void this.weaponAssets.preload(def.id).catch(() => undefined);
   }
 
   /**
@@ -1532,9 +1348,10 @@ export class Game {
    * somebody threw one. So they landed in the opening seconds of a match, each with a first frame
    * that compiled its programs — the stalls the playtest timed on entering the arena (the turret
    * and three bodies' rifles) and on entering Depot (the station and two more). The menu is where
-   * there is time. Unlike the viewmodel's files above this is the whole arsenal, because the bots
-   * deal from all of it; the bodies' files are a quarter of a viewmodel's each, about nine
-   * megabytes for the fifteen, fetched once a version — the cache headers keep them after that.
+   * there is time. This is the whole arsenal, because the bots deal from all of it, and at *LOD*
+   * detail: the bodies' files are a quarter of a viewmodel's each, about nine megabytes for the
+   * fifteen, fetched once a version — the cache headers keep them after that. The full
+   * templates follow, in `warmArsenalViewmodels`, deliberately behind these.
    * Each one is compiled for the scene's lights as it lands (`GpuWarmup.adopt`).
    */
   private warmWorldAssets(): void {
@@ -1604,30 +1421,58 @@ export class Game {
     if (this.world !== null) return;
     // One map in the scene, ever: the menu's backdrop goes before the match's map arrives.
     this.backdrop.dispose();
-    const modeEntry = this.modeEntry();
-    // One cosmetic skin deck per Match, outside shared/simulation code: gameplay never depends
-    // on the skin a client happened to draw. Seeded rather than `Math.random` (S2), from the
-    // two counters that move between matches — the lifetime count in the save and the
-    // per-session build count — so consecutive matches deal different decks and any one of
-    // them can be dealt again from the same save.
+    const characterSelector = this.dealCharacterDeck();
+    this.characterSelector = characterSelector;
+    this.world = new MatchWorld(this.worldDeps(characterSelector));
+    // A new map is a new light setup, and every program in the scene is compiled for one: the
+    // first frame of the world prepares them instead of stalling on them. See `GpuWarmup`.
+    gpuWarmup.requestScene();
+    this.bindDebugOverlay();
+  }
+
+  /**
+   * One cosmetic skin deck per Match, outside shared/simulation code: gameplay never depends
+   * on the skin a client happened to draw.
+   *
+   * Seeded rather than `Math.random` (S2), from the two counters that move between matches —
+   * the lifetime count in the save and the per-session build count — so consecutive matches
+   * deal different decks and any one of them can be dealt again from the same save.
+   */
+  private dealCharacterDeck(): RandomCharacterSelector {
     this.worldsBuilt++;
-    const characterSelector = new RandomCharacterSelector(
+    return new RandomCharacterSelector(
       new Rng(CHARACTER_DECK_SALT ^ (this.profile.save.profile.matchesPlayed << 16) ^ this.worldsBuilt),
     );
-    this.characterSelector = characterSelector;
-    this.world = new MatchWorld({
+  }
+
+  /**
+   * The body the player declared (M16, B6), or the deal for one who did not — the fallback
+   * the `CharacterAvatarProvider` comment promised. A bot's `characterId` is null, so the
+   * whole roster still deals exactly as it did before the wire.
+   */
+  private avatarFor(
+    actor: { characterId: CharacterId | null; entityId: number },
+    characterSelector: RandomCharacterSelector,
+  ): ReturnType<CharacterAssetService['avatarProvider']> {
+    return this.characterAssets.avatarProvider(
+      characterDefinition(actor.characterId ?? characterSelector.characterIdFor(actor.entityId)),
+    );
+  }
+
+  /**
+   * Everything the per-match world is built from: this process's long-lived objects, the
+   * config records the tuning panel holds, and the suppliers for the three facts that outlive
+   * the world itself.
+   */
+  private worldDeps(characterSelector: RandomCharacterSelector): MatchWorldDeps {
+    const modeEntry = this.modeEntry();
+    return {
       bus: this.bus,
       scene: this.scene,
       renderer: this.renderer,
       weaponAssets: this.weaponAssets,
       textures: this.textures,
-      characterAvatarProvider: (actor) =>
-        // The body the player declared (M16, B6), or the deal for one who did not — the
-        // fallback the `CharacterAvatarProvider` comment promised. A bot's `characterId` is
-        // null, so the whole roster still deals exactly as it did before the wire.
-        this.characterAssets.avatarProvider(
-          characterDefinition(actor.characterId ?? characterSelector.characterIdFor(actor.entityId)),
-        ),
+      characterAvatarProvider: (actor) => this.avatarFor(actor, characterSelector),
       viewmodel: this.viewmodel,
       cameraRig: this.cameraRig,
       audio: this.audio,
@@ -1660,8 +1505,8 @@ export class Game {
       // The screen, read at the moment a command is built. See `MatchWorldDeps.inMatch`.
       inMatch: () => this.state === 'MATCH',
       // F14. The same merge every surface reads, so the simulation and the tag cannot disagree.
-      cheats: () => this.cheatMask,
-      requestCheat: (bits) => this.requestCheatBits(bits),
+      cheats: () => this.surfaces.cheatMask,
+      requestCheat: (bits) => this.surfaces.requestCheatBits(bits),
       onConfigChanged: () => this.onConfigChanged(),
       onWeaponConfigChanged: () => this.onWeaponConfigChanged(),
       // M11 (§7). Suppliers rather than values: all three outlive this world, which is the
@@ -1669,12 +1514,10 @@ export class Game {
       lastBuild: () => this.session.buildReport,
       buildProgress: () => this.buildQueue.progress,
       migrationWindows: () => this.session.windows,
-    });
-    // A new map is a new light setup, and every program in the scene is compiled for one: the
-    // first frame of the world prepares them instead of stalling on them. See `GpuWarmup`.
-    gpuWarmup.requestScene();
+    };
+  }
 
-    /**
+  /**
      * The × asks; it does not decide (playtest round 4, B1).
      *
      * Bound after construction, like `PauseMenu.setOnLoadout` and `NetSession.onMatchState`,
@@ -1682,14 +1525,14 @@ export class Game {
      * outlives the world. Re-bound on every build because the overlay is a new object each
      * time and `debugRequest` is not.
      */
-    const overlay = this.world.debug.overlay;
-    overlay.onDismiss = () => {
-      this.debugRequest = 'none';
-    };
+  private bindDebugOverlay(): void {
+    const overlay = this.world?.debug.overlay;
+    if (overlay === undefined) return;
+    overlay.onDismiss = () => this.surfaces.dismissDebugOverlay();
     // A fresh surface starts hidden; the frame pass puts it back up if the request survived a
     // rotation. Without this the new overlay would show a frame late, which is harmless, and
     // would also be a second place deciding — which is not.
-    overlay.setVisible(debugOverlayVisible(this.hudSurfaceState()));
+    overlay.setVisible(this.surfaces.isDebugOverlayVisible());
   }
 
   /**
@@ -1715,8 +1558,8 @@ export class Game {
      * Networked, this field is not read at all — see `cheatMask` — so clearing it costs nothing
      * and is not a second writer of the replicated answer.
      */
-    this.offlineCheats = 0;
-    this.clearInstantCheat();
+    this.surfaces.clearOfflineEntitlements();
+    this.surfaces.clearInstantCheat();
     this.world?.dispose({ keepConnection: keep });
     this.world = null;
     this.characterSelector = null;
@@ -1765,19 +1608,6 @@ export class Game {
     this.profile.patchSettings({ fov: this.cameraConfig.fov });
   }
 
-  /**
-   * Apply a settings change, live, and persist it (M8, brief S6.3).
-   *
-   * **One function, called with a patch, that re-applies everything.** The alternative — a
-   * switch on which key changed — is eleven branches that each have to be kept in step with
-   * the screen, and the first one anybody forgets is a setting that silently does nothing,
-   * which is the exact failure S6.3 opens by naming. Re-applying all of them costs a
-   * handful of property writes on a user gesture and cannot drift.
-   *
-   * Persistence is separate and deliberately lazy: `Profile.patchSettings` marks the save
-   * dirty and `SaveStore` coalesces the burst a slider drag produces into one write 250 ms
-   * later. Live is immediate; written is a quarter of a second behind.
-   */
   /** The map behind the menu, rolled when there is none — see `MENU`'s `enter`. */
   private prepareBackdrop(): void {
     if (this.backdrop.mapId !== '') return;
@@ -1786,66 +1616,11 @@ export class Game {
     this.backdrop.prepare(entry.id);
   }
 
-  applySettings(patch: Partial<SettingsV1>): void {
-    this.profile.patchSettings(patch);
-    this.previewSettings(this.profile.settings);
-  }
-
-  /**
-   * Apply a settings record to the live systems without persisting it (M17 C4, decision 2).
-   *
-   * The settings screen edits a draft and previews it here on every change, so a sensitivity
-   * is felt on the frame the slider moves; APPLY hands the draft to `applySettings`, BACK
-   * previews the saved record again. The one description of what a setting *does* lives here,
-   * and the persisted path is that description on the saved record.
-   */
-  previewSettings(s: SettingsV1): void {
-    // ---- look ------------------------------------------------------------
-    this.input.setSensitivity(s.sensitivity);
-    this.input.setAdsSensitivity(s.adsSensitivity);
-    this.input.setInvertY(s.invertY);
-    // By identity: a rebind hands over a new table, a slider does not, and `setBindings`
-    // clears the held keys and re-arms the keyboard lock — not something to do per tick.
-    if (s.bindings !== this.appliedBindings) {
-      this.appliedBindings = s.bindings;
-      this.input.setBindings(s.bindings);
-    }
-    this.cameraConfig.fov = clampFov(s.fov);
-
-    // ---- audio -----------------------------------------------------------
-    this.audio.setMasterVolume(s.masterVolume);
-    this.audio.setBusVolume('sfx', s.sfxVolume);
-    this.audio.setBusVolume('music', s.musicVolume);
-    this.audio.setBusVolume('ui', s.uiVolume);
-
-    // ---- video -----------------------------------------------------------
-    this.renderer.setSize(window.innerWidth, window.innerHeight, s.renderScale);
-    this.cameraRig.resize(this.renderer.aspect);
-    this.viewmodel.resize(this.renderer.aspect);
-    this.renderer.setShadowQuality(s.shadowQuality, this.scene);
-    this.renderer.setMotionBlur(s.motionBlur);
-    // A trail of the frame before a resolution change is a smear at the wrong size.
-    this.renderer.resetMotionBlur();
-
-    // ---- presentation ----------------------------------------------------
-    // The palette writes CSS custom properties and notifies the canvases; everything that
-    // draws a gameplay colour reads one of the two. See `ui/Palette.ts`.
-    palette.set(s.colorblind);
-    this.fpsCounter.setVisible(s.showFps);
-  }
-
   private onWeaponConfigChanged(): void {
     this.world?.applyWeaponConfig();
   }
 
   // -- loop ----------------------------------------------------------------
-
-  /**
-   * Start or stop the background-tab network heartbeat. Bound to `visibilitychange`.
-   */
-  private readonly onVisibility = (): void => {
-    this.session.onVisibilityChanged();
-  };
 
   private simulate(tick: number): void {
     const world = this.world;
@@ -1937,7 +1712,7 @@ export class Game {
      * chunk fewer. See `MapBuildQueue`.
      */
     this.voteOverlay.tick();
-    this.updateHudSurfaces();
+    this.surfaces.update();
     // The editor's weapon preview spins from the render pass rather than from a timer of its
     // own, so it stops with the frame loop instead of running on in a background tab. It
     // early-outs when the screen is hidden, which is every frame of a match.
@@ -1961,178 +1736,10 @@ export class Game {
 
     const world = this.world;
     if (world === null) {
-      /**
-       * No world: the front end is DOM over the menu's backdrop (M15, A3) — a rolled map on
-       * a slow dolly, rendered through the backdrop's own camera with no viewmodel —
-       * or over a cleared canvas while that map is still building, because a canvas that is
-       * neither drawn nor cleared holds the last frame of the previous match.
-       */
-      const backdropCam = this.backdrop.frame(dt, this.renderer.aspect, alpha);
-      if (backdropCam !== null) {
-        if (!gpuWarmup.hold(this.scene, backdropCam)) this.renderer.render(this.scene, backdropCam, null);
-      } else {
-        this.renderer.clear();
-      }
+      this.frame.renderBackdrop(dt, alpha);
       return;
     }
-
-    const player = world.player;
-    const sim = player.sim;
-    const match = world.match;
-    const def = this.weaponDef;
-
-    // Sampled before the camera is composed: the interpolated aim-recoil offset is part
-    // of where the camera points, so it cannot be produced after the fact (S6.2).
-    match.sampleVisual(alpha);
-    const yaw = this.input.yaw + match.visual.aimYaw * DEG2RAD;
-    const pitch = this.input.pitch + match.visual.aimPitch * DEG2RAD;
-
-    this.drive.sprint = sim.sprintActive;
-    this.drive.tacSprint = sim.tacSprintActive;
-    this.drive.slide = sim.slideActive;
-    this.drive.adsFraction = match.visual.adsFraction;
-    // M8: the ADS sensitivity multiplier is blended by how far the sights are up, so the
-    // look speed changes with the picture rather than on the button edge.
-    this.input.setAdsFraction(match.visual.adsFraction);
-    this.drive.adsFovScale = def.adsFovScale;
-    this.drive.adsViewmodelFovScale = def.adsViewmodelFovScale;
-
-    /**
-     * A dead player in a one-life round watches a teammate (M11 Gate B, §6.8).
-     *
-     * Applied here rather than inside the rig because the rig's job is to turn a *pose* into a
-     * camera — bob, sway, shake, ADS blend — and it should not have to know that the pose
-     * sometimes belongs to somebody else. The rig is handed the spectated eye instead of the
-     * local one and does exactly what it always does.
-     *
-     * Null in every other case, which is every mode except Search & Destroy and every moment
-     * the player is alive, so the ordinary path is unchanged.
-     */
-    const spectated = match.spectatorView(alpha);
-    // `alpha` is 1 below because the pose handed over is already interpolated by the actor.
-    if (spectated !== null) {
-      this.spectatePose.x = spectated.x;
-      this.spectatePose.y = spectated.y;
-      this.spectatePose.z = spectated.z;
-      // The watched body's own eye, not a standing one: `makeSnapshot` leaves this at 1.65 m and
-      // a crouching teammate's eyes are at 0.95. See `ClientMatch.spectatorView`.
-      this.spectatePose.eyeHeight = spectated.eyeHeight;
-      this.cameraRig.update(
-        this.spectatePose,
-        this.spectatePose,
-        1,
-        // Their facing, not the dead player's mouse. A spectator who could look around
-        // independently of the body they are inside is a floating camera with extra steps.
-        spectated.yaw,
-        0,
-        this.spectateDrive,
-        this.cameraConfig,
-        dt,
-        this.viewmodel,
-      );
-    } else {
-      this.cameraRig.update(
-        player.prev,
-        player.curr,
-        alpha,
-        yaw,
-        pitch,
-        this.drive,
-        this.cameraConfig,
-        dt,
-        this.viewmodel,
-      );
-    }
-
-    const cam = this.cameraRig.camera;
-    if (this.audio.isRunning) {
-      const fx = -Math.sin(yaw);
-      const fz = -Math.cos(yaw);
-      this.audio.setListener(cam.position.x, cam.position.y, cam.position.z, fx, 0, fz, 0, 1, 0);
-      // The slide scrape is a sustained source, so it is driven per frame from the
-      // stance rather than fired from an event (see PLAN.md, M1 playtest note).
-      this.audio.setSlide(sim.slideActive, sim.x, sim.y, sim.z, sim.speed, sim.groundMaterial);
-    }
-    // Recycling runs whatever the context is doing. Skipping it while suspended is how
-    // voices used to accumulate: nothing was freeing them, and something still had to.
-    this.audio.update();
-
-    match.render(alpha, cam, dt, yaw, pitch);
-    // M8: dust and haze ride the render clock, not the sim tick — they drive no gameplay
-    // value, so S4.1's constant-dt rule does not apply and a fixed step would make the
-    // cloud stutter at frame rates that are not 60.
-    world.particulate?.update(cam.position.x, cam.position.y, cam.position.z, dt);
-    world.debug.render(cam, alpha, dt);
-
-    /**
-     * A live Chopper Gunner owns the view (M7).
-     *
-     * Asked rather than pushed: the streak hands back a camera while it is running and null
-     * once it has been restored, so there is nothing for `Game` to undo and no state here that
-     * could disagree with the streak about whose camera it is. That is what makes acceptance
-     * criterion 2 — "returns control cleanly, including if the player is killed or the match
-     * ends" — a property of one method rather than of four call sites.
-     */
-    // This client's seat, not the single-player constant: over the network the local player is
-    // entity 1 or above, so asking for entity 0's gunship found nobody's and the camera never
-    // took over — the streak flew and the player watched it from the ground.
-    const chopper = match.streaks.activeChopperFor(match.localId);
-    // M9: the streak reports a pose and a lens; `ChopperCamera` keeps the actual camera.
-    const takeover = this.chopperCamera.cameraFor(chopper, this.renderer.aspect);
-    /**
-     * The match intro (M15, Phase C), asked the same way and first: it answers for the
-     * round-one freeze and for nothing else, and while it does the world is drawn through
-     * its lens with no viewmodel — the player is not holding anything the camera can see —
-     * and the HUD's instruments come down. It is client-only presentation over a world the
-     * server already froze; nothing about it is on the wire.
-     */
-    const intro = this.introCamera.cameraFor(world, cam, this.renderer.aspect, dt);
-    match.ui.hud.setIntro(intro !== null);
-    /**
-     * Everything above ran — the bodies were built and posed, the weapons put in their hands — and
-     * now, if the GPU has programs to compile for this scene, they are compiled instead of drawn
-     * (part 5). The canvas keeps the last picture for those few frames; the simulation and the
-     * network do not wait, which is the half of a stall that used to cost a resync. See `GpuWarmup`.
-     */
-    if (gpuWarmup.hold(this.scene, intro ?? takeover ?? cam, { scene: this.viewmodel.scene, camera: this.viewmodel.camera })) {
-      // Nothing drawn this frame; the debug overlay's own clock still runs.
-      world.debug.update(dt);
-      this.session.servicePendingTransitions();
-      return;
-    }
-    if (intro !== null) {
-      this.renderer.render(this.scene, intro, null);
-    } else if (takeover !== null) {
-      /**
-       * A grey render pass over the world with the bodies drawn by side, not a filter over
-       * the ordinary image (S6.1). No viewmodel: the player is not holding anything.
-       *
-       * Post-M8 the two body groups are handed over separately so the pass can tell friend
-       * from foe. Which is which is decided *here*, because the local team is a fact about
-       * the match and `engine/` has no business knowing what a team is — it is given a cold
-       * group and a hot one.
-       */
-      // From the side the *server* assigned, not the single-player constant: a networked gunner
-      // on team B had the thermal pass draw their own side hot and the enemy cold — the optic
-      // reading exactly backwards, in the one streak whose entire value is telling friend from
-      // foe. And through `isHostile` rather than "the other side" (M13 Phase A): in
-      // Free-for-All both substrate groups are hot and nothing is cold, where the pass used to
-      // draw the half of the lobby sharing the gunner's side near-black — the reported "black
-      // hit indicator". The gunner's own body is never in either group (see `NetSession
-      // .syncActors`), so hot-everything is exactly right there.
-      const viewer = match.viewer;
-      gunshipHot.length = 0;
-      gunshipCold.length = 0;
-      for (const team of ['A', 'B'] as const) {
-        const group = match.botRenderer.groupFor(team);
-        (isHostile(viewer.team, team, viewer.freeForAll) ? gunshipHot : gunshipCold).push(group);
-      }
-      this.renderer.renderGunship(this.scene, takeover, gunshipHot, gunshipCold);
-    } else {
-      this.renderer.render(this.scene, cam, this.viewmodel);
-    }
-    world.debug.update(dt);
-
+    this.frame.renderWorld(world, alpha, dt);
     // Between frames, with nothing part-way through a dispatch. Also serviced from the
     // hidden-tab heartbeat, because this pass does not run in a background tab at all.
     this.session.servicePendingTransitions();
@@ -2195,8 +1802,8 @@ export class Game {
     //
     // Asked of the predicate rather than of the panel, so "is it on screen" has one answer
     // here and in `updateHudSurfaces`. Escape writes the request, exactly as the × does.
-    if (debugOverlayVisible(this.hudSurfaceState())) {
-      this.debugRequest = 'none';
+    if (this.surfaces.isDebugOverlayVisible()) {
+      this.surfaces.dismissDebugOverlay();
       return;
     }
     // Above the pause branches for the same reason the F1 overlay is: a player closing a
@@ -2237,14 +1844,14 @@ export class Game {
    * survives without a second flag remembering it.
    */
   private toggleOverlayFromPause(): void {
-    this.debugRequest = debugOverlayVisible(this.hudSurfaceState()) ? 'none' : 'onPause';
+    this.surfaces.toggleDebugOverlayFromPause();
   }
 
   private resumeFromPause(): void {
     if (this.state !== 'PAUSED') return;
     // Before the transition, so the request describes where the player is going rather than
     // where they were. See `DebugOverlayRequest`.
-    if (this.debugRequest === 'onPause') this.debugRequest = 'inMatch';
+    this.surfaces.demoteDebugRequestOnResume();
     this.transitionTo('MATCH');
   }
 
@@ -2264,27 +1871,34 @@ export class Game {
     const flow = match.flow;
     return `${mode.name} · ${this.mapEntry().name} · ${flow.teamScore('A')} – ${flow.teamScore('B')}`;
   }
+  //#endregion
+}
+//#endregion
 
-  private readonly onResize = (): void => {
-    viewport.set(window.innerWidth, window.innerHeight);
-    this.renderer.setSize(viewport.width, viewport.height, this.profile.settings.renderScale);
-    applyFrameScale(this.uiHost, viewport.width, viewport.height);
-    this.cameraRig.resize(this.renderer.aspect);
-    this.viewmodel.resize(this.renderer.aspect);
-  };
-
-  private readonly onPageHide = (): void => {
-    this.profile.patchSettings({
-      modeId: this.selection.modeId,
-      mapId: this.selection.mapId,
-      botDifficulty: this.selection.difficulty,
-    });
-    this.profile.flush();
-    this.audio.suspend();
+// ====================================== INTERNAL HELPERS ====================================== \\
+//#region Internal Helpers
+/**
+ * The saved selection, resolved against the registry rather than trusted.
+ *
+ * `normaliseSave` validates every other field of the save but stores `mapId` and `modeId` as
+ * bare strings, so a save written before the map ids were prefixed carries `foundry` where the
+ * registry now has `mp_foundry`. Resolving here rather than at each of the six
+ * `findMap`/`findMode` call sites means the selection is *known good* from construction on,
+ * and those calls keep throwing — which is correct for a code path that asks for a map that
+ * does not exist.
+ */
+function resolveSelection(settings: SettingsV1): MenuSelection {
+  return {
+    modeId: resolveModeId(asModeId(settings.modeId)).id,
+    mapId: resolveMapId(settings.mapId).id,
+    // Already validated against the union by `normaliseSave`, which is where every other
+    // enumerated setting is checked. No resolve step, because unlike a map id it has never
+    // had a rename to survive.
+    difficulty: settings.botDifficulty,
   };
 }
 
 function clampFov(v: number): number {
   return Math.min(FOV_MAX, Math.max(FOV_MIN, v));
 }
-
+//#endregion

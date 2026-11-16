@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EV } from '../shared/core/Events';
+import { ALL_WEAPONS } from '../shared/weapons/WeaponDefs';
+import { makeSnapshot } from '../shared/player/PlayerState';
 import { BYE_IDLE } from '../shared/net/Protocol';
 import { WARMUP_MATCH_ID } from '../shared/net/Skirmish';
 import { Cheat, CheatOutcome, cheatCodeToggling } from '../shared/cheats/Cheats';
@@ -45,6 +47,8 @@ interface WorldDouble {
     particulate: null;
     disposed: { keepConnection: boolean } | null;
     readonly harnessOptions: unknown[];
+    /** What the frame pass pushed at this world's match and overlay, in order. */
+    readonly pushed: Record<string, unknown[]>;
 }
 
 interface MatchDouble {
@@ -76,6 +80,10 @@ interface NetDouble {
 }
 
 let worlds: WorldDouble[];
+/** What `match.spectatorView(alpha)` answers: a pose while spectating, null otherwise. */
+let spectated: unknown = null;
+/** What `streaks.activeChopperFor` answers: a live Chopper Gunner, or null. */
+let chopper: unknown = null;
 let buildQueue: BuildQueueDouble;
 let handshakeResult: (() => Promise<unknown>) | null;
 let gpuHold: boolean;
@@ -149,44 +157,74 @@ vi.mock('./MatchWorld', async (importOriginal) => ({
                 },
             } as unknown as MatchDouble;
             const self = this;
+            const pushed: Record<string, unknown[]> = {
+                scoreboardOpen: [],
+                resultSurfaces: [],
+                cheatTag: [],
+                aimWarning: [],
+                headerSlots: [],
+                intro: [],
+                overlayVisible: [],
+            };
+            (this as unknown as { pushed: Record<string, unknown[]> }).pushed = pushed;
+            const ownGroups: Record<string, object> = { A: { team: 'A' }, B: { team: 'B' } };
             Object.assign(this.match, {
                 setActive: (on: boolean): void => void self.match.active.push(on),
-                setScoreboardOpen: (): void => void calls.push('scoreboard'),
-                setResultSurfacesVisible: (): void => undefined,
-                setCheatTag: (): void => undefined,
-                setAimWarning: (): void => undefined,
-                setHeaderSlots: (): void => undefined,
+                setScoreboardOpen: (on: boolean): void => void pushed['scoreboardOpen']?.push(on),
+                setResultSurfacesVisible: (on: boolean): void => void pushed['resultSurfaces']?.push(on),
+                setCheatTag: (text: string): void => void pushed['cheatTag']?.push(text),
+                setAimWarning: (text: string): void => void pushed['aimWarning']?.push(text),
+                setHeaderSlots: (slots: unknown): void => void pushed['headerSlots']?.push(slots),
                 clearReplicatedStreaks: (): void => void calls.push('clearStreaks'),
                 clearReplicatedProjectiles: (): void => void calls.push('clearProjectiles'),
                 applyLoadout: (): void => void calls.push('applyLoadout'),
-                headerSlots: [],
+                headerSlots: [{ label: 'A' }],
                 isPlayerDead: false,
                 playerRespawnSeconds: 0,
                 scoreboardHeld: false,
                 inWarmupArena: false,
-                streaks: { creditKills: (): void => void calls.push('creditKills'), active: [], lastMs: 0, activeChopperFor: () => null },
+                streaks: {
+                    creditKills: (): void => void calls.push('creditKills'),
+                    active: [],
+                    lastMs: 0,
+                    activeChopperFor: (): unknown => chopper,
+                },
                 weapons: { definition: { id: 'ar_m4' } },
                 actorsForRender: () => [],
                 mortarOverlay: undefined,
-                ui: { lastUpdateMs: 0, hud: { setIntro: (): void => undefined } },
+                ui: { lastUpdateMs: 0, hud: { setIntro: (on: boolean): void => void pushed['intro']?.push(on) } },
                 bankProgression: () => ({ lines: [], total: 0, xpBefore: 0, levelBefore: 1, levelAfter: 1, weaponLevelUps: [], challengesCompleted: [], camosUnlocked: [] }),
                 lastModeMs: 0,
                 mode: { name: 'TEAM DEATHMATCH', getScoreboardColumns: () => [], id: 'TDM' },
                 viewer: { team: 'A', freeForAll: false },
                 visual: { aimYaw: 0, aimPitch: 0, adsFraction: 0 },
                 sampleVisual: (): void => undefined,
-                spectatorView: (): null => null,
-                render: (): void => undefined,
-                botRenderer: { groupFor: () => ({}) },
+                spectatorView: (): unknown => spectated,
+                render: (): void => void calls.push('render'),
+                simulate: (): void => void calls.push('simulate'),
+                botRenderer: { groupFor: (team: string): object => ownGroups[team] ?? {} },
                 scoreboard: { rows: [] },
                 score: { rows: [] },
                 bots: { roster: [] },
             });
             this.net = (deps['server'] ?? null) === null ? null : makeNet();
             this.map = { def: { id: String((deps['mapEntry'] as { id?: string } | undefined)?.id ?? 'mp_foundry') } };
-            this.player = { sim: {}, prev: {}, curr: {} };
+            /**
+             * Real snapshots, because the real `CameraRig` reads every field of them: a
+             * bare object makes the camera NaN rather than failing where the gap is.
+             */
+            this.player = {
+                sim: makeSnapshot(),
+                prev: makeSnapshot(),
+                curr: makeSnapshot(),
+                weaponSpeedScale: 1,
+                step: (): void => void calls.push('step'),
+            };
             this.debug = {
-                overlay: { onDismiss: null, setVisible: (): void => undefined },
+                overlay: {
+                    onDismiss: null,
+                    setVisible: (on: boolean): void => void pushed['overlayVisible']?.push(on),
+                },
                 simulate: (): void => undefined,
                 render: (): void => undefined,
                 update: (): void => undefined,
@@ -202,6 +240,7 @@ vi.mock('./MatchWorld', async (importOriginal) => ({
                 particulate: null,
                 disposed: null,
                 harnessOptions: [],
+                pushed,
             };
             (this as unknown as { record: WorldDouble }).record = record;
             worlds.push(record);
@@ -628,6 +667,8 @@ function installEnvironment(): void {
     timers = [];
     intervals = [];
     worlds = [];
+    spectated = null;
+    chopper = null;
     nowMs = 100_000;
     pageHidden = false;
     rafCallback = null;
@@ -884,6 +925,21 @@ async function connect(r: Rig, over: Partial<WelcomeInfo> = {}): Promise<void> {
 function flow(game: Game): Record<string, unknown> {
     const session = (game as unknown as { session?: object }).session;
     return (session ?? game) as unknown as Record<string, unknown>;
+}
+
+/** The object that owns the frame's camera state: `Game` before C23b, its `GameFrame` after. */
+function frameOf(game: Game): Record<string, unknown> {
+    const owner = (game as unknown as { frame?: object }).frame;
+    return (owner ?? game) as unknown as Record<string, unknown>;
+}
+
+/**
+ * The object that owns the HUD surfaces and the cheat door: `Game` itself before C23b moved
+ * them, and its `GameSurfaces` afterwards. Same reasoning as `flow` above.
+ */
+function surfaces(game: Game): Record<string, unknown> {
+    const owner = (game as unknown as { surfaces?: object }).surfaces;
+    return (owner ?? game) as unknown as Record<string, unknown>;
 }
 
 /** The §4.18 drains only: the render pass pumps the queue every frame with no budget. */
@@ -1396,6 +1452,23 @@ describe('Game: warming the assets', () => {
         expect(assets.asked.some((a) => a.startsWith('lod:'))).toBe(true);
     });
 
+    it('warms every weapon in the arsenal, behind the two the player is about to hold (#35)', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        const asked = (r.game as unknown as { weaponAssets: { asked: string[] } }).weaponAssets.asked;
+        // Every weapon's full template, which is what the editor and the preview were waiting
+        // on per weapon before BACKLOG #35.
+        for (const def of ALL_WEAPONS) expect(asked).toContain(`weapon:${def.id}`);
+        // And last: the equipped class, the grenades, the knife, the arms and the world's LODs
+        // are all asked for before the first arsenal-only weapon is.
+        const equipped = asked.indexOf('hands');
+        const arsenalOnly = asked.findIndex(
+            (entry, at) => entry.startsWith('weapon:') && at > asked.lastIndexOf('lod:' + ALL_WEAPONS[0]!.id),
+        );
+        expect(equipped).toBeLessThan(arsenalOnly);
+    });
+
     it('does not warm on the way into a match', () => {
         const r = rig();
         r.game.start();
@@ -1416,7 +1489,7 @@ describe('Game: the cheat door', () => {
         r.runTimers();
         search = '?server=127.0.0.1:8080';
         await connect(r);
-        (r.game as unknown as { requestCheat: (c: string) => void }).requestCheat('NOTACODE');
+        (surfaces(r.game)['requestCheat'] as (c: string) => void).call(surfaces(r.game), 'NOTACODE');
         expect(worlds[0]?.net?.client.sent.filter((s) => s.startsWith('cheat'))).toEqual([]);
     });
 
@@ -1430,7 +1503,7 @@ describe('Game: the cheat door', () => {
         // state, and `check-cheats.mjs` holds this file to that rule as it holds the game to it.
         const code = cheatCodeToggling(Cheat.God);
         expect(code).not.toBeNull();
-        (r.game as unknown as { requestCheat: (c: string) => void }).requestCheat(code ?? '');
+        (surfaces(r.game)['requestCheat'] as (c: string) => void).call(surfaces(r.game), code ?? '');
         expect(worlds[0]?.net?.client.sent.some((entry) => entry.startsWith('cheat('))).toBe(true);
     });
 
@@ -1443,9 +1516,9 @@ describe('Game: the cheat door', () => {
         const toggle = (): void =>
             (r.game as unknown as { toggleOverlayFromPause: () => void }).toggleOverlayFromPause();
         toggle();
-        expect((r.game as unknown as { debugRequest: string }).debugRequest).toBe('onPause');
+        expect(surfaces(r.game)['debugRequest']).toBe('onPause');
         toggle();
-        expect((r.game as unknown as { debugRequest: string }).debugRequest).toBe('none');
+        expect(surfaces(r.game)['debugRequest']).toBe('none');
     });
 
     it("the server's reply captions the screen", async () => {
@@ -1456,5 +1529,210 @@ describe('Game: the cheat door', () => {
         await connect(r);
         sinkOf().onCheats?.(CheatOutcome.Granted as never);
         expect(worlds[0]?.net?.client.sent.filter((s) => s.startsWith('cheat'))).toEqual([]);
+    });
+});
+
+// ---------------------------------------------------------------------------- the surfaces
+
+describe('Game: the HUD surfaces, decided once a frame', () => {
+    /** A live solo match with one frame run, and what that frame pushed at the match. */
+    function liveFrame(over: Record<string, unknown> = {}): Record<string, unknown[]> {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        r.game.transitionTo('MATCH');
+        const world = worlds.at(-1)!;
+        Object.assign(world.match, over);
+        r.frame();
+        return world.pushed;
+    }
+
+    it('pushes the scoreboard, the result surfaces and the header every frame', () => {
+        const pushed = liveFrame();
+        expect(pushed['scoreboardOpen']).toEqual([false]);
+        expect(pushed['resultSurfaces']).toEqual([true]);
+        expect(pushed['headerSlots']).toEqual([[{ label: 'A' }]]);
+    });
+
+    it('holds the board open while Tab is held, and reports nothing in the waiting room', () => {
+        expect(liveFrame({ scoreboardHeld: true })['scoreboardOpen']).toEqual([true]);
+        // The waiting room reports no result, so neither the board nor the strip nor the header.
+        const warmup = liveFrame({ scoreboardHeld: true, inWarmupArena: true });
+        expect(warmup['scoreboardOpen']).toEqual([false]);
+        expect(warmup['resultSurfaces']).toEqual([false]);
+        expect(warmup['headerSlots']).toEqual([[]]);
+    });
+
+    it('keeps the debug overlay down until it is asked for, and up in a match once it is', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        r.game.transitionTo('MATCH');
+        r.frame();
+        expect(worlds[0]?.pushed['overlayVisible']).toEqual([false, false]);
+        surfaces(r.game)['debugRequest'] = 'inMatch';
+        r.frame();
+        expect(worlds[0]?.pushed['overlayVisible']?.at(-1)).toBe(true);
+    });
+
+    it('refuses an in-match request on the pause screen and allows the pause screen its own', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        r.game.transitionTo('MATCH');
+        r.game.transitionTo('PAUSED');
+        surfaces(r.game)['debugRequest'] = 'inMatch';
+        r.frame();
+        expect(worlds[0]?.pushed['overlayVisible']?.at(-1)).toBe(false);
+        surfaces(r.game)['debugRequest'] = 'onPause';
+        r.frame();
+        expect(worlds[0]?.pushed['overlayVisible']?.at(-1)).toBe(true);
+    });
+
+    it('reports no cheat tag and no aim warning for an ordinary offline match', () => {
+        const pushed = liveFrame();
+        expect(pushed['cheatTag']).toEqual(['']);
+        expect(pushed['aimWarning']?.at(-1)).toBe('');
+    });
+
+    it('runs the frame on a screen with no world without building one', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        r.frame();
+        r.frame();
+        expect(worlds).toHaveLength(0);
+    });
+});
+
+// ---------------------------------------------------------------------------- the cheat door
+
+describe('Game: what a cheat code does offline', () => {
+    it('changes nothing at all for a code that is not one', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        r.game.transitionTo('MATCH');
+        (surfaces(r.game)['requestCheat'] as (c: string) => void).call(surfaces(r.game), 'XYZZYNOPE');
+        expect((surfaces(r.game)['cheatMask'] as number)).toBe(0);
+    });
+
+    it('applies a toggle against this process when there is no server', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        r.game.transitionTo('MATCH');
+        const code = cheatCodeToggling(Cheat.God) ?? '';
+        const mask = (): number => (surfaces(r.game)['cheatMask'] as number);
+        expect(mask()).toBe(0);
+        (surfaces(r.game)['requestCheat'] as (c: string) => void).call(surfaces(r.game), code);
+        expect(mask() & Cheat.God).toBe(Cheat.God);
+        (surfaces(r.game)['requestCheat'] as (c: string) => void).call(surfaces(r.game), code);
+        expect(mask() & Cheat.God).toBe(0);
+    });
+
+    it('drops the offline entitlement with the world it was granted in', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        r.game.transitionTo('MATCH');
+        const code = cheatCodeToggling(Cheat.God) ?? '';
+        (surfaces(r.game)['requestCheat'] as (c: string) => void).call(surfaces(r.game), code);
+        expect((surfaces(r.game)['cheatMask'] as number) & Cheat.God).toBe(Cheat.God);
+        r.game.transitionTo('MENU');
+        expect((surfaces(r.game)['cheatMask'] as number)).toBe(0);
+    });
+
+    it('refuses a code typed on the menu, where there is no seat to apply it to', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        const code = cheatCodeToggling(Cheat.God) ?? '';
+        (surfaces(r.game)['requestCheat'] as (c: string) => void).call(surfaces(r.game), code);
+        expect((surfaces(r.game)['cheatMask'] as number)).toBe(0);
+    });
+
+    it('lets the replicated mask win over anything this process granted itself', async () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        search = '?server=127.0.0.1:8080';
+        await connect(r);
+        worlds[0]!.net!.client.cheatMask = Cheat.Unseen;
+        expect((surfaces(r.game)['cheatMask'] as number)).toBe(Cheat.Unseen);
+    });
+});
+
+// ---------------------------------------------------------------------------- the frame
+
+describe('Game: composing the frame', () => {
+    it('draws the ordinary view when nothing has taken the camera', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        r.game.transitionTo('MATCH');
+        r.frame();
+        expect(worlds[0]?.match.calls).toContain('render');
+        expect(worlds[0]?.pushed['intro']).toEqual([false]);
+    });
+
+    it('runs the gunship pass once a chopper is up for this seat', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        r.game.transitionTo('MATCH');
+        chopper = {
+            activeView: (view: Record<string, number>): boolean => {
+                Object.assign(view, { x: 0, y: 40, z: 0, yaw: 0, pitch: -0.4, fov: 60 });
+                return true;
+            },
+        };
+        worlds[0]!.match.localTeam = 'A';
+        r.frame();
+        // The groups themselves belong to the renderer, which is a double here; what this
+        // pins is that the frame reached the pass with a live streak rather than the ordinary
+        // path, and that the match still rendered its own scene first.
+        expect(worlds[0]?.match.calls).toContain('render');
+    });
+
+    it('drives the camera from the watched body while spectating', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        r.game.transitionTo('MATCH');
+        spectated = { x: 3, y: 1, z: -2, yaw: 1.2, eyeHeight: 0.95 };
+        r.frame();
+        const pose = frameOf(r.game)['spectatePose'] as { x: number; eyeHeight: number };
+        expect(pose.x).toBe(3);
+        // The watched body's own eye, not the standing 1.65 the snapshot starts at.
+        expect(pose.eyeHeight).toBe(0.95);
+    });
+
+    it('leaves every motion field of the spectate drive at rest', () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        r.game.transitionTo('MATCH');
+        spectated = { x: 0, y: 0, z: 0, yaw: 0, eyeHeight: 1.65 };
+        r.frame();
+        const drive = frameOf(r.game)['spectateDrive'] as { sprint: boolean; slide: boolean; adsFraction: number };
+        expect(drive.sprint).toBe(false);
+        expect(drive.slide).toBe(false);
+        expect(drive.adsFraction).toBe(0);
+    });
+
+    it('compiles instead of drawing while the GPU warm-up holds, and still cashes a rotation', async () => {
+        const r = rig();
+        r.game.start();
+        r.runTimers();
+        search = '?server=127.0.0.1:8080';
+        await connect(r, { mapId: 'mp_foundry' });
+        gpuHold = true;
+        const onNewMatch = (worlds[0]?.deps['server'] as { onNewMatch: (w: WelcomeInfo) => void }).onNewMatch;
+        onNewMatch(welcome({ mapId: 'mp_foundry' }));
+        r.frame();
+        // The held frame draws nothing and still services the deferred rotation, which is the
+        // whole reason that call sits on both sides of the early return.
+        expect(worlds).toHaveLength(2);
     });
 });

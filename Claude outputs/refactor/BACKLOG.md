@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**62 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**61 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -171,7 +171,7 @@ and belong in its Step 2 plan.
 | ~~C20~~ | `client/ui/` CharacterStage, WeaponPreview, Lineup, Emblem, CategoryIcons, WeaponIcons, FpsCounter | **closed** — one entry names a file of its: **#35**, which cites `WeaponPreview.ts:245`. The fix it asks for is in `Game.warmWeaponAssets`, outside this fence, so it stays `bound to C23`; the line moved to **336** when `show` came apart, and the entry now says so. Twenty words were swept and the rest is elsewhere: every *renderer* hit is the main one, *camo* is the finish table's, *skin* is the catalogue's, and *CharacterStage*, *Lineup*, *Emblem*, *CategoryIcons*, *WeaponIcons* and *FpsCounter* return nothing at all. **C20 opened #80, #81 and #82** — the first from a number its own tests measured, the second and third from running its own oracles |
 | ~~C21~~ | `client/` MatchEquipment, MatchFeedback, MatchMeta, MatchObjectives, GameLoadout, GameScreens, main | **closed** — nothing was bound to it: no §1 row, and **none of the seven file names appears anywhere in this file** — not one, which no earlier unit could say of all of its files. Thirteen words were swept and every hit is somewhere else: all 37 *equipment* hits are `shared/equipment` (#13's `equipment.simulate` argument, #16's three body heights, #17, #18) or C12's `client/equipment/`; *objectives* is one hit, `ObjectiveStat` in #14/#15's scoreboard cluster; *bomb* is one, `MatchInstance.sendBomb` in #50's comment list; *feedback* is one, the English word inside #33; the 20 *loadout* hits are #71 and #72 in C16's finished editor and the `shared/meta/` rules; and `client/Match` finds only `MatchWorld.ts:795`, which is C22's file and not this unit's. **C21 opened #83**, from the one file in the unit that writes its rule down |
 | ~~C22~~ | `client/MatchWorld.ts` | **closed** — **#50's fifth reference was absorbed**: `MatchWorld.ts:795` is this unit's own file and the one bullet of that entry no session had a fence for, so the client's streak-index table now names `SnapshotRecords.streakKindIndex`. Nothing else was bound: there was no §1 row, and *MatchWorld* has no other hit in this file outside #50 and C21's row above. Eleven words were swept and every hit is elsewhere — *Particulate* and *PropModels* are C10's row and **#64**'s pair of matrix freezes, *NetSession* is C13's row, *LocalIdentity* is **#13**'s `shared/combat` move, *loadMap* is **#7**'s misplaced JSDoc on `loadMapCollision` in A4's `MapLoader.ts`, every *station* hit is **#4**'s generator comment or #64, and all three *divergence* hits are the leg and arm figures in `HitboxDef`, not the checker this file owns; *prebuilt*, *BotHarness*, *DebugSuite* and *resupply* return nothing at all. **C22 opened #84**, from its own Step 1 |
-| C23 | `client/Game.ts` + `GameSession.ts` | #35 (preload the arsenal's viewmodels) — and **two more that this row did not list**: **#75**, whose two candidate fixes are both in `Game.ts` ("which no unit has reached yet"), and **#83**, whose `Game.ts:1148` half reads `banksProgress` to decide whether to show the XP strip. C23a found them by sweeping for the file name rather than by reading this row; all three are C23b's. **#55** names `Game.ts` as the gunship pass's *caller* only — the fix is in `Renderer.ts` (C2's) |
+| ~~C23~~ | `client/Game.ts` + `GameSession.ts`, `GameSurfaces.ts`, `GameFrame.ts` | **closed** — **#35 was absorbed** by C23b under its own approval, as a behaviour change: `warmArsenalViewmodels` warms the whole arsenal's full templates behind the equipped class, the grenades, the knife, the arms and the world's LODs, which is the middle of the three answers the entry offered. **#75 was answered and closed** — its premise is the browser pane's own `requestAnimationFrame` throttle and not the game; the measurement that replaces it is **#85**. **#83 was declined**: its `Game.ts:1148` half is one ternary, and the fix it points at is a *compute-but-do-not-bank* path in `MatchProgression.finish`, which is A19's file, in the ratchet and outside R3's fence — the same reason C21 could not do it. **#55 was declined**: this unit owns only the gunship pass's *call site*, which moved to `GameFrame.renderGunship` and still only picks the hot and cold groups; the fix is in `Renderer.ts`, C2's finished file. **C23 opened #85** |
 | C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
 
 Everything else below lands in a **completed** unit's files and therefore needs a session of its
@@ -883,52 +883,6 @@ Each of these is wrong today, was found while writing characterization tests, an
 rather than fixed** under §5.9 of the prompt — the test carries
 `// Pins current behaviour; suspected bug: <title>`. Fixing one means updating its pinning test in
 the same commit, with the reason.
-
-### #75 — The pause screen's debug button cannot appear while the pause screen is up · `open` *(opened 2026-11-09 by C17)*
-
-**Files** `src/client/ui/PauseMenu.ts` (`setDebugAvailable`, and the comment on it);
-`src/client/Game.ts` (`updateHudSurfaces`) is the other half. **Origin** C17, measured in the
-browser during its live check.
-
-The method's comment makes a promise:
-
-> *"Idempotent, and called every frame from the one pass that decides every other surface, which
-> is why it can be a plain assignment: there is no moment at which somebody has to remember to
-> refresh it — **including the moment the player types the code on this very screen**."*
-
-The emphasised clause is the one case that does not hold. `Game.updateHudSurfaces` runs from the
-match loop, and the match loop does not advance while the game is `PAUSED` — which is the only
-state this screen is ever up in. Measured on a live solo match on FOUNDRY, with the setter on
-`debugButton.hidden` instrumented:
-
-```
-paused, over one second         0 writes
-resumed, over three seconds     3 writes
-```
-
-So a player who types the code on the pause screen gets *"Code accepted."* on the line under the
-field and **no button**, until they resume and pause again. The entitlement is real by then; the
-refresh simply never ran while they were looking at it.
-
-**This is not what C17 changed.** The method and its one writer are character for character what
-they were, and C17's BROWSER checksum A holds the button hidden and shown as two different
-sections, both unchanged across the unit. What C17 adds is the measurement, and the fact that
-the comment is wrong about its own method.
-
-**Two fixes, and they are not equivalent.** `Game` could call `updateHudSurfaces` once on the
-transition into `PAUSED` — cheap, and it fixes the moment the player enters the screen but not
-the moment they type; or the cheat reply path could call `setDebugAvailable` itself, which fixes
-the typing moment and gives the entitlement a second writer, which is the thing the comment says
-it is glad not to have. Both edits are in `Game.ts`, which no unit has reached yet.
-
-**Pinned meanwhile.** `PauseMenu.test.ts` holds the button's hidden-ness as a pure function of
-`setDebugAvailable`, which is true and stays true under either fix. Nothing pins the gap itself,
-because the gap is in the caller.
-
-**Verify** `npm run check`, then: solo match, Escape, type the code, and read the button without
-resuming.
-
----
 
 ### #76 — The one line of state on the settings screen is told apart only by its position · `open` *(opened 2026-11-09 by C17)*
 
@@ -1890,44 +1844,51 @@ a normal browser window. Reproduce it in Chrome before spending anything on the 
 written against) and compare against the three descriptions in `renderGunship`'s JSDoc — grey
 terrain, near-black team-mates, orange enemies.
 
-### #35 — The arsenal's viewmodels are fetched on demand, so a grey primitive stands in · `bound to C23` · `needs a decision from the user`
-**Files** `src/client/Game.ts` — `warmWeaponAssets` and `warmWorldAssets`. The service itself,
-`src/client/weapons/WeaponAssetService.ts` (C9), already has every loader this needs. **Origin**
-reported from play, 2026-10-19.
-
-Land on a weapon in the Create Class editor, or carry a class edited between spawns into a match,
-and the grey primitive fallback stands in for as long as the file takes to arrive.
-`Game.warmWeaponAssets` warms **only the two equipped weapons'** full templates — its own doc
-comment says so and gives the reason — while `warmWorldAssets` warms the whole arsenal at *LOD*
-detail, the quarter-sized file a body carries, about nine megabytes for the fifteen. Nothing warms
-the arsenal's **viewmodels**, so the editor and the preview ask per weapon as the player reaches it
-(`LoadoutEditor.ts:1135`, `WeaponPreview.ts:336`), and that request is what the grey is waiting on.
-
-The request is a global asynchronous preload at boot, so the weapons are already in memory. The
-mechanism exists — `warmWorldAssets` is that loop for the LODs — so the edit is a few lines, and
-the cost is the whole question: a full template is roughly four times an LOD, so warming the
-arsenal is tens of megabytes fetched on a connection that may not want them, against cache headers
-that keep them for a version. **Decide**: warm the whole arsenal at boot; warm it behind the menu
-once the equipped class is ready, which is the middle answer and costs nothing at the moment the
-player presses Play; or leave it on demand and spend the fix on a placeholder better than a grey
-primitive.
-
-**C20 moved the second line number** on 2026-11-11: `WeaponPreview.ts:245` was the `preload`
-call inside `show`, and the split moved it into `showWhenLoaded` at 336 with its whole
-paragraph. As with C16's move, that is the *call site* and not the fix, which is still in
-`Game.warmWeaponAssets` and still C23's.
-
-**C16 declined it** on 2026-11-09, which is why the first line number above reads differently.
-`LoadoutEditor.ts:999` was the `preload` call in the middle of `optionsFor`; the split moved it
-into `warmWeaponFile`, with the whole of the paragraph that explained it. That call is the *call
-site*, not the fix: it already does the most a screen can do, which is to ask for every card's
-file at the moment the list opens rather than at the moment the pointer lands. The edit this
-entry asks for is in `Game.warmWeaponAssets`, which is outside C16's fence (R3) and belongs to
-C23, so the entry stays bound there, with the decision still the user's.
-
 ---
 
 ## 6. Documentation and housekeeping
+
+### #85 — A live check in the browser pane under-reports whenever Claude's window is behind another · `open` *(opened 2026-11-16 by C23b)*
+
+**Files** none — this is about the instrument, not the game. `REFACTOR-PROMPT.md` §6's
+BROWSER procedure is where it belongs. **Origin** C23b, measuring #75.
+
+The pane throttles `requestAnimationFrame` to about 1 fps, and sometimes suspends it, whenever
+the Claude desktop window is not in front. Everything driven from the render pass therefore
+*appears* not to run: the pre-match countdown never ends, a match never reaches its debrief,
+and anything a frame pass writes is written a handful of times a minute instead of sixty times
+a second.
+
+**It has now produced one wrong entry and one abandoned check.** C18 could not run its live
+check at all and said so. **#75 was worse, because it produced a number**: it reported that
+`Game.updateHudSurfaces` never runs while `PAUSED`, measured as *"paused, over one second — 0
+writes"*, and concluded that a player who types the debug code on the pause screen gets no
+button until they resume. C23b re-measured the same thing with the window in front:
+
+| | #75's measurement | C23b's |
+|---|---|---|
+| writes while paused | 0 over 1 s | **224 over 4 s** |
+| the button, after typing the code on the pause screen | never appears | **appears, without resuming** |
+
+The frame pass runs while paused exactly as the `PAUSED` handler's own comment says it does —
+`draw` calls the surface pass, not `simulate` — and `PauseMenu.setDebugAvailable` is a plain
+assignment, so a pass that ran at all could not have written zero. #75 was the pane, and it is
+closed.
+
+**What to do about it.** The three levers, all proved in C23a and C23b:
+
+- `?nosplash` to skip a splash that needs a real click;
+- `__p7.game.loopHandle.maxStepsPerFrame = 120` with `simSpeed = 8`, which is the lever
+  `public/verify/tdm.js` already uses — 1,800 ticks in 20 s against a throttled pane, enough
+  to carry a match to its debrief;
+- drive state through `__p7.game`'s own public methods rather than waiting for frames.
+
+**Decide** whether §6's BROWSER procedure gains a paragraph saying all of this, and whether a
+live check should refuse to report a *negative* result at all without first proving the frame
+rate it was measured at. A check that can only produce false negatives is worse than one that
+declines to run, because C18's silence cost nothing and #75 cost two sessions.
+
+**Verify** reading, and the next unit's live check.
 
 ### #84 — `MatchWorld`'s overview says the file has no optional chaining, and it has ten · `open` *(opened 2026-11-15 by C22)*
 
@@ -2217,7 +2178,7 @@ element tree of every screen in the game.
 
 ---
 
-### #79 — The DOM double is copied whole into every test file that needs it · `open` *(opened 2026-11-10 by C19)*
+### #79 — The DOM double is copied whole into every test file that needs it · `open` *(opened 2026-11-10 by C19; another copy added 2026-11-16 by C23a)*
 
 **Files** every `*.test.ts` in `src/client/ui/` from C14 on — fifteen copies now, seven of them
 added by C19. **Origin** C19's Step 3.

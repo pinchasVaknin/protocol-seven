@@ -559,6 +559,12 @@ const FINISHED = {
     'src/client/main.ts',
   ],
   C22: ['src/client/MatchWorld.ts'],
+  C23: [
+    'src/client/Game.ts',
+    'src/client/GameFrame.ts',
+    'src/client/GameSession.ts',
+    'src/client/GameSurfaces.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

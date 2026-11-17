@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installClock } from '../shared/core/Clock';
+import { angleDelta } from '../shared/core/MathUtil';
 import { createGameBus, EV } from '../shared/core/Events';
 import { Btn, type InputCommand } from '../shared/core/InputCommand';
 import { DEFAULT_SCHEDULER } from '../shared/ai/AiScheduler';
@@ -1358,12 +1359,24 @@ describe('Match — steering the mortar mark', () => {
         r.match.dispose();
     });
 
-    it('answers an exact half turn by moving the mark one way, not the other', () => {
+    /**
+     * `d = -PI` exactly: the one input BACKLOG #1 is about, and the one assertion C24c changed.
+     *
+     * The local `angleDeltaRad` this file used to carry answered `-PI` here, because its `while`
+     * loops tested `d < -PI`; `MathUtil.angleDelta` answers `+PI`, because its `if` tests
+     * `d <= -PI`. The mark therefore travels the other way at this input and at no other, which
+     * is the deliberate behaviour change C24c took under its own approval.
+     *
+     * Reachable through the public surface, which is what makes it worth a test at all:
+     * `mortarOverlay` is a public field, `overlayYaw` starts at zero, and `show` called directly
+     * does not write it — only `stepStreakInput` does.
+     */
+    it('answers an exact half turn the way the shared helper does', () => {
         const r = rig();
         const before = openedAtZeroYaw(r);
-        // `d = -PI` exactly — the one input the local helper and `MathUtil.angleDelta` disagree on.
         r.match.simulate(makeCommand({ tickIndex: 1, yaw: -Math.PI }));
-        expect(r.match.mortarOverlay.markX).toBeGreaterThan(before);
+        expect(angleDelta(0, -Math.PI)).toBe(Math.PI);
+        expect(r.match.mortarOverlay.markX).toBeLessThan(before);
         r.match.dispose();
     });
 

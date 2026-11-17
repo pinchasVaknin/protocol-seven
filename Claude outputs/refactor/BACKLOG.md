@@ -172,7 +172,7 @@ and belong in its Step 2 plan.
 | ~~C21~~ | `client/` MatchEquipment, MatchFeedback, MatchMeta, MatchObjectives, GameLoadout, GameScreens, main | **closed** — nothing was bound to it: no §1 row, and **none of the seven file names appears anywhere in this file** — not one, which no earlier unit could say of all of its files. Thirteen words were swept and every hit is somewhere else: all 37 *equipment* hits are `shared/equipment` (#13's `equipment.simulate` argument, #16's three body heights, #17, #18) or C12's `client/equipment/`; *objectives* is one hit, `ObjectiveStat` in #14/#15's scoreboard cluster; *bomb* is one, `MatchInstance.sendBomb` in #50's comment list; *feedback* is one, the English word inside #33; the 20 *loadout* hits are #71 and #72 in C16's finished editor and the `shared/meta/` rules; and `client/Match` finds only `MatchWorld.ts:795`, which is C22's file and not this unit's. **C21 opened #83**, from the one file in the unit that writes its rule down |
 | ~~C22~~ | `client/MatchWorld.ts` | **closed** — **#50's fifth reference was absorbed**: `MatchWorld.ts:795` is this unit's own file and the one bullet of that entry no session had a fence for, so the client's streak-index table now names `SnapshotRecords.streakKindIndex`. Nothing else was bound: there was no §1 row, and *MatchWorld* has no other hit in this file outside #50 and C21's row above. Eleven words were swept and every hit is elsewhere — *Particulate* and *PropModels* are C10's row and **#64**'s pair of matrix freezes, *NetSession* is C13's row, *LocalIdentity* is **#13**'s `shared/combat` move, *loadMap* is **#7**'s misplaced JSDoc on `loadMapCollision` in A4's `MapLoader.ts`, every *station* hit is **#4**'s generator comment or #64, and all three *divergence* hits are the leg and arm figures in `HitboxDef`, not the checker this file owns; *prebuilt*, *BotHarness*, *DebugSuite* and *resupply* return nothing at all. **C22 opened #84**, from its own Step 1 |
 | ~~C23~~ | `client/Game.ts` + `GameSession.ts`, `GameSurfaces.ts`, `GameFrame.ts` | **closed** — **#35 was absorbed** by C23b under its own approval, as a behaviour change: `warmArsenalViewmodels` warms the whole arsenal's full templates behind the equipped class, the grenades, the knife, the arms and the world's LODs, which is the middle of the three answers the entry offered. **#75 was answered and closed** — its premise is the browser pane's own `requestAnimationFrame` throttle and not the game; the measurement that replaces it is **#85**. **#83 was declined**: its `Game.ts:1148` half is one ternary, and the fix it points at is a *compute-but-do-not-bank* path in `MatchProgression.finish`, which is A19's file, in the ratchet and outside R3's fence — the same reason C21 could not do it. **#55 was declined**: this unit owns only the gunship pass's *call site*, which moved to `GameFrame.renderGunship` and still only picks the hot and cold groups; the fix is in `Renderer.ts`, C2's finished file. **C23 opened #85** |
-| C24 | `client/ClientMatch.ts` | #1 (local `angleDeltaRad`, `while` loops) |
+| ~~C24~~ | `client/ClientMatch.ts` + `MatchArsenal.ts`, `MatchLife.ts`, `MatchStreakLedger.ts`, `MatchSurfaces.ts` | **closed** — **#1 was absorbed** by C24c under its own approval, as a behaviour change at one input: `ClientMatch.angleDeltaRad` is gone, the mortar overlay is on `MathUtil.angleDelta`, and `d = -PI` now answers `+PI` instead of `-PI`. Unlike C1’s half, this boundary **is** reachable through the public surface — `mortarOverlay.show()` does not write `overlayYaw`, so one `simulate` at `yaw = -PI` constructs it exactly — and `ClientMatch.test.ts` holds both the new answer and the direction the mark now travels. That was the fourth of #1’s five copies, and the entry **stays open, re-scoped**: the fifth is `CameraRig.interpolatePhase`, which is C2’s finished file and which no unit can now reach — C24 was the last one. **C24a opened #86**; C24b and C24c opened none |
 
 Everything else below lands in a **completed** unit's files and therefore needs a session of its
 own. Those sessions are not refactor units: they may change behaviour where the task says so, and
@@ -463,73 +463,35 @@ can see a private field — which is the point.
 
 ---
 
-### #1 — One local angle helper that is **not** the shared one · `bound to C24`
+### #1 — One local angle helper that is **not** the shared one · `open` · *needs a session of its own* *(rewritten 2026-11-17 by C24c, which closed the fourth of five copies)*
 
-**Files** `src/client/ClientMatch.ts:3444`. **Origin** A1; the export half was **closed by A23**,
-`IntroPlan`'s copy **folded by A24** (both 2026-10-17/18), and `IntroCamera`'s **folded by C1**
-on 2026-10-25. One copy is left — see §1.
+**Files** `src/client/engine/CameraRig.ts` (`interpolatePhase`). **Origin** A1. Four of the five
+copies are gone: the duplicate export **closed by A23**, `IntroPlan`’s **folded by A24**,
+`IntroCamera`’s **by C1** and `RemoteActor`’s **by C13**, with `ClientMatch`’s **by C24c**.
 
-**What C1 finished.** `IntroCamera`'s local `angleDelta` is deleted and the file imports
-`MathUtil.angleDelta`, which the user approved as a deliberate behaviour change at exactly one
-input: a yaw blend whose two ends are a half turn apart now turns the other way. The decision
-was that `<` against `<=` there was a transcription slip rather than a choice — nothing in the
-file or its history ever argued for `[-PI, PI]` — and the rest of the fold is a no-op, which
-`IntroCamera.test.ts` pins by asserting the blend against the shared helper on both sides of the
-change. The boundary itself is **not** pinned: `d = -PI` exactly cannot be constructed through
-`cameraFor`, whose poses come from a real plan, so no test holds it. The SIM oracle was
-byte-identical across the change and the browser flyover was unchanged.
-
-**What A23 finished.** `MathUtil` exported one function under two names, `angleDelta` and
-`shortestAngle`, and the duplicate export is gone: the two call sites moved onto the survivor
-(`shared/net/Interpolation.ts`'s `sample` and `extrapolate`, `shared/ai/Bot.ts`'s `renderYaw`),
-`shortestAngle` was deleted, the two JSDoc blocks were merged onto `angleDelta` with the M10
-provenance note intact, and `MathUtil.test.ts`'s fifteen-row agreement table now asserts
-`angleDelta(from, to) === wrapAngle(to - from)` on every row — the same rows, between the two
-helpers that are left. The 3,600-tick SIM hash was byte-identical across the change, which is
-what a no-op looks like. It took an approved fence exception (R2 and R3) because the edit lands
-in A1's finished files.
-
-**What is left, and it is not a no-op.** One file still defines its own copy, and it is **not**
-the shared function:
+**What C24c finished, and what it cost.** `ClientMatch.angleDeltaRad` is deleted and the mortar
+overlay’s bearing is on `MathUtil.angleDelta`. That is a **behaviour change at exactly one
+input**, approved as part of C24’s plan:
 
 ```
-MathUtil.angleDelta   if (d > PI) d -= TAU;  if (d <= -PI) d += TAU;   ->  (-PI, PI]
-ClientMatch.angleDeltaRad while (d > PI) d -= TAU; while (d < -PI) d += TAU;  ->  [-PI, PI], no %
+MathUtil.angleDelta       d = (to-from) % TAU; if (d > PI) d -= TAU; if (d <= -PI) d += TAU;  ->  (-PI, PI]
+ClientMatch.angleDeltaRad let d = b - a; while (d > PI) d -= TAU; while (d < -PI) d += TAU;   ->  [-PI, PI]
 ```
 
-The difference is `<=` against `<` at exactly **d = -PI**: the shared helper maps a half turn to
-`+PI`, the local copy keeps `-PI`. `ClientMatch`'s is a third spelling again — `while` loops
-rather than `%`, which agrees everywhere the modulus does but is its own code.
+At `d = -PI` the local copy answered `-PI` and the shared one answers `+PI`, so the mortar mark
+travels the other way — 131.9 m, clamped by `MortarOverlay.moveBy` to the map edge.
 
-So folding it in is a **behaviour change at one input value**, in the place the mortar overlay's
-bearing is computed. A24 folded the intro plan's yaw blend and `intro.txt` was byte-identical
-across every map and mode; C1 folded the intro camera's and the SIM oracle was byte-identical
-too. Both are evidence this one can be judged the same way.
+**Unlike C1’s half, this boundary is reachable through the public surface,** which is the thing
+worth keeping from C24c: `mortarOverlay` is a public field, `overlayYaw` starts at `0`, and
+`MortarOverlay.show()` called directly does **not** write it — only `stepStreakInput` does. So
+`show(x, z)` followed by one `simulate` at `yaw = -Math.PI` constructs `d = -PI` exactly.
+`ClientMatch.test.ts` holds both halves of the change: that `angleDelta(0, -PI) === +PI`, and
+that the mark now moves the other way at that input. C1 said of its own fold that the boundary
+*"may well be unreachable through the public surface, in which case say so rather than writing a
+test that does not actually hold it"* — here it is reachable, and it is held.
 
-At d = -PI the two answers are a half turn apart in sign, which is the one input where a blend
-would visibly swing the other way.
-
-**A fourth copy, folded by C13 on 2026-11-08, and it was the easy one.**
-`src/client/net/RemoteActor.ts`'s `renderYaw` carried the unwrap inline, and unlike every other
-copy in this entry it was the shared function **character for character** — `% TAU`, `> PI`,
-`<= -PI`, with `TAU = Math.PI * 2` on both sides:
-
-```
-RemoteActor.renderYaw  let d = (yaw - prevYaw) % (PI*2); if (d > PI) d -= PI*2; if (d <= -PI) d += PI*2;
-                       return prevYaw + d * alpha;                 ->  (-PI, PI], the shared one
-```
-
-So folding it was a bit-exact no-op rather than a behaviour question, which is why C13 did it
-inside its own unit rather than leaving a fifth entry here. The method is now one line —
-`this.prevYaw + angleDelta(this.prevYaw, this.pose.yaw) * alpha` — which is what its
-single-player twin `Bot.renderYaw` has read since A23, so the two are the same sentence again.
-`RemoteActor.test.ts` pins both wrap directions and the `d = -PI` boundary with exact doubles,
-and the BROWSER checksum over 150 frames of yaw was byte-identical across the change. **This
-entry is unchanged otherwise:** it stays bound to C24 for `ClientMatch.angleDeltaRad`, which is
-still a different spelling with a different answer at one input.
-
-**A third spelling of the same unwrap, noted by C2 on 2026-10-25.**
-`src/client/engine/CameraRig.ts`'s non-exported `interpolatePhase` carries the unwrap inline:
+**What is left, and why no unit can reach it.**
+`src/client/engine/CameraRig.ts`’s non-exported `interpolatePhase` carries the unwrap inline:
 
 ```
 CameraRig.interpolatePhase  let d = b - a; if (d > PI) d -= TAU; if (d < -PI) d += TAU;
@@ -544,25 +506,21 @@ the function sits on the per-frame camera path (R7), the change is a behaviour c
 input exactly as above, and the unit had no approval for one. C2 measured the real input range
 instead — `bobPhase` advances at most **0.736 rad per tick** at 4.92 m/s, so the two spellings
 agree on every value the game can produce, and the boundary is as unreachable as C1 found
-`IntroCamera`'s to be. `CameraRig.test.ts` pins both wrap directions and the no-wrap case with
+`IntroCamera`’s to be. `CameraRig.test.ts` pins both wrap directions and the no-wrap case with
 exact doubles, so whoever folds this in has the before/after already written.
 
-**Where it is done:** C24, with `ClientMatch`'s copy, or in a session of its own — `CameraRig.ts`
-is **C2**'s file, now finished and in the `check:style` ratchet, so a later unit cannot reach it
-under R3 either.
+`CameraRig.ts` is **C2’s** file, finished and in the `check:style` ratchet, so no later unit can
+reach it under R3. **C24 was the last unit of the programme**, which means this copy will never
+be absorbed by a unit and needs a session of its own — one that is not fenced by R3 and may
+change behaviour where it says so.
 
-**Decide** fold it in and accept the `(-PI, PI]` boundary (and pin what can be pinned in C24's
-tests), or keep the local copy and write down *why* it wants `[-PI, PI]`. Note what C1 found:
-the boundary input may well be unreachable through the public surface, in which case say so
-rather than writing a test that does not actually hold it. What is not acceptable is a fourth
-copy.
+**Decide** fold it in and accept the `(-PI, PI]` boundary, or keep the local copy and write down
+*why* it wants `[-PI, PI]`. Note what C1 and C2 both found: the boundary input may be
+unreachable through the public surface here, in which case say so rather than writing a test
+that does not actually hold it. What is not acceptable is a sixth copy.
 
-**Where it is done:** `ClientMatch.ts` in **C24**, inside its own unit's fence and under that
-unit's approval, because it is a behaviour question about that unit's code rather than a
-mechanical merge.
-
-**Verify** `npm run check` + SIM snapshot/compare. Both are camera work and need the BROWSER
-check their units already run; neither is covered by an oracle the way `IntroPlan` was.
+**Verify** `npm run check` + SIM snapshot/compare, plus C2’s own BROWSER check — this is camera
+work and no oracle covers it the way `intro.txt` covered `IntroPlan`.
 
 ### #3 — Replace greybox's two hand-computed ramps with `rampAlongX` / `rampAlongZ` · `needs measurement`
 

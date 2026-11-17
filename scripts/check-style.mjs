@@ -566,7 +566,12 @@ const FINISHED = {
     'src/client/GameSurfaces.ts',
   ],
   // `ClientMatch.ts` itself joins in C24c, when its own skeleton lands.
-  C24: ['src/client/MatchStreakLedger.ts', 'src/client/MatchSurfaces.ts'],
+  C24: [
+    'src/client/MatchArsenal.ts',
+    'src/client/MatchLife.ts',
+    'src/client/MatchStreakLedger.ts',
+    'src/client/MatchSurfaces.ts',
+  ],
 };
 
 // ---------------------------------------------------------------------------

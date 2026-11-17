@@ -162,7 +162,7 @@
   {
     takeTheLine();
     match.latency.reset();
-    match.hud.lastHitLatencyMs = -1;
+    match.ui.hud.lastHitLatencyMs = -1;
     const markers = [];
 
     // Aim at the close dummy: it is 5 m away and slightly north of the lane.
@@ -177,12 +177,12 @@
 
     for (let i = 0; i < 24; i++) {
       aimAt(target);
-      match.hud.lastHitLatencyMs = -1;
+      match.ui.hud.lastHitLatencyMs = -1;
       mouse('mousedown', 0);
       await sleep(40);
       mouse('mouseup', 0);
       await sleep(120);
-      if (match.hud.lastHitLatencyMs >= 0) markers.push(match.hud.lastHitLatencyMs);
+      if (match.ui.hud.lastHitLatencyMs >= 0) markers.push(match.ui.hud.lastHitLatencyMs);
       if (target.health.current < 40) target.reset();
     }
 

@@ -631,7 +631,7 @@ export class Session {
     this.send(writeStreaks(this.out, view));
   }
 
-  /** The board, whole (M13 Phase B). See `MatchInstance.sendScoreboard` for when. */
+  /** The board, whole (M13 Phase B). See `SeatChannels.sendScoreboard` for when. */
   sendScoreboard(serial: number, rows: readonly ReplicatedScoreRow[]): void {
     this.send(writeScoreboard(this.out, serial, rows));
   }

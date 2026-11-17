@@ -19,18 +19,6 @@ import type { PropShapeDef, PropShapeId } from './types';
  */
 export const PROP_SHAPES: Readonly<Record<PropShapeId, PropShapeDef>> = {
   /**
-   * The resupply station (this session).
-   *
-   * Deliberately not the scenery `crate` with a different flag on it: a player has to be able
-   * to tell from across a lane which box is worth kneeling at, and every map here is already
-   * full of boxes. So it is wider than it is tall, it sits open, and the two parts that read at
-   * distance are `hazard` — the one material in the palette that means *look at this* and is
-   * used nowhere as a surface you walk on.
-   *
-   * The body is solid and the lid and stripe are not, exactly as `crate` does it: trim that
-   * collides is trim a grenade bounces off oddly.
-   */
-  /**
    * The resupply station (2026-09-27): four **invisible** boxes, and a pile that stands over
    * them.
    *

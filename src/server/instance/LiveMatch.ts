@@ -158,7 +158,7 @@ export class LiveMatch extends MatchInstance {
 
   // ====================================== PUBLIC METHODS ====================================== \\
   //#region Public Methods
-  /** True once every human who was here has gone. See `Server.stepFlow`. */
+  /** True once every human who was here has gone. See `SkirmishFlow.stepFlow`. */
   get abandoned(): boolean {
     return this.everSeated && this.playerCount === 0;
   }

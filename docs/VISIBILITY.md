@@ -34,7 +34,7 @@ it to every client. Four of its events carry positions:
 | `Pose` | jump and land positions | the same |
 
 **Already right, and the model for the rest:** UAV contacts are built per recipient and sent only
-to the team whose UAV recorded them (`MatchInstance.sendStreaks`), and Ghost keeps a body out of
+to the team whose UAV recorded them (`SeatChannels.sendStreaks`), and Ghost keeps a body out of
 that list. The scoreboard and the killfeed carry no positions.
 
 **What that buys a cheater**, with no change to anything the server decides: boxes on every enemy
@@ -320,7 +320,7 @@ through the client's sink emits the impact facing the player and no shot.
 **Part 4 — the S&D bomb.** Carried, the bomb's place is its carrier's place, and `MsgS.Bomb` sent
 it to every seat every snapshot: the attackers' carrier on every defender's wire, through any
 wall. The client already drew no HUD arrow to a carried bomb for exactly that reason
-(`MatchObjectives`), but the coordinates arrived regardless. Now `MatchInstance.sendBomb` gives a
+(`MatchObjectives`), but the coordinates arrived regardless. Now `SeatChannels.sendBomb` gives a
 seat that does not have the carrier awake the bomb where *its own snapshot* puts the carrier — the
 dormant record, frozen where it was last seen (`SeatView.recordOf`), or the origin if it never was
 — and the client hides a carried bomb whose carrier is dormant (`MatchObjectivesDeps.dormant`).

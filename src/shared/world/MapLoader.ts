@@ -42,12 +42,6 @@ export interface CollisionStats {
 // ===================================== EXPORTED FUNCTIONS ===================================== \\
 //#region Exported Functions
 /**
- * Build the collision world for a map.
- *
- * Allocation happens once, at load. The returned `CollisionWorld` is the single structure
- * that serves both the collision broadphase and every gameplay raycast (S4.3).
- */
-/**
  * A second view over collision that has already been loaded (M11, S4.19).
  *
  * The collider set and the spatial hash are the expensive, immutable half and are shared; the
@@ -64,6 +58,12 @@ export function shareMapCollision(baked: LoadedCollision): LoadedCollision {
   };
 }
 
+/**
+ * Build the collision world for a map.
+ *
+ * Allocation happens once, at load. The returned `CollisionWorld` is the single structure
+ * that serves both the collision broadphase and every gameplay raycast (S4.3).
+ */
 export function loadMapCollision(def: MapDef): LoadedCollision {
   const colliders = new ColliderSet(countSolidParts(def) + 8);
   addBrushColliders(colliders, def);

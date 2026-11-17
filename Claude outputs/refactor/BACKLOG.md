@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**62 open entries.** #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**60 open entries.** (Re-counted from the headings on 2026-11-17, when batch A closed ten: the running figure in this sentence had drifted eight low over the programme and is now derived rather than remembered.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -1452,30 +1452,6 @@ not.
 from each other. `WeaponAudio.test.ts`'s snapshots flip in the same commit and are the record
 of what moved.
 
-### #62 — `WeaponModelSpec.scale`'s doc names the wrong weapon · `open` *(opened 2026-11-03 by C9)*
-**Files** `src/client/weapons/WeaponModelSpecs.ts` (the `scale` field's doc comment).
-**Origin** C9's characterization tests, 2026-11-03.
-
-The field says *"Overall scale. The pistol is the only weapon that is genuinely a different
-size."* The pistol is at **1**, and it sets `scale: 1` explicitly, which reads as a leftover
-from when it was not. Six other weapons are not at 1: `smg_wasp` 0.94, `smg_meridian` 0.97,
-`lmg_bastion` 1.06, `lmg_monolith` 1.08, `sniper_kestrel` 1.04, `sniper_vantage` 1.02 — the
-SMGs under and the heavy weapons over, which is a deliberate and sensible pattern that the
-comment denies.
-
-**Why C9 did not fix it.** R8 lets a unit delete a comment its own refactor made false, and
-this one was false before C9 opened the file; rewriting it is a claim about what the numbers
-are *for*, which is the author's to make. The numbers themselves are pinned
-(`WeaponModelSpecs.test.ts`, "scales the two SMGs down and the four heavy weapons up").
-
-**Decide** the sentence. Most likely: the SMGs and the heavy weapons are scaled against each
-other and the pistol is drawn at 1 and corrected on Z instead (`adsOffsetZ: -0.13`), which is
-what the `adsOffsetZ` doc already describes. While there: the pistol's redundant `scale: 1`
-either goes or gets a line saying it is deliberate.
-
-**Verify** `npm run check`. No value changes, so the twelve rows pinned in
-`WeaponModelSpecs.test.ts` must not move.
-
 ### #61 — A plain-object lookup answers for `Object.prototype`'s keys · `open` *(opened 2026-11-03 by C9)*
 **Files** `src/client/weapons/WeaponAssetCatalog.ts` (`equipmentAssetId`, `EQUIPMENT_ASSET_IDS`).
 **Origin** C9's characterization tests, 2026-11-03.
@@ -1806,35 +1782,6 @@ terrain, near-black team-mates, orange enemies.
 
 ## 6. Documentation and housekeeping
 
-### #86 — `public/verify/gunplay.js` reaches `match.hud`, which `Match` does not have · `open` *(opened 2026-11-16 by C24a)*
-
-**Files** `public/verify/gunplay.js` (lines 165, 180, 185). **Origin** C24a's Step 0 reach-in
-sweep (§4.2), which exists to find the *opposite* case — a script that depends on a private
-member a refactor is about to move.
-
-Three lines of that harness read and write `match.hud`:
-
-```js
-match.hud.lastHitLatencyMs = -1;                      // L165, L180
-if (match.hud.lastHitLatencyMs >= 0) markers.push(…); // L185
-```
-
-**`Match` has no `hud` member.** The HUD is `match.ui.hud` — `ui` is the `MatchHud`, and the
-`Hud` under it is what carries `lastHitLatencyMs`. So the assignment is a write to a property
-of `undefined` and throws a `TypeError`, which means that script's **criteria 5 and 8** — the
-hitmarker check and the whole input-latency distribution — have not run since whenever the
-`ui` indirection was introduced. Everything above them in the file still ran, so the script
-has been reporting partial results rather than failing visibly.
-
-The fix is three characters (`match.ui.hud`) and C24a could not make it: `public/` is §10's,
-out of the reach of every unit in the programme, and R3 fences this unit at
-`src/client/ClientMatch.ts` and its own new files. It is also worth re-running the whole
-script afterwards rather than assuming the two criteria pass once they execute — nobody has
-seen their output.
-
-**Verify** load the client with the harness and watch criteria 5 and 8 produce numbers rather
-than being absent from the report.
-
 ### #85 — A live check in the browser pane under-reports whenever Claude's window is behind another · `open` *(opened 2026-11-16 by C23b)*
 
 **Files** none — this is about the instrument, not the game. `REFACTOR-PROMPT.md` §6's
@@ -1876,31 +1823,6 @@ rate it was measured at. A check that can only produce false negatives is worse 
 declines to run, because C18's silence cost nothing and #75 cost two sessions.
 
 **Verify** reading, and the next unit's live check.
-
-### #84 — `MatchWorld`'s overview says the file has no optional chaining, and it has ten · `open` *(opened 2026-11-15 by C22)*
-
-**Files** `src/client/MatchWorld.ts`, the file overview — the sentence ending *"which is why this
-file has no `?.` in it and why `Game.simulate` no longer has four."* **Origin** C22's Step 1.
-
-The paragraph is making a real point, and most of it is still exactly true: M7 moved the
-*nullability* out of `Game` by turning six always-null-together fields into one world that either
-exists or does not, so the four things a world always has — `map`, `player`, `match`, `debug` —
-are never asked `?.`. The sentence then overstates it into a claim about the file. The file
-carries **ten** optional chains, and every one is on something genuinely optional:
-`deps.server?.prebuiltMap`, `this.net?.` five times, `this.match.range?.dummies`,
-`this.harness?.stop()` and `this.particulate?.dispose()`.
-
-**Why C22 could not do it.** R8 lets a unit delete a comment *its own refactor* made false. This
-one was false before the unit started, the split did not touch the claim and did not move the
-paragraph, and rewriting it is not a deletion — it is choosing what the sentence should say, of
-which "no `?.` on the four a world always has" is only one option. That is a judgement about the
-file's documented design rather than a refactor, which is what this list is for.
-
-**Decide** whether the clause is narrowed to the four fields it is actually about, dropped, or
-left as the loose shorthand it is. One sentence either way, and the next reader stops counting
-question marks.
-
-**Verify** reading. No oracle sees a comment.
 
 ### #81 — A passing `npm run layout` can still exit 1, on its own teardown · `open` *(opened 2026-11-11 by C20)*
 
@@ -2009,22 +1931,6 @@ built module-level cache would make the order irrelevant. The second costs one b
 bundle, and the bake is bit-exact against four maps at four settings.
 
 
-### #43 — The harness's "background build" warning tells you to set a variable that is already set · `open` *(opened 2026-10-19)*
-**Files** `src/server/skirmishHarness.ts` (~line 1451, the `background build` warning). **Origin**
-the session that closed #40, on 2026-10-19.
-
-Since #40, the NET oracle's run ends a match properly — the `post-match hold` line in the same
-report now reads *"3 client(s) held, 3 migrated back; screen said 30.0/29.9/29.9s, actual
-summary→arena 30022/30020/30022ms"*. The warning three lines above it still says *"the return to
-the arena was NOT EXERCISED — no match ended in this run ... Shorten `MATCH_ROUND_SECONDS` to
-reach it"*, which is now false twice over: a match did end, and the variable it asks for is set.
-Its condition is presumably about the *next* cycle's background build, which `--cycles 1` cannot
-reach — in which case the text should say so instead of naming a remedy that is already applied.
-
-**Why the session that found it did not fix it.** It is in the harness, which §10 of
-`REFACTOR-PROMPT.md` keeps out of scope for the whole programme. §6 now warns the reader to
-expect that one line and ignore it.
-
 ### #42 — Three clients disagree with the server's final scoreboard, one run in five · `open` · *a fix is in place; the cause is still unconfirmed* *(opened 2026-10-19)*
 **Files** `src/server/instance/MatchInstance.ts` (`sendScoreboard`) — B5's file; the check is
 `src/server/skirmishHarness.ts`'s 4.3 comparison. **Origin** the session that closed #40.
@@ -2090,18 +1996,6 @@ two by running a seeded match to the tick its win condition fires and asserting 
 went out on that tick with the previous one younger than `SCOREBOARD_MIN_TICKS`. That is the
 fix's own behaviour held in place; it still is not evidence that the fix removes #42, which
 needs the match that ends **on a kill** described above.
-
-### #4 — Fix the false comment about the ammo stations in the `props.ts` generator · `open`
-**Files** the script that generates `src/shared/world/maps/props.ts` (find it under `scripts/`).
-**Origin** A3b. A comment in the generator states something untrue about the ammo stations, which
-misleads anyone reading the generated file. The generated values themselves are never edited (R9) —
-only the comment.
-
-### #7 — Move the misplaced JSDoc in `MapLoader.ts` · `open`
-**Files** `src/shared/world/MapLoader.ts` (~lines 44–49). **Origin** A4 — the defect was introduced
-during that unit. `loadMapCollision`'s JSDoc ended up above `shareMapCollision`, so
-`loadMapCollision` is undocumented and the reader gets the wrong description for the function
-below. Move it back.
 
 ### #22 — Extend the M9 maths table to the engines the project actually runs on · `open` *(opened 2026-10-12)*
 **Files** `src/shared/core/SimMath.ts` (the table in its header), using
@@ -2388,47 +2282,6 @@ methods around them are not.
 round still goes where it went. `SentryGun.test.ts` and `ChopperGunner.test.ts` (both A16) pin the
 shot counters, the eye height a sentry fires from and the chopper's belt.
 
-### #28 — Settle the "six killstreaks" the comments still describe · `open` *(opened 2026-10-13 by A17)*
-
-**Files** `src/shared/streaks/StreakDefs.ts` (the file overview), `src/shared/streaks/StreakSystem.ts`
-(the class comment), and any other `streaks/` comment that counts them. **Origin** A17.
-
-There are **nine** streaks — the six of M7 plus the minigun, the flamethrower and the riot shield
-of F16 — and several comments still say six. `StreakDefs.ts` opens with *"The six killstreaks, as
-data"*, and `StreakSystem`'s class comment says *"which `StreakDef.effectEnds` names for each of
-the six"* and *"activate/function/expire for all six"*.
-
-**Why A17 did not just change the number.** Some of them are not arithmetic, they are history, and
-a mechanical find-and-replace would make a true sentence false. The clearest case is in
-`StreakSystem`:
-
-> *"six shipped streaks against three keys **meant** a player who reached twelve kills **held** six
-> things"*
-
-That is a statement about the state of the game at playtest round 4, when there really were six,
-and it is the reason the equipped-streaks filter exists. Changing it to nine would misdate the
-decision it records. The same question has to be asked of each one: is this sentence counting the
-streaks *now*, or recording what was true when something was decided?
-
-So it is a read of every occurrence with a judgement per occurrence, which is a different kind of
-work from a refactor unit and does not belong inside one.
-
-**Do while there:** `grep -rn "six" src/shared/streaks/` is the whole corpus, and the same sweep is
-worth running for "three keys" and "all six" across `src/client/ui/` and `docs/`, where the HUD's
-strip and the acceptance criteria may count them too.
-
-**C14 ran the `src/client/ui/` half on 2026-11-08, and it is empty.** The HUD's strip counts
-*keys*, not streaks, and three is still the right number: `HudStreaks.ts` says *"Three slots
-because there are three keys"* and *"the **class's** three keys"*, both true. The only "six" in
-that directory is `LoadoutEditor.ts` and `styles/meta.css` counting the **six category bars** of
-the loadout list, which is a different six and also true. So this entry's corpus is
-`src/shared/streaks/` and `docs/` alone; nothing in `client/ui/` has to be read with it.
-
-**Verify** `npm run check`. Comments only, so the oracles cannot move; if they do, something other
-than a comment changed.
-
----
-
 ### #29 — A reverted weapon keeps its camo for one pass · `open` *(opened 2026-10-14 by A19)*
 
 **Files** `src/shared/meta/Unlocks.ts` (`revertLockedWeapon`, extracted from `sanitiseLoadout` by
@@ -2499,86 +2352,6 @@ in the `check:style` ratchet, so this needs a session of its own either way.
 
 **Verify** `npm run check` + SIM snapshot/compare → `PASS`, plus `Snapshot.test.ts`'s *"names
 every piece of equipment and nothing else"*.
-
-### #50 — Four references to members that moved out of `MatchInstance` · `open` *(opened 2026-10-20 by B5)*
-
-**Files** `src/server/net/Session.ts:634`, `src/server/Router.ts:15`,
-`docs/VISIBILITY.md:37` and `:323`. **Origin** B5. **The fifth was closed by C22** on
-2026-11-15: `src/client/MatchWorld.ts` is that unit's own file, and its `streakKindIndex` now
-names `SnapshotRecords.streakKindIndex`, which is where that lookup went.
-
-B5 split `MatchInstance.ts` into four files, and four comments elsewhere still name the old
-address:
-
-- `Session.ts:634` — *"See `MatchInstance.sendScoreboard` for when."* → `SeatChannels.sendScoreboard`.
-- `Router.ts:15` — *"`MatchInstance.seats` holds the *seat* (the entity, the encoder)"* → the
-  field is `roster`, a `SeatRoster`, and what it holds per seat is now one `SeatSlot` rather than
-  an entry in each of seven maps.
-- `VISIBILITY.md:37` — `MatchInstance.sendStreaks` → `SeatChannels.sendStreaks`.
-- `VISIBILITY.md:323` — `MatchInstance.sendBomb` → `SeatChannels.sendBomb`.
-Everything else that names a member still names one: `buildEntities`, `sendSnapshots`, `step`,
-`seat`, `unseat`, `releaseEntity` and `isArena` all stayed, and `writePlayer`, `writeBot` and
-`describeStreak` kept their names in `SnapshotRecords.ts`, so the comments in `NetPlayer.ts`,
-`Session.ts:954` and `CarriedWeapon.ts` are still correct.
-
-**Why B5 could not do it.** `Session.ts` is B3's file and in the `check:style` ratchet, `docs/`
-is out of scope for the whole programme (§10), and R3 fences a unit to its own files. The
-`Router.ts` line is **bound to B8**, which owns that file and has not run yet; the other two
-need a session of their own, as #32 and #48 did. The client one needed neither: C22 owns
-`MatchWorld.ts`, so it fell inside that unit's fence and was done there.
-
-**Verify** reading. No oracle sees a comment.
-
-### #51 — One reference to `ServerMatch.stepThrowers`, which is now `MatchThrows`' · `open` *(opened 2026-10-24 by B6)*
-
-**Files** `PLAN.md:1633`. **Origin** B6. **Two of the three were closed by B8** on 2026-10-25:
-`NetPlayer.ts:103` and `NetPlayer.test.ts:90` are B8's own files and now name
-`MatchThrows.stepThrowers`.
-
-B6 moved the grenade hands out of `Match.ts` into `server/MatchThrows.ts`, and three comments
-name the old address:
-
-- `PLAN.md:1633` — *"`ServerMatch.stepThrowers`, is what keeps a muzzle flash off a man holding
-  a grenade."*
-
-Everything else still names something that exists: `stepMelee`, `step`, `addPlayer`,
-`removePlayer`, `setPendingLoadout`, `applyPendingLoadoutNow`, `perksOf` and `loadoutOf` all
-stayed on `ServerMatch`, so `HeadlessClient.ts:206` and `:1534` are **correct** and are named
-here only so that the next reader does not "fix" them.
-
-**Why B6 could not do it.** `NetPlayer.ts` and its test are B8's files, and `PLAN.md` is a root
-document §10 keeps out of the whole programme. One reading session, no behaviour. The
-`NetPlayer.ts` half is **bound to B8**, which owns that file and has not run yet.
-
-**Verify** reading. No oracle sees a comment.
-
-### #52 — Four references to flow members that moved out of `Server` · `open` *(opened 2026-10-25 by B7)*
-
-**Files** `src/server/instance/LiveMatch.ts:161`, `src/server/skirmishHarness.ts:1432`, `:1444`
-and `:1467`. **Origin** B7b.
-
-B7 split the skirmish flow out of `Server.ts` into `server/SkirmishFlow.ts`, and four comments
-name the old address:
-
-- `LiveMatch.ts:161` — *"True once every human who was here has gone. See `Server.stepFlow`."*
-  on `abandoned`. The reader it points at is `SkirmishFlow.stepFlow`, and the method that acts
-  on the answer is `SkirmishFlow.maybeAbandonLive`.
-- `skirmishHarness.ts:1432`, `:1444` and `:1467` — three mentions of `Server.finishLive`, which
-  is `SkirmishFlow.finishLive` now. The last one is inside a **failure message the harness
-  prints**, so it is the one a reader meets at the worst moment: *"is supposed to be prepared:
-  see Server.finishLive for the arena half."*
-
-Everything else still names something that exists: `Server.tick`, `Server.stepInstance`,
-`Server.rebuildWarmup`, `Server.stop`, `MatchInstance.seat` and `ServerMatch.*` all stayed where
-their comments say they are.
-
-**Why B7 could not do it.** `LiveMatch.ts` is B4's file and in the `check:style` ratchet, and
-`skirmishHarness.ts` is one of §10's instruments — out of scope for the whole programme, and the
-file #43 is already open against for the same reason. One reading session, no behaviour. The
-`LiveMatch.ts` half could also ride along with whichever session takes #51's `NetPlayer.ts` line,
-since both are a one-line comment fix in a finished unit's file.
-
-**Verify** reading. No oracle sees a comment.
 
 ### #53 — The NET oracle fails three different ways when it runs behind the SIM ones · `open` *(opened 2026-10-25 by B8)*
 

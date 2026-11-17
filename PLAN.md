@@ -1630,7 +1630,7 @@ protocol moves.
   a grenade held indefinitely, and the rifle brought its own pair of gloves with it.
 - **A cooking player is no longer replicated as firing.** `EFlag.Firing` was read straight off
   `Btn.Fire`, which is now the pin-pull button: `NetPlayer.handBusy`, written by
-  `ServerMatch.stepThrowers`, is what keeps a muzzle flash off a man holding a grenade.
+  `MatchThrows.stepThrowers`, is what keeps a muzzle flash off a man holding a grenade.
 - **`ThrowController.test.ts`** holds the ten rules above that a change next door would break
   silently — what costs a grenade, when `throwFrom` is called and with what cook.
 

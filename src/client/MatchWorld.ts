@@ -14,8 +14,10 @@
  * The fix is not to move code, it is to move the *nullability*. Six fields that are always
  * null together are one field that is sometimes null, so `Game` now holds a single
  * `MatchWorld | null` and asks once. Inside here nothing is optional: a `MatchWorld` that
- * exists has a map, a player, a match and a debug suite, which is why this file has no `?.`
- * in it and why `Game.simulate` no longer has four.
+ * exists has a map, a player, a match and a debug suite, which is why none of those four is
+ * ever asked `?.` here and why `Game.simulate` no longer has four. The ten optional chains this
+ * file does carry are on things that are genuinely optional — a server, a net session, the
+ * range, the bot harness and the particulate — none of which a world always has.
  *
  * ## The mirror rule still holds
  *

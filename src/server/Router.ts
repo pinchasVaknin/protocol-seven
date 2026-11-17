@@ -20,7 +20,7 @@ const log = logger('router');
  * There is no intermediate state where a player is 'between' instances."*
  *
  * That invariant needs a single owner or it is not an invariant. Membership is recorded here
- * and nowhere else: `MatchInstance.seats` holds the *seat* (the entity, the encoder), but this
+ * and nowhere else: `SeatRoster` holds the *seat* — one `SeatSlot` per player — but this
  * map decides who is where, and `move` is the only thing that writes both. A second place that
  * could disagree — a flag on the session, a lookup that scans both instances — is how a player
  * ends up simulated in one world and sent snapshots from another.

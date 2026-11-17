@@ -1429,7 +1429,7 @@ function reportFlow(input: FlowReportInput): number {
      * `HeadlessClient` had been counting the exact number all along, behind an accessor with no
      * readers whose comment said arena returns were *expected* to be late.
      *
-     * They are not. `Server.finishLive` sends a `Prepare` for the arena with the summary, so
+     * They are not. `SkirmishFlow.finishLive` sends a `Prepare` for the arena with the summary, so
      * the return trip is built during the hold like every outbound trip is built during warmup.
      * A non-zero here is a player watching a hitch on the transition the whole design exists to
      * make invisible, so it goes in the gate beside the misprediction window rather than into a
@@ -1441,7 +1441,7 @@ function reportFlow(input: FlowReportInput): number {
     /**
      * The return trip has to have happened for the number below to mean anything.
      *
-     * Found by running the red control: with `Server.finishLive`'s arena `Prepare` removed —
+     * Found by running the red control: with `SkirmishFlow.finishLive`'s arena `Prepare` removed —
      * the bug — a default run still reported **0 late** and passed, because a default run never
      * ends a match. Migrations go arena to live and stop there, so the one transition F13 is
      * about is not in the sample at all.
@@ -1453,9 +1453,12 @@ function reportFlow(input: FlowReportInput): number {
     const returned = reports.filter((r) => r.toArenaWindows.length > 0).length;
     if (returned === 0) {
       log.warn(
-        'background build: the return to the arena was NOT EXERCISED — no match ended in this ' +
-          'run, so the transition F13 is about never happened and the late-build count below ' +
-          'proves nothing. Shorten MATCH_ROUND_SECONDS to reach it.',
+        'background build: the return to the arena was NOT SAMPLED — no post-migration ' +
+          'window into the arena closed before this run ended, so the late-build count below ' +
+          'proves nothing. Note this is not "no match ended": the post-match hold line reports ' +
+          'the hold and the migrations back. What is missing is a *closed* window — ' +
+          'HeadlessClient records one only once POST_MIGRATION_WINDOW_TICKS have elapsed after ' +
+          'the migration, which a run that stops at the summary never reaches.',
       );
     }
 
@@ -1464,7 +1467,7 @@ function reportFlow(input: FlowReportInput): number {
       const who = reports.filter((r) => r.lateBuilds > 0).map((r) => `${r.name} x${r.lateBuilds}`);
       problems.push(
         `${late} migration(s) arrived with no map built — ${who.join(', ')}. Every transition ` +
-          'is supposed to be prepared: see Server.finishLive for the arena half.',
+          'is supposed to be prepared: see SkirmishFlow.finishLive for the arena half.',
       );
     }
   } else {

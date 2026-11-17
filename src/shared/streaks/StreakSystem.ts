@@ -20,7 +20,7 @@
  * against the world this class owns:
  *
  *  - **The cooldown.** `STREAK_COOLDOWN_SECONDS` from the moment the streak's **effect ends**,
- *    which `StreakDef.effectEnds` names for each of the six. For a lasting streak that is its
+ *    which `StreakDef.effectEnds` names for each of the nine. For a lasting streak that is its
  *    own duration plus the cooldown; for a mortar or a crate the effect is over at the press.
  *    Armed as an estimate in `activate` and replaced by the fact in `retire`, so a sentry shot
  *    down early gets its thirty seconds from when it stopped shooting.
@@ -290,7 +290,7 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
   /**
    * Put kills in somebody's wallet without their scoring them. Debug and verification (S7).
    *
-   * Exposed so acceptance criterion 1 can exercise activate/function/expire for all six
+   * Exposed so acceptance criterion 1 can exercise activate/function/expire for all nine
    * without first staging a twelve-kill streak, which would measure the score system rather
    * than the streak. Credits the **price** of the named streak rather than handing the streak
    * over, because after B9 there is nothing to hand over: the harness's "give them a chopper"
@@ -573,7 +573,7 @@ export class StreakSystem extends Disposable implements ObjectiveProvider {
    *
    * A streak with no duration reports a full cooldown's worth and keeps reporting it every tick
    * it is alive, so "no two at once" holds for something that ends on its own terms without this
-   * having to express an infinity on a wire that has no room for one. All six shipped streaks
+   * having to express an infinity on a wire that has no room for one. All nine shipped streaks
    * have a duration, so today this is a guard rather than a case.
    */
   private liveTicksFor(entityId: number, id: StreakId): number {

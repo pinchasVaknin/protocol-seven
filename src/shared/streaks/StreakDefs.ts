@@ -1,5 +1,5 @@
 /**
- * The six killstreaks, as data (brief S6.1).
+ * The nine killstreaks, as data (brief S6.1).
  *
  * Every number that decides how a streak *feels* is here rather than inside the class that
  * implements it, which is S3's rule and is what lets the debug panel slider them without the
@@ -298,7 +298,7 @@ export const STREAK_DEFS: readonly StreakDef[] = [
 /**
  * Seconds a streak is locked out for after its effect ends (round 4, the second pass).
  *
- * One number for all six rather than a per-streak field, because it is a rule about the *pace*
+ * One number for all nine rather than a per-streak field, because it is a rule about the *pace*
  * of the match rather than a property of any one streak — the same reason the respawn delay is
  * not a property of a class. A streak's own duration is already the part of the lockout that
  * differs, and it is already on the def.

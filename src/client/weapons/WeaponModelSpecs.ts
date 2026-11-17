@@ -50,7 +50,16 @@ export interface WeaponModelSpec {
   readonly bipod: boolean;
   /** A pump-action fore-end that slides on the reload. */
   readonly pump: boolean;
-  /** Overall scale. The pistol is the only weapon that is genuinely a different size. */
+  /**
+   * Overall scale, against the shared viewmodel size.
+   *
+   * The SMGs are drawn under it (`smg_wasp` 0.94, `smg_meridian` 0.97) and the heavy weapons
+   * over it (`lmg_bastion` 1.06, `lmg_monolith` 1.08, `sniper_kestrel` 1.04, `sniper_vantage`
+   * 1.02), so the arsenal reads as a range of sizes rather than one silhouette rescaled. The
+   * pistol is **not** among them: it sits at 1 and is pulled back on Z instead, which is what
+   * `adsOffsetZ`'s own note describes. Its explicit `scale: 1` is deliberate, so that a row
+   * with no scale line is a row nobody has looked at rather than a pistol.
+   */
   readonly scale: number;
 
   /**

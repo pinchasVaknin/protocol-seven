@@ -995,19 +995,19 @@ describe('the shield', () => {
 
 
   /**
-   * **A defect, pinned rather than fixed (C6, BACKLOG #57).**
+   * **BACKLOG #57, fixed 2026-11-21.** This assertion was the reverse.
    *
-   * The base matrix the arms are solved against is one shared scratch, and `base` inside
+   * The base matrix the arms are solved against was one shared scratch, and `base` inside
    * `update` is a *reference* to it. A knife or a grenade posed later in the same frame
-   * composes its own pose into that same object, so by the time the plate is posed the matrix
-   * it is handed is the held item's and not the weapon's — the glove on the shield is solved
-   * against wherever the grenade is. Carrying the riot shield and throwing a grenade is the
+   * composed its own pose into that same object, so by the time the plate was posed the matrix
+   * it was handed was the held item's and not the weapon's — the glove on the shield solved
+   * against wherever the grenade was. Carrying the riot shield and throwing a grenade is the
    * reachable case, because the streak gives you a sidearm and a throw is still allowed.
    *
-   * R1 says a refactor unit may not change what this draws, so the sharing is kept exactly as
-   * it is and this test is the record of it. See #57 for the fix and the decision it needs.
+   * The weapon's base and the held item's scratch are two objects now, so the throw below —
+   * which is what made the two differ — must leave the plate on the weapon's.
    */
-  it('solves the plate’s glove against the grenade’s pose, not the weapon’s — see #57', () => {
+  it('solves the plate’s glove against the weapon, even with a grenade in the other hand', () => {
     const cfg = config({ idleAmplitude: 0 });
     const model = fakeWeapon({ withHands: true });
     const shield = fakeShield(true);
@@ -1019,8 +1019,8 @@ describe('the shield', () => {
     anim.setShield(shield);
     anim.setGrenade(grenade);
     run(anim, { throwing: true, throwCook: 0.17 }, 1, cfg);
-    expect(plateRig.bases[0]).toEqual(grenadeRig.bases[0]);
-    expect(plateRig.bases[0]).not.toEqual(weaponRig.bases[0]);
+    expect(plateRig.bases[0]).toEqual(weaponRig.bases[0]);
+    expect(plateRig.bases[0]).not.toEqual(grenadeRig.bases[0]);
   });
 
   it('hands the plate’s glove the same base the weapon’s would have had', () => {

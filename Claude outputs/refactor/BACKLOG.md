@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**41 open entries.** (Derived from the headings, not remembered: batch A closed ten on 2026-11-17, and batches B, C and D closed eight, six and five on 2026-11-21. The figure here had drifted eight low over the programme before it was re-counted.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**38 open entries.** (Derived from the headings, not remembered: batch A closed ten on 2026-11-17, and batches B, C, D and E closed eight, six, five and three on 2026-11-21. The figure here had drifted eight low over the programme before it was re-counted.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -1171,73 +1171,6 @@ not.
 from each other. `WeaponAudio.test.ts`'s snapshots flip in the same commit and are the record
 of what moved.
 
-### #60 — Three weapon sounds leave the distance curve on whatever played before them · `open` *(opened 2026-11-03 by C9)*
-**Files** `src/client/weapons/WeaponAudio.ts` — `magazineSeatThump`, `playFleshImpact`'s
-oscillator block, `playDeath`'s noise block. **Origin** C9's characterization tests,
-2026-11-03; it is **#56's watch-for, and the answer is yes**.
-
-#56 found `ProceduralAudio.playLanding`'s thump setting fourteen of a `NoiseSpec`'s fifteen
-fields and leaving `roll` — the distance-falloff curve — on whatever the shared scratch
-carried. Its watch-for named this file as the other user of the same two module-level
-scratches, outside C3's fence. It has the defect three times:
-
-| sound | layer | sets `roll`? |
-|---|---|---|
-| `playReloadStep('magIn')` | the thump under the magazine | **no** — its own noise burst set `handling` |
-| `playFleshImpact` | the thump | **no** — its own noise burst set `impact` one block above |
-| `playDeath` | the gear-and-cloth layer | **no** — its own oscillator set `world` one block above |
-
-All three are `positional` on the `sfx` bus, so `AudioGraph.routeVoice` reads the leftover and
-picks `DISTANCE_PROFILES[roll]` off it. In practice each usually inherits something plausible
-from its own first layer — which is why nobody has heard it — but the scratches are
-**module-level and shared by every sound in the game**, so a UI blip, a footstep or another
-player's rifle can be the last writer just as easily. The first of each after a quiet moment
-is the reliable case.
-
-`playHitmarker` also leaves `roll` unset and is **not** a defect: it is non-positional on the
-`ui` bus, and `routeVoice` takes the flat route and never reads the field. That is pinned too.
-
-**Why C9 could not fix it.** R1, exactly as C3 could not fix #56: three lines, each of which
-changes what a listener hears at a real distance. Pinned instead — three tests under "the
-fields a sound does not set, on a scratch it shares with every other sound" — with
-`magazineSeatThump` carrying a comment naming this entry.
-
-**Decide** per sound, and then **set it explicitly**, as #56 says: the defect is the silence,
-not the value. The magazine thump wants `handling` to match its own burst; the flesh thump
-wants `impact`; the death's gear layer wants `world` to match the body it falls with. If those
-three are right the fix is three lines and the three tests flip with them.
-
-**Watch for** the same class of bug wherever a caller fills a shared scratch. Between #56 and
-this entry, `engine/ProceduralAudio.ts` and `weapons/WeaponAudio.ts` have both been read field
-by field.
-
-**C12 read the last two on 2026-11-07, and they are not alike** — which is the useful part,
-because one of them is the shape the fix should take:
-
-| | the spec it fills | sets `roll`? | |
-|---|---|---|---|
-| `equipment/EquipmentAudio.ts` | `audio.noiseScratch` / `oscScratch` — the **shared** pair, written 7 times | never | **has this defect** |
-| `streaks/StreakAudio.ts` | its **own** `makeNoiseSpec()` / `makeOscSpec()`, one pair per instance | never, but the factory defaults `roll: 'world'` | **clean** |
-
-Verified at runtime rather than by reading: a probe fed `playExplosion` a recording
-`ProceduralAudio` and all four layers arrived **with no `roll` field at all**. So every
-equipment sound — explosion, bounce, armed, flashbang, smoke — plays on whatever distance
-profile the previous sound in the game happened to leave behind. `StreakAudio` cannot, because
-nothing else can reach its specs.
-
-That makes the scope of this entry larger than it read: not three sounds in one file, but
-**every positional sound in `EquipmentAudio`**. It also makes the fix cheaper to argue for —
-`StreakAudio` already demonstrates the alternative, in the same unit, and it costs one pair of
-spec objects per instance.
-
-C12 pinned both halves rather than fixing either (R1): `EquipmentAudio.test.ts` has two tests
-carrying the `// Pins current behaviour; suspected bug` comment, and `StreakAudio.test.ts` has
-two asserting that the shared scratches are never touched at all.
-
-**Verify** `npm run check`, plus the BROWSER counters: `__p7.game.audio` publishes `poolSize`,
-`voiceCount`, `sourcesStarted` and `voicesDropped`; a seated magazine is one noise burst and
-one oscillator hit, and a death is one of each.
-
 ### #59 — The knife merges its own parts, beside a helper that merges everything else's · `open` *(opened 2026-11-02 by C8)*
 **Files** `src/client/weapons/KnifeMesh.ts` (`mergeBySurface`) and
 `src/client/weapons/WeaponGeometry.ts` (`addMerged`). **Origin** C8, reading its own build.
@@ -1343,97 +1276,6 @@ which R3 allows only in a design unit.
 **Verify** `npm run check`, plus the sixteen texture checksums C4 pinned in
 `ProceduralTextures.test.ts` and the three command logs C7 pinned in `WeaponMesh.test.ts`:
 whatever is shared, both sets of images have to come out unchanged.
-
-### #57 — The riot shield's glove is solved against the grenade, not against the weapon · `open` *(opened 2026-10-27 by C6)*
-**Files** `src/client/weapons/ViewmodelAnim.ts` — `update` and `poseShield`; the shared matrix now lives
-in `WeaponBasePose.ts` as `HandsBase`. **Origin** C6's characterization tests, 2026-10-27.
-
-One `Matrix4` is the base pose a frame's arms are solved against, and `update` composes the weapon's
-pose into it and hands the *same object* on:
-
-```
-  const base = this.handsBase.fromPose(pose, ...);   // the weapon's
-  this.model.hands?.update(base);                    // correct
-  this.knives.pose(this.handsBase, ...);             // overwrites it with the blade's
-  this.grenades.pose(this.handsBase, ...);           // overwrites it with the grenade's
-  this.poseShield(pose, hipOnly);                    // reads it — and gets the grenade's
-```
-
-So whenever a knife or a grenade is posed in the same frame as the shield, the plate's one glove is
-solved against wherever the held item is. Measured on the shipped code: the weapon's base translation
-was `(0.1488, -0.1366, -0.3205)` and the plate was handed `(0.2151, -0.0756, -0.3005)` — the grenade's
-wind-up, about 9 cm away and turned.
-
-**It is reachable.** The riot shield killstreak gives you a sidearm, and a throw is not blocked while
-it is up, so a grenade thrown from behind the plate runs this every frame of the throw. A melee does
-too. What it looks like is the glove on the plate jumping to where the grenade is and back.
-
-**Why C6 could not fix it.** R1. The fix is one line — give the plate its own `HandsBase`, or compose
-the weapon's a second time before `poseShield` — but it changes what is drawn, and a refactor unit may
-not. C6 kept the sharing exactly as it is, named it on `HandsBase` so it is visible rather than
-accidental, and pinned it (`ViewmodelAnim.test.ts`, "solves the plate's glove against the grenade's
-pose, not the weapon's"). Per §5.9 the test flips to the correct assertion when this is fixed.
-
-**Decide** whether the plate should take the weapon's base — almost certainly yes, since the arrangement
-`poseShield`'s own JSDoc describes is *"its hands are updated against the same base the weapon's would
-have been"*, which is the thing that is not happening — or whether a shield carried with a grenade out
-should pose some third way.
-
-**Watch for** the same class of bug anywhere else a frame hands on a reused scratch object. C6 checked
-its own fence and this is the only one; `ViewmodelHands` (C8) composes matrices of its own and was not
-in C6's. **C8 checked it on 2026-11-02 and it is clean**: the class carries fourteen scratch objects
-and none of them leaves it — `place` builds the `Placement` it returns with `new THREE.Vector3()` and
-`new THREE.Quaternion()`, and the scratch is read only inside `place` and `poseArm`. What C8 did find
-there is the opposite trade: those fresh objects are **sixteen allocations per frame per rig**, and
-thirty-two while a reload runs. R7 is do-no-harm and C8 left them, because turning three allocated
-placements into one shared scratch is exactly the shape that produced this entry.
-
-**Verify** `npm run check`, plus the BROWSER A/B C6 used: build a `ViewmodelAnim` with a shield *and* a
-grenade, run one frame, and compare the two `ViewmodelHands.update` arguments. They should be equal and
-today they are not.
-
-### #56 — The landing thump inherits its distance curve from whatever played before it · `open` *(opened 2026-10-26 by C3)*
-**Files** `src/client/engine/ProceduralAudio.ts` — `playLanding`, the oscillator block. **Origin**
-C3's characterization tests, 2026-10-26.
-
-`ProceduralAudio` pours every sound into one of two **module-level scratch specs**
-(`AudioGraph.noiseScratch` / `oscScratch`) and hands it straight to a primitive, which is
-deliberate: a 700 RPM weapon plus footsteps would otherwise allocate a spec per layer per shot.
-The contract that makes it safe is that each caller sets every field it depends on.
-
-`playLanding`'s body thump does not. It sets fourteen of the fifteen fields and leaves **`roll`**
-— the distance-falloff curve (`engine/AudioMix.ts`) — at whatever the previous oscillator sound
-left on the shared object. Every other positional sound in the file sets it: `playFootstep` sets
-it on both its layers, and `playLanding` sets it on its own *noise* layer one block above. The
-thump is the only one that does not, and it is `positional` on the `sfx` bus, so
-`AudioGraph.routeVoice` genuinely reads it.
-
-In practice it is usually `'footstep'`, because a heavy step sets that and you normally take one
-before you land — which is also why nobody has heard it. But a landing that follows a UI sound,
-or the first landing after load, gets `'world'`: `refDistance` 2.6 and `rolloff` 1.1 against the
-footstep curve's 1.6 and 1.6, so the thump carries noticeably further than it was tuned to. The
-first landing of a match is the reliable case.
-
-**Why C3 could not fix it.** R1. The fix is one line — `osc.roll = 'footstep';` — but it changes
-what a listener hears at a real distance, and a refactor unit may not. C3 pinned the current
-behaviour instead (`ProceduralAudio.test.ts`, "leaves the landing thump on whatever distance curve
-the last oscillator used") and left a comment on the block naming this entry, per §5.9.
-
-**Decide** whether the thump should be on `'footstep'` like the burst above it — almost certainly
-yes, and then the test flips to assert that — or whether a landing is a bigger source than a step
-and wants `'world'` or `'impact'` deliberately. Either way, **set it explicitly**: the defect is
-the silence, not the value.
-
-**Watch for** the same class of bug anywhere else a caller fills a shared scratch. C3 checked this
-file and `playLanding`'s thump is the only one; `weapons/WeaponAudio.ts` uses the same two
-scratches and was not in C3's fence. **C9 read it on 2026-11-03 and the answer is yes** — three
-sounds there leave `roll` where the last one left it, and all three are positional on the `sfx`
-bus. They are **#60**, pinned the same way this one is; whatever is decided here should be decided
-there in the same sitting, because it is one defect in two files. (The file is C9's, not C10's.)
-
-**Verify** `npm run check`, plus the BROWSER counters C3 used: `__p7.game.audio` publishes
-`poolSize`, `voiceCount`, `sourcesStarted` and `voicesDropped`, and a landing is one noise burst
-and one oscillator hit.
 
 ### #55 — The Chopper Gunner optic draws a flat grey field and no map · `open` *(opened 2026-10-25 by C2)*
 **Files** `src/client/engine/Renderer.ts` (`renderGunship`, `GUNSHIP_VERT`, `GUNSHIP_WORLD_FRAG`)

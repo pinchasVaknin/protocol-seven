@@ -231,6 +231,8 @@ export class WeaponAudio {
     this.audio.noiseBurst(noise);
 
     const osc = this.audio.oscScratch;
+    // `impact`, matching the burst above it (BACKLOG #60).
+    osc.roll = 'impact';
     placeOnSfxBus(osc, x, y, z);
     osc.type = 'sine';
     osc.freq = headshot ? 260 : 150;
@@ -266,6 +268,9 @@ export class WeaponAudio {
     // Gear and cloth going down with it.
     const noise = this.audio.noiseScratch;
     placeOnSfxBus(noise, x, y, z);
+    // `world`, matching the oscillator above it: the body and its gear fall together, so they
+    // should carry the same distance (BACKLOG #60).
+    noise.roll = 'world';
     noise.filter = 'lowpass';
     noise.freq = 1250;
     noise.freqEnd = 300;
@@ -383,6 +388,10 @@ function applyReloadLayer(noise: NoiseSpec, layer: ReloadLayer): void {
 
 /** The weight under a magazine going home. `roll` is not set here; see BACKLOG #60. */
 function magazineSeatThump(osc: OscSpec): void {
+  // `handling`, to match the noise burst this thump sits under (BACKLOG #60). It is set here
+  // rather than at the call site because the curve is part of what this sound *is*, and the
+  // scratch it is written into is shared with every other sound in the game.
+  osc.roll = 'handling';
   osc.type = 'sine';
   osc.freq = 190;
   osc.freqEnd = 90;

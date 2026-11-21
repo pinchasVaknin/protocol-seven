@@ -134,11 +134,14 @@ describe('playExplosion', () => {
     void a;
   });
 
-  it('names no distance profile on any layer', () => {
-    // Pins current behaviour; suspected bug: BACKLOG #60. These specs are the graph's shared
-    // scratches, so an explosion plays on whatever `roll` the previous sound happened to set.
+  it('names a distance profile on every layer', () => {
+    // BACKLOG #60, fixed 2026-11-21. This asserted the opposite — no layer carried a `roll` at
+    // all, because these were the graph's **shared** scratches and nothing here ever set one,
+    // so an explosion played on whatever curve the previous sound in the game had left. The
+    // pair is this class's own now and `makeNoiseSpec` defaults it.
     audio.playExplosion(0, 0, 0, 1);
-    for (const layer of graph.fired) expect('roll' in layer.spec).toBe(false);
+    expect(graph.fired.length).toBeGreaterThan(0);
+    for (const layer of graph.fired) expect(layer.spec['roll']).toBe('world');
   });
 });
 
@@ -190,8 +193,8 @@ describe('the other equipment sounds', () => {
     expect(graph.fired.length).toBeGreaterThan(0);
   });
 
-  it('names no distance profile on any of them either', () => {
-    // Pins current behaviour; suspected bug: BACKLOG #60.
+  it('names one on every other positional sound too', () => {
+    // BACKLOG #60, fixed 2026-11-21. Was the reverse; see the explosion's own test above.
     const positional: Array<() => void> = [
       () => audio.playThrow(1, 2, 3),
       () => audio.playBounce(1, 2, 3, 5, 0, false),
@@ -204,7 +207,7 @@ describe('the other equipment sounds', () => {
       play();
       for (const layer of graph.fired) {
         if (layer.kind === 'ui') continue;
-        expect('roll' in layer.spec).toBe(false);
+        expect(layer.spec['roll']).toBe('world');
       }
     }
   });

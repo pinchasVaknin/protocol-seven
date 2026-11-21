@@ -107,7 +107,23 @@ export class ViewmodelAnim {
   /** The pose this frame is building, metres and degrees. One record, never a literal (R7). */
   private readonly pose = makeViewmodelPose();
   /** The one matrix a frame's arms are solved against. Shared on purpose; see BACKLOG #57. */
+  /**
+   * The **weapon's** base pose, composed once a frame and read by the arms and by the plate.
+   *
+   * Separate from `itemBase` since BACKLOG #57: one base was shared, `knives.pose` and
+   * `grenades.pose` each overwrote it, and `poseShield` — which runs after both — solved the
+   * plate's one glove against whatever had been posed last. Measured on the shipped code: the
+   * weapon's base translation was (0.1488, -0.1366, -0.3205) and the plate was handed
+   * (0.2151, -0.0756, -0.3005), the grenade's wind-up, about 9 cm away and turned.
+   *
+   * Recomposing in `poseShield` would not have fixed it: `motion.applyWeapon` and `kick.apply`
+   * mutate the pose in between, so by then it is no longer the pose the arms were solved
+   * against. Two objects, each written once.
+   */
   private readonly handsBase = new HandsBase();
+
+  /** The scratch a knife or a grenade poses itself into. Never read by the weapon or the plate. */
+  private readonly itemBase = new HandsBase();
 
   private model: WeaponModel;
   private shield: ShieldModel | null = null;
@@ -267,9 +283,9 @@ export class ViewmodelAnim {
     // The arms: solved against the base pose, carried through the rest with the gun.
     this.model.hands?.update(base);
 
-    this.knives.pose(this.handsBase, this.motion, drive, cfg);
-    this.grenades.pose(this.handsBase, this.motion, drive, cfg);
-    // The plate takes the same base pose with **its own** offset on top, never the weapon's.
+    this.knives.pose(this.itemBase, this.motion, drive, cfg);
+    this.grenades.pose(this.itemBase, this.motion, drive, cfg);
+    // The plate takes the weapon's base pose with **its own** offset on top (BACKLOG #57).
     this.poseShield(pose, hipOnly);
   }
   //#endregion

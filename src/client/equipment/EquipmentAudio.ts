@@ -2,7 +2,7 @@
 //#region Imports
 import { Rng } from '../../shared/core/Rng';
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
-import type { NoiseSpec, OscSpec } from '../engine/AudioSpecs';
+import { makeNoiseSpec, makeOscSpec, type NoiseSpec, type OscSpec } from '../engine/AudioSpecs';
 import { surfaceAtIndex } from '../../shared/world/maps/materials';
 //#endregion
 
@@ -22,6 +22,15 @@ export class EquipmentAudio {
   // ========================================== FIELDS ========================================== \\
   //#region Fields
   private readonly rng = new Rng(0x2b7c_5e01);
+
+  /**
+   * This class's own pair, not the graph's (BACKLOG #60). See `placeNoise` for why.
+   *
+   * The same arrangement `streaks/StreakAudio` has had all along, which is why that file never
+   * had this defect: one pair per instance, reachable by nothing else, with `roll` defaulted.
+   */
+  private readonly noise: NoiseSpec = makeNoiseSpec();
+  private readonly osc: OscSpec = makeOscSpec();
   //#endregion
 
   // ======================================= CONSTRUCTOR ======================================== \\
@@ -131,14 +140,21 @@ export class EquipmentAudio {
   // ===================================== PRIVATE METHODS ====================================== \\
   //#region Private Methods
   /**
-   * Point the shared noise scratch at a place in the world.
+   * Point this class's own noise spec at a place in the world.
    *
-   * Seven sounds in this file opened with these five lines. They are the graph's scratches,
-   * not this class's, so what is set here is set for every sound that follows until the next
-   * caller overwrites it — see BACKLOG #60 for the field this does *not* set.
+   * Seven sounds in this file open with these five lines. They used to be written into the
+   * **graph's** scratches, shared with every other sound in the game, and none of the seven
+   * ever set `roll` — so every explosion, bounce, arming beep, flashbang and smoke plume played
+   * on whatever distance curve the previous sound happened to leave behind. A probe fed
+   * `playExplosion` a recording graph and all four layers arrived with no `roll` field at all.
+   *
+   * The pair is this class's now (BACKLOG #60, fixed 2026-11-21), which is the shape
+   * `streaks/StreakAudio` already had and the reason it never had this defect: nothing else can
+   * reach them, and `makeNoiseSpec` defaults `roll` to `'world'`, so an unset field is a
+   * deliberate curve rather than the last caller's. It costs one pair of objects per instance.
    */
   private placeNoise(x: number, y: number, z: number): NoiseSpec {
-    const noise = this.audio.noiseScratch;
+    const noise = this.noise;
     noise.x = x;
     noise.y = y;
     noise.z = z;
@@ -147,9 +163,9 @@ export class EquipmentAudio {
     return noise;
   }
 
-  /** The same, for the oscillator scratch. */
+  /** The same, for the oscillator. */
   private placeOsc(x: number, y: number, z: number): OscSpec {
-    const osc = this.audio.oscScratch;
+    const osc = this.osc;
     osc.x = x;
     osc.y = y;
     osc.z = z;

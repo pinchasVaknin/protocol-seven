@@ -267,7 +267,7 @@ describe('the reload', () => {
       "noiseBurst x=1.5 y=2 z=3 positional=true bus=sfx roll=handling filter=lowpass freq=900 freqEnd=450 q=0.7 level=0.16 attack=0.001 decay=0.07 wet=0.1 rate=1
       noiseBurst x=1.5 y=2 z=3 positional=true bus=sfx roll=handling filter=bandpass freq=3100 freqEnd=1800 q=4.5 level=0.32 attack=0.001 decay=0.035 wet=0.1 rate=1
       noiseBurst x=1.5 y=2 z=3 positional=true bus=sfx roll=handling filter=bandpass freq=1500 freqEnd=600 q=2.2 level=0.4 attack=0.001 decay=0.075 wet=0.1 rate=1
-      oscHit x=1.5 y=2 z=3 positional=true bus=sfx roll=world type=sine freq=190 freqEnd=90 level=0.24 attack=0.002 decay=0.08 wet=0.08 filterFreq=700 filterQ=0.7
+      oscHit x=1.5 y=2 z=3 positional=true bus=sfx roll=handling type=sine freq=190 freqEnd=90 level=0.24 attack=0.002 decay=0.08 wet=0.08 filterFreq=700 filterQ=0.7
       noiseBurst x=1.5 y=2 z=3 positional=true bus=sfx roll=handling filter=bandpass freq=2300 freqEnd=3600 q=3 level=0.36 attack=0.001 decay=0.09 wet=0.1 rate=1
       noiseBurst x=1.5 y=2 z=3 positional=true bus=sfx roll=handling filter=lowpass freq=1400 freqEnd=700 q=0.8 level=0.14 attack=0.001 decay=0.06 wet=0.1 rate=1"
     `);
@@ -382,9 +382,9 @@ describe('the feedback sounds', () => {
     head.weapons.playFleshImpact(2, 3, 4, true);
     expect(`${logOf(body.audio)}\n${logOf(head.audio)}`).toMatchInlineSnapshot(`
       "noiseBurst x=2 y=3 z=4 positional=true bus=sfx roll=impact filter=lowpass freq=620 freqEnd=190 q=0.9 level=0.24 attack=0.001 decay=0.075 wet=0.16 rate=0.9836911612655967
-      oscHit x=2 y=3 z=4 positional=true bus=sfx roll=world type=sine freq=150 freqEnd=67.5 level=0.18 attack=0.001 decay=0.06 wet=0.1 filterFreq=420 filterQ=0.7
+      oscHit x=2 y=3 z=4 positional=true bus=sfx roll=impact type=sine freq=150 freqEnd=67.5 level=0.18 attack=0.001 decay=0.06 wet=0.1 filterFreq=420 filterQ=0.7
       noiseBurst x=2 y=3 z=4 positional=true bus=sfx roll=impact filter=lowpass freq=1500 freqEnd=500 q=2.6 level=0.3 attack=0.001 decay=0.05 wet=0.16 rate=0.9836911612655967
-      oscHit x=2 y=3 z=4 positional=true bus=sfx roll=world type=sine freq=260 freqEnd=117 level=0.18 attack=0.001 decay=0.06 wet=0.1 filterFreq=420 filterQ=0.7"
+      oscHit x=2 y=3 z=4 positional=true bus=sfx roll=impact type=sine freq=260 freqEnd=117 level=0.18 attack=0.001 decay=0.06 wet=0.1 filterFreq=420 filterQ=0.7"
     `);
   });
 
@@ -442,39 +442,44 @@ describe('the feedback sounds', () => {
   });
 });
 
-describe('the fields a sound does not set, on a scratch it shares with every other sound', () => {
-  // Pins current behaviour; suspected bug: BACKLOG #60. The three below are positional and on
-  // the sfx bus, so `AudioGraph.routeVoice` genuinely reads the `roll` they did not set.
-  it('leaves the seated magazine thump on whatever curve the last oscillator used', () => {
+describe('the distance curve every sound names for itself', () => {
+  /**
+   * BACKLOG #60, fixed 2026-11-21. All three assertions below were the reverse: each sound set
+   * fourteen of fifteen fields and left `roll` on whatever the shared scratch carried, so each
+   * test seeded the scratch and asserted the leftover came back. They now seed it with
+   * something *wrong* and assert the sound overwrites it, which is the same test read the
+   * other way round and the only way to show the silence is gone.
+   */
+  it('names handling for the seated magazine thump, whatever ran before it', () => {
     const { audio, weapons } = harness();
     audio.oscScratch.roll = 'world';
     weapons.playReloadStep(0, 0, 0, 'magIn');
     const thump = oscAt(audio, 1);
-    expect(thump.roll).toBe('world');
+    expect(thump.roll).toBe('handling');
     expect(thump.positional).toBe(true);
     expect(thump.bus).toBe('sfx');
 
-    // And after a gunshot, which does set it, the same call carries the gunshot's curve.
+    // And after a gunshot, which sets `loud`, the same call still names its own.
     const after = harness();
     after.weapons.playGunshot(0, 0, 0, CARBINE, 1);
     after.weapons.playReloadStep(0, 0, 0, 'magIn');
-    expect(oscAt(after.audio, 5).roll).toBe('loud');
+    expect(oscAt(after.audio, 5).roll).toBe('handling');
   });
 
-  it('leaves the flesh thump on whatever curve the last oscillator used', () => {
+  it('names impact for the flesh thump, matching its own noise layer', () => {
     const { audio, weapons } = harness();
     audio.oscScratch.roll = 'footstep';
     weapons.playFleshImpact(0, 0, 0, false);
-    expect(oscAt(audio, 1).roll).toBe('footstep');
-    // Its own noise layer sets `impact`, one block above, which is what makes this a slip.
+    expect(oscAt(audio, 1).roll).toBe('impact');
+    // Its own noise layer sets `impact` one block above; the two agree now.
     expect(noiseAt(audio, 0).roll).toBe('impact');
   });
 
-  it("leaves the death's gear layer on whatever curve the last noise burst used", () => {
+  it("names world for the death's gear layer, matching the body it falls with", () => {
     const { audio, weapons } = harness();
     audio.noiseScratch.roll = 'handling';
     weapons.playDeath(0, 0, 0);
-    expect(noiseAt(audio, 1).roll).toBe('handling');
+    expect(noiseAt(audio, 1).roll).toBe('world');
     // Its own oscillator sets `world`, one block above.
     expect(oscAt(audio, 0).roll).toBe('world');
   });
@@ -518,7 +523,7 @@ describe('the whole vocabulary', () => {
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=handling filter=lowpass freq=900 freqEnd=450 q=0.7 level=0.16 attack=0.001 decay=0.07 wet=0.1 rate=1
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=handling filter=bandpass freq=3100 freqEnd=1800 q=4.5 level=0.32 attack=0.001 decay=0.035 wet=0.1 rate=1
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=handling filter=bandpass freq=1500 freqEnd=600 q=2.2 level=0.4 attack=0.001 decay=0.075 wet=0.1 rate=1
-      oscHit x=1 y=2 z=3 positional=true bus=sfx roll=loud type=sine freq=190 freqEnd=90 level=0.24 attack=0.002 decay=0.08 wet=0.08 filterFreq=700 filterQ=0.7
+      oscHit x=1 y=2 z=3 positional=true bus=sfx roll=handling type=sine freq=190 freqEnd=90 level=0.24 attack=0.002 decay=0.08 wet=0.08 filterFreq=700 filterQ=0.7
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=handling filter=bandpass freq=2300 freqEnd=3600 q=3 level=0.36 attack=0.001 decay=0.09 wet=0.1 rate=1
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=handling filter=lowpass freq=1400 freqEnd=700 q=0.8 level=0.14 attack=0.001 decay=0.06 wet=0.1 rate=1
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=handling filter=bandpass freq=2600 freqEnd=1400 q=3.2 level=0.3 attack=0.001 decay=0.03 wet=0.08 rate=1
@@ -530,11 +535,11 @@ describe('the whole vocabulary', () => {
       noiseBurst x=0 y=0 z=0 positional=false bus=ui roll=handling filter=bandpass freq=1500 freqEnd=700 q=2.4 level=0.34 attack=0.0008 decay=0.055 wet=0 rate=1
       playUiSweep 720 300 0.2 0.13
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=impact filter=lowpass freq=620 freqEnd=190 q=0.9 level=0.24 attack=0.001 decay=0.075 wet=0.16 rate=1.086462280622218
-      oscHit x=1 y=2 z=3 positional=true bus=sfx roll=loud type=sine freq=150 freqEnd=67.5 level=0.18 attack=0.001 decay=0.06 wet=0.1 filterFreq=420 filterQ=0.7
+      oscHit x=1 y=2 z=3 positional=true bus=sfx roll=impact type=sine freq=150 freqEnd=67.5 level=0.18 attack=0.001 decay=0.06 wet=0.1 filterFreq=420 filterQ=0.7
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=impact filter=lowpass freq=1500 freqEnd=500 q=2.6 level=0.3 attack=0.001 decay=0.05 wet=0.16 rate=0.9614150337292813
-      oscHit x=1 y=2 z=3 positional=true bus=sfx roll=loud type=sine freq=260 freqEnd=117 level=0.18 attack=0.001 decay=0.06 wet=0.1 filterFreq=420 filterQ=0.7
+      oscHit x=1 y=2 z=3 positional=true bus=sfx roll=impact type=sine freq=260 freqEnd=117 level=0.18 attack=0.001 decay=0.06 wet=0.1 filterFreq=420 filterQ=0.7
       oscHit x=1 y=2 z=3 positional=true bus=sfx roll=world type=sine freq=118 freqEnd=48 level=0.4 attack=0.003 decay=0.2 wet=0.24 filterFreq=340 filterQ=0.7
-      noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=impact filter=lowpass freq=1250 freqEnd=300 q=0.8 level=0.22 attack=0.004 decay=0.26 wet=0.3 rate=0.951150182262063
+      noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=world filter=lowpass freq=1250 freqEnd=300 q=0.8 level=0.22 attack=0.004 decay=0.26 wet=0.3 rate=0.951150182262063
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=impact filter=bandpass freq=1798.5538841225205 freqEnd=809.3492478551342 q=1.1 level=0.16 attack=0.001 decay=0.1 wet=0.22 rate=1
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=impact filter=bandpass freq=1389.9194048602135 freqEnd=625.4637321870961 q=1.1 level=0.26 attack=0.001 decay=0.11 wet=0.22 rate=1
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=impact filter=bandpass freq=1816.7552696506025 freqEnd=817.5398713427711 q=1 level=0.16 attack=0.001 decay=0.1 wet=0.22 rate=1

@@ -191,13 +191,20 @@ describe('ProceduralAudio: landings', () => {
     expect(r.oscs.length).toBe(0);
   });
 
-  it('leaves the landing thump on whatever distance curve the last oscillator used', () => {
-    // Pins current behaviour; suspected bug: "The landing thump inherits its distance curve
-    // from the previous sound" (BACKLOG #56). Every other positional sound in this file sets
-    // `roll` on the shared scratch; the landing's body does not, and it is positional on the
-    // sfx bus, so `routeVoice` reads whatever the last caller happened to leave there.
+  /**
+   * BACKLOG #56, fixed 2026-11-21 — and the pin that was here could not have told you.
+   *
+   * It seeded the shared scratch by playing a **footstep**, whose own thump sets
+   * `roll = 'footstep'`, and then asserted the landing thump read `'footstep'`. That is the
+   * same value the fix sets deliberately, so the test passed with the defect and passes
+   * without it: it recorded the bug in its prose and not in its assertion.
+   *
+   * Seeded with something the landing would never want, so the assertion distinguishes.
+   */
+  it('names the footstep curve for its thump, whatever the last oscillator left', () => {
     const r = recorder();
-    r.audio.playFootstep(0, 0, 0, 7, true, 0, 1); // its thump sets roll = 'footstep'
+    // The scratch, left on a curve a landing would never choose for itself.
+    (r.audio.oscScratch as OscSpec).roll = 'loud';
     r.audio.playLanding(0, 0, 0, 8, 0, 1);
     const thump = r.oscs[r.oscs.length - 1]?.spec as OscSpec;
     expect(thump.positional).toBe(true);

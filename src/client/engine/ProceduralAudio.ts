@@ -181,6 +181,12 @@ export class ProceduralAudio extends AudioGraph {
 
     if (!heavy) return;
     const osc = this.worldOsc(x, y, z);
+    // The same curve as the burst above it (BACKLOG #56, found 2026-11-21 while fixing the
+    // landing's). `worldOsc` sets the place and the bus and **not** `roll`, so this thump took
+    // whatever the shared scratch carried — and its own test has been asserting `'footstep'`
+    // and passing on a leftover from whichever test ran before it. The entry said the landing
+    // was the only one in this file; it was not.
+    osc.roll = 'footstep';
     osc.type = 'sine';
     osc.freq = this.random(115, 150);
     osc.freqEnd = osc.freq * 0.45;
@@ -190,7 +196,6 @@ export class ProceduralAudio extends AudioGraph {
     osc.wet = 0.1;
     osc.filterFreq = 400;
     osc.filterQ = 0.6;
-    osc.roll = 'footstep';
     this.oscHit(osc);
   }
 
@@ -221,9 +226,14 @@ export class ProceduralAudio extends AudioGraph {
     spec.rate = 1;
     this.noiseBurst(spec);
 
-    // No `roll` is set here, so the thump takes whatever curve the previous oscillator left on
-    // the shared scratch. Pins current behaviour; suspected bug: BACKLOG #56.
     const osc = this.worldOsc(x, y, z);
+    // The same curve as the burst above it (BACKLOG #56, fixed 2026-11-21). This field was the
+    // one of fifteen `playLanding` did not set, so the thump took whatever the previous
+    // oscillator had left on the shared scratch: usually `'footstep'`, because you normally
+    // take a step before you land, and `'world'` after a UI sound or on the first landing of a
+    // match — `refDistance` 2.6 and `rolloff` 1.1 against 1.6 and 1.6, so it carried noticeably
+    // further than it was tuned to.
+    osc.roll = 'footstep';
     osc.type = 'sine';
     osc.freq = this.random(95, 125);
     osc.freqEnd = osc.freq * 0.42;

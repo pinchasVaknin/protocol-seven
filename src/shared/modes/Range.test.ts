@@ -148,20 +148,21 @@ describe('ending the session', () => {
     expect([result.scoreA, result.scoreB]).toEqual([0, 0]);
   });
 
-  it('ignores the harness clock override, unlike every other mode', () => {
-    // Pins current behaviour; suspected bug: Range.onRoundStart bypasses roundTicks.
-    //
-    // `onRoundStart` computes `Math.round(config.timeLimitSeconds / DT)` directly where the
-    // other five modes call the inherited `roundTicks(...)`, which is the one place
-    // `roundSecondsOverride` is read. `ModeDeps.roundSecondsOverride` documents the opposite
-    // — "both are overridden from this one value, so they cannot be shortened apart" — so a
-    // harness asking for a thirty-second range gets the authored fifteen minutes.
+  it('takes the harness clock override, like every other mode', () => {
+    // BACKLOG #24, fixed 2026-11-22. This case was the reverse: it asserted that three ticks of
+    // a two-tick override left the session running, because `onRoundStart` computed its own
+    // `Math.round(timeLimitSeconds / DT)` instead of calling the inherited `roundTicks(...)`,
+    // the one place `roundSecondsOverride` is read. A harness asking for a thirty-second range
+    // got the authored fifteen minutes, which is what `ModeDeps.roundSecondsOverride` promises
+    // cannot happen: "both are overridden from this one value, so they cannot be shortened
+    // apart". Nothing depended on it — the override reaches a mode only through the server's
+    // `Config`, and the server never runs RANGE.
     const { mode } = rig({ roundSecondsOverride: 2 * DT });
     mode.onRoundStart(1);
     mode.onTick(1);
-    mode.onTick(2);
-    mode.onTick(3);
     expect(mode.checkWinCondition()).toBe(null);
+    mode.onTick(2);
+    expect(mode.checkWinCondition()?.reason).toBe('Session ended');
   });
 
   it('ends immediately if nobody ever started the round', () => {

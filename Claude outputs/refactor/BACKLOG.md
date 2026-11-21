@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**38 open entries.** (Derived from the headings, not remembered: batch A closed ten on 2026-11-17, and batches B, C, D and E closed eight, six, five and three on 2026-11-21. The figure here had drifted eight low over the programme before it was re-counted.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**31 open entries: 25 with a heading of their own, and the six §3 holds inside its three clusters** (#6, #12 and #5; #2, which absorbed #19; #14 and #15). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read 25 and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -124,8 +124,6 @@ opened by units since and are not from that list.)
 Status values: `open`, `bound to <unit>` (the next unit that owns these files — do it there),
 `blocked on <task>`, `needs measurement`, `needs a decision from the user`.
 
----
-
 ## 1. Lookup by unit: what to fold in at Step 0
 
 Find the unit you are about to start. If it is listed, those tasks are **in scope for that unit**
@@ -177,8 +175,6 @@ and belong in its Step 2 plan.
 Everything else below lands in a **completed** unit's files and therefore needs a session of its
 own. Those sessions are not refactor units: they may change behaviour where the task says so, and
 they are not fenced by R3.
-
----
 
 ## 3. Sequenced clusters — order matters
 
@@ -393,8 +389,6 @@ the monomorphic writes and removes the silent-failure mode, which is the actual 
 cached row object, team moves, the prune, the empty set, that `serial` does not move when nothing
 changed, and all fifteen columns through `applyReplicated` and `reset`. Do not weaken it.
 
----
-
 ## 4. Independent — one decision each
 
 ### #74 — Three files build the same pager arrow, and all three are now finished · `open` *(opened 2026-11-09 by C17, corrected 2026-11-10 by C19)*
@@ -600,42 +594,6 @@ If it is done, every expression must be carried over character for character —
 every grenade in the game flies — and `Projectile.test.ts` (A10) steps one projectile, previews the
 same arc, and asserts they agree point for point at float32 precision.
 
-### #21 — Restructure the Gait load-time guard · `open`
-
-**Files** `src/shared/ai/Gait.ts`. **Origin** A11 — and the one skeleton deviation that unit
-shipped, approved at the time. `Gait.ts` is in the `check:style` ratchet, so the gate will check the
-result.
-
-`Gait.ts` reads two boxes off the rig with `.find(...)`, validates them with a top-level
-`if (... === undefined) throw`, and then derives `LEG_PIVOT_Y` and `LEG_LENGTH` from the narrowed
-values. Section 3.2 puts a top-level side-effecting statement in a MODULE INITIALISATION section at
-the foot of the file and moves the interleaved declarations with it — which here would either drag
-every constant in the file down, or, if only the `throw` moved, lose the narrowing that lets
-`LEG_PIVOT_Y` read `LEG_BOX.oy` without `?.`. Writing `LEG_BOX?.oy ?? 0` turns a loud failure at
-load into a silent zero in a published measurement, which is a behaviour change, so A11 left the
-guard in place with a comment saying why.
-
-**The shape that satisfies both** is probably a small internal helper that does the lookup and the
-validation together and returns a non-optional box:
-
-```ts
-function requireRigBox(name: string): HitboxDef { ... }
-const LEG_BOX = requireRigBox('legL');
-```
-
-It keeps the loud failure, removes the top-level statement, removes the `?.` in `legDivergence`
-and `armDivergence` too, and lets the file's sections be exactly what 3.2 describes. `HitboxDef`
-is exported from `combat/HitboxRig.ts`. Check whether anything else in the tree wants the same
-helper before adding a second copy.
-
-**Behaviour to preserve** the error is thrown at module load, with that message, when the rig has
-no such box; `LEG_PIVOT_Y`, `LEG_LENGTH` and the two divergence figures keep their exact values.
-`Gait.test.ts` (A11) asserts the two come off the rig's own `legL` box. `npm run readability` prints
-the figures this file produces — compare its output before and after; those figures go through
-`toFixed`, so they are engine-stable (see §5).
-
----
-
 ## 5. Suspected bugs, pinned in tests, awaiting a fix
 
 ### #83 — A Shooting Range session banks a loss's worth of XP onto the account, and says nothing · `open` *(opened 2026-11-14 by C21)*
@@ -757,46 +715,6 @@ attribute — re-baseline them in the same commit, with the reason.
 
 ---
 
-### #72 — `assignSlot` writes the two weapons in place and replaces the four arrays · `open` *(opened 2026-11-09 by C16)*
-
-**Files** `src/client/ui/LoadoutEditor.ts` (`assignSlot`, `assignWeapon`). **Origin** C16, found
-by its own characterization tests and pinned rather than fixed. The file is C16's own, which
-makes this a decision rather than a fence problem.
-
-The function's one-line header says what it is for:
-
-> *"Put `from` into `target` in place: the profile owns `target`, so it is written, not
-> replaced."*
-
-That holds for `target.primary` and `target.secondary`, which `assignWeapon` writes field by
-field. It does not hold one level down. CANCEL leaves the slot with **four new arrays**:
-
-```
-target.perks                 = [...from.perks];
-target.streaks               = [...from.streaks];
-target.primary.attachments   = [...from.primary.attachments];
-target.secondary.attachments = [...from.secondary.attachments];
-```
-
-So anything that captured `slot.perks`, `slot.streaks` or either `attachments` array and held it
-across a CANCEL is writing into an array the class no longer has — the exact hazard the comment
-says the function avoids, one level down from where it avoids it.
-
-**Nothing is known to do that today.** The editor looks the arrays up through `this.slot` every
-time, and `Profile` hands out the live slot rather than a field of it. That is why this is a
-hazard and not a bug report: it is a rule the function states and then breaks, and the next
-caller that believes the comment is the one that pays.
-
-**Pinned meanwhile.** `LoadoutEditor.test.ts` has *"CANCEL writes the weapon objects in place and
-replaces the four arrays"*, which asserts both halves by identity, with the §5.9 comment. Fixing
-it means `target.perks.length = 0; target.perks.push(...from.perks)` four times — or deciding
-the comment is the thing that is wrong and rewriting it to say which half is in place.
-
-**Verify** `npm run check`, then C16's BROWSER checksum A, whose fifteen tab sections and its
-`the range door` sections all run through a CANCEL path.
-
----
-
 ### #69 — The mortar overlay and the minimap disagree about what a wall is · `open` *(opened 2026-11-09 by C15)*
 
 **Files** `src/client/ui/MortarOverlay.ts` (`classify`) and `src/client/ui/Minimap.ts`
@@ -842,25 +760,6 @@ updated in the same commit, with the reason.
 
 ---
 
-### #8 — `NavBakeStats.stacked` is not recounted after pruning · `open`
-**Files** `src/shared/world/NavBake.ts`. **Origin** A5. The `stacked` figure — columns carrying
-more than one surface — keeps the raw count from the first pass while `walkable` and `links` are
-updated after pruning. On Depot it reports **1,810 instead of 430**. Fix the counting so it runs
-after the prune, and update the test.
-
-### #9 — Dead no-op in `Movement.tryStepUp` · `open`
-**Files** `src/shared/player/Movement.ts`. **Origin** A6. `vxBefore` / `vzBefore` are captured and
-written back to `sim.vx` / `sim.vz`, but nothing modifies the velocity in between, so the
-assignment rewrites the same value. Left in place during the refactor because this is the hottest
-path in the game. Delete the capture and the restore, and confirm the oracles do not move.
-
-### #10 — `PlayerSim.reset` leaves stale `Mantle` pose fields · `open`
-**Files** `src/shared/player/PlayerState.ts` (and `Mantle.ts`). **Origin** A6. `reset` clears
-`mantleActive` but not `mantleFrom`, `mantleTo`, `mantleEndStance` and the rest. Because the flag is
-false the game never reads the stale pose, so there is no gameplay bug — but a snapshot taken
-immediately after a spawn still carries ghost data from the previous life, which can reach
-reconciliation and the wire. Clear all the mantle fields in `reset` and update the test.
-
 ### #38 — The input ring's accept window is one tick wider than the ring, and narrower than the skew limit · `open` *(opened 2026-10-19 by B1)*
 **Files** `src/server/net/InputBuffer.ts`. **Origin** B1.
 
@@ -885,26 +784,6 @@ the ring or narrowing `MAX_TICK_SKEW` changes what the wire admits — and `MAX_
 in `src/shared/net/Protocol.ts`, which is **A20's** file and outside B1's fence (R3). The two
 pinning tests carry `// Pins current behaviour; suspected bug:`, so fixing either means
 rewriting its case in the same commit, with the reason.
-
-### #24 — `Range` ignores the harness clock override · `open` *(opened 2026-10-12 by A14)*
-**Files** `src/shared/modes/Range.ts`. **Origin** A14.
-
-`Range.onRoundStart` seeds its clock with `Math.round(config.timeLimitSeconds / DT)` where the
-other five modes call the inherited `this.roundTicks(...)` — the single place
-`ModeDeps.roundSecondsOverride` is read. So the range is the one mode a harness cannot shorten,
-which is the opposite of what that field's own documentation promises: *"Both are overridden from
-this one value, so they cannot be shortened apart. A harness that shortened only `MatchFlow`'s
-clock got a HUD that hit zero and a match that carried on for another nine minutes."* That is
-exactly what a shortened range run gets. `docs/archive/plan/15-m10.5-tier-1-fixes.md` line 65
-already noted it in passing, so it is long-standing.
-
-The fix is almost certainly the one line, but it changes behaviour for any harness run that
-shortens the range, so A14 pinned it instead. Pinned by `Range.test.ts`, "ignores the harness clock
-override, unlike every other mode", which carries the `// Pins current behaviour; suspected bug:`
-comment — **fixing the code means rewriting that case in the same commit, with the reason.** Check
-first whether any harness depends on the range being un-shortenable.
-
----
 
 ## 5b. Field reports from play — the same kind of bug, with no test holding it
 
@@ -1314,8 +1193,6 @@ a normal browser window. Reproduce it in Chrome before spending anything on the 
 written against) and compare against the three descriptions in `renderGunship`'s JSDoc — grey
 terrain, near-black team-mates, orange enemies.
 
----
-
 ## 6. Documentation and housekeeping
 
 ### #85 — A live check in the browser pane under-reports whenever Claude's window is behind another · `open` *(opened 2026-11-16 by C23b)*
@@ -1359,35 +1236,6 @@ rate it was measured at. A check that can only produce false negatives is worse 
 declines to run, because C18's silence cost nothing and #75 cost two sessions.
 
 **Verify** reading, and the next unit's live check.
-
-### #81 — A passing `npm run layout` can still exit 1, on its own teardown · `open` *(opened 2026-11-11 by C20)*
-
-**Files** `scripts/headless-chrome.mjs` (`withPage`, the `rmSync` at the end).
-**Origin** C20's before run.
-
-```
-PASS — every surface fits its frame
-Error: EPERM, Permission denied: \\?\C:\Users\...\Temp\operator-layout-guy5QM
-    at rmSync (node:fs:1222:18)
-    at withPage (scripts/headless-chrome.mjs:241:5)
-```
-
-The probe printed its result and its 264 measurements, every one `ok`, and then failed
-deleting the headless profile folder because Chrome on Windows had not let go of it yet. Exit
-code 1 for a run that passed. It is **intermittent**: C20's after run, the same command on the
-same tree, exited 0.
-
-A tool that reports success with a failing exit code cannot be put in a script, which is most
-of what an instrument is for — and the error text names a random directory, so a run that
-hits it cannot be diffed against one that did not without trimming first, which is what C20's
-baseline had to do.
-
-**Decide**: retry the delete a few times, ignore EPERM on the teardown and say so, or leave
-the folder for the OS to collect. The first is the usual answer on Windows.
-
-**Verify** run `npm run layout` ten times and count the exits.
-
----
 
 ### #77 — One seeded skirmish test times out on a cold full run and passes alone · `needs measurement` *(opened 2026-11-09 by C18)*
 
@@ -1512,8 +1360,6 @@ against a Node 24 run, and write the result into the table with the engine versi
 **Also record there** that a SIM snapshot/compare pair is only meaningful on **one machine and one
 Node build** — the state hashes depend on these functions — and that `npm run readability` is
 immune, because its figures go through `toFixed(3)`/`toFixed(4)`.
-
----
 
 ## 6b. Duplication that spans units — opened by A16
 

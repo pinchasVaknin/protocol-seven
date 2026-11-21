@@ -588,7 +588,15 @@ function stripLockedAttachments(
     }
     kept.push(id);
   }
-  entry.attachments = kept;
+  // Written back into the caller's array rather than replacing it (BACKLOG #72, fixed
+  // 2026-11-22). This ran `entry.attachments = kept` on *every* pass, whether or not anything
+  // was stripped, and `Profile.editLoadout` sanitises after every edit — so a class's
+  // attachment array was a different object after each keystroke in the editor, and
+  // `LoadoutEditor.assignSlot`'s promise that the profile's slot is written and not replaced
+  // could not hold however carefully `assignSlot` itself was written. The server runs this
+  // function over everything a client sends, so it owes the same thing there.
+  entry.attachments.length = 0;
+  for (const id of kept) entry.attachments.push(id);
   return changed;
 }
 

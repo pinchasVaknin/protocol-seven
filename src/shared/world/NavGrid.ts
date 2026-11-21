@@ -72,7 +72,7 @@ export interface NavBakeStats {
   pruned: number;
   links: number;
   bakeMs: number;
-  /** Columns that ended up carrying more than one walkable surface. */
+  /** Columns carrying more than one walkable surface once the prune has run. */
   stacked: number;
   /** M8. Of `links`, how many are mantles rather than walks. */
   climbLinks: number;

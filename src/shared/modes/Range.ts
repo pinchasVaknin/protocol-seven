@@ -22,7 +22,6 @@
 //#region Imports
 import type { ScoreTeam } from '../combat/ScoreSystem';
 import { accuracy } from '../combat/ScoreSystem';
-import { DT } from '../core/Loop';
 import {
   GameMode,
   type ColumnDef,
@@ -152,7 +151,11 @@ export class Range extends GameMode {
   }
 
   override onRoundStart(_round: number): void {
-    this.ticksLeft = Math.round(this.config.timeLimitSeconds / DT);
+    // Through `roundTicks`, like the other five modes (BACKLOG #24, fixed 2026-11-22). This used
+    // to compute `Math.round(config.timeLimitSeconds / DT)` itself, which is the same line with
+    // `ModeDeps.roundSecondsOverride` left out — so the range was the one mode a harness could
+    // not shorten, and the field's own documentation promises the opposite.
+    this.ticksLeft = this.roundTicks(this.config.timeLimitSeconds);
   }
 
   override onRoundEnd(_result: RoundResult): void {

@@ -210,13 +210,15 @@ describe('resetting a sim', () => {
   });
 
   /**
-   * Pins current behaviour; suspected bug: `reset` does not clear the mantle pose fields
-   * (`mantleFrom*`, `mantleTo*`, `mantleDir*`, `mantleEndStance`) or `tick`, although
-   * `PlayerSimState` carries all of them. It clears `mantleActive`, so nothing reads the stale
-   * pose — but a save taken right after a spawn still carries the previous life's vault, and a
-   * correction compares against it.
+   * BACKLOG #10, fixed 2026-11-22. This case was the reverse of itself: it asserted that the
+   * pose fields came through a `reset` unchanged, because only the flag was cleared.
+   *
+   * `tick` is still not cleared, and that one is deliberate rather than an oversight — it is
+   * the sim's own clock, not part of a life. The sprint double-tap window is keyed off it, and
+   * a spawn that wound it back to zero would hand out a free tactical sprint on the first
+   * press, which is what the case above pins.
    */
-  it('leaves the mantle pose and the tick as they were', () => {
+  it('clears the whole mantle pose, and leaves the tick running', () => {
     const sim = new PlayerSim();
     const stamped = stamp(makePlayerSimState());
     loadPlayerSim(stamped, sim);
@@ -225,9 +227,12 @@ describe('resetting a sim', () => {
     expect(sim.mantleActive).toBe(false);
     expect(sim.mantleElapsed).toBe(0);
     expect(sim.mantleCooldown).toBe(0);
-    // Not cleared:
-    expect(sim.mantleToY).toBe(stamped.mantleToY);
-    expect(sim.mantleEndStance).toBe(stamped.mantleEndStance);
+    expect([sim.mantleFromX, sim.mantleFromY, sim.mantleFromZ]).toEqual([0, 0, 0]);
+    expect([sim.mantleToX, sim.mantleToY, sim.mantleToZ]).toEqual([0, 0, 0]);
+    expect([sim.mantleDirX, sim.mantleDirZ]).toEqual([0, 0]);
+    // A fresh sim's own default, not merely zero: this one is a stance id.
+    expect(sim.mantleEndStance).toBe(new PlayerSim().mantleEndStance);
+    // Not cleared, on purpose:
     expect(sim.tick).toBe(stamped.tick);
   });
 });

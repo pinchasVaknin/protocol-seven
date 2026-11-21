@@ -251,8 +251,22 @@ export class PlayerSim {
     this.jumpedThisTick = false;
     this.airSpeedCap = 0;
 
+    // All twelve, not just the flag (BACKLOG #10, fixed 2026-11-22). `mantleActive` false is
+    // enough for the simulation, which never reads the pose without it — but `savePlayerSim`
+    // copies every field, so a correction taken on the tick after a spawn carried the previous
+    // life's vault: its start corner, its end corner, its exit stance. Reconciliation compares
+    // states field by field, so ghost data in a field nobody reads is still a difference.
     this.mantleActive = false;
     this.mantleElapsed = 0;
+    this.mantleFromX = 0;
+    this.mantleFromY = 0;
+    this.mantleFromZ = 0;
+    this.mantleToX = 0;
+    this.mantleToY = 0;
+    this.mantleToZ = 0;
+    this.mantleDirX = 0;
+    this.mantleDirZ = 0;
+    this.mantleEndStance = 'STAND';
     this.mantleCooldown = 0;
 
     this.prevButtons = 0;

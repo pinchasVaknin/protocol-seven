@@ -143,7 +143,7 @@ describe('baking the navmesh on Depot', () => {
     expect(nav.stats.walkable).toBe(13616);
     expect(nav.stats.pruned).toBe(3876);
     expect(nav.stats.links).toBe(101016);
-    expect(nav.stats.stacked).toBe(1810);
+    expect(nav.stats.stacked).toBe(430);
     expect(nav.stats.climbLinks).toBe(98);
     expect(fingerprint(nav)).toEqual({
       links: 12544359,
@@ -160,12 +160,12 @@ describe('baking the navmesh on Depot', () => {
     // is a fact about the map a reader would otherwise have to bake to learn.
     expect(columnsWithLayers(nav, 2)).toBe(430);
     expect(columnsWithLayers(nav, 3)).toBe(0);
-    // Pins current behaviour; suspected bug: NavBakeStats.stacked is never adjusted by the
-    // reachability prune. `walkable` is decremented and `links` is recounted, so `stacked`
-    // alone still reports the 1,810 columns phase 1 found, including the 1,380 whose upper
-    // surface was then thrown away as unreachable.
-    expect(nav.stats.stacked).toBe(1810);
-    expect(nav.stats.stacked).toBeGreaterThan(columnsWithLayers(nav, 2));
+    // And `stats.stacked` agrees with the grid (BACKLOG #8, fixed 2026-11-22). It used to report
+    // the 1,810 columns phase 1 found, including the 1,380 whose upper surface was then thrown
+    // away as unreachable, while `walkable` and `links` beside it were both corrected after the
+    // prune. This last assertion was the reverse of itself: `stacked` *greater than* the number
+    // of columns that actually carry two.
+    expect(nav.stats.stacked).toBe(columnsWithLayers(nav, 2));
   });
 
   it('marks a mantle as a link and as a climb, never as a climb alone', () => {

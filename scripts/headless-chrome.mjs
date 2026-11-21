@@ -238,6 +238,28 @@ export async function withPage(prefix, pagePath, work) {
     child.kill();
     await exited;
     await server.close();
+    removeProfile(userDataDir);
+  }
+}
+
+/**
+ * Delete the headless profile, and never fail a passing run over it.
+ *
+ * Chrome on Windows has not always let go of its profile directory by the time it has exited,
+ * and `rmSync` then throws EPERM: a probe that printed `PASS` and all 264 of its measurements
+ * still exited 1, which makes it useless in a script, and a script is most of what an
+ * instrument is for (BACKLOG #81, fixed 2026-11-22). It is intermittent — the same command on
+ * the same tree exited 0 the next run — so the ten retries stay and are tried first.
+ *
+ * The directory is `mkdtemp`'s, under the OS temp dir, so one left behind costs a few megabytes
+ * until the OS collects it. The warning names the error code and not the path, because the path
+ * has a random suffix and two runs of a diffable instrument have to produce comparable output.
+ */
+function removeProfile(userDataDir) {
+  try {
     rmSync(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch (err) {
+    const code = err instanceof Error && 'code' in err ? err.code : 'unknown';
+    console.warn(`  left the headless profile for the OS to collect (${code} on teardown)`);
   }
 }

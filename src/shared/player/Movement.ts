@@ -377,8 +377,6 @@ function tryStepUp(
   const startX = sim.x;
   const startY = sim.y;
   const startZ = sim.z;
-  const vxBefore = sim.vx;
-  const vzBefore = sim.vz;
 
   world.moveCapsule(startX, startY, startZ, 0, cfg.stepHeight, 0, r, h, stepRise);
   const rise = stepRise.y - startY;
@@ -403,10 +401,14 @@ function tryStepUp(
 
   sim.steppedUp = true;
   sim.blockedHorizontally = false;
-  // The blocked move never happened, so the velocity it would have killed
-  // is restored before the (much weaker) stepped contacts are projected.
-  sim.vx = vxBefore;
-  sim.vz = vzBefore;
+  // Nothing in here touches the velocity, and that is the point (BACKLOG #9, settled
+  // 2026-11-22). This used to capture `sim.vx` / `sim.vz` at the top and write the same two
+  // values back here, under a comment about restoring the velocity the blocked move would have
+  // killed — but the three `moveCapsule` probes above write into module scratch vectors and
+  // nothing between the capture and the restore read the velocity, let alone wrote it. The
+  // step-up decides *where* the body goes, not how fast: the velocity the blocked move left is
+  // the velocity the stepped move carries, and the projection that follows sees
+  // `blockedHorizontally` cleared one line above.
   return true;
 }
 

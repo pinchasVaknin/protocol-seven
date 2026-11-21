@@ -1102,7 +1102,9 @@ export class LoadoutEditor {
                 apply: () =>
                     this.edit((s) => {
                         s[which].weaponId = def.id;
-                        s[which].attachments = [];
+                        // Emptied, not replaced: `assignSlot`'s rule, in the one other place
+                        // this file writes that array (BACKLOG #72).
+                        s[which].attachments.length = 0;
                     }),
                 icon: makeIconSvg(iconFor(def.id), ICON_VIEWBOX, 'lo-bar__silhouette'),
             });
@@ -1743,22 +1745,37 @@ function cloneWeapon(weapon: WeaponLoadout): WeaponLoadout {
     return { weaponId: weapon.weaponId, attachments: [...weapon.attachments], camo: weapon.camo };
 }
 
-/** Put `from` into `target` in place: the profile owns `target`, so it is written, not replaced. */
+/**
+ * Put `from` into `target` in place: the profile owns `target`, so it is written, not replaced.
+ *
+ * **All the way down** (BACKLOG #72, fixed 2026-11-22). The two weapon objects were written
+ * field by field and the four arrays inside them were *replaced*, which is the exact hazard this
+ * line promises to avoid, one level below where it avoided it: anything that captured
+ * `slot.perks`, `slot.streaks` or either `attachments` and held it across a CANCEL was writing
+ * into an array the profile no longer had. Nothing did — the editor looks them up through
+ * `this.slot` every time — so this is the rule being made true rather than a bug report.
+ */
 function assignSlot(target: LoadoutSlot, from: LoadoutSlot): void {
     target.name = from.name;
     assignWeapon(target.primary, from.primary);
     assignWeapon(target.secondary, from.secondary);
     target.lethal = from.lethal;
     target.tactical = from.tactical;
-    target.perks = [...from.perks];
+    assignArray(target.perks, from.perks);
     target.fieldUpgrade = from.fieldUpgrade;
-    target.streaks = [...from.streaks];
+    assignArray(target.streaks, from.streaks);
 }
 
 function assignWeapon(target: WeaponLoadout, from: WeaponLoadout): void {
     target.weaponId = from.weaponId;
-    target.attachments = [...from.attachments];
+    assignArray(target.attachments, from.attachments);
     target.camo = from.camo;
+}
+
+/** Replace an array's contents without replacing the array. */
+function assignArray<T>(target: T[], from: readonly T[]): void {
+    target.length = 0;
+    for (const item of from) target.push(item);
 }
 
 /** The pager's arrows (the stage's went in R3.6). */

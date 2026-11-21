@@ -1747,23 +1747,26 @@ describe('SAVE and CANCEL', () => {
         expect(r.profile.loadouts[0]?.primary.weaponId).toBe(pick.id);
     });
 
-    it('CANCEL writes the weapon objects in place and replaces the four arrays', () => {
+    it('CANCEL writes the weapon objects and the four arrays in place', () => {
         const r = rig();
         r.editor.show();
         const slot = r.profile.loadouts[0];
         if (slot === undefined) throw new Error('no class');
         const held = { primary: slot.primary, secondary: slot.secondary, perks: slot.perks, streaks: slot.streaks };
         const attachments = slot.primary.attachments;
+        const perksBefore = [...slot.perks];
         r.editor.openBox('perks', 0);
         fire(actions(r).cancel, 'click');
-        // Pins current behaviour; suspected bug: the comment says the profile owns the slot, so
-        // it is written rather than replaced — which holds for the two weapon objects and not
-        // for the four arrays inside them.
+        // BACKLOG #72, fixed 2026-11-22. The last three assertions were `not.toBe`: the two
+        // weapon objects were written in place and the four arrays inside them were replaced,
+        // one level below where `assignSlot`'s own comment says it writes rather than replaces.
         expect(slot.primary).toBe(held.primary);
         expect(slot.secondary).toBe(held.secondary);
-        expect(slot.perks).not.toBe(held.perks);
-        expect(slot.streaks).not.toBe(held.streaks);
-        expect(slot.primary.attachments).not.toBe(attachments);
+        expect(slot.perks).toBe(held.perks);
+        expect(slot.streaks).toBe(held.streaks);
+        expect(slot.primary.attachments).toBe(attachments);
+        // In place, and with the right contents: an array kept and not written is the other bug.
+        expect(slot.perks).toEqual(perksBefore);
     });
 
     it('CANCEL with nothing open does nothing', () => {

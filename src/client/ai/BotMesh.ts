@@ -56,7 +56,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp01, lerp } from '../../shared/core/MathUtil';
-import { HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
+import { HUMANOID_RIG, requireRigBox, type HitZone } from '../../shared/combat/HitboxRig';
 import {
   AMPLITUDE_RESPONSE,
   ARM_PITCH,
@@ -227,7 +227,7 @@ export class BotMesh implements ActorAvatar {
       node.add(mesh);
     }
 
-    const head = requiredRigBox('head');
+    const head = requireRigBox('head');
     this.headAnchor.name = 'indicator-anchor:head';
     this.headAnchor.position.set(head.ox, head.oy + head.sy * 0.5, head.oz);
     this.shoulderFrames = {
@@ -518,12 +518,6 @@ export function buildBotAssets(): BotAssets {
 
 // ====================================== INTERNAL HELPERS ====================================== \\
 //#region Internal Helpers
-function requiredRigBox(name: string): (typeof HUMANOID_RIG.boxes)[number] {
-  const box = HUMANOID_RIG.boxes.find((candidate) => candidate.name === name);
-  if (box === undefined) throw new Error(`HUMANOID_RIG has no "${name}" box for an indicator anchor.`);
-  return box;
-}
-
 /**
  * A pad's frame on the outer face of an arm box, in the pad convention (+Z out of the arm,
  * +X down it), after the same baked forward pitch `buildBodyGeometry` gives the arms. The
@@ -531,7 +525,7 @@ function requiredRigBox(name: string): (typeof HUMANOID_RIG.boxes)[number] {
  * what keeps a pad on the same shoulder before and after the skin lands.
  */
 function proceduralShoulderFrame(name: 'armL' | 'armR'): THREE.Object3D {
-  const arm = requiredRigBox(name);
+  const arm = requireRigBox(name);
   const outward = Math.sign(arm.ox) || 1;
   const shoulderY = arm.oy + arm.sy * 0.5;
   const node = new THREE.Object3D();
@@ -599,8 +593,7 @@ function buildBodyGeometry(): THREE.BufferGeometry {
  * `buildZoneGeometry` would produce, and the whole reason the leg can turn.
  */
 function buildLegGeometry(): THREE.BufferGeometry {
-  const box = HUMANOID_RIG.boxes.find((b) => b.name === 'legL');
-  if (box === undefined) throw new Error('HUMANOID_RIG has no "legL" box to build a leg from.');
+  const box = requireRigBox('legL');
   const g = new THREE.BoxGeometry(box.sx, box.sy, box.sz);
   g.translate(0, -box.sy * 0.5, box.oz);
   g.computeBoundingSphere();

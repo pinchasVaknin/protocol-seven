@@ -50,7 +50,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import { HUMANOID_RIG } from '../combat/HitboxRig';
+import { requireRigBox } from '../combat/HitboxRig';
 import { simCos, simSin } from '../core/SimMath';
 //#endregion
 
@@ -69,21 +69,18 @@ export interface GaitPose {
 
 // ========================================= CONSTANTS ========================================== \\
 //#region Constants
-/** The boxes this poses. Read from the rig so the animation and the hitboxes cannot drift. */
-const LEG_BOX = HUMANOID_RIG.boxes.find((box) => box.name === 'legL');
-const ARM_BOX = HUMANOID_RIG.boxes.find((box) => box.name === 'armL');
-
 /**
- * Stays here, between the two lookups and the constants derived from them, rather than moving
- * to a MODULE INITIALISATION section at the foot of the file.
+ * The boxes this poses. Read from the rig so the animation and the hitboxes cannot drift.
  *
- * It is what narrows `LEG_BOX` to non-undefined for `LEG_PIVOT_Y` and `LEG_LENGTH` below.
- * Moved down, those two would need `LEG_BOX?.oy ?? 0`, which turns a loud failure at load into
- * a silent zero in a measurement — a behaviour change, and behaviour outranks the section order.
+ * `requireRigBox` throws at module load if the rig has no such box, which is the behaviour these
+ * two want and the reason they do not use `find` (BACKLOG #21, fixed 2026-11-22). A top-level
+ * `if (... === undefined) throw` used to sit between these lines and the constants below,
+ * narrowing them — a module-scope statement §3.2 has nowhere to put but a MODULE INITIALISATION
+ * section at the foot of the file, which is below everything that needs the narrowing. The
+ * lookup and the check are one call now, so the file's sections are the plain ones.
  */
-if (LEG_BOX === undefined || ARM_BOX === undefined) {
-  throw new Error('HUMANOID_RIG has no "legL"/"armL" box; there is nothing here to pose.');
-}
+const LEG_BOX = requireRigBox('legL');
+const ARM_BOX = requireRigBox('armL');
 
 /**
  * How far the arms are pitched forward at the shoulder, radians.
@@ -210,7 +207,7 @@ export function slideFraction(amplitude = 1): number {
  * is `sz` deep, so half of that is covered for free.
  */
 export function legDivergence(swing: number): number {
-  return limbDivergence(LEG_LENGTH, LEG_BOX?.sz ?? 0, swing);
+  return limbDivergence(LEG_LENGTH, LEG_BOX.sz, swing);
 }
 
 /**
@@ -220,7 +217,7 @@ export function legDivergence(swing: number): number {
  * function of phase — but it is the same kind of claim and it belongs in the same table.
  */
 export function armDivergence(): number {
-  return limbDivergence(ARM_BOX?.sy ?? 0, ARM_BOX?.sz ?? 0, ARM_PITCH);
+  return limbDivergence(ARM_BOX.sy, ARM_BOX.sz, ARM_PITCH);
 }
 //#endregion
 

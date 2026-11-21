@@ -98,6 +98,7 @@ export function bakeNavmesh(world: CollisionWorld, bounds: Box, opts: NavBakeOpt
   }
 
   recordLinkCounts(grid);
+  recordStackedColumns(grid);
   stats.bakeMs = nowMs() - t0;
   return grid;
 }
@@ -174,7 +175,6 @@ function markStandableColumns(
       layer++;
       stats.walkable++;
     }
-    if (layer > 1) stats.stacked++;
   }
 }
 
@@ -453,6 +453,33 @@ function recordLinkCounts(grid: NavGrid): void {
   }
   grid.stats.links = links;
   grid.stats.climbLinks = climbs;
+}
+
+/**
+ * Count the columns that still carry more than one surface, now that the prune has run.
+ *
+ * Counted here rather than in the pass that marks them, which is where it used to be and is the
+ * obvious place for it (BACKLOG #8, fixed 2026-11-22). Phase 1 finds 1,810 stacked columns on
+ * Depot and the reachability prune then throws away the upper surface of 1,380 of them, so the
+ * figure the AI panel printed was four times the truth while `walkable` and `links` beside it
+ * were both corrected after the prune. 430 is the number of places on that map where a bot can
+ * be above another bot, which is what a reader of that line wants to know.
+ *
+ * There is nothing to decrement during the prune: a column stops being stacked when its
+ * *second* surface goes, and the prune walks nodes without knowing how many its column has
+ * left. So the columns are walked once at the end — one pass over a grid the bake has already
+ * walked several times, after the measurement that matters is finished.
+ */
+function recordStackedColumns(grid: NavGrid): void {
+  let stacked = 0;
+  for (let column = 0; column < grid.columnCount; column++) {
+    let surfaces = 0;
+    for (let layer = 0; layer < grid.layers; layer++) {
+      if (grid.walkable[layer * grid.columnCount + column] === 1) surfaces++;
+    }
+    if (surfaces > 1) stacked++;
+  }
+  grid.stats.stacked = stacked;
 }
 
 function popcount8(v: number): number {

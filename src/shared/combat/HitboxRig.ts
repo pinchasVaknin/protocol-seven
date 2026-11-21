@@ -621,6 +621,26 @@ export function buildLayout(id: string, boxes: readonly HitboxDef[]): RigLayout 
   const chest = boxes.find((b) => b.upper === true) ?? boxes.find((b) => b.zone === 'torso');
   return { id, boxes, height: top, aimY: chest?.oy ?? top * 0.5, boundY, boundRadius: radius };
 }
+
+/**
+ * The standing rig's box called `name`, or a thrown error — never `undefined`.
+ *
+ * Three places read a named box off `HUMANOID_RIG` and derive a *measurement* from it: the
+ * gait's hip pivot and leg length, the body mesh's leg geometry, and the hit-indicator anchors.
+ * All three want the same two things, and neither is `find`'s — a non-optional box, so the
+ * arithmetic downstream reads `box.oy` rather than `box?.oy ?? 0`, and a loud failure at load if
+ * the rig is renamed, because `?? 0` turns a renamed box into a silent zero in a published
+ * measurement, which is the worst of the three outcomes (BACKLOG #21).
+ *
+ * It lives here because the rig does. Each caller used to carry its own copy, one of them a
+ * top-level `if (... === undefined) throw` that §3.2 has nowhere to put: a module-scope
+ * statement wedged between the constants that need its narrowing.
+ */
+export function requireRigBox(name: string): HitboxDef {
+  const box = HUMANOID_RIG.boxes.find((candidate) => candidate.name === name);
+  if (box === undefined) throw new Error(`HUMANOID_RIG has no "${name}" box.`);
+  return box;
+}
 //#endregion
 
 // ====================================== INTERNAL HELPERS ====================================== \\

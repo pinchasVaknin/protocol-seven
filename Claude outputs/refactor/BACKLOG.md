@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**47 open entries.** (Derived from the headings, not remembered: batch A closed ten on 2026-11-17, batch B eight and batch C five on 2026-11-21. The figure here had drifted eight low over the programme before it was re-counted.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**46 open entries.** (Derived from the headings, not remembered: batch A closed ten on 2026-11-17, batch B eight and batch C six on 2026-11-21. The figure here had drifted eight low over the programme before it was re-counted.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -937,81 +937,6 @@ characterization test. That is the difference from §5: none of these is pinned,
 what happens today and no oracle will notice when it changes. All three are client-side and all
 three land in division C files, so each is bound to the unit that owns them (§1) and is done under
 that unit's approval, not here.
-
-### #33 — A killed target dummy leaves its bullet holes hanging in the air · `needs a decision from the user` · *needs a session of its own (C4 and C11 both declined it)* *(rewritten 2026-11-05 by C11, with the window measured)*
-**Files** `src/client/combat/TargetDummy.ts`; `src/client/engine/Decals.ts` / `Fx.ts` (C4) only if
-the clear needs an API they do not have. **Origin** reported from play, 2026-10-19.
-
-Shoot a dummy until it dies and the holes stay where they were with nothing behind them.
-`TargetDummy.decals` reasoned about exactly this once, and only half way: it allows holes on
-`static` and `infinite` dummies as "the two that never move", and refuses them on `strafe`, `popup`
-and `faller` because `DecalField` places a mark in **world** space, so a hole punched in a moving
-target slides off it and reads as a miss hanging in mid-air. What the getter did not consider is
-that a dummy which never moves while *alive* still moves — or vanishes — when it **dies**:
-`updateVisual` sets `body.visible = false` on the frame health reaches zero, so a `static` dummy's
-mesh is gone and its world-space holes are not. `infinite` never dies, which leaves `static` as the
-one that reproduces; a `faller` tipping flat is the same picture for whoever re-enables its holes
-later.
-
-Note what this is **not**: the decal veto (`combat/BodyVolume` through `ClientMatch.insideBody`) is
-the veto for *drawn bodies* — players and bots — and dummies were never in it. `Ballistics` gates
-a dummy's impact on `Damageable.decals` instead, in one line (`Ballistics.ts:446`), and that gate
-does what it says. The defect is that nothing clears the marks afterwards.
-
-The fix is to drop a dummy's own decals when it dies, and again when it respawns — which needs
-`Decals`/`Fx` to be able to forget the marks placed on *one* target rather than all of them, an API
-they do not have today. **Decide inside C11** whether a per-target owner on a decal is worth it, or
-whether the cheap answer is to take `static` out of `TargetDummy.decals` and lose the holes on the
-range altogether.
-
-**What that API would cost, measured by C4 on 2026-10-26** (which declined this entry, because the
-decision above is C11's and C11 has not run). `DecalField` is a ring of `CAPACITY` instance slots
-— **376** at the shipped tables, derived from the largest magazine the arsenal can assemble — with
-a cursor, a count, and no notion of who placed what. Adding ownership is:
-
-- one parallel array of `CAPACITY` owner ids beside the ring, written in `place` and cleared on
-  recycle. About 1.5 KB, and `place` already writes two instance attributes so a third store is
-  nothing;
-- a `clearOwner(id)` that walks all 376 slots and hides the matching ones. That is a full pass
-  rather than the O(1) `place` this class is built around, but it runs on a death or a respawn,
-  not per frame, and `clear()` already walks the whole ring the same way;
-- one more parameter on `place`, which is already nine — or an owner set on the field before the
-  shot, which `Ballistics` would have to remember to clear.
-
-So the cost is small and the awkward part is the ninth-plus parameter, not the memory or the scan.
-The cheap alternative the entry offers — dropping `static` from `TargetDummy.decals` — costs
-nothing in this file and loses the holes on the range.
-
-**C11 ran on 2026-11-05 and declined both halves, with a measurement.** The decision this entry
-asked C11 for is made: *neither*, from inside a refactor unit.
-
-- The owner API is in `Decals.ts` / `Fx.ts`, which are **C4's** — finished, in the `check:style`
-  ratchet, outside R3's fence. C11 is no freer to reach into them than C4 was to pre-build for
-  C11. A task bound to a unit may change behaviour where its entry says so; it does not thereby
-  gain the right to edit another unit's finished files.
-- The cheap half is inside `TargetDummy.ts` and C11 could have done it — but it is a behaviour
-  change that removes bullet holes from the four measurement targets *and* the DPS dummy, which
-  are the only targets a group is ever read off. Trading the feedback the range exists to give
-  for the removal of an artefact is the user's call, not a unit's, and this entry is already
-  marked `needs a decision from the user`.
-
-**What C11 measured, which this entry did not have: the orphaned window is bounded, and short.**
-`step` runs `advanceRespawn`, which calls `reset()` once `respawnTimer >= RESPAWN_SECONDS`, and
-`RESPAWN_SECONDS` is **2.5**. So a `static` dummy is dead, with its holes unowned, for two and a
-half seconds — and then the body comes back *behind the very same holes*, because a static dummy
-has not moved and `DecalField` placed them in world space. The report is a 2.5-second artefact on
-a target that puts itself back, not a permanent one. `infinite` never dies and so never
-reproduces it at all, which leaves **exactly one dummy in the whole range** that shows this.
-
-C11 pinned both halves in `TargetDummy.test.ts`: `decals` is true for `static` and `infinite` and
-false for the other three, and `updateVisual` drives `body.visible`/`head.visible` off
-`health.alive`, with the 2.5 s respawn measured either side. Neither can move now without a test
-going red.
-
-**Still open, and now correctly scoped: this needs a session of its own**, not a refactor unit —
-one free to touch `engine/Decals.ts` and `combat/TargetDummy.ts` together. Decide there, with the
-2.5 s in hand, whether a 1.5 KB owner array and an O(CAPACITY) `clearOwner` are worth removing a
-two-and-a-half-second artefact on one target.
 
 ### #34 — The camera trembles while walking the arena · `open` · *every candidate reached so far is measured clean; nothing is confirmed against the reporter's own machine* *(rewritten 2026-10-25, extended and corrected 2026-10-26, by C2)*
 **Files** **not** `src/client/engine/CameraRig.ts` or `FrameLoop.ts` — those are measured clean

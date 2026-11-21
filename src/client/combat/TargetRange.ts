@@ -18,7 +18,7 @@ import { EV, type GameBus } from '../../shared/core/Events';
 import type { HealthConfig } from '../../shared/player/Health';
 import { makeGroundProbe, type CollisionWorld } from '../../shared/world/CollisionWorld';
 import type { DamageSystem } from '../../shared/combat/DamageSystem';
-import { buildDummyMaterials, TargetDummy, type DummyMaterials, type DummySpec } from './TargetDummy';
+import { buildDummyMaterials, TargetDummy, type DummyMaterials, type DummySpec, type ClearDecals } from './TargetDummy';
 //#endregion
 
 // ========================================= CONSTANTS ========================================== \\
@@ -257,13 +257,15 @@ export class TargetRange {
     bus: GameBus,
     healthConfig: HealthConfig,
     world?: CollisionWorld,
+    /** Hands each dummy the door it clears its own bullet holes through (BACKLOG #33). */
+    clearDecals?: ClearDecals,
   ) {
     this.group.name = 'targets';
     this.materials = buildDummyMaterials();
 
     for (const authored of SPECS) {
       const spec = world === undefined ? authored : groundedSpec(authored, world);
-      const dummy = new TargetDummy(spec, healthConfig, this.materials);
+      const dummy = new TargetDummy(spec, healthConfig, this.materials, clearDecals);
       this.dummies.push(dummy);
       this.byId.set(spec.id, dummy);
       this.group.add(dummy.group);

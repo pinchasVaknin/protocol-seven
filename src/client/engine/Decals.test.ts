@@ -233,6 +233,56 @@ describe('DecalField: placing a hole', () => {
 });
 
 describe('DecalField: clearing', () => {
+  /**
+   * BACKLOG #33, settled 2026-11-21: a dummy that vanishes takes its own holes with it.
+   *
+   * The cylinder is the body's, so the two things this has to get right are the ones a box
+   * would have got wrong: a mark on the wall *behind* the body stays, and a mark above the
+   * body's head stays.
+   */
+  it('takes back the marks inside one body and leaves the rest', () => {
+    const { decals } = field();
+    const rng = seeded();
+    // Two in the body's own volume, at its feet and at chest height.
+    decals.place(10, 0.2, 5, 0, 0, 1, 0.05, 1, rng);
+    decals.place(10.3, 1.2, 5.2, 0, 0, 1, 0.05, 1, rng);
+    // One on the wall two metres behind it, and one above its head.
+    decals.place(10, 1, 7, 0, 0, 1, 0.05, 1, rng);
+    decals.place(10, 3.4, 5, 0, 0, 1, 0.05, 1, rng);
+    expect(decals.live).toBe(4);
+
+    // Feet at (10, 0, 5), a body roughly a metre across and under two metres tall.
+    expect(decals.clearCylinder(10, 0, 5, 0.6, 2)).toBe(2);
+    expect(decals.live).toBe(2);
+    expect([scaleAt(decals, 0).x, scaleAt(decals, 1).x]).toEqual([0, 0]);
+    expect(scaleAt(decals, 2).x).not.toBe(0);
+    expect(scaleAt(decals, 3).x).not.toBe(0);
+  });
+
+  it('clears nothing when the body is somewhere else, and says so', () => {
+    const { decals } = field();
+    const rng = seeded();
+    decals.place(0, 1, 0, 0, 0, 1, 0.05, 1, rng);
+    expect(decals.clearCylinder(50, 0, 50, 1, 2)).toBe(0);
+    expect(decals.live).toBe(1);
+  });
+
+  /**
+   * The ring is not rewound by a clear, which is the half that is easy to get wrong: a cleared
+   * slot keeps its turn in the queue, so the next hole lands after it rather than on a live one.
+   */
+  it('leaves the cursor where it was, so a cleared slot is reused in its turn', () => {
+    const { decals } = field();
+    const rng = seeded();
+    decals.place(1, 1, 1, 0, 0, 1, 0.05, 1, rng);
+    decals.place(2, 1, 2, 0, 0, 1, 0.05, 1, rng);
+    expect(decals.clearCylinder(1, 0, 1, 0.6, 2)).toBe(1);
+
+    decals.place(3, 1, 3, 0, 0, 1, 0.05, 1, rng);
+    expect(positionAt(decals, 2).x).toBe(3);
+    expect(scaleAt(decals, 0).x).toBe(0);
+  });
+
   it('hides every slot and starts the ring again', () => {
     const { decals } = field();
     const rng = seeded();

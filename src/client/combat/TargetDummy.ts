@@ -24,6 +24,9 @@ import { HitboxRig, HUMANOID_RIG, type HitZone } from '../../shared/combat/Hitbo
 
 // =========================================== TYPES ============================================ \\
 //#region Types
+/** Take back the marks inside one body's volume. See `Fx.clearDecalsIn` and BACKLOG #33. */
+export type ClearDecals = (x: number, y: number, z: number, radius: number, height: number) => void;
+
 /**
  * M7 adds two, from the M6 playtest notes.
  *
@@ -74,6 +77,20 @@ const LABEL_H = 96;
 
 /** The one type face the read-out is drawn in, top line and figures alike. */
 const LABEL_FONT_FAMILY = 'ui-sans-serif, system-ui, Segoe UI, Roboto, Arial, sans-serif';
+
+/**
+ * The upright cylinder a dummy's own body occupies, derived from the rig rather than guessed.
+ *
+ * Used only to take back the bullet holes a dummy was wearing when it died (BACKLOG #33). The
+ * radius is the furthest any hitbox corner reaches in plan and the height is the top of the
+ * tallest one, both off `HUMANOID_RIG` — so a change to the rig moves this with it rather than
+ * leaving two descriptions of one body, which is the mistake `props.ts` records for the
+ * resupply station.
+ */
+const BODY_CLEAR_RADIUS = Math.max(
+  ...HUMANOID_RIG.boxes.map((b) => Math.hypot(Math.abs(b.ox) + b.sx / 2, Math.abs(b.oz) + b.sz / 2)),
+);
+const BODY_CLEAR_HEIGHT = Math.max(...HUMANOID_RIG.boxes.map((b) => b.oy + b.sy / 2));
 //#endregion
 
 // ===================================== CLASS TargetDummy ====================================== \\
@@ -167,7 +184,16 @@ export class TargetDummy implements Damageable {
 
   // ======================================= CONSTRUCTOR ======================================== \\
   //#region Constructor
-  constructor(spec: DummySpec, healthConfig: HealthConfig, materials: DummyMaterials) {
+  /** Absent in the harnesses, which draw nothing and so leave nothing behind. */
+  private readonly clearDecals: ClearDecals | undefined;
+
+  constructor(
+    spec: DummySpec,
+    healthConfig: HealthConfig,
+    materials: DummyMaterials,
+    clearDecals?: ClearDecals,
+  ) {
+    this.clearDecals = clearDecals;
     this.spec = spec;
     this.entityId = spec.id;
     this.displayName = spec.name;
@@ -335,6 +361,25 @@ export class TargetDummy implements Damageable {
     if (this.body.visible !== visible) {
       this.body.visible = visible;
       this.head.visible = visible;
+      /**
+       * The holes go with the body (BACKLOG #33, settled 2026-11-21).
+       *
+       * `DecalField` places a mark in **world** space, so a dummy that vanishes on the frame
+       * its health reaches zero leaves its holes hanging in mid-air with nothing behind them
+       * — which is what was reported from play. `decals` already refuses marks on the three
+       * behaviours that move while alive; this is the case that getter did not consider,
+       * which is that a `static` dummy moves when it *dies*.
+       *
+       * On both edges, not just the falling one: a respawn is the other moment the body and
+       * its marks could disagree, and clearing twice costs one pass over a ring of 376.
+       */
+      this.clearDecals?.(
+        this.group.position.x,
+        this.group.position.y,
+        this.group.position.z,
+        BODY_CLEAR_RADIUS,
+        BODY_CLEAR_HEIGHT,
+      );
     }
 
     // The label lives inside the rotated group, so undo that rotation before facing the

@@ -141,6 +141,45 @@ export class DecalField {
     if (this.mesh.instanceColor !== null) this.mesh.instanceColor.needsUpdate = true;
   }
 
+  /**
+   * Hide every mark inside an upright cylinder, and answer how many went (BACKLOG #33).
+   *
+   * A cylinder rather than a box because the caller is a body and a body has a yaw: a
+   * world-space box would have to be rotated, and the thing being described — "roughly where
+   * this person is standing" — is round in plan anyway. `y` is the **feet**, so the test is a
+   * horizontal distance against `radius` and a height within `[y, y + height]`.
+   *
+   * A full pass over the ring rather than an index, which is the honest cost of not tracking
+   * ownership per slot: it runs on a death or a respawn, never on a shot. `place` stays the
+   * O(1) write this class is built around.
+   *
+   * The ring's cursor is **not** rewound. A cleared slot keeps its place in the queue and is
+   * reused in turn, exactly as a slot that aged out would be; rewinding would make the next
+   * hole overwrite a live one somewhere else.
+   */
+  clearCylinder(x: number, y: number, z: number, radius: number, height: number): number {
+    const r2 = radius * radius;
+    let cleared = 0;
+    for (let i = 0; i < CAPACITY; i++) {
+      this.mesh.getMatrixAt(i, this.matrix);
+      // A hidden slot is a zero scale, and `elements[0]` is the x column's length: skip it
+      // rather than count it, so the answer is marks removed and not slots visited.
+      if (this.matrix.elements[0] === 0 && this.matrix.elements[5] === 0) continue;
+      const px = this.matrix.elements[12] ?? 0;
+      const py = this.matrix.elements[13] ?? 0;
+      const pz = this.matrix.elements[14] ?? 0;
+      if (py < y || py > y + height) continue;
+      const dx = px - x;
+      const dz = pz - z;
+      if (dx * dx + dz * dz > r2) continue;
+      this.mesh.setMatrixAt(i, this.hidden);
+      if (this.count > 0) this.count--;
+      cleared++;
+    }
+    if (cleared > 0) this.mesh.instanceMatrix.needsUpdate = true;
+    return cleared;
+  }
+
   clear(): void {
     for (let i = 0; i < CAPACITY; i++) this.mesh.setMatrixAt(i, this.hidden);
     this.mesh.instanceMatrix.needsUpdate = true;

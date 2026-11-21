@@ -275,6 +275,17 @@ export class Fx {
     tracer.travelled = 0;
   }
 
+  /**
+   * Take back the marks inside one body's volume (BACKLOG #33).
+   *
+   * The mirror of `decalVeto`, which refuses a hole *inside* a drawn body: this takes back the
+   * ones already placed when that body stops being drawn. The range's dummies are the callers
+   * — they are the only bodies that vanish where they stood.
+   */
+  clearDecalsIn(x: number, y: number, z: number, radius: number, height: number): number {
+    return this.decalField.clearCylinder(x, y, z, radius, height);
+  }
+
   /** Material-dependent burst plus a decal (S6.5). */
   spawnImpact(
     x: number,

@@ -1295,7 +1295,16 @@ export class Match {
      */
     private spawnRange(deps: MatchDeps): TargetRange | null {
         if (!deps.map.targetRange) return null;
-        const range = new TargetRange(this.damage, deps.bus, deps.healthConfig, deps.world);
+        const range = new TargetRange(
+            this.damage,
+            deps.bus,
+            deps.healthConfig,
+            deps.world,
+            // A dummy that vanishes takes its own bullet holes with it (BACKLOG #33). `Fx` is
+            // built *below* this and is read through `this` when a dummy dies, which is long
+            // after the constructor — the range is built early because the director wants it.
+            (x, y, z, radius, height) => void this.fx.clearDecalsIn(x, y, z, radius, height),
+        );
         deps.scene.add(range.group);
         return range;
     }

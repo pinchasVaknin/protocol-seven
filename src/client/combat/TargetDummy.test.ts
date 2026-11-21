@@ -573,6 +573,58 @@ describe('TargetDummy render pass', () => {
   });
 });
 
+describe('TargetDummy decal clearing', () => {
+  /**
+   * BACKLOG #33, settled 2026-11-21. Reported from play: shoot a dummy until it dies and the
+   * holes stay where they were with nothing behind them, because `DecalField` places a mark in
+   * world space and `updateVisual` takes the body out of the scene on the frame health reaches
+   * zero. The frame that hides the body is the frame that takes its marks with it.
+   */
+  it('asks for its own volume to be cleared on the frame it stops being drawn', () => {
+    const calls: number[][] = [];
+    const target = new TargetDummy(spec({ x: 4, y: 0.5, z: -3 }), DEFAULT_HEALTH_CONFIG, materials,
+      (x, y, z, radius, height) => calls.push([x, y, z, radius, height]));
+    target.step();
+    target.updateVisual(1, 0, 1.6, 0);
+    expect(calls).toEqual([]);
+
+    target.health.applyDamage(target.health.max);
+    target.updateVisual(1, 0, 1.6, 0);
+    expect(calls).toHaveLength(1);
+    const [x, y, z, radius, height] = calls[0] as number[];
+    expect([x, y, z]).toEqual([4, 0.5, -3]);
+    // Derived from `HUMANOID_RIG`, not written down twice: a body about a metre across in plan
+    // and under two metres tall.
+    expect(radius).toBeGreaterThan(0.2);
+    expect(radius).toBeLessThan(1.2);
+    expect(height).toBeGreaterThan(1.4);
+    expect(height).toBeLessThan(2.2);
+  });
+
+  it('asks again when the body comes back, so the two edges cannot disagree', () => {
+    let calls = 0;
+    const target = new TargetDummy(spec(), DEFAULT_HEALTH_CONFIG, materials, () => {
+      calls++;
+    });
+    target.step();
+    target.updateVisual(1, 0, 1.6, 0);
+    target.health.applyDamage(target.health.max);
+    target.updateVisual(1, 0, 1.6, 0);
+    expect(calls).toBe(1);
+
+    target.reset();
+    target.updateVisual(1, 0, 1.6, 0);
+    expect(calls).toBe(2);
+  });
+
+  it('runs without one, which is what the harnesses have', () => {
+    const target = dummy();
+    target.step();
+    target.health.applyDamage(target.health.max);
+    expect(() => target.updateVisual(1, 0, 1.6, 0)).not.toThrow();
+  });
+});
+
 describe('TargetDummy dispose', () => {
   it('empties the group and releases what it owns', () => {
     const target = dummy();

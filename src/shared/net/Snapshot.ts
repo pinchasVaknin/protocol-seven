@@ -290,11 +290,28 @@ const OF = {
 
 // ===================================== EXPORTED FUNCTIONS ===================================== \\
 //#region Exported Functions
+/**
+ * `ALL_EQUIPMENT`'s order as a lookup, built once (BACKLOG #30).
+ *
+ * The inverse of `equipmentIdAt`. Module level rather than per call because the scan it
+ * replaces allocated a closure every time it ran.
+ */
+const EQUIPMENT_WIRE_INDEX = new Map<EquipmentId, number>(ALL_EQUIPMENT.map((def, at) => [def.id, at]));
+
 /** The wire's equipment table: `ALL_EQUIPMENT`'s order, 255 for nothing. Appended, never interleaved. */
+/**
+ * An equipment id's wire index, or 255 for "none" and for anything not on the table.
+ *
+ * Off a `Map` rather than a `findIndex` closure (BACKLOG #30). B5 took the one production
+ * caller — `MatchInstance.writePlayer`, which reads `SnapshotRecords`' own index now — so what
+ * is left here is the decode side's inverse, used by `Snapshot.test.ts` to assert the wire
+ * order in both directions. That test is the only guard that the order of `ALL_EQUIPMENT` has
+ * not moved, which is why this is kept rather than deleted; the scan is gone because a lookup
+ * and its inverse should be one table and not a table and a walk.
+ */
 export function equipmentIndexOf(id: EquipmentId | null): number {
   if (id === null) return 255;
-  const at = ALL_EQUIPMENT.findIndex((def) => def.id === id);
-  return at < 0 ? 255 : at;
+  return EQUIPMENT_WIRE_INDEX.get(id) ?? 255;
 }
 
 export function equipmentIdAt(index: number): EquipmentId | null {

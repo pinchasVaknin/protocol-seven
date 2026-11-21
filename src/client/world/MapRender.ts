@@ -13,6 +13,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { freezeSubtree } from './StaticMatrices';
 import * as THREE from 'three';
 import type { ProceduralTextures } from '../engine/ProceduralTextures';
 import { rememberShadowAuthoring, SHADOW_TIERS } from '../engine/Renderer';
@@ -188,7 +189,7 @@ export function* buildMapChunked(
         yield { done: build.done, total: build.total, label: 'lights' };
 
         addSky(build, def);
-        freezeMatrices(root);
+        freezeSubtree(root);
         build.done++;
         yield { done: build.done, total: build.total, label: 'sky' };
 
@@ -550,15 +551,6 @@ function addSky(build: MapBuild, def: MapDef): void {
     build.disposables.push(sky);
     build.drawCalls++;
     build.triangles += sky.triangleCount;
-}
-
-/** A map does not move, so nothing under its root recomposes a matrix on a frame. */
-function freezeMatrices(root: THREE.Group): void {
-    root.updateMatrixWorld(true);
-    root.traverse((obj) => {
-        obj.matrixAutoUpdate = false;
-        obj.matrixWorldAutoUpdate = false;
-    });
 }
 
 function makeMaterial(textures: ProceduralTextures, key: MaterialKey): THREE.Material {

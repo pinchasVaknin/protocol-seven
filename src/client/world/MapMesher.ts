@@ -133,6 +133,14 @@ const FACES: ReadonlyArray<readonly [number, number, number, number]> = [
  *
  * Below the functions it calls in the file's reading order, and above them in its load order:
  * `buildHemisphere` is a hoisted `function` declaration, which is what makes that legal.
+ *
+ * **That arrangement is load-bearing** (BACKLOG #65, settled 2026-11-21). Written as
+ * `const buildHemisphere = (n) => …` instead, this line would throw a temporal-dead-zone error
+ * at module load — and it would throw for every importer of `MapRender`, which is most of the
+ * client, on the first import rather than at the first bake. Left as it is deliberately: the
+ * alternative is a lazily built cache and a branch in `bakeAo`, which buys nothing but the
+ * freedom to rewrite a declaration nobody has a reason to rewrite. If you do rewrite it,
+ * move the constant below the function.
  */
 const AO_DIRECTIONS = buildHemisphere(16);
 //#endregion

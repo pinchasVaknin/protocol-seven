@@ -69,7 +69,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
 import { Path, Pathfinder, type PathClient } from '../ai/Pathing';
-import { angleDelta } from '../core/MathUtil';
+import { angleDelta, smoothstep } from '../core/MathUtil';
 import { simCos, simSin } from '../core/SimMath';
 import type { GameModeId } from '../modes/GameMode';
 import type { MovementConfig } from '../player/MovementConfig';
@@ -597,12 +597,6 @@ export function collidingSamples(plan: IntroPlan, collision: CollisionWorld, ste
 
 // ====================================== INTERNAL HELPERS ====================================== \\
 //#region Internal Helpers
-/** A smoothstep ease: position, and (for the profile) its peak speed is 1.5× the average. */
-function ease(u: number): number {
-  const c = u < 0 ? 0 : u > 1 ? 1 : u;
-  return c * c * (3 - 2 * c);
-}
-
 /** three's yaw for a horizontal direction. */
 function yawOf(dx: number, dz: number): number {
   return Math.atan2(-dx, -dz);
@@ -881,7 +875,7 @@ function planApproach(build: PlanBuild): IntroPose {
     label: '',
     metres: approach.length,
     at(u, out) {
-      const s = approach.length * ease(u);
+      const s = approach.length * smoothstep(0, 1, u);
       approach.at(s, out);
       // The heading is the route's, averaged either side, so a corner is turned into.
       out.yaw = approach.headingAt(s, HEADING_WINDOW);
@@ -1012,7 +1006,7 @@ function pullbackSegment(build: PlanBuild, approachEnd: IntroPose, overview: Ove
     label: '',
     metres: build.overviewDistance,
     at(u, out) {
-      const e = ease(u);
+      const e = smoothstep(0, 1, u);
       out.x = approachEnd.x + (pose.x - approachEnd.x) * e;
       out.y = approachEnd.y + (pose.y - approachEnd.y) * e;
       out.z = approachEnd.z + (pose.z - approachEnd.z) * e;
@@ -1020,7 +1014,7 @@ function pullbackSegment(build: PlanBuild, approachEnd: IntroPose, overview: Ove
       // One turn, with the climb, onto the centre; none at all when the ray is straight back.
       out.yaw = approachEnd.yaw + turn * e;
       // The pitch: the approach's for the first moments, then the target's as the rise takes it.
-      if (u < 0.3) out.pitch = APPROACH_PITCH + (out.pitch - APPROACH_PITCH) * ease(u / 0.3);
+      if (u < 0.3) out.pitch = APPROACH_PITCH + (out.pitch - APPROACH_PITCH) * smoothstep(0, 1, u / 0.3);
     },
   };
 }
@@ -1093,7 +1087,7 @@ function pullInSegment(build: PlanBuild, approachEnd: IntroPose, overview: Overv
     label: '',
     metres: build.overviewDistance,
     at(u, out) {
-      const e = ease(u);
+      const e = smoothstep(0, 1, u);
       out.x = pose.x + (approachEnd.x - pose.x) * e;
       out.y = pose.y + (approachEnd.y - pose.y) * e;
       out.z = pose.z + (approachEnd.z - pose.z) * e;
@@ -1102,7 +1096,7 @@ function pullInSegment(build: PlanBuild, approachEnd: IntroPose, overview: Overv
       out.yaw = pose.yaw - turn * e;
       // Level out over the last third, onto the approach's own pitch.
       if (u > 0.66) {
-        const f = ease((u - 0.66) / 0.34);
+        const f = smoothstep(0, 1, (u - 0.66) / 0.34);
         out.pitch = out.pitch + (APPROACH_PITCH - out.pitch) * f;
       }
     },
@@ -1170,14 +1164,14 @@ function whipSegment(
     label: objective.label,
     metres: spline.length,
     at(u, out) {
-      const sAlong = spline.length * ease(u);
+      const sAlong = spline.length * smoothstep(0, 1, u);
       spline.at(sAlong, out);
       // The heading: from the last hold's into the route's over the first 30 %, along
       // the route (averaged, so its corners are turned) through the middle, onto the
       // objective's over the last 35 %.
       const along = spline.headingAt(sAlong, WHIP_HEADING_WINDOW);
-      const enter = u < 0.3 ? ease(u / 0.3) : 1;
-      const leave = u > 0.65 ? ease((u - 0.65) / 0.35) : 0;
+      const enter = u < 0.3 ? smoothstep(0, 1, u / 0.3) : 1;
+      const leave = u > 0.65 ? smoothstep(0, 1, (u - 0.65) / 0.35) : 0;
       const yawAlong = fromYaw + angleDelta(fromYaw, along) * enter;
       out.yaw = yawAlong + angleDelta(yawAlong, stand.yaw) * leave;
       const pitchAlong = fromPitch + (APPROACH_PITCH - fromPitch) * enter;

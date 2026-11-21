@@ -354,7 +354,6 @@ export class LoadoutEditor {
     private stageParts: HTMLElement[] = [];
     private stageSkins: HTMLElement | null = null;
     private stageActions: HTMLElement | null = null;
-    private readonly boxElements = new Map<BoxKind, HTMLElement>();
     /**
      * Which weapon the stage is holding, when it is not simply the slot's own.
      *
@@ -510,7 +509,6 @@ export class LoadoutEditor {
     /** Build the screen. Called from `show()` and from nowhere else — see the class comment. */
     private paint(): void {
         this.refreshers.length = 0;
-        this.boxElements.clear();
         this.open = null;
 
         const stage = this.paintStage();
@@ -841,7 +839,6 @@ export class LoadoutEditor {
         wrap.className = 'lo-cats';
         for (const box of BOXES) {
             const el = this.createCategoryBar(box);
-            this.boxElements.set(box.kind, el);
             wrap.appendChild(el);
         }
         return wrap;

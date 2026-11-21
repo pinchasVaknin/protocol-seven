@@ -23,6 +23,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { freezeSubtree } from './StaticMatrices';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { logger } from '../../shared/core/Log';
@@ -129,11 +130,7 @@ export class PropModels {
      * and the next prop that arrives late should land in a root where it already holds.
      * `updateMatrixWorld` first, or the clone keeps the identity matrix it was added with.
      */
-    clone.updateMatrixWorld(true);
-    clone.traverse((node) => {
-      node.matrixAutoUpdate = false;
-      node.matrixWorldAutoUpdate = false;
-    });
+    freezeSubtree(clone);
     return clone;
   }
   //#endregion

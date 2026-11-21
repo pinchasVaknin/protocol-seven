@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**46 open entries.** (Derived from the headings, not remembered: batch A closed ten on 2026-11-17, batch B eight and batch C six on 2026-11-21. The figure here had drifted eight low over the programme before it was re-counted.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**41 open entries.** (Derived from the headings, not remembered: batch A closed ten on 2026-11-17, and batches B, C and D closed eight, six and five on 2026-11-21. The figure here had drifted eight low over the programme before it was re-counted.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -436,30 +436,6 @@ units already import) and convert all three call sites in one change.
 
 **Verify** `npm run check`, plus C16's and C17's BROWSER checksums (both hold a pager's element
 tree, with the arrows' labels and their disabled states) and `npm run layout`.
-
----
-
-### #71 — The loadout editor keeps a map of its category bars that nothing reads · `open` *(opened 2026-11-09 by C16)*
-
-**Files** `src/client/ui/LoadoutEditor.ts` (`boxElements`). **Origin** C16's Step 0, confirmed by
-a tree-wide search.
-
-`private readonly boxElements = new Map<BoxKind, HTMLElement>()` is cleared in `paint`, filled
-one entry per bar in `paintCategories`, and **never read** — not in this file, not anywhere in
-`src/`. It is six map writes per paint and a reference to six live elements that outlives
-nothing, which is harmless; it is also a reader's question with no answer in the file.
-
-C16 left it alone on purpose: the approved Step 2 plan did not name it, and deleting private
-state is a widening of scope rather than a split of a function, however safe. It is three lines
-to remove — the declaration, the `clear()` and the `set()` — with no test and no oracle touching
-it, which is why this entry exists rather than a commit.
-
-**Watch for** whether it was meant to serve an `openBox`-by-element path that was never written:
-`openBox(kind, tab)` finds its box in `BOXES` rather than in this map, so the map's only possible
-purpose is one nothing has needed yet.
-
-**Verify** `npm run check`, plus C16's BROWSER checksum A and `npm run layout`, neither of which
-can see a private field — which is the point.
 
 ---
 
@@ -1605,29 +1581,6 @@ cold run spends transforming before any test starts.
 
 ---
 
-### #65 — `MapMesher`'s ray bundle is built at load by a hoist nothing writes down · `open` *(opened 2026-11-03 by C10)*
-
-**Files** `src/client/world/MapMesher.ts` (`AO_DIRECTIONS`, `buildHemisphere`). **Origin** C10.
-
-`const AO_DIRECTIONS = buildHemisphere(16)` runs at module load and calls a function declared
-*below* it in the file. That is legal only because `buildHemisphere` is a `function` declaration
-and therefore hoisted; had anyone written it as `const buildHemisphere = (n) => …`, the module
-would throw on import with a temporal-dead-zone error, and it would throw for every importer of
-`MapRender`, which is most of the client.
-
-C10 put the constant under a `DERIVED CONSTANTS` section, which is what §3.2 asks for a value
-that reads a later declaration at load time, and said so in its comment. That records *where* it
-sits. It does not record that the arrangement is load-bearing.
-
-**Decide** whether to leave it with the note C10 added, or to remove the dependency on hoisting
-altogether — the bundle is 48 floats and nothing reads it before the first bake, so a lazily
-built module-level cache would make the order irrelevant. The second costs one branch per
-`bakeAo` call, which is once per material per map.
-
-**Verify** `npm run check`, plus C10's BROWSER checksum A: every `== AO` line in it is this
-bundle, and the bake is bit-exact against four maps at four settings.
-
-
 ### #42 — Three clients disagree with the server's final scoreboard, one run in five · `open` · *a fix is in place; the cause is still unconfirmed* *(opened 2026-10-19)*
 **Files** `src/server/instance/MatchInstance.ts` (`sendScoreboard`) — B5's file; the check is
 `src/server/skirmishHarness.ts`'s 4.3 comparison. **Origin** the session that closed #40.
@@ -1805,88 +1758,21 @@ user approve — for a helper whose only new caller is in another directory); im
 rendering; or a third file in a shared directory, which R3 allows only in a unit marked
 **design**, and C11 is not one.
 
-**Decide** whether `shared/combat/HitboxRig.ts` should offer "the merged geometry of these zones"
-beside the rig it already owns — both callers already import `HUMANOID_RIG` from it, so it is the
-one place neither of them has to reach sideways to — or whether two eleven-line functions over
-the same table are simply fine. Note that the grey-box colour pair is a separable decision: it
+**The home this entry proposed does not exist** (checked 2026-11-21, by the batch that closed
+#64). `shared/combat/HitboxRig.ts` cannot offer "the merged geometry of these zones": the
+geometry is `THREE.BoxGeometry` and `mergeGeometries`, and `check-boundaries.mjs` forbids
+`shared/ -> three` outright (`BAN_THREE_IN_SHARED`, and `server/ -> three` beside it, because a
+headless process does not render). The rig *table* is shared and the geometry built from it is
+not, which is the whole point of that boundary. So the choice is narrower than it looked.
+
+**Decide** between a third file on the client side — `client/combat/ZoneGeometry.ts` is the
+least wrong, since `client/combat -> client/ai` is the direction the entry already rejects —
+and leaving two eleven-line functions over the same table, which is also defensible. Note that the grey-box colour pair is a separable decision: it
 could move with the geometry or stay where it is.
 
 **Verify** `npm run check`, plus C11's BROWSER checksum A, which hashes the attribute buffers,
 the index and the bounding sphere of every geometry both files build, and the colour of every
 material — so a merge that moved a single vertex or a single hex shows up as a diff.
-
-### #64 — The map root's matrix freeze is written twice, and the two files cannot share it · `open` *(opened 2026-11-03 by C10)*
-
-**Files** `src/client/world/MapRender.ts` (`freezeMatrices`) and
-`src/client/world/PropModels.ts` (`placeStation`'s closing walk). **Origin** C10.
-
-Both walk a subtree and turn `matrixAutoUpdate` and `matrixWorldAutoUpdate` off on every node,
-for the same reason and with the same two lines:
-
-```
-MapRender.freezeMatrices(root)    root.updateMatrixWorld(true); root.traverse(off)
-PropModels.placeStation(...)      clone.updateMatrixWorld(true); clone.traverse(off)
-```
-
-They are not two copies by accident — the second exists *because* of the first. `MapRender`
-freezes its root at the end of the build; a station arrives over the network minutes later and
-has to freeze itself, which is the whole of the comment on it (2026-10-18, measured at 136 of
-1,236 auto-updating objects).
-
-**Why C10 could not merge them.** `MapRender` imports `MODELLED_PROP_SHAPES` from `PropModels`,
-so the reverse import is a cycle, and the only other home is a third file in the same directory
-— a new source file, which R3 allows only in a unit marked **design**. C10 is not one. Both
-copies are now named functions with the reason on them, which is the most a fenced unit can do.
-
-**Decide** whether `client/world/` should carry a small shared module for "what the map root
-holds is static" (it would also be the home for the invariant the next late-arriving prop needs
-to honour), or whether two three-line walks with one comment between them are simply fine. Either
-is defensible; what is not is a third copy appearing without anyone noticing the first two.
-
-**Verify** `npm run check`, plus C10's BROWSER checksum A, whose `auto=` field on every node of
-every map root is exactly what this is about.
-
-### #54 — `IntroPlan.ease` is the last private copy of `smoothstep` · `open` *(opened 2026-10-25 by C1)*
-
-**Files** `src/shared/cinematic/IntroPlan.ts` (`ease`, line 601) and
-`src/shared/core/MathUtil.ts` (`smoothstep`). **Origin** C1.
-
-```
-MathUtil.smoothstep(0, 1, x)   const t = clamp01((x - 0) / (1 - 0));  return t*t*(3 - 2*t);
-IntroPlan.ease(u)              const c = u < 0 ? 0 : u > 1 ? 1 : u;   return c*c*(3 - 2*c);
-```
-
-Byte-identical bodies: `clamp01`'s is the same ternary pair character for character, and the
-`/ 1` is exact for every double, so `smoothstep(0, 1, u)` and `ease(u)` agree bit for bit —
-including on NaN and both infinities. C1 removed `IntroCamera`'s copy of exactly this function
-by calling `smoothstep` at its two sites; this is the one that is left.
-
-**Why C1 could not do it.** `IntroPlan.ts` is **A24**'s file: finished, in the `check:style`
-ratchet, and outside C1's fence (R3). The edit itself is two lines — delete `ease`, call
-`smoothstep(0, 1, u)` at its call sites — but deleting a non-exported helper in a finished
-file is that unit's commit to make, and §4.3 sends duplication that spans units here.
-
-**Watch for** `ease` is called from several places inside `IntroPlan`, so this is a small sweep
-rather than one substitution, and the file is the one the `intro` oracle reads end to end.
-
-**A third copy, noted by C4 on 2026-10-26.** `src/client/engine/ProceduralTextures.ts`'s private
-`smooth(t)` is `t * t * (3 - 2 * t)` — the same body again, without the clamp:
-
-```
-MathUtil.smoothstep(0, 1, x)   clamp01(x) then t*t*(3 - 2*t)
-IntroPlan.ease(u)              its own clamp then the same
-ProceduralTextures.smooth(t)   no clamp at all
-```
-
-It is only ever called with a lattice fraction, which is in range by construction, so the three
-agree on every input it can actually receive. C4 did not fold it: `smooth` runs inside the value
-noise, 65,536 times per texture across sixteen textures at load, so an added clamp is real work on
-a load-time hot loop — and §4.3 sends duplication that spans units here anyway. Whoever takes this
-entry should take all three at once.
-
-**Verify** `npm run check` + SIM snapshot/compare → `PASS`. `intro.txt` is 602 lines of plan
-across every map and mode and must stay byte-identical; the bodies are identical, so anything
-else is a finding.
 
 ### #26 — Unify the downward ground probe · `open` *(opened 2026-10-12 by A16)*
 
@@ -1950,40 +1836,6 @@ methods around them are not.
 **Verify** `npm run check` + SIM snapshot/compare → `PASS` — the 3,600-tick hash is what proves a
 round still goes where it went. `SentryGun.test.ts` and `ChopperGunner.test.ts` (both A16) pin the
 shot counters, the eye height a sentry fires from and the chopper's belt.
-
-### #30 — `equipmentIndexOf` has no caller left · `open` · *(opened 2026-10-14 by A20, rewritten by B5 on 2026-10-20)*
-
-**Files** `src/shared/net/Snapshot.ts` (`equipmentIndexOf`, `equipmentIdAt`). **Origin** A20.
-
-As opened, this asked for `equipmentIndexOf(id)` — `ALL_EQUIPMENT.findIndex((def) => def.id === id)`,
-a closure per call on a path that runs per player per snapshot — to be given the table the weapon
-side already has, and it bound the **call site** to B5 because that call site was
-`MatchInstance`'s `writePlayer`.
-
-**B5 did the call site and nothing else.** `server/instance/SnapshotRecords.ts` already built
-`EQUIPMENT_INDEX` for the projectile channel, so one file held two ways to turn an equipment id
-into its wire index; §4.3 says merge that inside the unit, which it did. `writePlayer` now reads
-the map (`heldEquipmentIndex`: `null` → 255, a miss → 255, the same indices because both are
-`ALL_EQUIPMENT` in order), and the SIM and NET oracles were byte-identical across the change.
-
-**What is left is a different question.** `equipmentIndexOf` now has **no production caller at
-all** — `grep -rn "equipmentIndexOf" src/` reaches `Snapshot.ts` itself and `Snapshot.test.ts`,
-which pins every index both ways. So the choice is no longer "give it a table":
-
-1. delete it and let `Snapshot.test.ts` assert the indices through `equipmentIdAt` alone — but
-   the test's *"names every piece of equipment and nothing else"* is the only guard that the
-   wire order of `ALL_EQUIPMENT` has not moved, and it reads it in both directions deliberately;
-2. keep it as the decode side's inverse and give it the `Map` anyway, so the two directions are
-   one table rather than a table and a scan;
-3. keep it exactly as it is and note on it that it is the test's half of the pair, so the next
-   reader does not re-measure a closure that nothing on a hot path calls.
-
-(2) is the smallest change that leaves no scan anywhere, and (3) costs nothing; either is
-defensible and all three are better than the current silence. `Snapshot.ts` is A20's file and
-in the `check:style` ratchet, so this needs a session of its own either way.
-
-**Verify** `npm run check` + SIM snapshot/compare → `PASS`, plus `Snapshot.test.ts`'s *"names
-every piece of equipment and nothing else"*.
 
 ### #53 — The NET oracle fails three different ways when it runs behind the SIM ones · `open` *(opened 2026-10-25 by B8)*
 

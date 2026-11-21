@@ -64,14 +64,18 @@ describe('the tunable key set', () => {
   });
 
   /**
-   * Pins current behaviour; suspected bug: two of the Kestrel's shipped numbers sit outside
-   * the slider that is supposed to tune them. `rpm` is 48 against a minimum of 60, and
-   * `adsFovScale` is 0.34 against a minimum of 0.4 — so touching either slider in the F1 panel
-   * snaps the weapon to a value it does not ship with, and the panel cannot restore what it
-   * replaced. A bolt-action at 48 RPM and a 4.5x scope at 0.34 are both deliberate; it is the
-   * two slider floors that were never widened for them.
+   * BACKLOG #11, settled 2026-11-21: **every** shipped value is inside its own slider now.
+   *
+   * Two of the Kestrel's were not — `rpm` 48 against a floor of 60 and `adsFovScale` 0.34
+   * against 0.4 — so touching either slider in the F1 panel snapped the weapon to a value it
+   * does not ship with, and the panel could not restore what it replaced. A bolt-action at 48
+   * RPM and a 4.5x scope at 0.34 are both deliberate; it was the two floors that were never
+   * widened for them, and they are 48 and 0.34 now. This assertion listed those two before.
+   *
+   * Leave it asserting an **empty** list: the next weapon authored outside its own slider is
+   * what this is here to catch.
    */
-  it('puts every shipped value inside its own slider range, bar the two that do not', () => {
+  it('puts every shipped value inside its own slider range', () => {
     // A default outside its slider is a number the panel cannot show, let alone restore.
     const outside: string[] = [];
     for (const def of ALL_WEAPONS) {
@@ -82,7 +86,7 @@ describe('the tunable key set', () => {
         if (value < meta.min || value > meta.max) outside.push(`${def.id} ${key}=${value}`);
       }
     }
-    expect(outside).toEqual(['sniper_kestrel rpm=48', 'sniper_kestrel adsFovScale=0.34']);
+    expect(outside).toEqual([]);
   });
 });
 

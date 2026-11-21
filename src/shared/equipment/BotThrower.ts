@@ -329,14 +329,22 @@ export class BotThrower {
     z: number,
     safeRadius: number,
   ): boolean {
-    if (Math.hypot(x - self.px, y - (self.py + 1), z - self.pz) < safeRadius) return false;
+    /**
+     * Measured from the body's centre, which the rig knows (BACKLOG #16, settled 2026-11-21).
+     *
+     * This was `py + 1`, a standing-body guess, so a crouching or sliding team-mate was
+     * measured from a point above their own chest and a grenade counted as further away than
+     * it was. `aimHeight` is the authored figure — `HitboxRig.layout.aimY`, 1.26 m standing
+     * and lower in every low layout — and it is what a safe radius plainly wants.
+     */
+    if (Math.hypot(x - self.px, y - (self.py + self.aimHeight), z - self.pz) < safeRadius) return false;
     for (const c of roster) {
       if (c === self) continue;
       if (!c.participating) continue;
       // Only a teammate makes a landing spot unsafe. In Free-for-All nobody is one, so a bot
       // throws at whoever is there — half the lobby used to be spared by its substrate side.
       if (isHostile(self.team, c.team, this.system.freeForAll)) continue;
-      if (Math.hypot(x - c.px, y - (c.py + 1), z - c.pz) < safeRadius * 0.7) return false;
+      if (Math.hypot(x - c.px, y - (c.py + c.aimHeight), z - c.pz) < safeRadius * 0.7) return false;
     }
     return true;
   }

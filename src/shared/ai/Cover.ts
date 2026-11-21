@@ -55,19 +55,6 @@ const MAX_SCORED = 16;
  * grey-box pit floor and the alcove shelf are both within a metre of open floor in plan.
  */
 const MAX_HEIGHT_DELTA = 1.6;
-
-const candidateIndex = new Int32Array(MAX_SCORED);
-const candidateDist = new Float64Array(MAX_SCORED);
-
-/**
- * The furthest candidate currently held, and where it sits in the two arrays above.
- *
- * Module-level beside the arrays they describe, and written only by `findWorstCandidate`
- * during one `gatherNearest` call. The scan that fills them is written once now; it used to
- * be written twice, identically, which was the whole of that function's complexity.
- */
-let worstDist = -Infinity;
-let worstAt = -1;
 //#endregion
 
 // ====================================== CLASS CoverIndex ====================================== \\
@@ -89,6 +76,24 @@ export class CoverIndex {
   private threatX = 0;
   private threatY = 0;
   private threatZ = 0;
+
+  /**
+   * The nearest few slots one `gatherNearest` call found, and the furthest of them.
+   *
+   * On the instance and not at module level, so two `CoverIndex`es in one process cannot read
+   * each other's candidates — the same rule `world/Raycaster` keeps for its ray and
+   * `equipment/SmokeField` for its sight line, and the reason all three now answer the
+   * question the same way (BACKLOG #20, settled 2026-11-21). There is no live defect either
+   * way: the arrays are filled by `gatherNearest` and read by `select`, both inside one
+   * synchronous call. What they are is state that spans two calls, which is exactly what the
+   * other two files decided belongs on an instance.
+   *
+   * Sixteen ints and sixteen doubles per index, of which a match has one.
+   */
+  private readonly candidateIndex = new Int32Array(MAX_SCORED);
+  private readonly candidateDist = new Float64Array(MAX_SCORED);
+  private worstDist = -Infinity;
+  private worstAt = -1;
   //#endregion
 
   // ======================================= CONSTRUCTOR ======================================== \\
@@ -177,10 +182,10 @@ export class CoverIndex {
     let bestScore = -Infinity;
 
     for (let k = 0; k < nearest; k++) {
-      const index = candidateIndex[k] ?? -1;
+      const index = this.candidateIndex[k] ?? -1;
       const slot = this.slots[index];
       if (slot === undefined) continue;
-      const score = this.scoreAgainstThreat(slot, candidateDist[k] ?? 0, perception);
+      const score = this.scoreAgainstThreat(slot, this.candidateDist[k] ?? 0, perception);
       if (score <= bestScore) continue;
       bestScore = score;
       best = index;
@@ -219,8 +224,8 @@ export class CoverIndex {
    */
   private gatherNearest(botId: number, x: number, y: number, z: number, maxRange: number): number {
     let count = 0;
-    worstDist = Infinity;
-    worstAt = -1;
+    this.worstDist = Infinity;
+    this.worstAt = -1;
 
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i];
@@ -229,7 +234,7 @@ export class CoverIndex {
       if (Math.abs(slot.y - y) > MAX_HEIGHT_DELTA) continue;
       const dist = Math.hypot(slot.x - x, slot.z - z);
       if (dist > maxRange) continue;
-      count = offerCandidate(i, dist, count);
+      count = this.offerCandidate(i, dist, count);
     }
     return count;
   }
@@ -268,53 +273,49 @@ export class CoverIndex {
       30 - myDist * 1.6 + facing * 8 - Math.abs(threatDist - 12) * 0.35 + (slot.height === 'high' ? 2 : 0)
     );
   }
-  //#endregion
-}
-//#endregion
 
-// ====================================== INTERNAL HELPERS ====================================== \\
-//#region Internal Helpers
-/**
- * Keep slot `i` if it is one of the nearest few. Returns how many are held afterwards.
- *
- * Two ways in: there is room, or it is nearer than the furthest one held and takes that slot's
- * place. Either way the furthest is re-found, because which candidate is now the one to beat
- * has changed.
- */
-function offerCandidate(i: number, dist: number, count: number): number {
-  if (count < MAX_SCORED) {
-    candidateIndex[count] = i;
-    candidateDist[count] = dist;
-    const held = count + 1;
-    if (held === MAX_SCORED) findWorstCandidate(held);
-    return held;
+  /**
+   * Hold this slot if there is room, or if it is nearer than the furthest one held.
+   *
+   * Two ways in: there is room, or it is nearer than the furthest one held and takes that
+   * slot's place. Either way the furthest is re-found, because which candidate is now the one
+   * to beat has changed.
+   */
+  private offerCandidate(i: number, dist: number, count: number): number {
+    if (count < MAX_SCORED) {
+      this.candidateIndex[count] = i;
+      this.candidateDist[count] = dist;
+      const held = count + 1;
+      if (held === MAX_SCORED) this.findWorstCandidate(held);
+      return held;
+    }
+
+    if (dist >= this.worstDist || this.worstAt < 0) return count;
+    this.candidateIndex[this.worstAt] = i;
+    this.candidateDist[this.worstAt] = dist;
+    // Re-find the worst slot; the array is 16 long so this is cheaper than a heap.
+    this.findWorstCandidate(count);
+    return count;
   }
 
-  if (dist >= worstDist || worstAt < 0) return count;
-  candidateIndex[worstAt] = i;
-  candidateDist[worstAt] = dist;
-  // Re-find the worst slot; the array is 16 long so this is cheaper than a heap.
-  findWorstCandidate(count);
-  return count;
-}
-
-/**
- * Find the furthest of the `count` candidates held, into `worstDist`/`worstAt`.
- *
- * Written out twice before — once on filling the array and once on every replacement after
- * that — which was identical both times and the whole of `gatherNearest`'s complexity and
- * depth. A module-level function over the module-level arrays allocates nothing, which is the
- * property the two inline copies were protecting.
- */
-function findWorstCandidate(count: number): void {
-  worstDist = -Infinity;
-  worstAt = -1;
-  for (let k = 0; k < count; k++) {
-    const d = candidateDist[k] ?? 0;
-    if (d > worstDist) {
-      worstDist = d;
-      worstAt = k;
+  /**
+   * Find the furthest of the `count` candidates held, into `worstDist`/`worstAt`.
+   *
+   * Written out twice before — once on filling the array and once on every replacement after
+   * that — which was identical both times and the whole of `gatherNearest`'s complexity and
+   * depth. It allocates nothing, which is the property the two inline copies were protecting.
+   */
+  private findWorstCandidate(count: number): void {
+    this.worstDist = -Infinity;
+    this.worstAt = -1;
+    for (let k = 0; k < count; k++) {
+      const d = this.candidateDist[k] ?? 0;
+      if (d > this.worstDist) {
+        this.worstDist = d;
+        this.worstAt = k;
+      }
     }
   }
+  //#endregion
 }
 //#endregion

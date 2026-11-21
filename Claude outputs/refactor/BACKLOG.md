@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**52 open entries.** (Derived from the headings, not remembered: batch A closed ten on 2026-11-17 and batch B eight on 2026-11-21. The figure here had drifted eight low over the programme before it was re-counted.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**47 open entries.** (Derived from the headings, not remembered: batch A closed ten on 2026-11-17, batch B eight and batch C five on 2026-11-21. The figure here had drifted eight low over the programme before it was re-counted.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -600,66 +600,6 @@ So this is an unbound task and needs its own session, as #32, #48 and #49 did.
 
 **Verify** `npm run check` + SIM snapshot/compare → `PASS`.
 
-### #16 — Settle the three hard-coded body heights · `needs a decision from the user`
-
-**Files** `src/shared/equipment/EquipmentSystem.ts`, `src/shared/equipment/BotThrower.ts`.
-**Origin** A10. **This one can change behaviour** — read the last paragraph.
-
-Three different numbers stand in for "how far up a body is" inside `shared/equipment`, and they
-disagree:
-1. `EquipmentSystem.tripsTrigger` (extracted by A10 from `stepTrigger`, logic unchanged) does the
-   claymore's height test against `c.py + 0.9`;
-2. the same method then raycasts to `c.py + c.aimHeight` for line of sight — a different height on
-   the same body in the same test;
-3. `BotThrower.isSafe` measures its safe radius from `c.py + 1`, twice.
-
-Meanwhile `Combatant.aimHeight` is documented as *"Torso-centre height above the feet, metres.
-Where a bot aims"* and `HitboxRig.layout.aimY` is the authored figure behind it — 1.26 m standing,
-lower in every low layout. The rig knows the answer and these three sites each invented their own.
-
-**Why it matters** 0.9 and 1 are standing-body guesses, so a crouching or sliding body is measured
-from the wrong place. For the claymore that shifts the band it will and will not fire through; for
-the bot's safe radius it shifts where a grenade counts as too close to a team-mate. Both are small,
-and both are wrong in exactly the pose a player notices.
-
-**Scope** decide what each site actually wants — the claymore's band is about a floor-to-floor
-separation so it may legitimately not be `aimHeight`; the safe radius plainly wants a body centre —
-name the ones that stay as constants with a comment saying what they mean, and move the rest onto
-the rig.
-
-**If a figure changes, that is a behaviour change**: the oracles must be re-baselined deliberately,
-with the difference explained, not silently. `EquipmentSystem.test.ts` and `BotThrower.test.ts`
-(A10) encode today's numbers — the claymore's radius, cone, height band, line of sight, owner and
-team-mate; the thrower's safe radius against self, team-mate, enemy and free-for-all — so a
-deliberate change means updating those assertions with a reason.
-
-### #17 — Remove the no-op blast-radius `Math.max` · `needs a decision from the user`
-
-**Files** `src/shared/equipment/EquipmentSystem.ts`. **Origin** A10.
-
-`detonate` computes its search radius as
-`Math.max(def.effectRadius, def.flashSeconds > 0 ? def.effectRadius : 0)`. Both arms of the ternary
-are `def.effectRadius` or `0`, so the expression is `Math.max(def.effectRadius, 0)` at best and
-simply `def.effectRadius` for every piece of equipment in the table — the smallest `effectRadius`
-is the smoke's 0, and smoke never reaches this branch, having neither a damage profile nor flash
-seconds. The `flashSeconds` test cannot change the result.
-
-It reads like the remains of a version where a flash had its own radius separate from the blast's —
-a reasonable thing to want, since `flashbang.effectRadius` is 11 against the frag's 6 and a flash
-does reach further than shrapnel. So there are **two honest outcomes and they are different
-changes**: (a) the expression is dead and should be `def.effectRadius`; or (b) a flash was meant to
-have its own radius, `EquipmentDef` should carry one and the line should read it — a behaviour
-change and a balance decision, not a cleanup. A10 pinned the current behaviour because telling (a)
-from (b) is a design question.
-
-**Note while deciding** `resolveBlast` (extracted by A10, logic unchanged) uses `radius` for the
-distance cull and then passes `def.effectRadius` separately to `this.flash.apply`, so the flash's
-own falloff is already measured against `effectRadius` inside `FlashField.intensityFor`. Under (b)
-those two would have to agree.
-
-**Verify** under (a) the oracles must be unchanged → `PASS`; under (b) they will differ and the
-difference has to be explained and re-baselined deliberately.
-
 ### #18 — Share the gravity and drag integration step · `open` · *note, not a defect*
 
 **Files** `src/shared/equipment/Projectile.ts`. **Origin** A10.
@@ -683,34 +623,6 @@ Until then this is a note, not a defect.
 If it is done, every expression must be carried over character for character — this is the arc
 every grenade in the game flies — and `Projectile.test.ts` (A10) steps one projectile, previews the
 same arc, and asserts they agree point for point at float32 precision.
-
-### #20 — Put the cover candidate arrays on the instance · `needs a decision from the user`
-
-**Files** `src/shared/ai/Cover.ts`. **Origin** A11.
-
-`Cover.ts` keeps `candidateIndex`, `candidateDist`, `worstDist` and `worstAt` at module level,
-shared by every `CoverIndex` ever constructed. **Two earlier units decided the same question the
-other way**, each with the reason written down: `world/Raycaster.ts` (A4) holds its ray in six
-private fields — *"on the instance and not at module level, so two Raycasters in one process — a
-menu skirmish beside a match — cannot read each other's ray"* — and `equipment/SmokeField.ts` (A10)
-holds its sight line in seven private fields with the same sentence.
-
-A11 kept Cover's at module level deliberately: the arrays are written and read entirely inside one
-synchronous `select` call, so there is no live defect — the same argument that justifies `evDamage`,
-`RESULT` and `LAUNCH`. But the project now answers one question two ways in three files, and the
-odd one out is the one whose state spans two calls (`gatherNearest` fills the arrays, `select`
-reads them).
-
-**Decide which rule the project wants and make all three agree:** move Cover's four onto the
-instance like the other two, or write down in `Cover.ts` why a per-call scratch shared across
-instances is fine here and a ray was not. Moving them costs 16 ints and 16 doubles per
-`CoverIndex`, of which a match has one. Note `findWorstCandidate` and `offerCandidate` (both
-extracted by A11) are module-level functions *because* the arrays are, so moving the arrays means
-moving those two onto the class as private methods.
-
-**Verify** `npm run check` + SIM snapshot/compare → `PASS`. `Cover.test.ts` (A11) includes a case
-offering thirty-two candidates against the cap of sixteen, which is the path this scratch exists
-for.
 
 ### #21 — Restructure the Gait load-time guard · `open`
 
@@ -972,14 +884,6 @@ path in the game. Delete the capture and the restore, and confirm the oracles do
 false the game never reads the stale pose, so there is no gameplay bug — but a snapshot taken
 immediately after a spawn still carries ghost data from the previous life, which can reach
 reconciliation and the wire. Clear all the mantle fields in `reset` and update the test.
-
-### #11 — Kestrel's base values fall outside its own tuning sliders · `needs a decision from the user`
-**Files** `src/shared/weapons/WeaponTuning.ts` or `src/shared/weapons/defs/snipers.ts`. **Origin**
-A8. The Kestrel ships `rpm: 48` against a slider minimum of 60, and `adsFovScale: 0.34` against a
-minimum of 0.4. Touching either slider in the F1 debug panel snaps the value to the bound and the
-weapon's authored figure cannot be restored through the UI. **Decide**: widen the bounds in
-`WEAPON_TUNABLES` to contain the authored values, or change the weapon's base values. The second is
-a balance change.
 
 ### #38 — The input ring's accept window is one tick wider than the ring, and narrower than the skew limit · `open` *(opened 2026-10-19 by B1)*
 **Files** `src/server/net/InputBuffer.ts`. **Origin** B1.
@@ -2214,59 +2118,3 @@ method gives a sound baseline today.
 **Verify** five NET runs each way on a quiet machine, which is the measurement §6's own table
 was built from.
 
-### #70 — A fourth spelling of RAD2DEG, and folding it moves 85 inputs · `needs a decision from the user` *(opened 2026-11-09 by C15)*
-
-**Files** `src/client/ui/BearingIndicator.ts` (`update`). **Origin** C15, measured rather than
-argued.
-
-`MathUtil` exports `RAD2DEG = 180 / Math.PI`, and `Hud.showHitDirection` — the transient member
-of this very family, in C14's finished files — uses it. The persistent member spells it out:
-
-```
-Hud.showHitDirection    (bearingRad * RAD2DEG).toFixed(1)
-BearingIndicator.update  Math.round((bearingRad * 180) / Math.PI)
-```
-
-**It is not the same number.** `x * (180/PI)` rounds the quotient once and then multiplies;
-`(x * 180) / PI` multiplies and then divides. Over the 7,201 tenth-of-a-degree bearings from
--360 to +360 the two expressions produce **different doubles in 1,730 cases**, and after
-`Math.round` they disagree in **85** of them — every one an exact half degree, where the two
-land on opposite sides of the rounding boundary. The first is at -350.5 degrees: one spelling
-says -350 and the other -351.
-
-So this is the same shape as #1: a fold that looks like tidying and is a behaviour change at a
-countable set of inputs. The consequence is one degree of rotation on a chevron, which is about
-2 px of arc and below what anybody can see — which is an argument for folding it, not against,
-but it is the user's call and not a refactor unit's.
-
-**Pinned meanwhile.** `BearingIndicator.test.ts` asserts the spelling against
-`Math.round((rad * 180) / Math.PI)` over five bearings and holds the 46.5-degree round trip
-(which lands at 46.49999999999999 and rounds *down*), so whoever folds it has the before and
-after already written.
-
-**Verify** `npm run check`, plus C15's BROWSER checksum A, whose bearing-indicator section walks
-eleven angles including both half-degree cases.
-
----
-
-### The missing item
-The chat list was counted as 24 and this file received 22 of them. Neither #19 (folded into #2) nor
-#23 (closed by A13) is the gap: both are accounted for. The likely candidates are a task recorded
-during **A2** (`shared/cheats`, `shared/ui`) or **A7** (`shared/weapons`) — the only two units with
-no entry here at all. If one of those rings true, re-add it with its unit and its reason.
-
----
-
-## 7. Rules for working this list
-
-1. **A task bound to a unit is done in that unit**, under that unit's plan and approval, and
-   removed from here in the same commit.
-2. **An unbound task gets its own session.** That session is not a refactor unit: R3's fence does
-   not apply, and where the task says so it may change behaviour — but then the oracle difference
-   must be explained and re-baselined deliberately, never silently.
-3. **Nothing here is started without the user's approval**, and the entries marked
-   `needs a decision from the user` cannot be started at all until that decision is made.
-4. **`needs measurement` means measure before deciding.** "Measured, left alone" is a perfectly
-   good outcome and should be recorded in the commit.
-5. When a task is finished, delete its entry and name it in the commit body, so git keeps the
-   record of why it existed.

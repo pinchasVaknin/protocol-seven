@@ -92,6 +92,18 @@ export interface EquipmentDeps {
 
 // ========================================= CONSTANTS ========================================== \\
 //#region Constants
+/**
+ * Where a claymore's trip beam crosses a body, metres above the feet.
+ *
+ * **Deliberately not `aimHeight`** (BACKLOG #16, settled 2026-11-21). The other two heights in
+ * this partition were standing-body guesses and are on the rig now; this one is not a guess
+ * about where a torso is. The band it feeds is `±2.4 m`, which is a floor-to-floor separation
+ * test: the question is whether the body is on the mine's own storey, not where its chest sits.
+ * A figure that dropped when the body crouched would narrow that band for a crouching player
+ * and change which floor a mine covers.
+ */
+const CLAYMORE_TRIP_HEIGHT = 0.9;
+
 const PROJECTILE_CAPACITY = 32;
 const SMOKE_CAPACITY = 8;
 
@@ -401,7 +413,7 @@ export class EquipmentSystem {
     const dz = c.pz - p.z;
     const flat = Math.hypot(dx, dz);
     if (flat > p.def.triggerRadius) return false;
-    if (Math.abs(c.py + 0.9 - p.y) > 2.4) return false;
+    if (Math.abs(c.py + CLAYMORE_TRIP_HEIGHT - p.y) > 2.4) return false;
     if (flat > 1e-4) {
       const dot = (dx * this.triggerFx + dz * this.triggerFz) / flat;
       if (dot < this.triggerHalfCos) return false;
@@ -417,7 +429,18 @@ export class EquipmentSystem {
 
     let victims = 0;
     const profile = def.damageProfile;
-    const radius = Math.max(def.effectRadius, def.flashSeconds > 0 ? def.effectRadius : 0);
+    /**
+     * One radius, because there has only ever been one (BACKLOG #17, settled 2026-11-21).
+     *
+     * This read `Math.max(def.effectRadius, def.flashSeconds > 0 ? def.effectRadius : 0)`,
+     * whose two arms are the same value — the `flashSeconds` test could not change the
+     * result for any equipment in the table. It reads like the remains of a version where a
+     * flash had a radius of its own, which is a reasonable thing to want and is **not** what
+     * the code did. If a flash should reach further than shrapnel one day, `EquipmentDef`
+     * gains a field and this line reads it, and `FlashField.intensityFor` — which measures
+     * the falloff against `effectRadius` — has to agree with it.
+     */
+    const radius = def.effectRadius;
 
     /**
      * The blast resolves in exactly one process (§4.15).

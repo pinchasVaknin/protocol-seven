@@ -97,7 +97,9 @@ export const WEAPON_TUNABLES: Readonly<Record<WeaponNumberKey, TunableMeta>> = {
   pellets: { label: 'Pellets', group: 'Damage', min: 1, max: 16, step: 1, unit: '' },
   pelletSpread: { label: 'Pellet cone', group: 'Damage', min: 0, max: 10, step: 0.05, unit: '°' },
 
-  rpm: { label: 'RPM', group: 'Handling', min: 60, max: 1400, step: 5, unit: '' },
+  // Floor 48 and not 60: the Kestrel ships at 48, and a slider that cannot reach a shipped
+  // value snaps it to the bound the moment the panel is touched (BACKLOG #11).
+  rpm: { label: 'RPM', group: 'Handling', min: 48, max: 1400, step: 5, unit: '' },
   magSize: { label: 'Mag size', group: 'Handling', min: 1, max: 200, step: 1, unit: '' },
   reserveAmmo: { label: 'Reserve', group: 'Handling', min: 0, max: 600, step: 10, unit: '' },
   reloadTime: { label: 'Reload', group: 'Handling', min: 0.4, max: 6, step: 0.05, unit: 's' },
@@ -128,7 +130,8 @@ export const WEAPON_TUNABLES: Readonly<Record<WeaponNumberKey, TunableMeta>> = {
   'recoil.visualAttack': { label: 'Visual attack', group: 'Recoil', min: 0.005, max: 0.2, step: 0.002, unit: 's' },
   'recoil.visualSettle': { label: 'Visual settle', group: 'Recoil', min: 0.02, max: 0.6, step: 0.005, unit: 's' },
 
-  adsFovScale: { label: 'ADS world FOV', group: 'Optics', min: 0.4, max: 1, step: 0.01, unit: 'x' },
+  // Floor 0.34 and not 0.4, for the Kestrel's own zoom. See the RPM row (BACKLOG #11).
+  adsFovScale: { label: 'ADS world FOV', group: 'Optics', min: 0.34, max: 1, step: 0.01, unit: 'x' },
   adsViewmodelFovScale: { label: 'ADS vm FOV', group: 'Optics', min: 0.4, max: 1, step: 0.01, unit: 'x' },
   tracerFraction: { label: 'Tracer rate', group: 'Optics', min: 0, max: 1, step: 0.02, unit: '' },
   shakePerShot: { label: 'Shake / shot', group: 'Optics', min: 0, max: 0.4, step: 0.005, unit: '' },

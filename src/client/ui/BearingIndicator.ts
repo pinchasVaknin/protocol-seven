@@ -1,3 +1,8 @@
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import { RAD2DEG } from '../../shared/core/MathUtil';
+//#endregion
+
 // =================================== CLASS BearingIndicator =================================== \\
 //#region Class BearingIndicator
 /**
@@ -68,7 +73,11 @@ export class BearingIndicator {
     }
     if (!active) return;
 
-    const deg = Math.round((bearingRad * 180) / Math.PI);
+    // `RAD2DEG`, like the transient half of this family in `Hud.showHitDirection` (BACKLOG
+    // #70). It is not the same arithmetic: `(x * 180) / PI` multiplies then divides, and
+    // over the 7,201 tenth-of-a-degree bearings the two disagree after rounding at 85 of
+    // them — every one an exact half degree, worth one degree of chevron, about 2 px of arc.
+    const deg = Math.round(bearingRad * RAD2DEG);
     if (deg === this.lastAngleDeg) return;
     this.lastAngleDeg = deg;
     this.element.style.transform = `rotate(${deg}deg)`;

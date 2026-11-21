@@ -40,7 +40,7 @@ import { EFlag, type EntitySnapshot } from '../../shared/net/Snapshot';
 import { ByteReader } from '../../shared/net/Wire';
 import { makeRayHit } from '../../shared/world/Geometry';
 import type { EventCollector } from './EventCollector';
-import { clearLine, isAlive, NEAR_RADIUS_M, teamOf, type RelevanceContext } from './Relevance';
+import { clearLine, entityById, isAlive, NEAR_RADIUS_M, teamOf, type RelevanceContext } from './Relevance';
 import { HEARING_RADIUS_M, isSound, type SeatContext } from './SeatEvents';
 import type { SeatView } from './SeatView';
 //#endregion
@@ -185,7 +185,7 @@ export class SeatAudit {
   ): void {
     this.decodeSent(sent);
 
-    const viewer = bodyById(seat.entities, seat.entityCount, seat.viewerId);
+    const viewer = entityById(seat.entities, seat.entityCount, seat.viewerId);
     if (viewer === null) return;
     this.fillAwake(view);
     this.fillEars(seat, viewer);
@@ -339,7 +339,7 @@ export class SeatAudit {
     out: VisibilityAuditStats,
   ): void {
     if (subject === seat.viewerId) return;
-    const body = bodyById(seat.entities, seat.entityCount, subject);
+    const body = entityById(seat.entities, seat.entityCount, subject);
     if (body !== null && !seat.freeForAll && teamOf(body) === teamOf(viewer)) return;
     out.enemySounds++;
     const audible =
@@ -592,11 +592,4 @@ export function emptyAuditStats(): VisibilityAuditStats {
  * `SeatEvents.find` is the same lookup over the same array. Unifying them needs a home neither
  * file can give it — see `BACKLOG.md` #45.
  */
-function bodyById(entities: readonly EntitySnapshot[], count: number, id: number): EntitySnapshot | null {
-  for (let i = 0; i < count; i++) {
-    const e = entities[i];
-    if (e !== undefined && e.entityId === id) return e;
-  }
-  return null;
-}
 //#endregion

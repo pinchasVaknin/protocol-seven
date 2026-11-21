@@ -641,7 +641,9 @@ export class LoadoutEditor {
         name.autocomplete = 'off';
         name.setAttribute('aria-label', `Class ${index + 1} name`);
         name.addEventListener('change', () => {
-            const next = name.value.trim().toUpperCase().slice(0, 16);
+            // Trimmed on both sides of the cap (#73): the slice can fall on a space, and a
+            // stored name with a trailing space is drawn by the strip and the quick selector.
+            const next = name.value.trim().toUpperCase().slice(0, 16).trim();
             if (next.length === 0) return;
             this.edit((slot) => {
                 slot.name = next;

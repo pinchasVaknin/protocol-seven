@@ -268,6 +268,26 @@ export function isAlive(e: EntitySnapshot): boolean {
  * clears, because one of those two callers puts the viewer's own body in first; both clear `out`
  * themselves. Writes into the caller's array: this runs per seat per snapshot.
  */
+/**
+ * The entity with this id among the first `count` of a seat's snapshot, or null.
+ *
+ * A linear scan, which is what the array shape allows and what every caller wants: the lists
+ * are a seat's relevant set, tens of entries at most, walked once per event rather than per
+ * entity per tick. It lived in `SeatEvents` and in `VisibilityAudit` as the same eight lines
+ * under two names (BACKLOG #45), beside the `teamOf`/`isAlive` pair both already import here.
+ */
+export function entityById(
+  entities: readonly EntitySnapshot[],
+  count: number,
+  entityId: number,
+): EntitySnapshot | null {
+  for (let i = 0; i < count; i++) {
+    const e = entities[i];
+    if (e !== undefined && e.entityId === entityId) return e;
+  }
+  return null;
+}
+
 export function collectTeammates(
   out: EntitySnapshot[],
   entities: readonly EntitySnapshot[],

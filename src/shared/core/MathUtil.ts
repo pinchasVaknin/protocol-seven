@@ -39,6 +39,20 @@ export function smoothstep(edge0: number, edge1: number, x: number): number {
 }
 
 /**
+ * The slot a tick occupies in a ring of `size`, for a tick that may be negative.
+ *
+ * `tick % size` alone answers negative for a negative tick, which indexes nothing; the second
+ * modulus brings it back. Two server rings were carrying this expression with their own
+ * constant — 128 ticks of commands in `InputBuffer` and 60 of rig history in `RigHistory` —
+ * and a wrap helper that exists twice is the kind of duplication that ends with one of them
+ * fixed (BACKLOG #36). Here rather than in `server/net` because neither ring depends on the
+ * other and they share nothing else.
+ */
+export function ringIndex(tick: number, size: number): number {
+  return ((tick % size) + size) % size;
+}
+
+/**
  * Signed shortest angular difference from `from` to `to`, radians.
  *
  * Result is in (-PI, PI], so interpolating with it always turns the short way: a body facing

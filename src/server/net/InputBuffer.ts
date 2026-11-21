@@ -33,7 +33,9 @@ import {
   NULL_COMMAND,
   type InputCommand,
   type MutableInputCommand,
+  makeCommand,
 } from '../../shared/core/InputCommand';
+import { ringIndex } from '../../shared/core/MathUtil';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -87,7 +89,7 @@ export class InputBuffer {
   /** Which tick each slot currently holds, or -1 for empty. */
   private readonly slotTick = new Int32Array(RING).fill(-1);
   /** The last command actually applied, for the gap-filling repeat. */
-  private readonly last: MutableInputCommand = blank();
+  private readonly last: MutableInputCommand = makeCommand();
   private hasLast = false;
 
   /**
@@ -107,7 +109,7 @@ export class InputBuffer {
   // ======================================= CONSTRUCTOR ======================================== \\
   //#region Constructor
   constructor() {
-    for (let i = 0; i < RING; i++) this.slots.push(blank());
+    for (let i = 0; i < RING; i++) this.slots.push(makeCommand());
   }
   //#endregion
 
@@ -230,11 +232,8 @@ export class InputBuffer {
 // ====================================== INTERNAL HELPERS ====================================== \\
 //#region Internal Helpers
 /** The slot a tick parks in. Wrap-safe for a negative tick, which `index` in `RigHistory` is too. */
+/** This ring's slot for a tick. The wrap itself is `MathUtil.ringIndex` (BACKLOG #36). */
 function slotIndex(tick: number): number {
-  return ((tick % RING) + RING) % RING;
-}
-
-function blank(): MutableInputCommand {
-  return { seq: 0, tickIndex: 0, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, sampledAtMs: 0 };
+  return ringIndex(tick, RING);
 }
 //#endregion

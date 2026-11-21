@@ -265,6 +265,10 @@ export class ActorIndicator {
   dispose(): void {
     this.labelTexture.dispose();
     this.labelMaterial.dispose();
+    // Out of the layer as well as emptied (#66). Clearing alone left one empty `THREE.Group`
+    // behind for every actor that had ever left, which nothing drew and everything traversed.
+    // Here rather than at the call site so it matches what the body half already does.
+    this.group.removeFromParent();
     this.group.clear();
     this.pads.clear();
   }

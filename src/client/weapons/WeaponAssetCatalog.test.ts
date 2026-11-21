@@ -183,12 +183,11 @@ describe('the equipment map', () => {
     expect(equipmentAssetId('')).toBeNull();
   });
 
-  // Pins current behaviour; suspected bug: BACKLOG #61 (a plain-object lookup answers for
-  // Object.prototype's keys). No production caller can reach it: every id comes from
-  // `ALL_EQUIPMENT`, and the loader would ask for a url built out of a function.
-  it('answers with a function for a key off the prototype chain, rather than null', () => {
-    expect(typeof equipmentAssetId('toString')).toBe('function');
-    expect(typeof equipmentAssetId('constructor')).toBe('function');
-    expect(equipmentAssetId('hasOwnProperty')).not.toBeNull();
+  // #61, fixed 2026-11-17. These three returned `Object.prototype`'s functions before the
+  // own-property guard; the signature always said `string | null`.
+  it('answers null for a key off the prototype chain', () => {
+    expect(equipmentAssetId('toString')).toBeNull();
+    expect(equipmentAssetId('constructor')).toBeNull();
+    expect(equipmentAssetId('hasOwnProperty')).toBeNull();
   });
 });

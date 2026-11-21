@@ -899,15 +899,15 @@ describe('the class strip', () => {
         expect(r.profile.loadouts[0]?.name).toBe('RECON OVERWATCH');
     });
 
-    it('trims before the cap and not after it, so a long name can end in a space', () => {
+    it('trims on both sides of the cap, so a long name cannot end in a space', () => {
         const r = rig();
         r.editor.show();
         const name = readPlate(plates(r)[0] as FakeElement).nameEl;
         name.value = '  recon overwatch team  ';
         fire(name, 'change');
-        // `trim().toUpperCase().slice(0, 16)` — the slice falls between two words, and nothing
-        // trims again afterwards. Pins current behaviour.
-        expect(r.profile.loadouts[0]?.name).toBe('RECON OVERWATCH ');
+        // The slice falls between two words; the second trim takes the space the cap left
+        // behind (#73, fixed 2026-11-17 — this assertion read 'RECON OVERWATCH ' before).
+        expect(r.profile.loadouts[0]?.name).toBe('RECON OVERWATCH');
     });
 
     it('refuses a name that is empty once trimmed', () => {

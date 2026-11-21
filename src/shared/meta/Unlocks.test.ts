@@ -382,11 +382,10 @@ describe('sanitiseLoadout: equipment, perks and streaks', () => {
     expect(second).toEqual([]);
   });
 
-  it('takes two passes to clear a camo off a weapon it reverted', () => {
-    // Pins current behaviour; suspected bug: a reverted weapon keeps its camo for one pass.
-    // The revert path clears `attachments` and returns, so the camo check below it never runs
-    // on that call — a save naming a locked sniper with a camo on it comes back holding the
-    // carbine *and* the camo, and only a second pass clears it.
+  it('clears a camo off a weapon it reverted, in the same pass', () => {
+    // #29, fixed 2026-11-17. The revert path cleared `attachments` and returned, so the camo
+    // check below it never ran on that call and a second pass was needed — one the load path
+    // does not make (C12 measured it: `Profile` sanitises exactly once).
     const slot = slotWith({
       primary: { weaponId: 'sniper_vantage', attachments: ['optic_reflex'], camo: 'gold' },
     });
@@ -394,13 +393,12 @@ describe('sanitiseLoadout: equipment, perks and streaks', () => {
     expect(sanitiseLoadout(slot, freshUnlocks(), first)).toBe(true);
     expect(slot.primary.weaponId).toBe(FALLBACK_PRIMARY);
     expect(slot.primary.attachments).toEqual([]);
-    // Still wearing a camo it never earned on the gun it is now holding.
-    expect(slot.primary.camo).toBe('gold');
+    // The finish went with the weapon it was earned on, silently, like the attachments.
+    expect(slot.primary.camo).toBe(null);
 
     const second: string[] = [];
-    expect(sanitiseLoadout(slot, freshUnlocks(), second)).toBe(true);
-    expect(slot.primary.camo).toBe(null);
-    expect(second).toEqual(['ASSAULT primary: camo "gold" not earned on ar_carbine; cleared']);
+    expect(sanitiseLoadout(slot, freshUnlocks(), second)).toBe(false);
+    expect(second).toEqual([]);
 
     const third: string[] = [];
     expect(sanitiseLoadout(slot, freshUnlocks(), third)).toBe(false);

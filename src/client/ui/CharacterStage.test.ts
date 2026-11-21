@@ -697,6 +697,26 @@ describe('the drag', () => {
         expect(reading(r)).not.toBe(before);
     });
 
+    /**
+     * BACKLOG #82, fixed 2026-11-21.
+     *
+     * `setPointerCapture` throws `InvalidStateError` for a pointer the browser no longer
+     * considers active, and a real pointer can go away between the event being queued and the
+     * handler running. The throw used to escape a listener that had already set `dragging`.
+     */
+    it('still starts the drag when the pointer can no longer be captured', () => {
+        const r = rig();
+        const before = reading(r);
+        r.canvas.setPointerCapture = (): never => {
+            throw new Error('InvalidStateError');
+        };
+        expect(() =>
+            fire(r.canvas, 'pointerdown', { clientX: 100, timeStamp: 0, pointerId: 1 } as never),
+        ).not.toThrow();
+        fire(r.canvas, 'pointermove', { clientX: 200, timeStamp: 16, pointerId: 1 } as never);
+        expect(reading(r)).not.toBe(before);
+    });
+
     it('ignores a move with no press behind it', () => {
         const r = rig();
         const before = reading(r);

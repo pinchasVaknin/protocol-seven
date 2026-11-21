@@ -540,6 +540,19 @@ function revertLockedWeapon(
     const was = entry.weaponId;
     entry.weaponId = which === 'primary' ? FALLBACK_PRIMARY : FALLBACK_SECONDARY;
     entry.attachments = [];
+    /**
+     * The finish goes with them (BACKLOG #29, 2026-11-17).
+     *
+     * This returned here, so the camo check below never ran on the same call: a save naming a
+     * locked sniper with a camo on it came back holding the carbine **and still wearing the
+     * camo** — a finish the account never earned on the gun it is now on. The hoped-for second
+     * pass does not exist; C12 measured the load path and it sanitises exactly once.
+     *
+     * Cleared silently, like the attachments one line above: both were earned on a weapon the
+     * player is no longer holding, and the revert message already says which weapon went. A
+     * second line naming a camo on a gun that is gone explains nothing.
+     */
+    entry.camo = null;
     losses.push(
       `${label} ${which} "${was}" is locked (${unlocks.weaponRequirement(was)}); reverted to ${entry.weaponId}`,
     );

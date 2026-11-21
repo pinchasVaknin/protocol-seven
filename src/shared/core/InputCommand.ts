@@ -205,11 +205,15 @@ export function copyCommand(src: InputCommand, dst: MutableInputCommand): void {
   dst.buttons = src.buttons;
   dst.sampledAtMs = src.sampledAtMs;
 }
-//#endregion
 
-// ====================================== INTERNAL HELPERS ====================================== \\
-//#region Internal Helpers
-function makeCommand(): MutableInputCommand {
+/**
+ * A zero command: eight fields, every one of them 0.
+ *
+ * Exported for `server/net/InputBuffer`, which backs its own 128-slot ring with these and was
+ * carrying a second copy of the literal (BACKLOG #37). A field added to `MutableInputCommand`
+ * had to be remembered in two places, in two partitions; now it is remembered here.
+ */
+export function makeCommand(): MutableInputCommand {
   return { seq: 0, tickIndex: 0, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, sampledAtMs: 0 };
 }
 //#endregion

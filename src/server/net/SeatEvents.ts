@@ -36,7 +36,7 @@ import { MAX_SERVER_FRAME_BYTES } from '../../shared/net/Protocol';
 import type { EntitySnapshot } from '../../shared/net/Snapshot';
 import { ByteWriter } from '../../shared/net/Wire';
 import { MAX_TICK_EVENTS, type EventCollector } from './EventCollector';
-import { collectTeammates, teamOf } from './Relevance';
+import { collectTeammates, entityById, teamOf } from './Relevance';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -92,7 +92,7 @@ export class SeatEvents {
   //#region Public Methods
   /** Decide the form of each of `events` for this seat. */
   select(events: EventCollector, seat: SeatContext): void {
-    const viewer = find(seat.entities, seat.entityCount, seat.viewerId);
+    const viewer = entityById(seat.entities, seat.entityCount, seat.viewerId);
     this.fillEars(seat, viewer);
 
     this.kept = 0;
@@ -157,7 +157,7 @@ export class SeatEvents {
     // `SeatView` does: it is not a state a seat stays in.
     if (viewer === null) return Form.Whole;
     if (seat.hidden(subject)) return Form.None;
-    const body = find(seat.entities, seat.entityCount, subject);
+    const body = entityById(seat.entities, seat.entityCount, subject);
     if (body !== null && !seat.freeForAll && teamOf(body) === teamOf(viewer)) return Form.Whole;
     if (events.muted[i] === 1) return Form.None;
     const x = events.xs[i] ?? 0;
@@ -203,16 +203,5 @@ export class SeatEvents {
 /** A footstep, a jump or a landing: the events hearing decides. */
 export function isSound(kind: number): boolean {
   return kind === Ev.Footstep || kind === Ev.Jump || kind === Ev.Land;
-}
-//#endregion
-
-// ====================================== INTERNAL HELPERS ====================================== \\
-//#region Internal Helpers
-function find(entities: readonly EntitySnapshot[], count: number, entityId: number): EntitySnapshot | null {
-  for (let i = 0; i < count; i++) {
-    const e = entities[i];
-    if (e !== undefined && e.entityId === entityId) return e;
-  }
-  return null;
 }
 //#endregion

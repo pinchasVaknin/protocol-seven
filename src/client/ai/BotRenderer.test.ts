@@ -747,29 +747,30 @@ describe('BotRenderer retirement', () => {
     h.renderer.dispose();
   });
 
-  it('empties a retired indicator but leaves its group parented', () => {
-    // Pins current behaviour; suspected bug: BotRenderer leaves an empty indicator group in
-    // the scene for every actor that has left. See BACKLOG #66.
+  it('takes a retired indicator out of the layer, not just out of its own group', () => {
+    // #66, fixed 2026-11-17. This read `toHaveLength(2)` after the retirement, with one of the
+    // two an empty group nothing drew; `ActorIndicator.dispose` unparents now.
     const h = harness();
     h.setRoster([actor(1), actor(2)]);
     h.frame();
     expect(h.indicatorLayer().children).toHaveLength(2);
     h.setRoster([actor(1)]);
     h.frame();
-    expect(h.indicatorLayer().children).toHaveLength(2);
-    expect(h.indicatorLayer().children.filter((c) => c.children.length === 0)).toHaveLength(1);
+    expect(h.indicatorLayer().children).toHaveLength(1);
+    expect(h.indicatorLayer().children.filter((c) => c.children.length === 0)).toHaveLength(0);
     h.renderer.dispose();
   });
 
-  it('accumulates one empty indicator group per roster turnover', () => {
-    // Pins current behaviour; suspected bug: see BACKLOG #66.
+  it('holds two indicator groups across five roster turnovers, not twelve', () => {
+    // #66, fixed 2026-11-17. The layer grew 2 → 4 → 6 → 8 → 10 before this; the bodies never
+    // did, which is what made it a traversal cost rather than anything visible.
     const h = harness();
     for (let wave = 0; wave < 5; wave++) {
       h.setRoster([actor(700 + wave), actor(800 + wave, { team: 'B' })]);
       h.frame();
       h.frame();
       expect(h.bodies()).toHaveLength(2);
-      expect(h.indicatorLayer().children).toHaveLength((wave + 1) * 2);
+      expect(h.indicatorLayer().children).toHaveLength(2);
       expect(h.indicatorLayer().children.filter((c) => c.children.length > 0)).toHaveLength(2);
     }
     h.renderer.dispose();

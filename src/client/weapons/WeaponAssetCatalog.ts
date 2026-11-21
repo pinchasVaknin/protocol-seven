@@ -200,6 +200,12 @@ export function weaponLodUrl(weaponId: string): string {
 }
 
 export function equipmentAssetId(equipmentId: string): string | null {
+  // `Object.hasOwn` rather than a bare index (#66's sibling, BACKLOG #61): the literal
+  // inherits `Object.prototype`, so `equipmentAssetId('toString')` answered with a *function*
+  // where the signature says `string | null`, and `preloadEquipment` would have built a url
+  // out of it. Unreachable from any caller in the project today — every id comes from
+  // `ALL_EQUIPMENT` — and reachable the day one comes from a save file or the console.
+  if (!Object.hasOwn(EQUIPMENT_ASSET_IDS, equipmentId)) return null;
   return EQUIPMENT_ASSET_IDS[equipmentId] ?? null;
 }
 //#endregion

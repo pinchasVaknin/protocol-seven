@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**60 open entries.** (Re-counted from the headings on 2026-11-17, when batch A closed ten: the running figure in this sentence had drifted eight low over the programme and is now derived rather than remembered.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**52 open entries.** (Derived from the headings, not remembered: batch A closed ten on 2026-11-17 and batch B eight on 2026-11-21. The figure here had drifted eight low over the programme before it was re-counted.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -909,34 +909,6 @@ the comment is the thing that is wrong and rewriting it to say which half is in 
 
 ---
 
-### #73 — A class name is trimmed before the sixteen-character cap and not after · `open` *(opened 2026-11-09 by C16)*
-
-**Files** `src/client/ui/LoadoutEditor.ts` (`createPlateName`). **Origin** C16, found by its own
-characterization tests and pinned rather than fixed.
-
-The plate's name field commits on `change`:
-
-```
-const next = name.value.trim().toUpperCase().slice(0, 16);
-if (next.length === 0) return;
-```
-
-`trim` runs **before** `slice`, so a name longer than sixteen characters is cut wherever the
-sixteenth character falls — and when that is a space, the space is stored. `recon overwatch
-team` is saved as `RECON OVERWATCH ` with a trailing space, which the strip then draws, the
-quick selector draws, and the save file carries. The `maxLength = 16` on the field means this is
-only reachable by pasting or by a programmatic write, which is why nobody has seen it.
-
-The fix is one more `.trim()` after the slice, and it is a behaviour change at exactly the
-inputs above — a stored name loses a trailing space — so it is pinned rather than folded:
-`LoadoutEditor.test.ts` has *"trims before the cap and not after it, so a long name can end in a
-space"* with the §5.9 comment, beside the case that holds the ordinary path.
-
-**Verify** `npm run check`. No oracle holds it: dump A's class is named by this script rather
-than typed, so the checksum does not move either way.
-
----
-
 ### #69 — The mortar overlay and the minimap disagree about what a wall is · `open` *(opened 2026-11-09 by C15)*
 
 **Files** `src/client/ui/MortarOverlay.ts` (`classify`) and `src/client/ui/Minimap.ts`
@@ -982,50 +954,6 @@ updated in the same commit, with the reason.
 
 ---
 
-### #66 — A retired actor's nameplate is emptied but never unparented · `open` *(opened 2026-11-05 by C11)*
-
-**Files** `src/client/ai/BotRenderer.ts` (`retireAbsent`), and `ActorIndicator.dispose` as the
-other half of the pair. **Origin** C11, found by its own BROWSER checksum B on its first run.
-
-`retireAbsent` takes an actor that has left the roster and releases everything it owns. The body
-is removed from the scene properly:
-
-```
-mesh.group.removeFromParent();   mesh.dispose();
-```
-
-The indicator is not:
-
-```
-const indicator = this.indicators.get(id);
-indicator?.dispose();            // ActorIndicator.dispose is `group.clear()` — it empties the
-this.indicators.delete(id);      // group and leaves the group itself in `indicatorGroup`
-```
-
-So `indicatorGroup` keeps one **empty `THREE.Group`** for every actor that has ever left, for the
-life of the renderer. Measured over six roster turnovers of two bodies each: the bodies stay at
-2 while the indicator layer goes 2 → 4 → 6 → 8 → 10 → **12**, of which 2 are live.
-
-**Nothing is drawn wrong** — an empty group renders nothing — so this is a scene-graph and
-`updateMatrixWorld` cost that grows with how many actors have come and gone, not a visual defect.
-That is also why no oracle caught it before one went looking: C11's checksum B now records the
-count explicitly.
-
-**Why C11 could not fix it.** R1. Removing the group changes `indicatorGroup.children.length`,
-which is observable output and is exactly what C11's own oracle pins; §5.9 says to pin the
-current behaviour, comment it and open an entry, never to fix it inside the refactor. It is
-pinned in `BotRenderer.test.ts` by two tests that both carry the
-`// Pins current behaviour; suspected bug:` comment.
-
-**The fix** is one line — `indicator.group.removeFromParent()` beside `indicator?.dispose()`, or
-the same line inside `ActorIndicator.dispose` so it matches what the body half already does.
-Prefer the second: `BotRenderer.dispose` reaches the same end today only because
-`this.group.clear()` happens to drop the whole layer.
-
-**Verify** `npm run check`, then C11's BROWSER checksum B, whose `indicatorNodes=` and `empty=`
-lines are the record of today's behaviour and are expected to change — deliberately, and with
-the two pinned tests updated in the same commit.
-
 ### #8 — `NavBakeStats.stacked` is not recounted after pruning · `open`
 **Files** `src/shared/world/NavBake.ts`. **Origin** A5. The `stacked` figure — columns carrying
 more than one surface — keeps the raw count from the first pass while `walkable` and `links` are
@@ -1052,20 +980,6 @@ minimum of 0.4. Touching either slider in the F1 debug panel snaps the value to 
 weapon's authored figure cannot be restored through the UI. **Decide**: widen the bounds in
 `WEAPON_TUNABLES` to contain the authored values, or change the weapon's base values. The second is
 a balance change.
-
-### #45 — One roster lookup, written twice in one unit · `open` *(opened 2026-10-19 by B2b)*
-**Files** `src/server/net/SeatEvents.ts` (`find`) and `src/server/net/VisibilityAudit.ts`
-(`bodyById`). **Origin** B2b.
-
-The same linear scan over the same array for the same answer. B2b removed the closure form —
-`VisibilityAudit` built a `byId` arrow per `observeEvents` call — so what is left is two
-identical module-level functions in two files.
-
-**Why B2b could not do it.** The same wall as #36: a shared helper needs a new file (R3, and B2
-is not a **design** unit) or a new export on an existing file (R2, and Step 2 approved exactly
-one — `collectTeammates`). `Relevance.ts` is the natural home, beside `collectTeammates` and the
-`teamOf`/`isAlive` pair both files already import from it; that is one export and two call sites,
-and it should be done with #36, which has the same shape and the same destination.
 
 ### #38 — The input ring's accept window is one tick wider than the ring, and narrower than the skew limit · `open` *(opened 2026-10-19 by B1)*
 **Files** `src/server/net/InputBuffer.ts`. **Origin** B1.
@@ -1452,31 +1366,6 @@ not.
 from each other. `WeaponAudio.test.ts`'s snapshots flip in the same commit and are the record
 of what moved.
 
-### #61 — A plain-object lookup answers for `Object.prototype`'s keys · `open` *(opened 2026-11-03 by C9)*
-**Files** `src/client/weapons/WeaponAssetCatalog.ts` (`equipmentAssetId`, `EQUIPMENT_ASSET_IDS`).
-**Origin** C9's characterization tests, 2026-11-03.
-
-`equipmentAssetId(id)` is `EQUIPMENT_ASSET_IDS[id] ?? null` over an object literal, so
-`equipmentAssetId('toString')` returns **`Object.prototype.toString`** — a function, where the
-signature says `string | null`. `preloadEquipment` would then build a url out of it and fetch
-it.
-
-**It is unreachable today, and that is the measurement rather than an excuse:** every caller
-passes an id from `ALL_EQUIPMENT`, and TypeScript types the return `string`, so nothing in the
-project can see it. It is recorded because the next piece of equipment named from a save file,
-a url flag or a console handle is the one that reaches it.
-
-**Why C9 did not fix it.** R1: `null` for `'toString'` is a different answer from the one the
-code gives today, and a refactor unit may not change an answer. Pinned instead
-(`WeaponAssetCatalog.test.ts`, "answers with a function for a key off the prototype chain").
-
-**Decide** `Object.hasOwn(EQUIPMENT_ASSET_IDS, id)`, a `Map`, or `Object.create(null)`. The
-first is one line and keeps the literal readable. While there: `ATTACHMENT_PART_SOCKETS` and
-`ATTACHMENT_PART_OWN_SOCKETS` are the same shape but keyed by a union type, so an arbitrary
-string cannot reach them and they are **not** the same defect.
-
-**Verify** `npm run check`; the pinning test flips to `toBeNull()` in the same commit.
-
 ### #60 — Three weapon sounds leave the distance curve on whatever played before them · `open` *(opened 2026-11-03 by C9)*
 **Files** `src/client/weapons/WeaponAudio.ts` — `magazineSeatThump`, `playFleshImpact`'s
 oscillator block, `playDeath`'s noise block. **Origin** C9's characterization tests,
@@ -1853,27 +1742,6 @@ the folder for the OS to collect. The first is the usual answer on Windows.
 
 ---
 
-### #82 — `setPointerCapture` on the stage is unguarded · `open` *(opened 2026-11-11 by C20)*
-
-**Files** `src/client/ui/CharacterStage.ts:608` (`listenForDrag`). **Origin** C20's oracle run.
-
-The last statement of the `pointerdown` handler is `this.canvas.setPointerCapture(e.pointerId)`,
-which throws `InvalidStateError` for a pointer the browser does not consider active. C20's
-dump hit it with synthetic events, which is not the product — but a real pointer can go away
-between the event being queued and the handler running, and then the throw escapes from inside
-a listener with `this.dragging` already set.
-
-What it costs is small: `pointerup` still fires and `release` still runs, so the stage is not
-left stuck. The drag simply stops tracking once the pointer leaves the canvas, which is what
-the capture was there to prevent.
-
-**Decide** whether a `try`/`catch` around that one line is worth it. It is one line, and the
-argument against is that swallowing an error hides a real one.
-
-**Verify** BROWSER: drag the operator off the edge of the canvas and back.
-
----
-
 ### #77 — One seeded skirmish test times out on a cold full run and passes alone · `needs measurement` *(opened 2026-11-09 by C18)*
 
 **Files** `src/client/world/MenuSkirmish.test.ts` (`deals a different fight for a different
@@ -2191,34 +2059,6 @@ entry should take all three at once.
 across every map and mode and must stay byte-identical; the bodies are identical, so anything
 else is a finding.
 
-### #36 — One ring index, written twice in one unit · `open` *(opened 2026-10-19 by B1)*
-**Files** `src/server/net/InputBuffer.ts` (`slotIndex`) and `src/server/net/RigHistory.ts`
-(`index`). **Origin** B1.
-
-The same wrap-safe expression, `((tick % SIZE) + SIZE) % SIZE`, with a different constant: 128
-ticks of commands and 60 ticks of rig history. B1 removed the *within-file* duplication —
-`InputBuffer` had it inline twice — so what is left is two one-line functions that differ only
-in their modulus, and a shared `ringIndex(tick, size)` would be the honest form.
-
-**Why B1 could not do it.** There is no home for it inside the fence. A new file needs a
-**design** unit (R3) and B1 is not one; exporting one file's helper for the other to import adds
-a public export (R2) and points `RigHistory` at `InputBuffer` or the reverse, which is a
-dependency between two modules that share nothing else. The natural home is a shared ring helper
-in `src/shared/core/`, which is **A1**'s territory. Worth doing with #37, which has the same
-shape and the same destination.
-
-### #37 — `InputBuffer.blank()` is a second `makeCommand()` · `open` *(opened 2026-10-19 by B1)*
-**Files** `src/server/net/InputBuffer.ts` (`blank`) and `src/shared/core/InputCommand.ts`
-(`makeCommand`, not exported). **Origin** B1.
-
-Both build the same eight-field zero command, and `InputCommand.ts` already has one for
-`CommandRing`'s backing store. A field added to `MutableInputCommand` has to be remembered in
-two places, in two partitions.
-
-**Why B1 could not do it.** `makeCommand` is private to `InputCommand.ts` and exporting it is an
-API change in **A1**'s file, outside B1's fence (R2, R3). The edit is one export and one import,
-but it belongs to whoever owns that file.
-
 ### #26 — Unify the downward ground probe · `open` *(opened 2026-10-12 by A16)*
 
 **Files** `src/shared/streaks/CarePackage.ts` (`probeGround`), `src/shared/streaks/MortarStrike.ts`
@@ -2281,43 +2121,6 @@ methods around them are not.
 **Verify** `npm run check` + SIM snapshot/compare → `PASS` — the 3,600-tick hash is what proves a
 round still goes where it went. `SentryGun.test.ts` and `ChopperGunner.test.ts` (both A16) pin the
 shot counters, the eye height a sentry fires from and the chopper's belt.
-
-### #29 — A reverted weapon keeps its camo for one pass · `open` *(opened 2026-10-14 by A19)*
-
-**Files** `src/shared/meta/Unlocks.ts` (`revertLockedWeapon`, extracted from `sanitiseLoadout` by
-A19). **Origin** A19, found by a characterization test. **Pinned**, not fixed — see
-`Unlocks.test.ts`, *"takes two passes to clear a camo off a weapon it reverted"*.
-
-`sanitiseLoadout` reverts a locked weapon to the fallback and clears its attachments, because
-they were earned on the gun it is no longer holding. It then **returns**, so the camo check that
-sits below it on the same path never runs. The result is that a save naming a locked weapon with
-a camo on it comes back holding the carbine **and still wearing the camo** — a finish the account
-never earned on the gun it is now on. A second `sanitiseLoadout` call clears it.
-
-Measured, as the test records: pass one reports the weapon revert, pass two reports
-`ASSAULT primary: camo "gold" not earned on ar_carbine; cleared`, pass three reports nothing.
-
-**Why A19 did not fix it.** It is a behaviour change, and R1 forbids one inside a refactor unit.
-It is also not obviously a one-line fix: clearing the camo on the revert path is the likely
-answer, but *which* reversion message the player should see is a decision — one line about the
-weapon, or two — and whether the camo line should appear at all when the gun it referred to is
-gone. The attachments are cleared silently on that path today, which argues the camo should be
-too.
-
-**How much it matters.** Acceptance criterion 5 says editing `localStorage` cannot put a locked
-item in the player's hands, and a camo is an item. Whether a player ever sees it depends on how
-many times the load path sanitises before drawing.
-
-**C12 checked, on 2026-11-07, and the answer is once.** `Profile`'s constructor runs
-`normaliseSave` and then exactly one `sanitiseAll()`; the only other two call sites are
-`doPrestige` and `importSave`, neither of which is on the load path. So the hoped-for second
-pass does not exist, the leak does surface, and **this entry stays a defect rather than becoming
-a tidy-up**. C12 pinned the single pass in `Profile.test.ts` ("sanitises exactly once on load")
-so that a future change to the load path has to notice this entry.
-
-**Verify** `npm run check` + SIM snapshot/compare. The oracles cannot see this — no oracle loads
-a hand-edited save — so the test above is the proof, and it will need its expectation inverted
-when the behaviour changes, which is the one case where changing a pinned assertion is correct.
 
 ### #30 — `equipmentIndexOf` has no caller left · `open` · *(opened 2026-10-14 by A20, rewritten by B5 on 2026-10-20)*
 

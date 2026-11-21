@@ -605,7 +605,23 @@ export class CharacterStage {
       this.dragLastMs = e.timeStamp;
       this.dragSpeed = 0;
       this.spin = 0;
-      this.canvas.setPointerCapture(e.pointerId);
+      /**
+       * The capture is best-effort (#82).
+       *
+       * `setPointerCapture` throws `InvalidStateError` for a pointer the browser no longer
+       * considers active, and a real pointer can go away between the event being queued and
+       * this handler running. The throw would escape a listener with `dragging` already set.
+       * Nothing is lost by failing: `pointerup` still fires and `release` still runs, so the
+       * drag simply stops tracking once the pointer leaves the canvas — which is the thing the
+       * capture was there to prevent, not the thing it was holding together.
+       *
+       * Narrow on purpose: only this one call, so a real error anywhere else still escapes.
+       */
+      try {
+        this.canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* A pointer that is already gone cannot be captured, and does not need to be. */
+      }
     });
     this.canvas.addEventListener('pointermove', (e) => this.dragTo(e));
     const release = (e: PointerEvent): void => {

@@ -25,6 +25,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
 import { HUMANOID_RIG, type HitboxRig, type RigLayout } from '../../shared/combat/HitboxRig';
+import { ringIndex } from '../../shared/core/MathUtil';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -138,7 +139,8 @@ export function restoreRig(src: RigSnapshot, rig: HitboxRig): void {
 
 // ====================================== INTERNAL HELPERS ====================================== \\
 //#region Internal Helpers
+/** This ring's slot for a tick. The wrap itself is `MathUtil.ringIndex` (BACKLOG #36). */
 function index(tick: number): number {
-  return ((tick % HISTORY_TICKS) + HISTORY_TICKS) % HISTORY_TICKS;
+  return ringIndex(tick, HISTORY_TICKS);
 }
 //#endregion

@@ -488,17 +488,19 @@ describe('the XP report', () => {
     });
 
     /**
-     * A testbed must not move the account. The range still **counts** kills and challenges in
-     * memory so the panels show something real; it simply never writes any of it, and it is
-     * reported as a loss with no MVP however the match went -- returning a won report without
-     * banking would put XP on the summary that the profile never received.
+     * A testbed must not move the account, and that is now what happens rather than what the
+     * comment said (BACKLOG #83, fixed 2026-11-22). This case asserted the opposite of the one
+     * below it: that a range reported a *loss*, because `finish` forced the won flag down --
+     * and then banked the loss, which is what made the forcing look like caution.
+     *
+     * The report tells the truth about the session now and the account does not move; the
+     * summary's XP strip is still hidden for a range, which is correct, because there is no
+     * longer any XP to show.
      */
-    it('reports a range as a loss, whatever happened in it', () => {
+    it('reports a range by what happened in it, and banks none of it', () => {
         const won = rig(true).meta.finish(true);
         const range = rig(false).meta.finish(true);
-        const lost = rig(true).meta.finish(false);
-        expect(range.total).toBe(lost.total);
-        expect(range.total).not.toBe(won.total);
+        expect(range.total).toBe(won.total);
     });
 
     /**
@@ -513,25 +515,27 @@ describe('the XP report', () => {
      *
      * These are the numbers today. See the backlog entry this opened.
      */
-    it('banks a loss onto the profile even for a range, and says nothing', () => {
+    it('leaves the account where it was for a range, and still reports the total', () => {
         const r = rig(false);
         expect(r.profile.xp).toBe(0);
         const report = r.meta.finish(true);
         expect(report.total).toBeGreaterThan(0);
-        expect(r.profile.xp).toBe(report.total);
+        expect(r.profile.xp).toBe(0);
     });
 
     /** Deltas, not totals: two profiles in one test share the save the double gives them. */
-    it('banks the same amount a lost match would', () => {
+    it('banks nothing where a lost match banks its 500', () => {
         const range = rig(false);
         const rangeBefore = range.profile.xp;
         range.meta.finish(true);
-        const rangeGain = range.profile.xp - rangeBefore;
+        expect(range.profile.xp - rangeBefore).toBe(0);
 
+        // The control, which is what makes the zero above mean something: the same rig that
+        // banks does bank, and a loss is what a range used to be paid.
         const lost = rig(true);
         const lostBefore = lost.profile.xp;
         lost.meta.finish(false);
-        expect(lost.profile.xp - lostBefore).toBe(rangeGain);
+        expect(lost.profile.xp - lostBefore).toBeGreaterThan(0);
     });
 
     it('starts from the level the profile is on', () => {

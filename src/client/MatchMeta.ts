@@ -105,6 +105,7 @@ export class MatchMeta {
       profile: deps.profile,
       score: deps.score,
       tracker: this.tracker,
+      banks: deps.banksProgress,
     });
 
     this.perks = new PerksRuntime({
@@ -172,12 +173,12 @@ export class MatchMeta {
    * MVPs is not what the word means.
    */
   finish(won: boolean): XpReport {
-    if (!this.deps.banksProgress) {
-      // The range still counts kills and challenges in memory so the panels show something
-      // real; it simply never writes any of it. Returning the report without banking would
-      // put XP on the summary that the profile never received.
-      return this.progression.finish(false, false);
-    }
+    // No branch here any more (BACKLOG #83, fixed 2026-11-22). `banksProgress` was read here
+    // and used to force the *won* flag down, which reported the range as a loss and then
+    // banked it as one: `progression.finish` reached `profile.bankMatch` and `flush` like any
+    // other ending, and a range session moved the account by 500 XP with the summary's strip
+    // hidden so nothing said so. The flag now reaches `MatchProgression` at construction,
+    // where it governs every write the class makes rather than this one argument.
     return this.progression.finish(won, this.isMvp());
   }
 

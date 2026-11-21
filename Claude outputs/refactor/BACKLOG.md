@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**31 open entries: 25 with a heading of their own, and the six §3 holds inside its three clusters** (#6, #12 and #5; #2, which absorbed #19; #14 and #15). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read 25 and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**27 open entries: 21 with a heading of their own, and the six §3 holds inside its three clusters** (#6, #12 and #5; #2, which absorbed #19; #14 and #15). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven and batch G four on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -391,48 +391,6 @@ changed, and all fifteen columns through `applyReplicated` and `reset`. Do not w
 
 ## 4. Independent — one decision each
 
-### #74 — Three files build the same pager arrow, and all three are now finished · `open` *(opened 2026-11-09 by C17, corrected 2026-11-10 by C19)*
-
-**Files** `src/client/ui/Settings.ts` (`creditsArrow`, C17's), `src/client/ui/LoadoutEditor.ts`
-(`arrowButton`, C16's) and `src/client/ui/PlaySolo.ts` (`arrowButton`, C19's) — all three in
-finished units. **Origin** C17's Step 0; the count corrected by C19's.
-
-The credits pager on INFO is deliberately the same control Create-a-Class pages its lists with
-— it uses `lo-pager` and `lo-arrow`, the editor's own classes, and says so in its comment. What
-it does not share is the **element**: each of these files builds its own
-`<button class="lo-arrow">` with a glyph, an `aria-label`, a disabled test and a click handler,
-four to seven lines each.
-
-```
-LoadoutEditor.arrowButton   lo-arrow . aria-label . onClick                     (C16, finished)
-Settings.creditsArrow       lo-arrow . aria-label . disabled by page . onClick  (C17, finished)
-PlaySolo.arrowButton        ps-pager__arrow . title . aria-label . makeIconSvg  (C19, finished)
-```
-
-**Corrected by C19 (2026-11-10): there are three, not four.** This entry named
-`VoteOverlay.ts` as the fourth copy. It has no pager and no arrow: its options are
-`<button class="op-vote__option">` elements that are `disabled` and `aria-disabled` with a fill
-bar behind the label, and the file builds no arrow of any kind. The claim came from C16's note
-that `optionsFor` exists in both `LoadoutEditor.ts` and `VoteOverlay.ts` with different bodies
-— which is true, and is about a different function.
-
-Two of the three really are the same function: C16's and C17's, both `lo-arrow`. The third is
-the same *shape* in different clothes — `ps-pager__arrow`, an SVG glyph through `makeIconSvg`
-rather than a text chevron, and a `title` as well as an `aria-label`.
-
-**The moment this entry was waiting for will not arrive.** It said to watch C19, on the theory
-that a unit owning two of the copies could fold them. C19 owns one. The three sit in three
-different units, all three now finished and fenced by R2 and R3, so no unit will ever hold two
-— and a shared helper put in `ScreenChrome.ts` today would have exactly one caller, which is
-worse than the duplication. This is a **one-off task over three finished files**, to be taken
-on its own and not at a unit's Step 2: add `pagerArrow` to `ScreenChrome.ts` (which all three
-units already import) and convert all three call sites in one change.
-
-**Verify** `npm run check`, plus C16's and C17's BROWSER checksums (both hold a pager's element
-tree, with the arrows' labels and their disabled states) and `npm run layout`.
-
----
-
 ### #1 — One local angle helper that is **not** the shared one · `open` · *needs a session of its own* *(rewritten 2026-11-17 by C24c, which closed the fourth of five copies)*
 
 **Files** `src/client/engine/CameraRig.ts` (`interpolatePhase`). **Origin** A1. Four of the five
@@ -492,52 +450,6 @@ that does not actually hold it. What is not acceptable is a sixth copy.
 **Verify** `npm run check` + SIM snapshot/compare, plus C2’s own BROWSER check — this is camera
 work and no oracle covers it the way `intro.txt` covered `IntroPlan`.
 
-### #3 — Replace greybox's two hand-computed ramps with `rampAlongX` / `rampAlongZ` · `needs measurement`
-
-**Files** `src/shared/world/maps/greybox.ts`, reading `maps/build.ts`. **Origin** A3a.
-
-`greybox.ts` was the only one of the four map files that did not import from `build.ts` at all. A3a
-fixed half of that: the local `add` closure went in favour of `build.addBox`. What remains is the
-two ramps, pushed inline with `out.push({...})`: the main ramp in `stepAndLedge` (top surface
-`(x=-18, y=0)` → `(x=-13.5, y=1.5)`, `rotationZ`) and the pit ramp in `pit` (`(z=8, y=-3)` →
-`(z=2, y=0)`, `rotationX`). `build.ts` exports exactly these two helpers, taking the two endpoints
-of the top surface — exactly what greybox's comments already describe in words.
-
-**The gap in the maths, and why A3a did not touch it.** Both sides reach the same geometry by two
-different floating-point routes:
-
-| | greybox (today) | `build.rampAlongX` |
-|---|---|---|
-| length | `Math.hypot(RISE, RUN)` | `Math.hypot(dx, dy)` — **arguments the other way round** |
-| angle | `Math.atan2(RISE, RUN)`, once, into a constant | `Math.atan2(dy, dx)`, from the deltas |
-| normal | `nx = -simSin(angle)`, `ny = simCos(angle)` | `nx = -dy / len`, `ny = dx / len` |
-
-The last two rows are the serious ones: `-simSin(atan2(a,b))` and `-a/hypot(b,a)` are equal
-mathematically with no guarantee of equality in the last bit, and `Math.hypot` is not guaranteed
-symmetric in its argument order. R5 forbids changing the order or grouping of floating-point
-arithmetic, and this brush's position feeds the collision world — the 3,600 hashes.
-
-**Steps** (1) measure before replacing: build both ramps both ways and compare `position` and
-`rotation` bit for bit. Identical → the swap is free. Different → decide which route is right
-(`rampAlongX` is the one the other three maps use, so probably that) and accept a last-bit change
-knowingly. (2) If replacing:
-`rampAlongX(out, 'metal', -18, 0, -13.5, 1.5, 6, 3.5, MAIN_RAMP_THICK)` and
-`rampAlongZ(out, 'metal', 8, -3, 2, 0, 10.3, 3.0, PIT_RAMP_THICK)` — check the arguments against
-the geometry in the comments. (3) `MAIN_RAMP_ANGLE`, `MAIN_RAMP_LEN`, `PIT_RAMP_ANGLE`,
-`PIT_RAMP_LEN` then become dead and `simSin`/`simCos` probably leave greybox's imports entirely.
-
-Note the measurement is a **same-engine** question and is unaffected by the cross-V8 finding of
-2026-10-12; but if a last-bit change *is* accepted, the re-baseline must be taken on the engine the
-gate runs (see §5).
-
-`greybox.test.ts` already pins both ramps ("the two ramps keep their authored pitch") — and pins
-them **against the formula** (`toBe(Math.atan2(1.5, 4.5))`), not against a baked literal, so it
-moves with the engine and will go red exactly when the maths moves. That is the signal to watch.
-
-**Why it is worth it** `greybox` is the room the movement system is calibrated in, and two ramp
-formulas that are supposed to agree are the same shape as the second finding in A2 — one rule
-written twice, ending up not agreeing.
-
 ### #13 — Move `PLAYER_ENTITY_ID` out of `DamageSystem` · `open` · *needs a session of its own (B5 and B6 both declined it)*
 
 **Files** `src/shared/combat/DamageSystem.ts`, `src/shared/combat/LocalIdentity.ts`, every
@@ -595,54 +507,6 @@ every grenade in the game flies — and `Projectile.test.ts` (A10) steps one pro
 same arc, and asserts they agree point for point at float32 precision.
 
 ## 5. Suspected bugs, pinned in tests, awaiting a fix
-
-### #83 — A Shooting Range session banks a loss's worth of XP onto the account, and says nothing · `open` *(opened 2026-11-14 by C21)*
-
-**Files** `src/client/MatchMeta.ts:174` (`finish`, and the comment above it);
-`src/client/Game.ts:1148` reads the same flag for the other half. **Pinned by**
-`MatchMeta.test.ts`, *"banks a loss onto the profile even for a range, and says nothing"* and
-*"banks the same amount a lost match would"*. **Origin** C21's characterization tests.
-
-`MatchMeta.finish` branches on `banksProgress`, and the comment above the branch says what the
-branch is for:
-
-> A testbed must not move the account. The range still **counts** kills and challenges in
-> memory so the panels show something real; it simply never writes any of it.
-
-The path it takes writes all of it. `progression.finish(false, false)` is the same
-`MatchProgression.finish` every other match calls: it runs `tracker.onMatchEnd`, banks the
-weapon tallies, and reaches `profile.bankMatch` and `profile.flush()` like any other ending.
-The only thing the branch does is force the *won* flag down — so the range is reported as a
-loss, which is the half the comment's second sentence describes, and banked as a loss, which
-is the half it denies.
-
-`Game` holds the other end. At `Game.ts:1148` it reads the same `banksProgress` off the mode
-and uses it to decide whether to **show** the XP strip — `banks ? report : null` — so the
-account moves and the screen that would have said so is the one thing the flag does suppress.
-
-**Measured in the live engine**, not only in tests: a range match finished with `banks=false
-won=true` moved the profile from 16500 to 17000. A loss is 500 XP, and that is what the range
-pays.
-
-**Decide** which of the two sentences is the intended behaviour, because they cannot both be:
-
-- *Never writes any of it* — the comment's own claim, and the one the flag's name implies.
-  `finish` returns a report built from the in-memory tallies without reaching the profile at
-  all. That needs `MatchProgression.finish` to grow a "compute but do not bank" path, which is
-  a change in `shared/meta/` — outside C21's fence under R3, and outside C24's too.
-- *Banks it like any other loss* — today's behaviour, in which case the comment is wrong and
-  the strip should probably be shown rather than hidden, since the XP is real.
-
-The first is almost certainly what was meant: a range is a testbed, the account is not supposed
-to move in it, and a player grinding challenges on the range is being paid for it silently.
-
-**Verify** `npm run check`. The two pinning tests hold today's numbers from both directions —
-one that the profile moves by exactly the report's total, one that the amount equals a lost
-match's — so a fix is two tests inverted and nothing else. C21's dump oracle does not cover
-this path (it holds no profile writes by design, after the first run of it banked into the
-page's real save).
-
----
 
 ### #80 — Five of the twelve weapons are framed slightly off their own diagonal in the preview · `open` *(opened 2026-11-11 by C20)*
 
@@ -757,33 +621,6 @@ a second export from `Minimap.ts`, which C15 did not ask for.
 **Verify** `npm run check`, then C15's BROWSER checksum A: both rasters are in it, digested over
 the whole of FOUNDRY, so either picture moving is a diff. The two pinning tests have to be
 updated in the same commit, with the reason.
-
----
-
-### #38 — The input ring's accept window is one tick wider than the ring, and narrower than the skew limit · `open` *(opened 2026-10-19 by B1)*
-**Files** `src/server/net/InputBuffer.ts`. **Origin** B1.
-
-Two defects in one window, both pinned by `InputBuffer.test.ts` and both about the same two
-numbers: `RING = 128` and `MAX_TICK_SKEW = 120`.
-
-1. **The two ends of the window share a slot.** `accept` takes any tick in
-   `[currentTick - 64, currentTick + 64]`, which is **129 ticks over 128 slots**, and
-   `(c - 64) % 128 === (c + 64) % 128`. A command for a tick 64 ahead silently overwrites one
-   for a tick 64 behind; the earlier tick then starves and repeats instead. Pinned by *"loses a
-   command 64 ticks behind when one 64 ticks ahead claims its slot"*.
-2. **The validator is wider than the buffer.** `validateCommand` accepts a skew of up to 120
-   ticks, so a command 65–120 ticks from the present passes the boundary and is then counted
-   here as `outOfWindow`. The file's own comment claimed the opposite — *"comfortably past
-   `MAX_TICK_SKEW` in both directions"* — and **B1 corrected that comment**, which is text, not
-   behaviour. Pinned by *"drops a command the validator accepted, because the skew limit is
-   wider than the ring"*.
-
-**Why B1 could not fix it.** Either fix changes which command survives, which is behaviour
-(R1): narrowing the window to `RING / 2 - 1` drops a tick that is accepted today, and widening
-the ring or narrowing `MAX_TICK_SKEW` changes what the wire admits — and `MAX_TICK_SKEW` lives
-in `src/shared/net/Protocol.ts`, which is **A20's** file and outside B1's fence (R3). The two
-pinning tests carry `// Pins current behaviour; suspected bug:`, so fixing either means
-rewriting its case in the same commit, with the reason.
 
 ## 5b. Field reports from play — the same kind of bug, with no test holding it
 

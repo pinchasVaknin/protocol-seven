@@ -2,9 +2,8 @@
 //#region Imports
 import { deriveCoverPoints, emitCoverPoint } from './cover';
 import type { Brush, CoverPoint, MapDef, PropDef, SpawnZone } from './types';
-import { simCos, simSin } from '../../core/SimMath';
 
-import { addBox } from './build';
+import { addBox, rampAlongX, rampAlongZ } from './build';
 //#endregion
 /**
  * MP_TESTBED - the M1 grey-box room (brief S5.6).
@@ -42,11 +41,11 @@ const FLOOR_TOP = 0;
 const WALL_HEIGHT = 6;
 
 // Ramp geometry is derived rather than eyeballed so the ends land exactly on the
-// surfaces they connect; a 2 cm lip at the bottom of a ramp is a movement bug.
+// surfaces they connect; a 2 cm lip at the bottom of a ramp is a movement bug. The deriving
+// is `build.rampAlongX` / `rampAlongZ`'s now (BACKLOG #3, closed 2026-11-22) — this file
+// states the two endpoints and the helper computes the angle, the length and the normal.
 const MAIN_RAMP_RISE = 1.5;
 const MAIN_RAMP_RUN = 4.5;
-const MAIN_RAMP_ANGLE = Math.atan2(MAIN_RAMP_RISE, MAIN_RAMP_RUN);
-const MAIN_RAMP_LEN = Math.hypot(MAIN_RAMP_RISE, MAIN_RAMP_RUN);
 const MAIN_RAMP_THICK = 0.5;
 
 /** Mirrors `combat/TargetRange.FIRING_LINE.x`. The range measures from here. */
@@ -54,8 +53,6 @@ const FIRING_LINE_X = -20;
 
 const PIT_DEPTH = 3;
 const PIT_RAMP_RUN = 6;
-const PIT_RAMP_ANGLE = Math.atan2(PIT_DEPTH, PIT_RAMP_RUN);
-const PIT_RAMP_LEN = Math.hypot(PIT_DEPTH, PIT_RAMP_RUN);
 const PIT_RAMP_THICK = 0.6;
 //#endregion
 
@@ -198,24 +195,9 @@ function stepAndLedge(out: Brush[]): void {
 
   // ---- 1.5 m ledge + the ramp that climbs it ----------------------------
   addBox(out, 'concreteDark', -9.75, 0.65, 6, 7.5, 1.7, 6);
-  {
-    // Top surface runs from (x=-18, y=0) to (x=-13.5, y=1.5).
-    const midX = -18 + MAIN_RAMP_RUN / 2;
-    const midY = MAIN_RAMP_RISE / 2;
-    const nx = -simSin(MAIN_RAMP_ANGLE);
-    const ny = simCos(MAIN_RAMP_ANGLE);
-    out.push({
-      position: {
-        x: midX - nx * (MAIN_RAMP_THICK / 2),
-        y: midY - ny * (MAIN_RAMP_THICK / 2),
-        z: 6,
-      },
-      size: { x: MAIN_RAMP_LEN, y: MAIN_RAMP_THICK, z: 3.5 },
-      rotationY: 0,
-      rotationZ: MAIN_RAMP_ANGLE,
-      material: 'metal',
-    });
-  }
+  // Top surface runs from (x=-18, y=0) to (x=-13.5, y=1.5): the far end is the ledge's own
+  // edge and its top, so the two cannot drift apart.
+  rampAlongX(out, 'metal', -18, FLOOR_TOP, -18 + MAIN_RAMP_RUN, MAIN_RAMP_RISE, 6, 3.5, MAIN_RAMP_THICK);
   // Ledge lip in the accent colour, and a guard rail on the far side.
   addBox(out, 'accent', -9.75, 1.48, 3.02, 7.5, 0.06, 0.06, { solid: false, shadows: false });
   addBox(out, 'metal', -9.75, 1.95, 8.85, 7.5, 0.9, 0.3);
@@ -389,24 +371,8 @@ function pit(out: Brush[]): void {
   addBox(out, 'concreteDark', 12.25, -2, 5, 0.5, 2, 7);
   addBox(out, 'concreteDark', 9, -2, 1.75, 6, 2, 0.5);
   addBox(out, 'concreteDark', 9, -2, 8.25, 6, 2, 0.5);
-  {
-    // Top surface runs from (z=8, y=-3) up to (z=2, y=0).
-    const midZ = 5;
-    const midY = -PIT_DEPTH / 2;
-    const ny = simCos(PIT_RAMP_ANGLE);
-    const nz = simSin(PIT_RAMP_ANGLE);
-    out.push({
-      position: {
-        x: 10.3,
-        y: midY - ny * (PIT_RAMP_THICK / 2),
-        z: midZ - nz * (PIT_RAMP_THICK / 2),
-      },
-      size: { x: 3.0, y: PIT_RAMP_THICK, z: PIT_RAMP_LEN },
-      rotationY: 0,
-      rotationX: PIT_RAMP_ANGLE,
-      material: 'metal',
-    });
-  }
+  // Top surface runs from (z=8, y=-3) up to (z=2, y=0).
+  rampAlongZ(out, 'metal', 8, -PIT_DEPTH, 8 - PIT_RAMP_RUN, FLOOR_TOP, 10.3, 3.0, PIT_RAMP_THICK);
   // Hazard trim around the lip so the pit reads as a hazard, not a texture seam.
   //
   // The two side strips stop short of the ends rather than running the full 6.4 m (round 2).

@@ -39,6 +39,7 @@ import { BOT_DIFFICULTIES, BOT_DIFFICULTY_BLURBS, BOT_DIFFICULTY_NAMES, type Bot
 import type { GameModeId } from '../../shared/modes/GameMode';
 import { findMap, MAPS, MODES, modesForMap, type MapEntry, type ModeEntry } from '../../shared/modes/ModeRegistry';
 import type { MenuSelection } from './Menus';
+import { pagerArrow } from './ScreenChrome';
 import { makeIconSvg } from './WeaponIcons';
 //#endregion
 
@@ -499,15 +500,16 @@ function ctaButton(
   return b;
 }
 
+/** This screen's arrow: its own class, an SVG glyph and a tooltip. The element is shared (#74). */
 function arrowButton(glyph: string, title: string, onClick: () => void): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'ps-pager__arrow';
-  b.title = title;
-  b.setAttribute('aria-label', title);
-  b.appendChild(makeIconSvg(glyph, GLYPH_VIEWBOX, 'ps-pager__glyph'));
-  b.addEventListener('click', onClick);
-  return b;
+  return pagerArrow({
+    className: 'ps-pager__arrow',
+    glyph,
+    label: title,
+    icon: { viewBox: GLYPH_VIEWBOX, className: 'ps-pager__glyph' },
+    titled: true,
+    onClick,
+  });
 }
 
 /** The pager counts in two digits, so `01 / 04` does not jump width at ten. */

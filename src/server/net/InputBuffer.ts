@@ -36,6 +36,7 @@ import {
   makeCommand,
 } from '../../shared/core/InputCommand';
 import { ringIndex } from '../../shared/core/MathUtil';
+import { MAX_TICK_SKEW } from '../../shared/net/Protocol';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -57,16 +58,26 @@ export interface InputBufferStats {
 // ========================================= CONSTANTS ========================================== \\
 //#region Constants
 /**
- * Ticks of command history held.
+ * Ticks of command history held: **exactly the window the validator admits**.
  *
- * 128 ticks is 2.1 s at 60 Hz. The accept window is half of it either side of the current
- * tick, which is **narrower than `MAX_TICK_SKEW`**: a command 65 to 120 ticks from the
- * present passes `validateCommand` and is then counted here as out of window, and the two
- * ends of that window share a slot. Both are pinned by `InputBuffer.test.ts` and recorded as
- * suspected bugs in `BACKLOG.md` (#38) rather than changed, because which command survives is
- * behaviour.
+ * Derived rather than chosen (BACKLOG #38, fixed 2026-11-22), and the derivation is the fix
+ * for both halves of that entry. It used to be a flat 128 with the window taken as half a ring
+ * either side, which was wrong twice over:
+ *
+ * - `[tick - 64, tick + 64]` is **129 ticks over 128 slots**, and `(c - 64) % 128` is
+ *   `(c + 64) % 128` — so a command 64 ticks ahead silently overwrote one 64 ticks behind, and
+ *   the earlier tick then starved and repeated the command before it.
+ * - `validateCommand` admits a skew of up to `MAX_TICK_SKEW`, so everything from 65 to 120
+ *   ticks out passed the boundary and was then counted here as `outOfWindow`. This file's own
+ *   comment had claimed the window was "comfortably past `MAX_TICK_SKEW` in both directions".
+ *
+ * One ring long and one window long are the same length now, so the two ends cannot meet and
+ * nothing the boundary let through is dropped here. `outOfWindow` therefore counts only what
+ * `accept` was handed without being validated first — which is a caller's bug, not a client's,
+ * and worth a non-zero count saying so. 241 ticks is 4.0 s at 60 Hz, against 2.1 s before;
+ * the cost is 113 more pooled commands, allocated once.
  */
-const RING = 128;
+const RING = MAX_TICK_SKEW * 2 + 1;
 //#endregion
 
 // ===================================== CLASS InputBuffer ====================================== \\
@@ -128,16 +139,18 @@ export class InputBuffer {
   /**
    * Accept one validated command.
    *
-   * `currentTick` bounds the window: anything more than half a ring behind is history the
-   * simulation has already passed, and anything more than half a ring ahead is a client whose
-   * clock is wrong or hostile. Both are counted rather than silently dropped, because the
-   * count is the first thing to look at when a player reports rubberbanding.
+   * `currentTick` bounds the window, at the same `MAX_TICK_SKEW` the boundary checks: further
+   * behind than that is history the simulation has already passed, and further ahead is a
+   * client whose clock is wrong or hostile. Both are counted rather than silently dropped,
+   * because the count is the first thing to look at when a player reports rubberbanding — and
+   * because this bound agreeing with the validator's means a non-zero count is now a sign that
+   * something reached here unvalidated (see `RING`).
    *
    * The command must already have been through `validateCommand` — this trusts its fields.
    */
   accept(cmd: InputCommand, currentTick: number): boolean {
     const tick = cmd.tickIndex;
-    if (tick < currentTick - RING / 2 || tick > currentTick + RING / 2) {
+    if (tick < currentTick - MAX_TICK_SKEW || tick > currentTick + MAX_TICK_SKEW) {
       this.outOfWindow++;
       return false;
     }

@@ -38,6 +38,21 @@ export interface MatchProgressionDeps {
   readonly profile: ProgressionStore;
   readonly score: ScoreSystem;
   readonly tracker: ChallengeTracker;
+  /**
+   * Whether this match is allowed to write to the account at all.
+   *
+   * `ModeRegistry`'s `banksProgress`, and the Shooting Range is the one mode that says no
+   * (BACKLOG #83, fixed 2026-11-22). It is asked here, at construction, rather than at
+   * `finish`, because `finish` is not the only place this class writes: a kill reaches
+   * `ChallengeTracker.onKill` the moment it happens and that advances challenge progress
+   * **in the save object**. A flag read only at the end would have left a range session
+   * paying out challenges for two hundred shots at a dummy and merely stopped the XP line.
+   *
+   * What a range still does is count: the ledger, the lines and the report are all built the
+   * same way, so the panels show something real and the summary could print it. Nothing
+   * reaches `ProgressionStore`.
+   */
+  readonly banks: boolean;
 }
 //#endregion
 
@@ -76,8 +91,10 @@ export class MatchProgression {
       bus: deps.bus,
       score: deps.score,
       entityId: PLAYER_ENTITY_ID,
-      onKill: (fact) => deps.tracker.onKill(fact),
-      onFlash: () => deps.tracker.onFlash(),
+      // Both of these advance challenge progress in the save, so a mode that banks nothing is
+      // not subscribed to them at all rather than having its writes undone later (#83).
+      onKill: deps.banks ? (fact) => deps.tracker.onKill(fact) : undefined,
+      onFlash: deps.banks ? () => deps.tracker.onFlash() : undefined,
     });
   }
   //#endregion
@@ -109,11 +126,17 @@ export class MatchProgression {
    * Idempotent. `Game` reaches SUMMARY from the render pass one frame after the mode
    * declared the match over, and a harness that ends two matches back to back must not be
    * able to bank one twice.
+   *
+   * **With `deps.banks` false it folds nothing in and still produces the report** (BACKLOG
+   * #83): the lines, the total and the levels are computed from the ledger exactly as they
+   * always were, and none of the three writers below is reached. That is what the Shooting
+   * Range's own comment has always claimed it does.
    */
   finish(won: boolean, isMvp: boolean): XpReport {
     const already = this.report;
     if (already !== null) return already;
 
+    const banks = this.deps.banks;
     const profile = this.deps.profile;
     const row = this.deps.score.row(PLAYER_ENTITY_ID);
     const bestStreak = row?.bestStreak ?? 0;
@@ -127,11 +150,11 @@ export class MatchProgression {
       score: row?.score ?? 0,
       bestStreak,
     };
-    this.deps.tracker.onMatchEnd(fact);
+    if (banks) this.deps.tracker.onMatchEnd(fact);
 
     // Weapon levels are banked before the XP lines are built for the same reason: a
     // weapon that levelled up on the last kill of the match should say so.
-    const weaponLevelUps = this.applyWeaponTallies();
+    const weaponLevelUps = banks ? this.applyWeaponTallies() : [];
 
     /**
      * The floor, and the completion condition is where this method is called from (round 5, B6).
@@ -152,17 +175,22 @@ export class MatchProgression {
 
     const xpBefore = profile.xp;
     const levelBefore = levelForXp(xpBefore);
-    const banked = profile.bankMatch(total, won);
-    profile.flush();
-
-    this.announce(total, xpBefore, banked.levelBefore, banked.levelAfter);
+    // A match that banks nothing ends on the level it started on, which is the truth and also
+    // what keeps the summary's bar from animating a gain the account did not receive (#83).
+    let levelAfter = levelBefore;
+    if (banks) {
+      const banked = profile.bankMatch(total, won);
+      profile.flush();
+      levelAfter = banked.levelAfter;
+      this.announce(total, xpBefore, banked.levelBefore, banked.levelAfter);
+    }
 
     this.report = {
       lines,
       total,
       xpBefore,
       levelBefore,
-      levelAfter: banked.levelAfter,
+      levelAfter,
       weaponLevelUps,
       challengesCompleted: this.deps.tracker.awardsThisMatch.map((a) => a.id),
       camosUnlocked: this.deps.tracker.camoGrantsThisMatch.map((g) => ({ weaponId: g.weaponId, camo: g.camo })),

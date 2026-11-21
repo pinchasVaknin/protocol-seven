@@ -100,7 +100,7 @@ import { createScreen } from './Frame';
 import { LoadoutStats } from './LoadoutStats';
 import { PlayerCard } from './PlayerCard';
 import { ProfilePanel } from './ProfilePanel';
-import { makeScreenFooter, makeScreenHeader, type ScreenPlace } from './ScreenChrome';
+import { makeScreenFooter, makeScreenHeader, pagerArrow, type ScreenPlace } from './ScreenChrome';
 import { ICON_VIEWBOX, iconFor, makeIconSvg } from './WeaponIcons';
 import { WeaponPreview } from './WeaponPreview';
 import type { WeaponAssetService } from '../weapons/WeaponAssetService';
@@ -1778,15 +1778,9 @@ function assignArray<T>(target: T[], from: readonly T[]): void {
     for (const item of from) target.push(item);
 }
 
-/** The pager's arrows (the stage's went in R3.6). */
+/** The pager's arrows (the stage's went in R3.6); the element is `ScreenChrome`'s (BACKLOG #74). */
 function arrowButton(text: string, label: string, onClick: () => void): HTMLButtonElement {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'lo-arrow';
-    b.textContent = text;
-    b.setAttribute('aria-label', label);
-    b.addEventListener('click', onClick);
-    return b;
+    return pagerArrow({ className: 'lo-arrow', glyph: text, label, onClick });
 }
 
 function emptyNote(text: string): HTMLElement {

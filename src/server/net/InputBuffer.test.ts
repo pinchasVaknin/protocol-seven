@@ -12,12 +12,13 @@ import { Reject, validateCommand } from './Validation';
  * exactly one command — because `PlayerController.step` consumes one per tick and a skip would
  * desync this client's tick count from the server's.
  *
- * Two cases at the bottom pin behaviour that is **wrong** rather than behaviour that is
- * designed; both are about the window, and both are in `BACKLOG.md` with the numbers.
+ * The two cases at the bottom used to pin behaviour that was **wrong** rather than designed,
+ * both about the window. BACKLOG #38 fixed both on 2026-11-22 and they now assert the window
+ * holding what it admits; each carries the shape it had before it.
  */
 
-/** The ring length `InputBuffer` is built on, which is private to it. 128 ticks is 2.1 s. */
-const RING = 128;
+/** The ring length `InputBuffer` is built on, which is private to it. 241 ticks is 4.0 s. */
+const RING = MAX_TICK_SKEW * 2 + 1;
 
 function command(seq: number, tickIndex: number, moveZ = 1): MutableInputCommand {
   return { seq, tickIndex, moveX: 0, moveZ, yaw: 0, pitch: 0, buttons: 0, sampledAtMs: 0 };
@@ -62,15 +63,15 @@ describe('InputBuffer', () => {
 
   it('counts a command outside the window in either direction', () => {
     const buffer = new InputBuffer();
-    expect(buffer.accept(command(1, 200 + RING / 2 + 1), 200)).toBe(false);
-    expect(buffer.accept(command(2, 200 - RING / 2 - 1), 200)).toBe(false);
+    expect(buffer.accept(command(1, 200 + MAX_TICK_SKEW + 1), 200)).toBe(false);
+    expect(buffer.accept(command(2, 200 - MAX_TICK_SKEW - 1), 200)).toBe(false);
     expect(buffer.stats()).toMatchObject({ accepted: 0, outOfWindow: 2 });
   });
 
   it('accepts the two ticks exactly on the edge of the window', () => {
     const buffer = new InputBuffer();
-    expect(buffer.accept(command(1, 200 - RING / 2), 200)).toBe(true);
-    expect(buffer.accept(command(2, 200 + RING / 2), 200)).toBe(true);
+    expect(buffer.accept(command(1, 200 - MAX_TICK_SKEW), 200)).toBe(true);
+    expect(buffer.accept(command(2, 200 + MAX_TICK_SKEW), 200)).toBe(true);
   });
 
   it('repeats the last command on a gap, stamped with the tick it is applied on', () => {
@@ -164,33 +165,40 @@ describe('InputBuffer', () => {
     expect(buffer.stats()).toMatchObject({ accepted: 1, duplicate: 1 });
   });
 
-  // Pins current behaviour; suspected bug: the accept window is one tick wider than the ring,
-  // so its two ends share a slot (BACKLOG #38).
-  it('loses a command 64 ticks behind when one 64 ticks ahead claims its slot', () => {
+  // BACKLOG #38, fixed 2026-11-22. This case was the reverse: it asserted that the command
+  // 64 ticks behind was gone, because `[c - 64, c + 64]` is 129 ticks over 128 slots and the
+  // two ends shared one. The window is `MAX_TICK_SKEW` either side of a ring exactly that
+  // many ticks long now, so the furthest apart two accepted ticks can be is one less than the
+  // ring and no two of them can collide.
+  it('keeps both ends of the window, which no longer share a slot', () => {
     const buffer = new InputBuffer();
-    const behind = 200 - RING / 2;
-    const ahead = 200 + RING / 2;
-    expect(behind % RING).toBe(ahead % RING);
+    const behind = 200 - MAX_TICK_SKEW;
+    const ahead = 200 + MAX_TICK_SKEW;
+    expect(behind % RING).not.toBe(ahead % RING);
 
     buffer.accept(command(1, behind), 200);
     buffer.accept(command(2, ahead), 200);
 
-    // Both were accepted; only the later one is still there.
     expect(buffer.stats()).toMatchObject({ accepted: 2, outOfWindow: 0 });
-    buffer.take(behind);
-    expect(buffer.stats().starved).toBe(1);
+    expect(buffer.take(behind).seq).toBe(1);
+    expect(buffer.stats().starved).toBe(0);
     expect(buffer.take(ahead).seq).toBe(2);
   });
 
-  // Pins current behaviour; suspected bug: `MAX_TICK_SKEW` and the ring's half-window disagree,
-  // against what this file's own comment claims (BACKLOG #38).
-  it('drops a command the validator accepted, because the skew limit is wider than the ring', () => {
+  // BACKLOG #38's other half, same date. This case asserted the drop: the boundary admitted a
+  // skew of 120 and the buffer's own window was 64, so 65 to 120 ticks out passed one check
+  // and was counted `outOfWindow` by the next.
+  it('keeps every command the validator accepted, out to the skew limit', () => {
     const buffer = new InputBuffer();
-    const cmd = command(1, 200 + RING / 2 + 1);
-    expect(MAX_TICK_SKEW).toBeGreaterThan(RING / 2);
-    expect(validateCommand(cmd, 200)).toBe(Reject.None);
+    const far = command(1, 200 + MAX_TICK_SKEW);
+    expect(validateCommand(far, 200)).toBe(Reject.None);
+    expect(buffer.accept(far, 200)).toBe(true);
+    expect(buffer.stats().outOfWindow).toBe(0);
 
-    expect(buffer.accept(cmd, 200)).toBe(false);
+    // And one tick further, which the validator rejects too: the two now agree on the edge.
+    const past = command(2, 200 + MAX_TICK_SKEW + 1);
+    expect(validateCommand(past, 200)).toBe(Reject.TickSkew);
+    expect(buffer.accept(past, 200)).toBe(false);
     expect(buffer.stats().outOfWindow).toBe(1);
   });
 });

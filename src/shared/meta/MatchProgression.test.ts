@@ -91,14 +91,14 @@ class FakeStore implements ProgressionStore {
   }
 }
 
-function rig() {
+function rig(banks = true) {
   const bus: GameBus = createGameBus();
   const score = new ScoreSystem(bus);
   score.register(PLAYER_ENTITY_ID, 'ME', 'A');
   score.register(2, 'THEM', 'B');
   const profile = new FakeStore();
   const tracker = new ChallengeTracker(profile);
-  const progression = new MatchProgression({ bus, profile, score, tracker });
+  const progression = new MatchProgression({ bus, profile, score, tracker, banks });
 
   const xpEvents: { total: number }[] = [];
   bus.on(EV.MetaXpAwarded, (p) => xpEvents.push({ total: p.total }));
@@ -220,5 +220,57 @@ describe('finishing a match', () => {
     let sum = 0;
     for (const line of report.lines) sum += line.xp;
     expect(report.total).toBe(sum);
+  });
+});
+
+/**
+ * BACKLOG #83, fixed 2026-11-22. `MatchMeta` used to read `banksProgress` at `finish` and spend
+ * it on forcing the *won* flag down, so a Shooting Range session was reported as a loss and then
+ * banked as one — the whole of `finish` ran, `bankMatch` and `flush` included, and the summary's
+ * strip was hidden so nothing on screen said the account had moved.
+ *
+ * The flag arrives at construction now, because `finish` was never the only writer: a kill
+ * reaches `ChallengeTracker.onKill` as it happens, which advances challenge progress in the save.
+ * A testbed that banked nothing at the end would still have paid out challenges all the way
+ * through. So the cases below are about *every* write, not about the XP line.
+ */
+describe('a mode that banks nothing', () => {
+  it('leaves the account exactly where it was, and still reports what was earned', () => {
+    const r = rig(false);
+    r.kill();
+    r.kill();
+    const report = r.progression.finish(true, true);
+
+    // The report is built the same way: the panels and the summary have something real to show.
+    expect(report.total).toBeGreaterThan(0);
+    expect(report.lines.length).toBeGreaterThan(0);
+    // And nothing reached the store.
+    expect(r.profile.xp).toBe(0);
+    expect(r.profile.banked).toHaveLength(0);
+    expect(r.profile.flushes).toBe(0);
+    expect(r.xpEvents).toHaveLength(0);
+  });
+
+  it('ends on the level it started on', () => {
+    const r = rig(false);
+    r.kill();
+    const report = r.progression.finish(true, false);
+    expect(report.levelAfter).toBe(report.levelBefore);
+  });
+
+  it('advances no challenge, not even on a kill', () => {
+    const banking = rig(true);
+    banking.kill();
+    const movedWhileBanking = banking.tracker.awardsThisMatch.length + banking.tracker.xpThisMatch;
+
+    const testbed = rig(false);
+    testbed.kill();
+    testbed.progression.finish(true, false);
+    // The control is the first rig: if a kill moved nothing in either, this case proves nothing.
+    expect(movedWhileBanking + banking.progression.killCount).toBeGreaterThan(0);
+    expect(testbed.tracker.awardsThisMatch).toHaveLength(0);
+    expect(testbed.tracker.xpThisMatch).toBe(0);
+    // The ledger still counted it, which is the half a testbed keeps.
+    expect(testbed.progression.killCount).toBe(1);
   });
 });

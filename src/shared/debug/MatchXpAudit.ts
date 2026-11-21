@@ -246,7 +246,7 @@ function playFight(shape: string, seconds: number): LedgerAgreementRow {
   const tracker = new ChallengeTracker(store);
   tracker.reset();
   scriptFight(soloBus, soloScore, PLAYER);
-  const progression = new MatchProgression({ bus: soloBus, profile: store, score: soloScore, tracker });
+  const progression = new MatchProgression({ bus: soloBus, profile: store, score: soloScore, tracker, banks: true });
   {
     const damage = new DamageSystem(soloBus);
     const set = new ColliderSet(2);
@@ -307,7 +307,7 @@ function playNothing(shape: string, seconds: number): MatchXpRow {
   const store = new ScratchStore();
   const tracker = new ChallengeTracker(store);
   tracker.reset();
-  const progression = new MatchProgression({ bus, profile: store, score, tracker });
+  const progression = new MatchProgression({ bus, profile: store, score, tracker, banks: true });
 
   score.register(PLAYER, 'OPERATOR', 'A');
 

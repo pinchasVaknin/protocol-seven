@@ -69,7 +69,7 @@ import { CHARACTER_CREDIT, CREDITS_NOTE, MODEL_CREDITS, type CreditEntry } from 
 import { createScreen } from './Frame';
 import { PlayerCard } from './PlayerCard';
 import { ProfilePanel } from './ProfilePanel';
-import { makeScreenFooter, makeScreenHeader } from './ScreenChrome';
+import { makeScreenFooter, makeScreenHeader, pagerArrow } from './ScreenChrome';
 import { makeIconSvg } from './WeaponIcons';
 //#endregion
 
@@ -820,18 +820,18 @@ export class Settings {
     return pager;
   }
 
+  /** The editor's own arrow, deliberately — see `creditsPager`. The element is shared (#74). */
   private creditsArrow(text: string, label: string, to: number, pages: number): HTMLButtonElement {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'lo-arrow';
-    b.textContent = text;
-    b.setAttribute('aria-label', label);
-    b.disabled = to < 0 || to >= pages;
-    b.addEventListener('click', () => {
-      this.creditsPage = to;
-      this.paint();
+    return pagerArrow({
+      className: 'lo-arrow',
+      glyph: text,
+      label,
+      disabled: to < 0 || to >= pages,
+      onClick: () => {
+        this.creditsPage = to;
+        this.paint();
+      },
     });
-    return b;
   }
 
   private startCapture(action: ActionId, slot: number): void {

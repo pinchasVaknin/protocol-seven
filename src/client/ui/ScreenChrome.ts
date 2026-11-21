@@ -23,6 +23,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
 import { makeMark } from './Emblem';
+import { makeIconSvg } from './WeaponIcons';
 
 declare const __APP_VERSION__: string | undefined;
 //#endregion
@@ -33,6 +34,23 @@ declare const __APP_VERSION__: string | undefined;
 export interface ScreenPlace {
   readonly title: string;
   readonly subtitle: string;
+}
+
+/** One arrow of a pager. See `pagerArrow`. */
+export interface PagerArrowSpec {
+  /** The button's own class: two screens page with the editor's `lo-arrow`, PLAY SOLO has its own. */
+  readonly className: string;
+  /** A chevron to write as text, or — with `icon` set — the SVG path to draw inside the button. */
+  readonly glyph: string;
+  /** The `aria-label`, and the `title` as well when `titled` is set. */
+  readonly label: string;
+  /** Draw `glyph` as an SVG of this view box and class instead of writing it as text. */
+  readonly icon?: { readonly viewBox: string; readonly className: string };
+  /** A tooltip as well as a label. */
+  readonly titled?: boolean;
+  /** A page that is not there: the arrow stays in place and refuses. */
+  readonly disabled?: boolean;
+  readonly onClick: () => void;
 }
 //#endregion
 
@@ -87,6 +105,36 @@ export function makeScreenFooter(modifier: string, place: ScreenPlace): HTMLElem
   foot.className = `op-foot ${modifier}`;
   foot.append(makeFootLine(), makeFootStamp(place));
   return foot;
+}
+/**
+ * One arrow of a pager, for the three screens that have one.
+ *
+ * Create-a-Class, INFO's credits and PLAY SOLO's map picker each built this button themselves,
+ * four to seven lines each, and two of the three used the same two classes — the credits pager
+ * is deliberately the editor's control and says so in its own comment (BACKLOG #74). The third
+ * is the same button in different clothes: its own class, an SVG glyph instead of a text
+ * chevron, and a tooltip. So the differences are arguments and the element is this.
+ *
+ * It lives here rather than in one of the three because all three are finished and fenced, and
+ * no one of them can own a control the other two reach for. Each still keeps a three-line
+ * function of its own naming the classes and the handler it pages with; what is shared is the
+ * element, which was the thing written three times.
+ *
+ * **The attributes go on in the order the three screens put them on**, because two browser
+ * checksums digest these buttons' serialised trees and `outerHTML` prints attributes in
+ * insertion order. `disabled` is assigned either way: assigning `false` adds nothing.
+ */
+export function pagerArrow(spec: PagerArrowSpec): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = spec.className;
+  if (spec.titled === true) b.title = spec.label;
+  if (spec.icon === undefined) b.textContent = spec.glyph;
+  else b.appendChild(makeIconSvg(spec.glyph, spec.icon.viewBox, spec.icon.className));
+  b.setAttribute('aria-label', spec.label);
+  b.disabled = spec.disabled ?? false;
+  b.addEventListener('click', spec.onClick);
+  return b;
 }
 //#endregion
 

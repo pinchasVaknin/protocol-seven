@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**18 open entries: 14 with a heading of their own, and the four §3 holds inside its two remaining clusters** (#6, #12 and #5; #2, which absorbed #19). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two and batch K two on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**16 open entries: 12 with a heading of their own, and the four §3 holds inside its two remaining clusters** (#6, #12 and #5; #2, which absorbed #19). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two and batch L two on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -340,65 +340,6 @@ the whole tree, which is exactly what A1 and A11 were forbidden from doing.
 `Combatant` literals, so a bad move surfaces as a compile error rather than silently.
 
 ## 4. Independent — one decision each
-
-### #1 — One local angle helper that is **not** the shared one · `open` · *needs a session of its own* *(rewritten 2026-11-17 by C24c, which closed the fourth of five copies)*
-
-**Files** `src/client/engine/CameraRig.ts` (`interpolatePhase`). **Origin** A1. Four of the five
-copies are gone: the duplicate export **closed by A23**, `IntroPlan`’s **folded by A24**,
-`IntroCamera`’s **by C1** and `RemoteActor`’s **by C13**, with `ClientMatch`’s **by C24c**.
-
-**What C24c finished, and what it cost.** `ClientMatch.angleDeltaRad` is deleted and the mortar
-overlay’s bearing is on `MathUtil.angleDelta`. That is a **behaviour change at exactly one
-input**, approved as part of C24’s plan:
-
-```
-MathUtil.angleDelta       d = (to-from) % TAU; if (d > PI) d -= TAU; if (d <= -PI) d += TAU;  ->  (-PI, PI]
-ClientMatch.angleDeltaRad let d = b - a; while (d > PI) d -= TAU; while (d < -PI) d += TAU;   ->  [-PI, PI]
-```
-
-At `d = -PI` the local copy answered `-PI` and the shared one answers `+PI`, so the mortar mark
-travels the other way — 131.9 m, clamped by `MortarOverlay.moveBy` to the map edge.
-
-**Unlike C1’s half, this boundary is reachable through the public surface,** which is the thing
-worth keeping from C24c: `mortarOverlay` is a public field, `overlayYaw` starts at `0`, and
-`MortarOverlay.show()` called directly does **not** write it — only `stepStreakInput` does. So
-`show(x, z)` followed by one `simulate` at `yaw = -Math.PI` constructs `d = -PI` exactly.
-`ClientMatch.test.ts` holds both halves of the change: that `angleDelta(0, -PI) === +PI`, and
-that the mark now moves the other way at that input. C1 said of its own fold that the boundary
-*"may well be unreachable through the public surface, in which case say so rather than writing a
-test that does not actually hold it"* — here it is reachable, and it is held.
-
-**What is left, and why no unit can reach it.**
-`src/client/engine/CameraRig.ts`’s non-exported `interpolatePhase` carries the unwrap inline:
-
-```
-CameraRig.interpolatePhase  let d = b - a; if (d > PI) d -= TAU; if (d < -PI) d += TAU;
-                            return a + d * alpha;                 ->  [-PI, PI], no %
-```
-
-It is **not** `angleDelta` — it interpolates toward `b` by `alpha` and only *uses* the delta — so
-there is nothing to substitute without first extracting `angleDelta(a, b)` out of it, and that
-lands on both of the differences this entry is about: the `% TAU` (which only matters for
-`|b − a| > TAU`, unreachable here) and `<` against `<=` at `d = -PI`. C2 declined to fold it:
-the function sits on the per-frame camera path (R7), the change is a behaviour change at one
-input exactly as above, and the unit had no approval for one. C2 measured the real input range
-instead — `bobPhase` advances at most **0.736 rad per tick** at 4.92 m/s, so the two spellings
-agree on every value the game can produce, and the boundary is as unreachable as C1 found
-`IntroCamera`’s to be. `CameraRig.test.ts` pins both wrap directions and the no-wrap case with
-exact doubles, so whoever folds this in has the before/after already written.
-
-`CameraRig.ts` is **C2’s** file, finished and in the `check:style` ratchet, so no later unit can
-reach it under R3. **C24 was the last unit of the programme**, which means this copy will never
-be absorbed by a unit and needs a session of its own — one that is not fenced by R3 and may
-change behaviour where it says so.
-
-**Decide** fold it in and accept the `(-PI, PI]` boundary, or keep the local copy and write down
-*why* it wants `[-PI, PI]`. Note what C1 and C2 both found: the boundary input may be
-unreachable through the public surface here, in which case say so rather than writing a test
-that does not actually hold it. What is not acceptable is a sixth copy.
-
-**Verify** `npm run check` + SIM snapshot/compare, plus C2’s own BROWSER check — this is camera
-work and no oracle covers it the way `intro.txt` covered `IntroPlan`.
 
 ## 5. Suspected bugs, pinned in tests, awaiting a fix
 
@@ -736,42 +677,6 @@ not.
 **Verify** `npm run check`, and then the ear: the twelve weapons have to stay distinguishable
 from each other. `WeaponAudio.test.ts`'s snapshots flip in the same commit and are the record
 of what moved.
-
-### #59 — The knife merges its own parts, beside a helper that merges everything else's · `open` *(opened 2026-11-02 by C8)*
-**Files** `src/client/weapons/KnifeMesh.ts` (`mergeBySurface`) and
-`src/client/weapons/WeaponGeometry.ts` (`addMerged`). **Origin** C8, reading its own build.
-
-Both group geometries by `SurfaceKey`, merge each group, compute a bounding sphere, make a mesh
-with the surface's material, freeze its matrix and push the merged geometry onto a disposables
-list. The loops are the same loop; the mesh names differ only by their label.
-
-**Why C8 did not fold it.** Not the fence — C8 may import from `WeaponGeometry` and does, for
-`boxGeometry`, which removed the duplicated rotate-and-translate. The blade is why:
-
-```
-  blade(length, z, tip)   CylinderGeometry(tip ? 0 : BLADE_HALF, BLADE_HALF, length, 4, 1)
-                          .scale(BLADE_FLATTEN, 1, 1)   <- flattened while still in XZ
-                          .rotateX(-PI / 2)             <- and only then swung down -Z
-```
-
-A four-sided cylinder, squashed across and tapered to a point, is a shape `WeaponGeometry` has
-no name for: `TubePart` carries one radius, no taper and no per-axis scale, and `addMerged`
-takes `BoxPart`s and `TubePart`s rather than geometries. Folding the loop therefore means
-either widening `TubePart` — and that lives in `WeaponMeshParts.ts`, which is **C7's and in the
-`check:style` ratchet** — or giving `addMerged` a third parameter for geometries somebody else
-built, which is a worse shape than two short loops.
-
-**Decide** which. Widening `TubePart` with an optional `flatten` and `tipRadius` would let the
-knife go through `addMerged` whole and would cost the other eleven weapons nothing, since both
-fields would be absent on every existing part. That is the tidy answer and it needs C7's file
-opened, which is a decision rather than a refactor.
-
-**Watch for** a third copy. `WeaponSilhouette` projects the same part lists without merging
-anything, so it is not one; nothing else in `client/weapons/` merges by surface today.
-
-**Verify** `npm run check`, plus the A/B C8 used: build the knife both ways and compare the
-mesh names, vertex counts and bounding boxes against the shipped build. `viewmodel:knife:gunmetal`
-and `viewmodel:knife:polymer` have to come out with the counts they have now.
 
 ### #55 — The Chopper Gunner optic draws a flat grey field and no map · `open` *(opened 2026-10-25 by C2)*
 **Files** `src/client/engine/Renderer.ts` (`renderGunship`, `GUNSHIP_VERT`, `GUNSHIP_WORLD_FRAG`)

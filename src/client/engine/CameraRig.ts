@@ -13,7 +13,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
 import * as THREE from 'three';
-import { clamp, damp, DEG2RAD, lerp } from '../../shared/core/MathUtil';
+import { angleDelta, clamp, damp, DEG2RAD, lerp } from '../../shared/core/MathUtil';
 import type { CameraConfig } from '../player/CameraConfig';
 import { CameraShake } from '../player/CameraShake';
 import { ACTOR_INDICATOR_LAYER, SKY_LAYER } from './Renderer';
@@ -273,12 +273,34 @@ export class CameraRig {
 
 // ====================================== INTERNAL HELPERS ====================================== \\
 //#region Internal Helpers
-/** Bob phase wraps at TAU; interpolate the short way around. */
+/**
+ * Bob phase wraps at TAU; interpolate the short way around.
+ *
+ * **The fifth and last copy of the unwrap, folded onto `MathUtil.angleDelta`** (BACKLOG #1,
+ * closed 2026-11-22). The four before it went in A23, A24, C1, C13 and C24c. This one was never
+ * `angleDelta` — it interpolates toward `b` and only *uses* the delta — so folding it meant
+ * extracting the delta first, and that landed on the two differences the entry is about:
+ *
+ * ```
+ * MathUtil.angleDelta   d = (to - from) % TAU; if (d > PI) d -= TAU; if (d <= -PI) d += TAU;
+ * the copy that was here let d = b - a;        if (d > PI) d -= TAU; if (d <  -PI) d += TAU;
+ * ```
+ *
+ * The `% TAU` cannot matter here: both phases are already `% TAU` in `PlayerController`, so
+ * `|b - a| < TAU` always. The `<` against `<=` differs at exactly one input, `d === -PI`, where
+ * the old spelling answered `-PI` and this one answers `+PI` — the same boundary C1 and C24c
+ * each had to rule on.
+ *
+ * **It is unreachable here, and this is the measurement rather than the assertion.** `b` and `a`
+ * are one sim tick apart (`GameFrame` passes the local player's `prev` and `curr`, and the
+ * spectator path passes the same object twice, so `d` is 0 there). One tick of bob is
+ * `speed * DT * TAU / stride`: on the shipped config — 6.9 m/s sprint, 2.1 m stride — that is
+ * **0.344 rad**, and at the extremes the tuning panel admits — 14 m/s against a 0.8 m stride —
+ * **1.833 rad**. Reaching the boundary needs PI, which is 1.7x the widest value the panel can
+ * produce, and reaching it needs that figure to the last bit. `CameraRig.test.ts` pins both wrap
+ * directions and the no-wrap case with exact doubles, and they did not move.
+ */
 function interpolatePhase(a: number, b: number, alpha: number): number {
-  const TAU = Math.PI * 2;
-  let delta = b - a;
-  if (delta > Math.PI) delta -= TAU;
-  if (delta < -Math.PI) delta += TAU;
-  return a + delta * alpha;
+  return a + angleDelta(a, b) * alpha;
 }
 //#endregion

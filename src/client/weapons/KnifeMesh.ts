@@ -32,10 +32,9 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sharedWeaponSurfaces } from './WeaponMesh';
-import type { SurfaceKey } from './WeaponMeshParts';
-import { boxGeometry } from './WeaponGeometry';
+import type { BoxPart, SurfaceKey, TubePart } from './WeaponMeshParts';
+import { addMerged } from './WeaponGeometry';
 import { ViewmodelHands } from './ViewmodelHands';
 //#endregion
 
@@ -72,12 +71,6 @@ export interface KnifeModel {
    */
   readonly arm: THREE.Group | null;
   dispose(): void;
-}
-
-/** One piece of the knife, built and waiting to be merged with the others on its surface. */
-interface Part {
-  readonly surface: SurfaceKey;
-  readonly geometry: THREE.BufferGeometry;
 }
 //#endregion
 
@@ -144,8 +137,12 @@ export function buildKnifeModel(
 
   // The fist is the thing the rig replaces; the blade is the thing the file replaces. Both
   // are built only while the file they are standing in for has not arrived.
-  const parts = [...(rig === null ? fistBoxes() : []), ...(template === null ? bladeBoxes() : [])];
-  mergeBySurface(root, parts, surfaces, disposables);
+  // Boxes then tubes, which is the order `addMerged` merges them in and the order the single
+  // interleaved list used to produce: the blades were last in `bladeBoxes` and `bladeBoxes` is
+  // last here, so every surface's vertices come out where they came out before (BACKLOG #59).
+  const boxes = [...(rig === null ? fistBoxes() : []), ...(template === null ? bladeBoxes() : [])];
+  const tubes = template === null ? bladeTubes() : [];
+  addMerged(root, boxes, tubes, surfaces, disposables, 'knife');
 
   const arm = rig === null ? buildForearm(surfaces, disposables) : null;
   const hands = rig === null ? null : attachHand(root, rig, disposables);
@@ -175,7 +172,7 @@ export function buildKnifeModel(
  * does not, so without it the seam opens at the extremes of the swing. Slimmer than it was
  * (playtest 3): 7.2 x 8.2 cm of glove hid the knife it held.
  */
-function fistBoxes(): Part[] {
+function fistBoxes(): BoxPart[] {
   return [
     box('glove', 0.060, 0.066, 0.092, 0, -0.004, 0.056),
     box('glove', 0.064, 0.026, 0.046, 0, 0.026, 0.026),
@@ -183,8 +180,8 @@ function fistBoxes(): Part[] {
   ];
 }
 
-/** The grip, the guard, the ricasso and two lengths of blade: the knife without its file. */
-function bladeBoxes(): Part[] {
+/** The grip, the guard and the ricasso: everything on the knife that is a box. */
+function bladeBoxes(): BoxPart[] {
   return [
     // Grip, slightly nose-down so the blade sits along the natural line of a held knife.
     box('polymer', 0.030, 0.038, 0.110, 0, LINE_Y - 0.002, -0.010, 0.06),
@@ -192,12 +189,15 @@ function bladeBoxes(): Part[] {
     // Guard and ricasso: the two blocks that make a blade look attached to something.
     box('gunmetal', 0.050, 0.020, 0.014, 0, LINE_Y + 0.002, -0.072),
     box('gunmetal', 0.011, 0.034, 0.024, 0, LINE_Y, -0.090),
-    blade(0.104, -0.134, false),
-    blade(0.056, -0.213, true),
   ];
 }
 
-/** One box of the knife, rotated and placed. */
+/** The two lengths of blade: the only tapered, flattened tubes in the project. */
+function bladeTubes(): TubePart[] {
+  return [blade(0.104, -0.134, false), blade(0.056, -0.213, true)];
+}
+
+/** One box of the knife, rotated and placed. The geometry is `addMerged`'s (BACKLOG #59). */
 function box(
   surface: SurfaceKey,
   w: number,
@@ -207,56 +207,38 @@ function box(
   y: number,
   z: number,
   rx = 0,
-): Part {
-  return { surface, geometry: boxGeometry({ surface, w, h, d, x, y, z, rx }) };
+): BoxPart {
+  return { surface, w, h, d, x, y, z, rx };
 }
 
 /**
- * A length of blade. `tip` makes it a point rather than a prism.
+ * A length of blade: a four-sided cylinder, flattened across and optionally tapered to a point.
  *
  * Built along +Y because that is the axis `CylinderGeometry` uses, flattened in X while the
  * section is still in the XZ plane, and only then swung down -Z — doing the squash after the
- * rotation would thin the blade top to bottom instead of across it.
+ * rotation would thin the blade top to bottom instead of across it, and swinging it the other
+ * way would put the point behind the hand.
  *
- * It is not a `TubePart`, which is why this file merges its own parts rather than calling
- * `addMerged`: a flattened, tapered four-gon is a shape `WeaponGeometry` has no name for.
- * See BACKLOG #59.
+ * **It is a `TubePart` now** (BACKLOG #59, closed 2026-11-22). It was not one, and that is the
+ * whole reason this file used to merge its own parts instead of calling `addMerged`: `TubePart`
+ * carried one radius, no taper and no per-axis scale, so a flattened tapered four-gon was a
+ * shape `WeaponGeometry` had no name for. It has three names for it now — `tipRadius`,
+ * `flatten` and `towardNegativeZ` — all optional, all absent on every other part in the
+ * project, and applied by `tubeGeometry` in exactly the order this function used to apply them.
  */
-function blade(length: number, z: number, tip: boolean): Part {
-  const geometry = new THREE.CylinderGeometry(tip ? 0 : BLADE_HALF, BLADE_HALF, length, 4, 1);
-  geometry.scale(BLADE_FLATTEN, 1, 1);
-  geometry.rotateX(-Math.PI / 2);
-  geometry.translate(0, LINE_Y, z);
-  return { surface: 'gunmetal', geometry };
-}
-
-/** One mesh per surface, named as a weapon's are, with the merged geometry owned by the caller. */
-function mergeBySurface(
-  root: THREE.Object3D,
-  parts: readonly Part[],
-  surfaces: ReadonlyMap<SurfaceKey, THREE.Material>,
-  disposables: Array<{ dispose(): void }>,
-): void {
-  const bySurface = new Map<SurfaceKey, THREE.BufferGeometry[]>();
-  for (const part of parts) {
-    const list = bySurface.get(part.surface);
-    if (list === undefined) bySurface.set(part.surface, [part.geometry]);
-    else list.push(part.geometry);
-  }
-  for (const [key, list] of bySurface) {
-    const merged = mergeGeometries(list, false);
-    for (const g of list) g.dispose();
-    if (merged === null) continue;
-    merged.computeBoundingSphere();
-    const material = surfaces.get(key);
-    if (material === undefined) continue;
-    const mesh = new THREE.Mesh(merged, material);
-    mesh.name = `viewmodel:knife:${key}`;
-    mesh.matrixAutoUpdate = false;
-    mesh.updateMatrix();
-    root.add(mesh);
-    disposables.push(merged);
-  }
+function blade(length: number, z: number, tip: boolean): TubePart {
+  return {
+    surface: 'gunmetal',
+    x: 0,
+    y: LINE_Y,
+    z,
+    radius: BLADE_HALF,
+    tipRadius: tip ? 0 : BLADE_HALF,
+    length,
+    sides: 4,
+    flatten: BLADE_FLATTEN,
+    towardNegativeZ: true,
+  };
 }
 
 /**

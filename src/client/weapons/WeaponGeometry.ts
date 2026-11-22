@@ -32,9 +32,20 @@ export function boxGeometry(part: BoxPart): THREE.BufferGeometry {
  * nobody can tell, and this is ten of them.
  */
 export function tubeGeometry(part: TubePart, sides = part.sides ?? 12): THREE.BufferGeometry {
-  const g = new THREE.CylinderGeometry(part.radius, part.radius, part.length, sides, 1);
+  const g = new THREE.CylinderGeometry(
+    part.tipRadius ?? part.radius,
+    part.radius,
+    part.length,
+    sides,
+    1,
+  );
+  // The three optional steps are the knife blade's (BACKLOG #59) and are absent on every other
+  // part in the project, so each `if` is skipped for all of them and the geometry they produce
+  // is the same geometry it always was. The order is the blade's own and is load-bearing:
+  // flatten while the section is still in XZ, and only then swing it flat.
+  if (part.flatten !== undefined) g.scale(part.flatten, 1, 1);
   // CylinderGeometry runs along +Y; barrels run along Z.
-  if (part.vertical !== true) g.rotateX(Math.PI / 2);
+  if (part.vertical !== true) g.rotateX(part.towardNegativeZ === true ? -Math.PI / 2 : Math.PI / 2);
   g.translate(part.x, part.y, part.z);
   return g;
 }
@@ -49,7 +60,7 @@ export function addMerged(
   parent: THREE.Object3D,
   boxes: readonly BoxPart[],
   tubes: readonly TubePart[],
-  surfaces: Map<SurfaceKey, THREE.MeshStandardMaterial>,
+  surfaces: ReadonlyMap<SurfaceKey, THREE.Material>,
   disposables: Array<{ dispose(): void }>,
   label: string,
 ): void {

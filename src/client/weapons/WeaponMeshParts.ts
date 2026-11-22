@@ -50,6 +50,28 @@ export interface TubePart {
   readonly sides?: number;
   /** Runs along Z by default; set for a tube standing on Y. */
   readonly vertical?: boolean;
+  /**
+   * The radius at the far end, for a taper. Absent means a cylinder: the same at both ends.
+   *
+   * Zero makes a point, which is what a knife blade is (BACKLOG #59). "Far" is the end the
+   * tube's own +Y maps to once it has been swung flat, so the near end is always `radius`.
+   */
+  readonly tipRadius?: number;
+  /**
+   * A scale across X, applied while the section is still in the XZ plane.
+   *
+   * A blade is a flattened four-gon and nothing else here is flattened at all, so this is
+   * absent on every other part (BACKLOG #59). It has to happen **before** the swing: doing it
+   * afterwards would thin the blade top to bottom instead of across it.
+   */
+  readonly flatten?: number;
+  /**
+   * Swing the tube down -Z rather than +Z.
+   *
+   * Only matters for a tapered tube, because that is the only kind whose two ends differ: a
+   * knife points away from the eye, so its blade is the one part that wants this.
+   */
+  readonly towardNegativeZ?: boolean;
 }
 
 /** A point in weapon-local metres. */

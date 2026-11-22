@@ -43,6 +43,13 @@
 
 // =========================================== TYPES ============================================ \\
 //#region Types
+/** A direction, written in place. See `lookDirection`. */
+export interface LookDir {
+  dx: number;
+  dy: number;
+  dz: number;
+}
+
 export interface AccuracyReport {
   /** Samples compared. */
   readonly samples: number;
@@ -175,6 +182,35 @@ export function verifyAgainstNative(samples = 200000, span = 64): AccuracyReport
     maxAbsSin,
     maxAbsCos,
   };
+}
+/** A direction to write into, for a caller that has no object of its own to lend. */
+export function makeLookDir(): LookDir {
+  return { dx: 0, dy: 0, dz: 0 };
+}
+
+/**
+ * The unit direction a body is looking in, for `yaw` and `pitch` in radians, into `out`.
+ *
+ * `yaw` 0 looks along -Z and a positive `pitch` looks up; the result is a unit vector because
+ * the three components are a sine and two cosines of perpendicular angles.
+ *
+ * **These four lines are carried over character for character, and must stay that way**
+ * (BACKLOG #27, R5). Three places computed them — a sentry's shot, a chopper gunner's, and the
+ * flamethrower's jet — and `simSin`/`simCos` with `cp` factored out exactly like this is what
+ * makes a round land in the same place on two engines. A helper is fine; re-deriving the maths
+ * inside one is not, so nothing here was tidied on the way in.
+ *
+ * **Why this is not every caller of the expression.** `PlayerController.moveBasis` and
+ * `ThrowController` compute a *basis* — a forward and a right — and the right vector reuses
+ * the `simSin(yaw)` and `simCos(yaw)` the forward needs. Folding only the forward out of those
+ * two would make them call the trigonometry twice on the hottest path in the game, which R7
+ * forbids for a saving of four lines. They are a different shape and they stay where they are.
+ */
+export function lookDirection(yaw: number, pitch: number, out: LookDir): void {
+  const cp = simCos(pitch);
+  out.dx = -simSin(yaw) * cp;
+  out.dy = simSin(pitch);
+  out.dz = -simCos(yaw) * cp;
 }
 //#endregion
 

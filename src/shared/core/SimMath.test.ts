@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { simCos, simSin, simTan, verifyAgainstNative } from './SimMath';
+import { lookDirection, makeLookDir, simCos, simSin, simTan, verifyAgainstNative } from './SimMath';
 
 /**
  * Characterisation of the deterministic trig: exact values where sine and cosine are known
@@ -95,5 +95,67 @@ describe('verifyAgainstNative', () => {
     expect(report.samples).toBe(20_000);
     expect(report.maxUlpSin).toBeLessThanOrEqual(1);
     expect(report.maxUlpCos).toBeLessThanOrEqual(1);
+  });
+});
+
+/**
+ * The four lines three shooters used to carry each, pinned against the helper that now holds
+ * them (BACKLOG #27).
+ *
+ * The expressions below are the **old** code, written out: `cp` factored first, then
+ * `-simSin(yaw) * cp`, `simSin(pitch)` and `-simCos(yaw) * cp`, in that order and with those
+ * signs. That is what makes this a pin rather than a tautology — it does not call the helper
+ * to decide what the helper should say, it records what a sentry's round, a chopper gunner's
+ * round and the flamethrower's jet were aimed along before the three were folded into one.
+ *
+ * `toBe`, not `toBeCloseTo`: R5 is about the last bit. A rewrite that factored `cp` out
+ * differently, or reached for `Math.sin`, would be correct to fourteen decimals and would put
+ * a round somewhere else on another engine, which is the failure this guards.
+ */
+describe('lookDirection', () => {
+  const out = makeLookDir();
+
+  /** Zero, the four quadrants' diagonals, straight up and down, and a pair off the grid. */
+  const angles: readonly (readonly [number, number])[] = [
+    [0, 0],
+    [Math.PI / 4, 0],
+    [-Math.PI / 4, 0],
+    [Math.PI * 0.75, 0],
+    [-Math.PI * 0.75, 0],
+    [0, Math.PI / 2],
+    [0, -Math.PI / 2],
+    [0, 0.3],
+    [1.1, -0.45],
+    [-2.7, 1.2],
+    [17.3, 0.87],
+  ];
+
+  for (const [yaw, pitch] of angles) {
+    it(`matches the expression it replaced at yaw ${yaw.toFixed(3)}, pitch ${pitch.toFixed(3)}`, () => {
+      const cp = simCos(pitch);
+      const dx = -simSin(yaw) * cp;
+      const dy = simSin(pitch);
+      const dz = -simCos(yaw) * cp;
+
+      lookDirection(yaw, pitch, out);
+      expect(out.dx).toBe(dx);
+      expect(out.dy).toBe(dy);
+      expect(out.dz).toBe(dz);
+    });
+  }
+
+  it('writes in place, into whatever object the caller lent it', () => {
+    // The flamethrower lends its own jet record, which carries six fields and not three.
+    const jet = { dx: 9, dy: 9, dz: 9, eyeX: 1, eyeY: 2, eyeZ: 3 };
+    lookDirection(0, 0, jet);
+    // `dx` is negative zero, because the expression is `-simSin(0) * cp` and always was.
+    expect(jet).toEqual({ dx: -0, dy: 0, dz: -1, eyeX: 1, eyeY: 2, eyeZ: 3 });
+  });
+
+  it('is a unit vector, which is what the ballistics caller assumes', () => {
+    for (const [yaw, pitch] of angles) {
+      lookDirection(yaw, pitch, out);
+      expect(Math.hypot(out.dx, out.dy, out.dz)).toBeCloseTo(1, 15);
+    }
   });
 });

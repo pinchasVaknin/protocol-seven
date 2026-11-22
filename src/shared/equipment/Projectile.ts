@@ -279,6 +279,25 @@ export class ProjectilePool {
   private integrate(p: Projectile, cfg: EquipmentConfig, world: CollisionWorld): number {
     const r = p.def.radius;
 
+    /**
+     * Gravity and drag, four lines, written again in `previewTrajectory` below.
+     *
+     * Deliberately (BACKLOG #18, closed 2026-11-22 — the entry said what this comment says and
+     * will not become a task). A10 unified the two larger blocks these two share,
+     * `averageContactNormal` and `reflectOffSurface`, both module-level functions over
+     * module-level state so they allocate nothing. This one it could not: `step` has the
+     * velocity on the projectile and the preview has it in three locals, so a shared helper
+     * either takes and returns three numbers — a scratch triple and six lines of copying in and
+     * out at each site, more than the four it saves — or takes an object, making both call
+     * sites polymorphic across a `Projectile` and the preview's scratch, on the arc every
+     * grenade in the game flies.
+     *
+     * **Worth doing the day `previewTrajectory` gets a record of its own** (a pooled scratch
+     * `Projectile`, say): one helper over one shape would then serve both and the copying
+     * disappears. If you do it, carry every expression over character for character — R5 — and
+     * `Projectile.test.ts` steps one projectile, previews the same arc, and asserts the two
+     * agree point for point at float32 precision.
+     */
     p.vy -= cfg.gravity * DT;
     const decay = Math.max(0, 1 - cfg.drag * DT);
     p.vx *= decay;
@@ -376,6 +395,8 @@ export function previewTrajectory(
   const steps = Math.min(Math.round(maxSeconds / DT), Math.floor(out.length / 3));
 
   for (let i = 0; i < steps; i++) {
+    // The other copy of `integrate`'s four lines, which that method's own comment explains
+    // and BACKLOG #18 closed on 2026-11-22 rather than merging.
     dvy -= cfg.gravity * DT;
     const decay = Math.max(0, 1 - cfg.drag * DT);
     dvx *= decay;

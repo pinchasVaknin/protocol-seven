@@ -16,7 +16,7 @@ import { makeRayHit, type RayHit } from '../world/Geometry';
 import { Killstreak, type StreakContext } from './KillstreakBase';
 import type { StreakConfig, StreakDef } from './StreakDefs';
 import { sentryWeapon } from './StreakWeapons';
-import { simCos, simSin } from '../core/SimMath';
+import { lookDirection, makeLookDir, simCos, simSin } from '../core/SimMath';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -42,6 +42,9 @@ export interface SentryTally {
 //#region Constants
 /** Module-level scratch. The sim path allocates nothing (S4.7). */
 const scratchRay: RayHit = makeRayHit();
+
+/** The direction of the round being fired. One sentry fires at a time per tick, so one is enough. */
+const aim = makeLookDir();
 
 /** Where the sentry sees and shoots from, above its base. */
 const SENTRY_EYE_HEIGHT = 0.74;
@@ -452,17 +455,14 @@ export class SentryGun extends Killstreak implements Damageable {
     const eyeY = this.y + SENTRY_EYE_HEIGHT;
     const yaw = this.combat.aimYaw;
     const pitch = this.combat.aimPitch;
-    const cp = simCos(pitch);
-    const dx = -simSin(yaw) * cp;
-    const dy = simSin(pitch);
-    const dz = -simCos(yaw) * cp;
+    lookDirection(yaw, pitch, aim);
 
     this.shotsFired++;
     this.ctx.present.sentryShot(this.x, eyeY, this.z);
 
     const def = sentryWeapon(this.ctx.cfg.sentryDamage);
     this.request.weapon = def;
-    this.ballistics.fire(this.x, eyeY, this.z, dx, dy, dz, def, this.request, this.trace);
+    this.ballistics.fire(this.x, eyeY, this.z, aim.dx, aim.dy, aim.dz, def, this.request, this.trace);
 
     this.ctx.present.tracer(this.x, eyeY, this.z, this.trace.endX, this.trace.endY, this.trace.endZ);
     if (this.trace.hitTarget) this.shotsHit++;

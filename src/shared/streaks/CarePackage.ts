@@ -5,6 +5,7 @@ import type { ObjectiveTarget } from '../ai/ObjectiveIntent';
 import { makeObjectiveTarget, type MutableObjectiveTarget } from '../ai/ObjectiveIntent';
 import { EV } from '../core/Events';
 import { DT } from '../core/Loop';
+import { groundUnder } from '../world/CollisionWorld';
 import { makeRayHit } from '../world/Geometry';
 import { Killstreak, type StreakContext } from './KillstreakBase';
 import { STREAK_DEFS, type StreakDef } from './StreakDefs';
@@ -196,15 +197,15 @@ export class CarePackage extends Killstreak {
   /**
    * Find the floor under the drop point by casting straight down from high up.
    *
-   * Uses the same spatial-hash raycaster gameplay uses (S4.3) — never `THREE.Raycaster`.
-   * A miss means the drop point is over a hole in the map, in which case sitting on y = 0 is
-   * the least surprising answer available.
+   * From twelve metres above the drop height, because that is where the crate is modelled as
+   * coming from, and far enough to reach a pit floor below the map's own. The cast itself is
+   * `world.groundUnder` (BACKLOG #26); the two numbers are this streak's.
+   *
+   * A fresh `RayHit` rather than a module scratch: this runs once, at activation.
    */
   private probeGround(x: number, z: number): number {
     const from = this.ctx.cfg.packageDropHeight + 12;
-    const hit = makeRayHit();
-    if (!this.ctx.world.raycast(x, from, z, 0, -1, 0, from + 8, hit)) return 0;
-    return from - hit.t;
+    return groundUnder(this.ctx.world, x, z, from, from + 8, makeRayHit());
   }
   //#endregion
 }

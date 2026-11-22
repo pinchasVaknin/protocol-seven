@@ -9,6 +9,7 @@ import { Killstreak, type StreakContext } from './KillstreakBase';
 import type { StreakDef } from './StreakDefs';
 import { mortarWeapon } from './StreakWeapons';
 import { simCos, simSin } from '../core/SimMath';
+import { groundUnder } from '../world/CollisionWorld';
 //#endregion
 
 // ========================================= CONSTANTS ========================================== \\
@@ -170,10 +171,16 @@ export class MortarStrike extends Killstreak {
 
 // ====================================== INTERNAL HELPERS ====================================== \\
 //#region Internal Helpers
-/** Where the floor is under a point, for placing the burst. */
+/**
+ * Where the floor is under a point, for placing the burst.
+ *
+ * From a flat 40 m, which is above anything a shell is fired over, and ten metres further than
+ * that so the burst still lands in a pit. The cast is `world.groundUnder` (BACKLOG #26); these
+ * two numbers are the mortar's, and `scratchRay` is why they are passed rather than shared —
+ * this runs once per shell, on the sim path.
+ */
 function groundAt(ctx: StreakContext, x: number, z: number): number {
   const from = 40;
-  if (!ctx.world.raycast(x, from, z, 0, -1, 0, from + 10, scratchRay)) return 0;
-  return from - scratchRay.t;
+  return groundUnder(ctx.world, x, z, from, from + 10, scratchRay);
 }
 //#endregion

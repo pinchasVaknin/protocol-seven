@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**27 open entries: 21 with a heading of their own, and the six §3 holds inside its three clusters** (#6, #12 and #5; #2, which absorbed #19; #14 and #15). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven and batch G four on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**24 open entries: 18 with a heading of their own, and the six §3 holds inside its three clusters** (#6, #12 and #5; #2, which absorbed #19; #14 and #15). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four and batch H three on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -481,30 +481,6 @@ is a tree-wide rename, which is precisely what R2 and R3 exist to keep out of a 
 So this is an unbound task and needs its own session, as #32, #48 and #49 did.
 
 **Verify** `npm run check` + SIM snapshot/compare → `PASS`.
-
-### #18 — Share the gravity and drag integration step · `open` · *note, not a defect*
-
-**Files** `src/shared/equipment/Projectile.ts`. **Origin** A10.
-
-A10 unified two of the three blocks shared between `ProjectilePool.step` and `previewTrajectory` —
-`averageContactNormal` (fourteen lines each) and `reflectOffSurface` (eight each), both module-level
-functions over module-level state so they allocate nothing. Still written twice, four lines each:
-`dvy -= cfg.gravity * DT`, `const decay = Math.max(0, 1 - cfg.drag * DT)`, and the three
-multiplies.
-
-`step` has the velocity on the projectile (`p.vx`) and `previewTrajectory` has it in three locals,
-so a shared helper either takes and returns three numbers — a module-level scratch triple plus six
-lines of copying in and out at each site, more than the four it saves — or takes an object, making
-the call site polymorphic across a `Projectile` and the preview's scratch. Both are worse than the
-duplication, which is why A10 stopped.
-
-**Worth revisiting if `previewTrajectory` ever gets a record of its own** (a pooled scratch
-`Projectile`, say), because then one helper over one shape serves both and the copying disappears.
-Until then this is a note, not a defect.
-
-If it is done, every expression must be carried over character for character — this is the arc
-every grenade in the game flies — and `Projectile.test.ts` (A10) steps one projectile, previews the
-same arc, and asserts they agree point for point at float32 precision.
 
 ## 5. Suspected bugs, pinned in tests, awaiting a fix
 
@@ -1298,69 +1274,6 @@ could move with the geometry or stay where it is.
 **Verify** `npm run check`, plus C11's BROWSER checksum A, which hashes the attribute buffers,
 the index and the bounding sphere of every geometry both files build, and the colour of every
 material — so a merge that moved a single vertex or a single hex shows up as a diff.
-
-### #26 — Unify the downward ground probe · `open` *(opened 2026-10-12 by A16)*
-
-**Files** `src/shared/streaks/CarePackage.ts` (`probeGround`), `src/shared/streaks/MortarStrike.ts`
-(`groundAt`), plus a home for one helper — `src/shared/world/CollisionWorld.ts` or
-`src/shared/world/Geometry.ts`. **Origin** A16.
-
-Two functions in the same unit cast the same ray straight down to find the floor under a point, and
-differ only in where they start and how far they look: `probeGround` from `packageDropHeight + 12`
-for `from + 8` metres and allocating a `RayHit` per call (it runs once, at activation);
-`groundAt` from a hard 40 for `from + 10` and reading a module-level scratch ray (it runs once per
-shell, on the sim path). Both answer "where is the floor here" and both return 0 on a miss.
-
-**Why A16 did not merge them.** A helper shared by two files in the unit has nowhere to live:
-R3 forbids a new source file outside a design unit, and putting it in one of the two and importing
-it from the other means adding a public export — an API change under R2 that would have to be
-approved for a helper whose real home is neither file. The right home is `world/`, where the
-raycaster is, and the right scope is wider than this unit: the same probe pattern recurs across the
-project, which is exactly the cross-unit duplication R4.3 sends here.
-
-**While there**: decide whether the two start heights and ranges are two facts or one. They are
-unlikely to be one — a crate is placed from above the drop height and a blast is placed on the
-floor under an impact — so the helper probably takes them as parameters rather than hiding them.
-
-**Verify** `npm run check` + SIM snapshot/compare → `PASS`. `CarePackage.test.ts` and
-`MortarStrike.test.ts` (both A16) pin the landing height and the impact height respectively.
-
-### #27 — Unify the streak shot pipeline · `open` *(opened 2026-10-12 by A16)*
-
-**Files** `src/shared/streaks/SentryGun.ts` (`stepFiring`), `src/shared/streaks/ChopperGunner.ts`
-(`stepFiring`), reading `src/shared/weapons/Ballistics.ts`. **Origin** A16.
-
-The two machine guns fire by the same six steps in the same order: turn `yaw`/`pitch` into a
-direction, count the shot, announce it, point the shared `DamageRequest` at the streak's weapon
-def, call `ballistics.fire`, draw a tracer, then read `hitTarget`/`lethal` off the trace into
-counters. The direction triple is identical character for character —
-
-```
-const cp = simCos(pitch);
-const dx = -simSin(yaw) * cp;
-const dy = simSin(pitch);
-const dz = -simCos(yaw) * cp;
-```
-
-— and the same four lines appear again in `shared/weapons/`. The hit-rate line in the two
-`describe()` methods is the same expression as well.
-
-**Why A16 did not merge them.** Same fence as #26: one helper for two files in the unit needs a
-home that is not either of them, and the direction triple's real home is `core/SimMath` or
-`weapons/Ballistics`, both outside A16. It is also the one merge in this unit where **R5 bites**:
-the four lines must stay in that order, with those signs and that `cp` factored out exactly as it
-is, because `simSin`/`simCos` and the multiplication order are what make a shot land in the same
-place on two engines. A helper is fine; re-deriving the maths inside it is not.
-
-**Do not merge the surrounding method.** The two differ in what gates the trigger — a sentry asks
-`combat.wantsFire` and a chopper asks the spin and the belt — and in what they count
-(`killsOnOwnSubstrate` is the sentry's alone). Those change for different reasons, so R4.3's second
-rule applies: the direction triple and perhaps the trace read-out are the shared parts, and the
-methods around them are not.
-
-**Verify** `npm run check` + SIM snapshot/compare → `PASS` — the 3,600-tick hash is what proves a
-round still goes where it went. `SentryGun.test.ts` and `ChopperGunner.test.ts` (both A16) pin the
-shot counters, the eye height a sentry fires from and the chopper's belt.
 
 ### #53 — The NET oracle fails three different ways when it runs behind the SIM ones · `open` *(opened 2026-10-25 by B8)*
 

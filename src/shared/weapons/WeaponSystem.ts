@@ -36,7 +36,7 @@ import { ScopeState } from './Scope';
 import type { ViewmodelConfig } from './ViewmodelConfig';
 import { makeWeaponInput, type Weapon, type WeaponInput } from './WeaponBase';
 import { MAX_PELLETS, type WeaponDef } from './WeaponDefs';
-import { simCos, simSin } from '../core/SimMath';
+import { lookDirection, simCos, simSin } from '../core/SimMath';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -449,10 +449,9 @@ export class WeaponSystem {
   private aimFlameJet(cmd: InputCommand, sim: PlayerSim): void {
     const yaw = cmd.yaw + this.recoil.aimYaw * DEG2RAD;
     const pitch = cmd.pitch + this.recoil.aimPitch * DEG2RAD;
-    const cp = simCos(pitch);
-    flameJet.dx = -simSin(yaw) * cp;
-    flameJet.dy = simSin(pitch);
-    flameJet.dz = -simCos(yaw) * cp;
+    // The same four lines the two streak guns fire by, and the reason they are one function
+    // now (BACKLOG #27): `flameJet` already has the three fields to write into.
+    lookDirection(yaw, pitch, flameJet);
     flameJet.eyeX = sim.x;
     flameJet.eyeY = sim.y + sim.eyeHeight;
     flameJet.eyeZ = sim.z;

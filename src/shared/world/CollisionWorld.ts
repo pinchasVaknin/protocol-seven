@@ -464,6 +464,36 @@ export function makeMoveOutput(): MoveOutput {
   };
 }
 
+/**
+ * The floor's height under `(x, z)`, or 0 where there is none.
+ *
+ * Cast straight down from `fromY` for `reach` metres, through the same spatial-hash raycaster
+ * gameplay uses (S4.3) — never `THREE.Raycaster`. A miss means the point is over a hole in the
+ * map, and sitting on y = 0 is the least surprising answer available.
+ *
+ * **The start height and the reach are the caller's, not this function's** (BACKLOG #26). Two
+ * streaks asked this question with their own copy of these two lines and different numbers: a
+ * care package probes from above its own drop height, because that is where the crate comes
+ * from, and a mortar burst probes from a flat 40 m, because that is above anything a shell is
+ * fired over. Those are two facts rather than one badly agreed fact, so they stay at the call
+ * sites and what is shared is the cast and the arithmetic on its result.
+ *
+ * `hit` is the caller's too, for the reason every raycast in this file takes one: the mortar
+ * asks once per shell on the sim path and reads a module scratch, the package asks once at
+ * activation and can afford a fresh one.
+ */
+export function groundUnder(
+  world: CollisionWorld,
+  x: number,
+  z: number,
+  fromY: number,
+  reach: number,
+  hit: RayHit,
+): number {
+  if (!world.raycast(x, fromY, z, 0, -1, 0, reach, hit)) return 0;
+  return fromY - hit.t;
+}
+
 export function makeGroundProbe(): GroundProbe {
   return { distance: 0, nx: 0, ny: 1, nz: 0, index: -1 };
 }

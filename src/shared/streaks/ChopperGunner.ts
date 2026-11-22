@@ -9,7 +9,7 @@ import { Ballistics, makeShotTrace, type ShotTrace } from '../weapons/Ballistics
 import { Killstreak, type StreakContext } from './KillstreakBase';
 import type { StreakDef } from './StreakDefs';
 import { chopperWeapon } from './StreakWeapons';
-import { simCos, simSin } from '../core/SimMath';
+import { lookDirection, makeLookDir, simCos, simSin } from '../core/SimMath';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -40,6 +40,9 @@ export interface ChopperView {
  * which is enough to pick a single operator out of a container yard from the orbit radius
  * and not so much that the orbital drift makes the picture unusable.
  */
+/** The direction of the round being fired. One gunner fires at a time per tick, so one is enough. */
+const aim = makeLookDir();
+
 const FOV_WIDE = 55;
 const FOV_ZOOMED = 22;
 /** How fast the zoom travels, per second. Brisk enough to use mid-burst. */
@@ -314,17 +317,14 @@ export class ChopperGunner extends Killstreak {
 
     this.spendRound(cfg.chopperReloadSeconds);
 
-    const cp = simCos(this.pitch);
-    const dx = -simSin(this.yaw) * cp;
-    const dy = simSin(this.pitch);
-    const dz = -simCos(this.yaw) * cp;
+    lookDirection(this.yaw, this.pitch, aim);
 
     this.shotsFired++;
     this.ctx.present.chopperShot();
 
     const def = chopperWeapon(cfg.chopperDamage);
     this.request.weapon = def;
-    this.ballistics.fire(this.x, this.y, this.z, dx, dy, dz, def, this.request, this.trace);
+    this.ballistics.fire(this.x, this.y, this.z, aim.dx, aim.dy, aim.dz, def, this.request, this.trace);
     this.ctx.present.tracer(this.x, this.y, this.z, this.trace.endX, this.trace.endY, this.trace.endZ);
     if (this.trace.hitTarget) this.shotsHit++;
     if (this.trace.lethal) this.kills++;

@@ -1,16 +1,17 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Splash, splashWanted } from './Splash';
+import { FakeElement, installFakeDom, type FakeAnimation, type FakeDom } from './testing/dom';
 
 /**
  * Characterization tests for the splash (refactor unit C19, written before the refactor).
  *
  * ## How a Web Animations timeline is assertable at all
  *
- * The four stages are `element.animate` calls on timers at absolute seconds from the gesture,
+ * The four stages are `element.animate` calls on env.timers at absolute seconds from the gesture,
  * so the double gives every element an `animate` that records the keyframes and the options
  * and hands back a move with `finish`, `cancel`, `onfinish` and `oncancel` -- and
- * `window.setTimeout` is a list with its own clock. `runTo(2.1)` therefore means *the moment
+ * `window.setTimeout` is a list with its own clock. `env.runTo(2.1)` therefore means *the moment
  * the shockwave is due*, and what is asserted is which moves exist by then, on which element,
  * with which duration. Nothing is timed and nothing is waited for.
  *
@@ -24,332 +25,21 @@ import { Splash, splashWanted } from './Splash';
 
 // ---------------------------------------------------------------------------- the DOM double
 
-type Listener = (event: FakeEvent) => void;
-
-interface FakeEvent {
-    key?: string;
-    code?: string;
-    repeat?: boolean;
-    preventDefault: () => void;
-    stopPropagation: () => void;
-}
-
-/** One move handed back by `element.animate`, with the hooks the splash uses on it. */
-class FakeAnimation {
-    onfinish: null | (() => void) = null;
-    oncancel: null | (() => void) = null;
-    playbackRate = 1;
-    cancelled = false;
-    finished = false;
-
-    constructor(
-        readonly el: FakeElement,
-        readonly frames: readonly Record<string, unknown>[],
-        readonly options: Record<string, unknown>,
-    ) {}
-
-    /** What `skip` does to a move already running: run it out, do not throw it away. */
-    finish(): void {
-        this.finished = true;
-        this.onfinish?.();
-    }
-
-    cancel(): void {
-        this.cancelled = true;
-        this.oncancel?.();
-    }
-}
-
-class FakeElement {
-    readonly tokens = new Set<string>();
-    readonly children: FakeElement[] = [];
-    readonly attributes = new Map<string, string>();
-    readonly listeners = new Map<string, Listener[]>();
-    readonly dataset: Record<string, string> = {};
-    readonly anims: FakeAnimation[] = [];
-    readonly style: Record<string, string> & { setProperty: (n: string, v: string) => void } = Object.assign(
-        {} as Record<string, string>,
-        {
-            setProperty: (n: string, v: string): void => {
-                this.style[n] = v;
-            },
-        },
-    );
-
-    textContent = '';
-    hidden = false;
-    disabled = false;
-    type = '';
-    value = '';
-    title = '';
-    src = '';
-    alt = '';
-    draggable = true;
-    width = 0;
-    height = 0;
-    offsetWidth = 200;
-    offsetHeight = 40;
-    /** `Splash.skullShift` measures the box with this; 0 unless a test sets it. */
-    clientWidth = 0;
-    clientHeight = 0;
-    parent: FakeElement | null = null;
-    rect = { left: 0, top: 0, right: 200, bottom: 40, width: 200, height: 40 };
-
-    constructor(readonly tag: string) {}
-
-    get className(): string {
-        return [...this.tokens].join(' ');
-    }
-
-    set className(value: string) {
-        this.tokens.clear();
-        for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-    }
-
-    readonly classList = {
-        add: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.add(token);
-        },
-        remove: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.delete(token);
-        },
-        toggle: (token: string, on?: boolean): void => {
-            if (on ?? !this.tokens.has(token)) this.tokens.add(token);
-            else this.tokens.delete(token);
-        },
-        contains: (token: string): boolean => this.tokens.has(token),
-    };
-
-    /** The Web Animations API. Every move the splash makes lands in `anims`, in order. */
-    animate(frames: readonly Record<string, unknown>[], options: Record<string, unknown>): FakeAnimation {
-        const anim = new FakeAnimation(this, frames, options);
-        this.anims.push(anim);
-        allAnimations.push(anim);
-        return anim;
-    }
-
-    appendChild(child: FakeElement): FakeElement {
-        child.parent = this;
-        this.children.push(child);
-        return child;
-    }
-
-    append(...nodes: FakeElement[]): void {
-        for (const node of nodes) this.appendChild(node);
-    }
-
-    replaceChildren(...nodes: FakeElement[]): void {
-        for (const child of this.children) child.parent = null;
-        this.children.length = 0;
-        this.append(...nodes);
-    }
-
-    remove(): void {
-        const siblings = this.parent?.children;
-        if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-        this.parent = null;
-    }
-
-    get childElementCount(): number {
-        return this.children.length;
-    }
-
-    get firstElementChild(): FakeElement | null {
-        return this.children[0] ?? null;
-    }
-
-    /**
-     * `setAttribute('class', …)` writes the token set, as a real element's does.
-     *
-     * This is how `makeIconSvg` names its icons: an SVG element has no settable `className`,
-     * so every glyph in the project is classed by attribute, and a double that did not
-     * reflect it would hide every icon from `querySelector`.
-     */
-    setAttribute(name: string, value: string): void {
-        this.attributes.set(name, value);
-        if (name === 'class') this.className = value;
-    }
-
-    getAttribute(name: string): string | null {
-        return this.attributes.get(name) ?? null;
-    }
-
-    removeAttribute(name: string): void {
-        this.attributes.delete(name);
-    }
-
-    addEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) this.listeners.set(type, [fn]);
-        else held.push(fn);
-    }
-
-    removeEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) return;
-        const at = held.indexOf(fn);
-        if (at >= 0) held.splice(at, 1);
-    }
-
-    getContext(): unknown {
-        return null;
-    }
-
-    getBoundingClientRect(): FakeElement['rect'] {
-        return this.rect;
-    }
-
-    focus(): void {}
-    blur(): void {}
-
-    querySelector(selector: string): FakeElement | null {
-        return this.queryAll(selector)[0] ?? null;
-    }
-
-    querySelectorAll(selector: string): FakeElement[] {
-        return this.queryAll(selector);
-    }
-
-    private queryAll(selector: string): FakeElement[] {
-        const token = selector.replace(/^\./, '');
-        const out: FakeElement[] = [];
-        const walk = (el: FakeElement): void => {
-            if (el.tokens.has(token)) out.push(el);
-            for (const child of el.children) walk(child);
-        };
-        for (const child of this.children) walk(child);
-        return out;
-    }
-}
-
-// ---------------------------------------------------------------------------- the environment
-
-let windowListeners: Map<string, Listener[]>;
-let timers: { readonly at: number; readonly fn: () => void; cancelled: boolean }[];
-let allAnimations: FakeAnimation[];
-let nowMs = 0;
-/** What `window.matchMedia('(prefers-reduced-motion: reduce)')` answers. */
-let reducedMotion = false;
-
-/** A keydown on `window`. Not a `KeyboardEvent` instance -- use `fireKey` for that. */
-function fireWindow(type: string, over: Partial<FakeEvent> = {}): void {
-    const event: FakeEvent = { preventDefault: () => undefined, stopPropagation: () => undefined, ...over };
-    for (const fn of [...(windowListeners.get(type) ?? [])]) fn(event);
-}
-
 /**
- * A keydown on `window` that passes `e instanceof KeyboardEvent`.
+ * The element class and the environment are shared: `ui/testing/dom.ts` (BACKLOG #79).
  *
- * `Splash.onInput` tests for that to let a lone modifier through, so a plain object is not
- * enough: the double registers a `KeyboardEvent` class globally and this makes one.
+ * What stood here was 330 lines of hand-grown double. It is the same double -- the file it
+ * moved to was written from this one -- so nothing this suite sees has changed.
  */
-function fireKey(type: string, over: Partial<FakeEvent> = {}): void {
-    const KE = (globalThis as Record<string, unknown>)['KeyboardEvent'] as new () => Record<string, unknown>;
-    const event = Object.assign(new KE(), { preventDefault: () => undefined, stopPropagation: () => undefined }, over);
-    for (const fn of [...(windowListeners.get(type) ?? [])]) fn(event as unknown as FakeEvent);
-}
 
-/** Run every timer whose moment has come, in the order they were set. */
-function runTimers(): number {
-    let ran = 0;
-    for (const timer of [...timers]) {
-        if (timer.cancelled || timer.at > nowMs) continue;
-        timer.cancelled = true;
-        timer.fn();
-        ran++;
-    }
-    return ran;
-}
-
-/** Advance the clock to `seconds` after the rig was built, running what falls due. */
-function runTo(seconds: number): void {
-    nowMs = 100_000 + seconds * 1000;
-    runTimers();
-}
-
-function pendingTimers(): number {
-    return timers.filter((t) => !t.cancelled).length;
-}
-
-class FakeKeyboardEvent {}
+let env: FakeDom;
 
 beforeEach(() => {
-    windowListeners = new Map();
-    timers = [];
-    allAnimations = [];
-    nowMs = 100_000;
-    const storage = new Map<string, string>();
-    const store = {
-        getItem: (k: string): string | null => storage.get(k) ?? null,
-        setItem: (k: string, v: string): void => {
-            storage.set(k, v);
-        },
-        removeItem: (k: string): void => {
-            storage.delete(k);
-        },
-        clear: (): void => storage.clear(),
-        key: (i: number): string | null => [...storage.keys()][i] ?? null,
-        get length(): number {
-            return storage.size;
-        },
-    };
-    const setTimer = (fn: () => void, ms = 0): number => {
-        timers.push({ at: nowMs + ms, fn, cancelled: false });
-        return timers.length;
-    };
-    const clearTimer = (id: number): void => {
-        const timer = timers[id - 1];
-        if (timer !== undefined) timer.cancelled = true;
-    };
-    (globalThis as Record<string, unknown>)['document'] = {
-        createElement: (tag: string) => new FakeElement(tag),
-        createElementNS: (_ns: string, tag: string) => new FakeElement(tag),
-        documentElement: new FakeElement('html'),
-        activeElement: null,
-    };
-    (globalThis as Record<string, unknown>)['HTMLElement'] = FakeElement;
-    (globalThis as Record<string, unknown>)['KeyboardEvent'] = FakeKeyboardEvent;
-    (globalThis as Record<string, unknown>)['localStorage'] = store;
-    (globalThis as Record<string, unknown>)['setTimeout'] = setTimer;
-    (globalThis as Record<string, unknown>)['clearTimeout'] = clearTimer;
-    (globalThis as Record<string, unknown>)['window'] = {
-        localStorage: store,
-        setTimeout: setTimer,
-        clearTimeout: clearTimer,
-        matchMedia: (query: string) => ({ matches: reducedMotion, media: query }),
-        addEventListener: (type: string, fn: Listener): void => {
-            const held = windowListeners.get(type);
-            if (held === undefined) windowListeners.set(type, [fn]);
-            else held.push(fn);
-        },
-        removeEventListener: (type: string, fn: Listener): void => {
-            const held = windowListeners.get(type);
-            if (held === undefined) return;
-            const at = held.indexOf(fn);
-            if (at >= 0) held.splice(at, 1);
-        },
-    };
-    (globalThis as Record<string, unknown>)['performance'] = { now: () => nowMs };
-    (globalThis as Record<string, unknown>)['requestAnimationFrame'] = (): number => 1;
-    (globalThis as Record<string, unknown>)['cancelAnimationFrame'] = (): void => undefined;
+    env = installFakeDom();
 });
 
 afterEach(() => {
-    reducedMotion = false;
-    for (const key of [
-        'document',
-        'HTMLElement',
-        'KeyboardEvent',
-        'localStorage',
-        'setTimeout',
-        'clearTimeout',
-        'window',
-        'performance',
-        'requestAnimationFrame',
-        'cancelAnimationFrame',
-    ]) {
-        delete (globalThis as Record<string, unknown>)[key];
-    }
+    env.restore();
 });
 
 // ---------------------------------------------------------------------------- the rig
@@ -388,9 +78,9 @@ function rig(): Rig {
     const splash = new Splash({
         host: host as unknown as HTMLElement,
         audio: audio as never,
-        onGesture: () => gestures.push(nowMs),
-        onReveal: () => reveals.push(nowMs),
-        onDone: () => dones.push(nowMs),
+        onGesture: () => gestures.push(env.nowMs),
+        onReveal: () => reveals.push(env.nowMs),
+        onDone: () => dones.push(env.nowMs),
     });
     return { splash, host, sounds: { calls }, gestures, reveals, dones };
 }
@@ -415,7 +105,7 @@ function findAll(root: FakeElement, token: string): FakeElement[] {
 
 /** The gesture: a real `KeyboardEvent` press, which is what starts stage 2. */
 function gesture(): void {
-    fireKey('keydown', { key: 'x', code: 'KeyX' });
+    env.fireKey('keydown', { key: 'x', code: 'KeyX' });
 }
 
 /** Every move made on `el`, newest last. */
@@ -565,7 +255,7 @@ describe('the layer it builds', () => {
 
     it('makes no move before it is played', () => {
         rig();
-        expect(allAnimations).toHaveLength(0);
+        expect(env.animations).toHaveLength(0);
     });
 });
 
@@ -603,29 +293,29 @@ describe('stage 1: black, and the skull', () => {
     it('makes exactly two moves and plays no sound', () => {
         const r = rig();
         r.splash.play();
-        expect(allAnimations).toHaveLength(2);
+        expect(env.animations).toHaveLength(2);
         expect(r.sounds.calls).toEqual([]);
     });
 
     it('listens on keydown and pointerdown once played', () => {
         const r = rig();
-        expect(windowListeners.get('keydown')).toBeUndefined();
+        expect(env.windowListeners.get('keydown')).toBeUndefined();
         r.splash.play();
-        expect(windowListeners.get('keydown')).toHaveLength(1);
-        expect(windowListeners.get('pointerdown')).toHaveLength(1);
+        expect(env.windowListeners.get('keydown')).toHaveLength(1);
+        expect(env.windowListeners.get('pointerdown')).toHaveLength(1);
     });
 
     it('listens once however often it is played', () => {
         const r = rig();
         r.splash.play();
         r.splash.play();
-        expect(windowListeners.get('keydown')).toHaveLength(1);
+        expect(env.windowListeners.get('keydown')).toHaveLength(1);
     });
 
     it('waits: nothing is scheduled before the gesture', () => {
         const r = rig();
         r.splash.play();
-        expect(pendingTimers()).toBe(0);
+        expect(env.pendingTimers()).toBe(0);
         expect(r.gestures).toHaveLength(0);
     });
 });
@@ -644,14 +334,14 @@ describe('the gesture', () => {
     it('is a click as well as a key', () => {
         const r = rig();
         r.splash.play();
-        fireWindow('pointerdown');
+        env.fireWindow('pointerdown');
         expect(r.gestures).toHaveLength(1);
     });
 
     it('is not a lone modifier', () => {
         const r = rig();
         r.splash.play();
-        for (const key of ['Shift', 'Control', 'Alt', 'Meta']) fireKey('keydown', { key });
+        for (const key of ['Shift', 'Control', 'Alt', 'Meta']) env.fireKey('keydown', { key });
         expect(r.gestures).toHaveLength(0);
         gesture();
         expect(r.gestures).toHaveLength(1);
@@ -681,8 +371,8 @@ describe('the gesture', () => {
         r.splash.play();
         gesture();
         // Nine steps: two flies, three flashes, three shakes, three hits, the rule, the
-        // shock, the light, the reveal and the fade -- fourteen timers in all.
-        expect(pendingTimers()).toBe(14);
+        // shock, the light, the reveal and the fade -- fourteen env.timers in all.
+        expect(env.pendingTimers()).toBe(14);
     });
 });
 
@@ -694,9 +384,9 @@ describe('stage 2: the collision', () => {
         r.splash.play();
         gesture();
         const protocol = findAll(boxOf(r), 'splash__piece')[1]!;
-        runTo(0.29);
+        env.runTo(0.29);
         expect(movesOn(protocol)).toHaveLength(0);
-        runTo(0.3);
+        env.runTo(0.3);
         expect(movesOn(protocol)).toHaveLength(1);
         expect(movesOn(protocol)[0]!.frames[0]!['transform']).toBe('translateX(140vw)');
         expect(movesOn(protocol)[0]!.options['duration']).toBe(320);
@@ -708,7 +398,7 @@ describe('stage 2: the collision', () => {
         gesture();
         const protocol = findAll(boxOf(r), 'splash__piece')[1]!;
         expect(protocol.style['visibility']).toBeUndefined();
-        runTo(0.3);
+        env.runTo(0.3);
         expect(protocol.style['visibility']).toBe('visible');
     });
 
@@ -717,7 +407,7 @@ describe('stage 2: the collision', () => {
         boxOf(r).clientWidth = 1024;
         r.splash.play();
         gesture();
-        runTo(0.62);
+        env.runTo(0.62);
         expect(r.sounds.calls).toEqual(['hit0']);
         const [skull, protocol] = findAll(boxOf(r), 'splash__piece');
         // The push: from the shift, a little past the mark, and back.
@@ -736,9 +426,9 @@ describe('stage 2: the collision', () => {
         r.splash.play();
         gesture();
         const seven = findAll(boxOf(r), 'splash__piece')[3]!;
-        runTo(1.1);
+        env.runTo(1.1);
         expect(movesOn(seven)).toHaveLength(1);
-        runTo(1.42);
+        env.runTo(1.42);
         expect(r.sounds.calls).toEqual(['hit0', 'hit1']);
         expect(movesOn(seven)).toHaveLength(2);
     });
@@ -747,9 +437,9 @@ describe('stage 2: the collision', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(0.62);
+        env.runTo(0.62);
         const after = movesOn(findAll(boxOf(r), 'splash__piece')[0]!).length;
-        runTo(1.42);
+        env.runTo(1.42);
         expect(movesOn(findAll(boxOf(r), 'splash__piece')[0]!)).toHaveLength(after);
     });
 
@@ -757,9 +447,9 @@ describe('stage 2: the collision', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(0.62);
+        env.runTo(0.62);
         const first = movesOn(boxOf(r))[0]!.frames[1]!['transform'] as string;
-        runTo(1.42);
+        env.runTo(1.42);
         const second = movesOn(boxOf(r))[1]!.frames[1]!['transform'] as string;
         expect(first).toBe('translate(7px, -4.2px)');
         expect(second).toBe('translate(9px, -5.3999999999999995px)');
@@ -769,7 +459,7 @@ describe('stage 2: the collision', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(1.7);
+        env.runTo(1.7);
         expect(r.sounds.calls).toEqual(['hit0', 'hit1', 'hit2']);
         const rule = findAll(boxOf(r), 'splash__piece')[2]!;
         expect(rule.style['visibility']).toBe('visible');
@@ -782,7 +472,7 @@ describe('stage 2: the collision', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(1.7);
+        env.runTo(1.7);
         const shakes = movesOn(boxOf(r));
         expect(shakes).toHaveLength(3);
         expect(shakes[2]!.frames[1]!['transform']).toBe('translate(5px, -3px)');
@@ -796,7 +486,7 @@ describe('stage 3: the shockwave', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(2.1);
+        env.runTo(2.1);
         expect(r.sounds.calls).toContain('shock');
         const rings = findAll(boxOf(r), 'splash__ring');
         expect(rings[0]!.anims).toHaveLength(1);
@@ -810,7 +500,7 @@ describe('stage 3: the shockwave', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(2.1);
+        env.runTo(2.1);
         const frames = findAll(boxOf(r), 'splash__ring')[0]!.anims[0]!.frames;
         expect(frames[0]!['transform']).toBe('translate(-50%, -50%) scale(0.12)');
         expect(frames[1]!['transform']).toBe('translate(-50%, -50%) scale(3.4)');
@@ -821,7 +511,7 @@ describe('stage 3: the shockwave', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(2.1);
+        env.runTo(2.1);
         expect(find(boxOf(r), 'splash__halo').anims).toHaveLength(0);
     });
 });
@@ -833,7 +523,7 @@ describe('stage 4: the light', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(3.5);
+        env.runTo(3.5);
         expect(r.sounds.calls).toEqual(['hit0', 'hit1', 'hit2', 'shock', 'chime']);
         for (const piece of findAll(boxOf(r), 'splash__piece')) {
             const glow = piece.anims[piece.anims.length - 1]!;
@@ -846,9 +536,9 @@ describe('stage 4: the light', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(1.7);
+        env.runTo(1.7);
         const first = find(boxOf(r), 'splash__eyes').anims.length;
-        runTo(3.5);
+        env.runTo(3.5);
         const eyes = find(boxOf(r), 'splash__eyes');
         expect(eyes.anims).toHaveLength(first + 1);
         expect(eyes.anims[first]!.options['duration']).toBe(1200);
@@ -858,7 +548,7 @@ describe('stage 4: the light', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(3.5);
+        env.runTo(3.5);
         expect(durations(find(boxOf(r), 'splash__halo'))).toEqual([1100]);
         const sparks = findAll(boxOf(r), 'splash__spark');
         for (const spark of sparks) expect(spark.anims).toHaveLength(1);
@@ -868,7 +558,7 @@ describe('stage 4: the light', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(3.5);
+        env.runTo(3.5);
         const sparks = findAll(boxOf(r), 'splash__spark');
         expect(sparks[0]!.anims[0]!.options['delay']).toBe(0);
         expect(sparks[1]!.anims[0]!.options['delay']).toBe(23);
@@ -880,7 +570,7 @@ describe('stage 4: the light', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(3.5);
+        env.runTo(3.5);
         const frames = findAll(boxOf(r), 'splash__spark')[0]!.anims[0]!.frames;
         expect(frames[0]!['transform']).toContain('rotate(var(--angle))');
         expect(frames[1]!['offset']).toBe(0.25);
@@ -895,9 +585,9 @@ describe('the reveal and the fade', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(4.19);
+        env.runTo(4.19);
         expect(r.reveals).toHaveLength(0);
-        runTo(4.2);
+        env.runTo(4.2);
         expect(r.reveals).toHaveLength(1);
     });
 
@@ -905,7 +595,7 @@ describe('the reveal and the fade', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(4.3);
+        env.runTo(4.3);
         const fades = movesOn(layerOf(r));
         expect(fades).toHaveLength(1);
         // fadeEnd 5.2 - reveal 4.2 - 0.1 = 0.9 s.
@@ -917,7 +607,7 @@ describe('the reveal and the fade', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(4.3);
+        env.runTo(4.3);
         expect(r.host.children).toHaveLength(1);
         movesOn(layerOf(r))[0]!.finish();
         expect(r.host.children).toHaveLength(0);
@@ -928,7 +618,7 @@ describe('the reveal and the fade', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(4.3);
+        env.runTo(4.3);
         movesOn(layerOf(r))[0]!.cancel();
         expect(r.dones).toHaveLength(1);
     });
@@ -937,15 +627,15 @@ describe('the reveal and the fade', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(4.3);
-        expect(windowListeners.get('keydown')).toHaveLength(0);
+        env.runTo(4.3);
+        expect(env.windowListeners.get('keydown')).toHaveLength(0);
     });
 
     it('reveals once, however often it is asked', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(4.2);
+        env.runTo(4.2);
         r.splash.skip();
         expect(r.reveals).toHaveLength(1);
     });
@@ -958,18 +648,18 @@ describe('the skip', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(0.62);
-        expect(pendingTimers()).toBeGreaterThan(0);
+        env.runTo(0.62);
+        expect(env.pendingTimers()).toBeGreaterThan(0);
         r.splash.skip();
-        expect(pendingTimers()).toBe(0);
+        expect(env.pendingTimers()).toBe(0);
     });
 
     it('finishes the moves already running rather than cancelling them', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(0.62);
-        const tracked = allAnimations.filter((a) => a.el !== layerOf(r));
+        env.runTo(0.62);
+        const tracked = env.animations.filter((a) => a.el !== layerOf(r));
         r.splash.skip();
         expect(tracked.some((a) => a.finished)).toBe(true);
         expect(tracked.every((a) => !a.cancelled)).toBe(true);
@@ -979,7 +669,7 @@ describe('the skip', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(0.62);
+        env.runTo(0.62);
         r.splash.skip();
         expect(r.reveals).toHaveLength(1);
         expect(durations(layerOf(r))).toEqual([450]);
@@ -989,10 +679,10 @@ describe('the skip', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(0.62);
+        env.runTo(0.62);
         r.splash.skip();
         const before = [...r.sounds.calls];
-        runTo(5);
+        env.runTo(5);
         expect(r.sounds.calls).toEqual(before);
     });
 
@@ -1009,7 +699,7 @@ describe('the skip', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(4.3);
+        env.runTo(4.3);
         const moves = movesOn(layerOf(r)).length;
         r.splash.skip();
         expect(movesOn(layerOf(r))).toHaveLength(moves);
@@ -1020,30 +710,30 @@ describe('the skip', () => {
 
 describe('prefers-reduced-motion', () => {
     it('goes from the gesture to the fade with the chime alone', () => {
-        reducedMotion = true;
+        env.reducedMotion = true;
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(0.5);
+        env.runTo(0.5);
         expect(r.sounds.calls).toEqual(['chime']);
         expect(r.reveals).toHaveLength(1);
         expect(durations(layerOf(r))).toEqual([900]);
     });
 
     it('schedules three steps, not fourteen', () => {
-        reducedMotion = true;
+        env.reducedMotion = true;
         const r = rig();
         r.splash.play();
         gesture();
-        expect(pendingTimers()).toBe(3);
+        expect(env.pendingTimers()).toBe(3);
     });
 
     it('moves none of the four pieces', () => {
-        reducedMotion = true;
+        env.reducedMotion = true;
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(5);
+        env.runTo(5);
         const pieces = findAll(boxOf(r), 'splash__piece');
         // Only the skull's own fade-in from stage 1, which runs either way.
         expect(pieces[0]!.anims).toHaveLength(1);
@@ -1053,7 +743,7 @@ describe('prefers-reduced-motion', () => {
     });
 
     it('still fades the prompt out', () => {
-        reducedMotion = true;
+        env.reducedMotion = true;
         const r = rig();
         r.splash.play();
         gesture();
@@ -1076,15 +766,15 @@ describe('disposal', () => {
         r.splash.play();
         gesture();
         r.splash.dispose();
-        expect(pendingTimers()).toBe(0);
+        expect(env.pendingTimers()).toBe(0);
     });
 
     it('cancels the moves rather than finishing them', () => {
         const r = rig();
         r.splash.play();
         gesture();
-        runTo(0.62);
-        const tracked = allAnimations.filter((a) => a.el !== layerOf(r));
+        env.runTo(0.62);
+        const tracked = env.animations.filter((a) => a.el !== layerOf(r));
         r.splash.dispose();
         expect(tracked.some((a) => a.cancelled)).toBe(true);
         expect(tracked.every((a) => !a.finished)).toBe(true);
@@ -1094,7 +784,7 @@ describe('disposal', () => {
         const r = rig();
         r.splash.play();
         r.splash.dispose();
-        expect(windowListeners.get('keydown')).toHaveLength(0);
+        expect(env.windowListeners.get('keydown')).toHaveLength(0);
     });
 
     it('does not say it is done: nobody revealed anything', () => {

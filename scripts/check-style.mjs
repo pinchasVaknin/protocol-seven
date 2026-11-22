@@ -567,6 +567,7 @@ const FINISHED = {
     'src/shared/core/RaySlab.ts',
     'src/shared/core/Vocabulary.ts',
     'src/client/ui/Dom.ts',
+    'src/client/ui/testing/dom.ts',
   ],
   C23: [
     'src/client/Game.ts',

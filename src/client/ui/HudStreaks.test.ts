@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { STREAK_COOLDOWN_SECONDS } from '../../shared/streaks/StreakDefs';
 import { HudStreaks, makeStreakHudState, type StreakHudState } from './HudStreaks';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the streak strip, the objective banner and the alive strip
@@ -13,62 +14,22 @@ import { HudStreaks, makeStreakHudState, type StreakHudState } from './HudStreak
 
 // ---------------------------------------------------------------------------- the DOM double
 
-class FakeElement {
-  readonly tokens = new Set<string>();
-  /** Unset properties read back as `''`, which is what a real `CSSStyleDeclaration` does. */
-  readonly style: Record<string, string> = { opacity: '', transform: '', visibility: '' };
-  readonly children: FakeElement[] = [];
-  textContent = '';
-  hidden = false;
-  parent: FakeElement | null = null;
+/**
+ * The element class is shared: `ui/testing/dom.ts` (BACKLOG #79).
+ *
+ * What stood here was 66 lines of it. The environment is still this file's own, and still
+ * only the two globals this suite needs -- the shared `installFakeDom` would also install a
+ * `window`, a `localStorage` and a fake clock, and a suite that runs without them today is not
+ * a suite to hand them to on the way past.
+ *
+ * The style seed is what this file's own double carried, for the reason the constructor gives:
+ * an untouched key reads back as `''`, and this suite asserts on that.
+ */
 
-  constructor(readonly tag: string) {}
-
-  get className(): string {
-    return [...this.tokens].join(' ');
-  }
-
-  set className(value: string) {
-    this.tokens.clear();
-    for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-  }
-
-  readonly classList = {
-    toggle: (token: string, on?: boolean): void => {
-      const want = on ?? !this.tokens.has(token);
-      if (want) this.tokens.add(token);
-      else this.tokens.delete(token);
-    },
-    add: (token: string): void => void this.tokens.add(token),
-    remove: (token: string): void => void this.tokens.delete(token),
-    contains: (token: string): boolean => this.tokens.has(token),
-  };
-
-  appendChild(child: FakeElement): FakeElement {
-    child.parent = this;
-    this.children.push(child);
-    return child;
-  }
-
-  append(...nodes: FakeElement[]): void {
-    for (const node of nodes) this.appendChild(node);
-  }
-
-  get firstElementChild(): FakeElement | null {
-    return this.children[0] ?? null;
-  }
-
-  remove(): void {
-    const siblings = this.parent?.children;
-    if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-    this.parent = null;
-  }
-}
+const element = (tag: string): FakeElement => new FakeElement(tag, { opacity: '', transform: '', visibility: '' });
 
 beforeEach(() => {
-  (globalThis as Record<string, unknown>).document = {
-    createElement: (tag: string) => new FakeElement(tag),
-  };
+  (globalThis as Record<string, unknown>).document = { createElement: element };
   (globalThis as Record<string, unknown>).HTMLElement = FakeElement;
 });
 

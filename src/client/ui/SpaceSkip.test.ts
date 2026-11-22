@@ -7,6 +7,7 @@ import {
     SKIP_TAP_WINDOW_SECONDS,
 } from '../../shared/ui/SkipGesture';
 import { SpaceSkip } from './SpaceSkip';
+import { installFakeDom, type FakeDom, type FakeEvent } from './testing/dom';
 
 /**
  * Characterization tests for the Space key adapter (refactor unit C19, written before the
@@ -16,303 +17,26 @@ import { SpaceSkip } from './SpaceSkip';
  * browser -- three window listeners, the key test that takes `key` as well as `code`, the
  * repeat that is not a press, and the `enabled` gate that the debrief's second of grace is.
  *
- * The clock is `performance.now`, which is the rig's: a hold is `nowMs += 200`, not a wait.
+ * The clock is `performance.now`, which is the rig's: a hold is `env.nowMs += 200`, not a wait.
  */
 
 // ---------------------------------------------------------------------------- the DOM double
 
-type Listener = (event: FakeEvent) => void;
+/**
+ * The element class and the environment are shared: `ui/testing/dom.ts` (BACKLOG #79).
+ *
+ * What stood here was 296 lines of hand-grown double. It is the same double -- the file it
+ * moved to was written from this one -- so nothing this suite sees has changed.
+ */
 
-interface FakeEvent {
-    key?: string;
-    code?: string;
-    repeat?: boolean;
-    preventDefault: () => void;
-    stopPropagation: () => void;
-}
-
-/** One move handed back by `element.animate`, with the hooks the splash uses on it. */
-class FakeAnimation {
-    onfinish: null | (() => void) = null;
-    oncancel: null | (() => void) = null;
-    playbackRate = 1;
-    cancelled = false;
-    finished = false;
-
-    constructor(
-        readonly el: FakeElement,
-        readonly frames: readonly Record<string, unknown>[],
-        readonly options: Record<string, unknown>,
-    ) {}
-
-    /** What `skip` does to a move already running: run it out, do not throw it away. */
-    finish(): void {
-        this.finished = true;
-        this.onfinish?.();
-    }
-
-    cancel(): void {
-        this.cancelled = true;
-        this.oncancel?.();
-    }
-}
-
-class FakeElement {
-    readonly tokens = new Set<string>();
-    readonly children: FakeElement[] = [];
-    readonly attributes = new Map<string, string>();
-    readonly listeners = new Map<string, Listener[]>();
-    readonly dataset: Record<string, string> = {};
-    readonly anims: FakeAnimation[] = [];
-    readonly style: Record<string, string> & { setProperty: (n: string, v: string) => void } = Object.assign(
-        {} as Record<string, string>,
-        {
-            setProperty: (n: string, v: string): void => {
-                this.style[n] = v;
-            },
-        },
-    );
-
-    textContent = '';
-    hidden = false;
-    disabled = false;
-    type = '';
-    value = '';
-    title = '';
-    src = '';
-    alt = '';
-    draggable = true;
-    width = 0;
-    height = 0;
-    offsetWidth = 200;
-    offsetHeight = 40;
-    /** `Splash.skullShift` measures the box with this; 0 unless a test sets it. */
-    clientWidth = 0;
-    clientHeight = 0;
-    parent: FakeElement | null = null;
-    rect = { left: 0, top: 0, right: 200, bottom: 40, width: 200, height: 40 };
-
-    constructor(readonly tag: string) {}
-
-    get className(): string {
-        return [...this.tokens].join(' ');
-    }
-
-    set className(value: string) {
-        this.tokens.clear();
-        for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-    }
-
-    readonly classList = {
-        add: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.add(token);
-        },
-        remove: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.delete(token);
-        },
-        toggle: (token: string, on?: boolean): void => {
-            if (on ?? !this.tokens.has(token)) this.tokens.add(token);
-            else this.tokens.delete(token);
-        },
-        contains: (token: string): boolean => this.tokens.has(token),
-    };
-
-    /** The Web Animations API. Every move the splash makes lands in `anims`, in order. */
-    animate(frames: readonly Record<string, unknown>[], options: Record<string, unknown>): FakeAnimation {
-        const anim = new FakeAnimation(this, frames, options);
-        this.anims.push(anim);
-        allAnimations.push(anim);
-        return anim;
-    }
-
-    appendChild(child: FakeElement): FakeElement {
-        child.parent = this;
-        this.children.push(child);
-        return child;
-    }
-
-    append(...nodes: FakeElement[]): void {
-        for (const node of nodes) this.appendChild(node);
-    }
-
-    replaceChildren(...nodes: FakeElement[]): void {
-        for (const child of this.children) child.parent = null;
-        this.children.length = 0;
-        this.append(...nodes);
-    }
-
-    remove(): void {
-        const siblings = this.parent?.children;
-        if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-        this.parent = null;
-    }
-
-    get childElementCount(): number {
-        return this.children.length;
-    }
-
-    get firstElementChild(): FakeElement | null {
-        return this.children[0] ?? null;
-    }
-
-    /**
-     * `setAttribute('class', …)` writes the token set, as a real element's does.
-     *
-     * This is how `makeIconSvg` names its icons: an SVG element has no settable `className`,
-     * so every glyph in the project is classed by attribute, and a double that did not
-     * reflect it would hide every icon from `querySelector`.
-     */
-    setAttribute(name: string, value: string): void {
-        this.attributes.set(name, value);
-        if (name === 'class') this.className = value;
-    }
-
-    getAttribute(name: string): string | null {
-        return this.attributes.get(name) ?? null;
-    }
-
-    removeAttribute(name: string): void {
-        this.attributes.delete(name);
-    }
-
-    addEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) this.listeners.set(type, [fn]);
-        else held.push(fn);
-    }
-
-    removeEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) return;
-        const at = held.indexOf(fn);
-        if (at >= 0) held.splice(at, 1);
-    }
-
-    getContext(): unknown {
-        return null;
-    }
-
-    getBoundingClientRect(): FakeElement['rect'] {
-        return this.rect;
-    }
-
-    focus(): void {}
-    blur(): void {}
-
-    querySelector(selector: string): FakeElement | null {
-        return this.queryAll(selector)[0] ?? null;
-    }
-
-    querySelectorAll(selector: string): FakeElement[] {
-        return this.queryAll(selector);
-    }
-
-    private queryAll(selector: string): FakeElement[] {
-        const token = selector.replace(/^\./, '');
-        const out: FakeElement[] = [];
-        const walk = (el: FakeElement): void => {
-            if (el.tokens.has(token)) out.push(el);
-            for (const child of el.children) walk(child);
-        };
-        for (const child of this.children) walk(child);
-        return out;
-    }
-}
-
-// ---------------------------------------------------------------------------- the environment
-
-let windowListeners: Map<string, Listener[]>;
-let timers: { readonly at: number; readonly fn: () => void; cancelled: boolean }[];
-let allAnimations: FakeAnimation[];
-let nowMs = 0;
-/** What `window.matchMedia('(prefers-reduced-motion: reduce)')` answers. */
-let reducedMotion = false;
-
-/** A keydown on `window`. Not a `KeyboardEvent` instance -- use `fireKey` for that. */
-function fireWindow(type: string, over: Partial<FakeEvent> = {}): void {
-    const event: FakeEvent = { preventDefault: () => undefined, stopPropagation: () => undefined, ...over };
-    for (const fn of [...(windowListeners.get(type) ?? [])]) fn(event);
-}
-
-class FakeKeyboardEvent {}
+let env: FakeDom;
 
 beforeEach(() => {
-    windowListeners = new Map();
-    timers = [];
-    allAnimations = [];
-    nowMs = 100_000;
-    const storage = new Map<string, string>();
-    const store = {
-        getItem: (k: string): string | null => storage.get(k) ?? null,
-        setItem: (k: string, v: string): void => {
-            storage.set(k, v);
-        },
-        removeItem: (k: string): void => {
-            storage.delete(k);
-        },
-        clear: (): void => storage.clear(),
-        key: (i: number): string | null => [...storage.keys()][i] ?? null,
-        get length(): number {
-            return storage.size;
-        },
-    };
-    const setTimer = (fn: () => void, ms = 0): number => {
-        timers.push({ at: nowMs + ms, fn, cancelled: false });
-        return timers.length;
-    };
-    const clearTimer = (id: number): void => {
-        const timer = timers[id - 1];
-        if (timer !== undefined) timer.cancelled = true;
-    };
-    (globalThis as Record<string, unknown>)['document'] = {
-        createElement: (tag: string) => new FakeElement(tag),
-        createElementNS: (_ns: string, tag: string) => new FakeElement(tag),
-        documentElement: new FakeElement('html'),
-        activeElement: null,
-    };
-    (globalThis as Record<string, unknown>)['HTMLElement'] = FakeElement;
-    (globalThis as Record<string, unknown>)['KeyboardEvent'] = FakeKeyboardEvent;
-    (globalThis as Record<string, unknown>)['localStorage'] = store;
-    (globalThis as Record<string, unknown>)['setTimeout'] = setTimer;
-    (globalThis as Record<string, unknown>)['clearTimeout'] = clearTimer;
-    (globalThis as Record<string, unknown>)['window'] = {
-        localStorage: store,
-        setTimeout: setTimer,
-        clearTimeout: clearTimer,
-        matchMedia: (query: string) => ({ matches: reducedMotion, media: query }),
-        addEventListener: (type: string, fn: Listener): void => {
-            const held = windowListeners.get(type);
-            if (held === undefined) windowListeners.set(type, [fn]);
-            else held.push(fn);
-        },
-        removeEventListener: (type: string, fn: Listener): void => {
-            const held = windowListeners.get(type);
-            if (held === undefined) return;
-            const at = held.indexOf(fn);
-            if (at >= 0) held.splice(at, 1);
-        },
-    };
-    (globalThis as Record<string, unknown>)['performance'] = { now: () => nowMs };
-    (globalThis as Record<string, unknown>)['requestAnimationFrame'] = (): number => 1;
-    (globalThis as Record<string, unknown>)['cancelAnimationFrame'] = (): void => undefined;
+    env = installFakeDom();
 });
 
 afterEach(() => {
-    reducedMotion = false;
-    for (const key of [
-        'document',
-        'HTMLElement',
-        'KeyboardEvent',
-        'localStorage',
-        'setTimeout',
-        'clearTimeout',
-        'window',
-        'performance',
-        'requestAnimationFrame',
-        'cancelAnimationFrame',
-    ]) {
-        delete (globalThis as Record<string, unknown>)[key];
-    }
+    env.restore();
 });
 
 // ---------------------------------------------------------------------------- the rig
@@ -330,7 +54,7 @@ function rig(onLeave: boolean = true): Rig {
         enabled: () => state.enabled,
         onLeave: onLeave
             ? (): void => {
-                  leaves.push(nowMs);
+                  leaves.push(env.nowMs);
               }
             : null,
     });
@@ -348,15 +72,15 @@ function rig(onLeave: boolean = true): Rig {
 
 /** Advance the clock by seconds. */
 function wait(seconds: number): void {
-    nowMs += seconds * 1000;
+    env.nowMs += seconds * 1000;
 }
 
 function down(over: Partial<FakeEvent> = { code: 'Space' }): void {
-    fireWindow('keydown', over);
+    env.fireWindow('keydown', over);
 }
 
 function up(over: Partial<FakeEvent> = { code: 'Space' }): void {
-    fireWindow('keyup', over);
+    env.fireWindow('keyup', over);
 }
 
 /** One tap: down, a moment, up. Shorter than the hold threshold. */
@@ -371,31 +95,31 @@ function tap(): void {
 describe('listening', () => {
     it('listens on nothing until asked', () => {
         rig();
-        expect(windowListeners.size).toBe(0);
+        expect(env.windowListeners.size).toBe(0);
     });
 
     it('takes keydown, keyup and blur', () => {
         const r = rig();
         r.skip.listen();
-        expect(windowListeners.get('keydown')).toHaveLength(1);
-        expect(windowListeners.get('keyup')).toHaveLength(1);
-        expect(windowListeners.get('blur')).toHaveLength(1);
+        expect(env.windowListeners.get('keydown')).toHaveLength(1);
+        expect(env.windowListeners.get('keyup')).toHaveLength(1);
+        expect(env.windowListeners.get('blur')).toHaveLength(1);
     });
 
     it('listens once however often it is asked', () => {
         const r = rig();
         r.skip.listen();
         r.skip.listen();
-        expect(windowListeners.get('keydown')).toHaveLength(1);
+        expect(env.windowListeners.get('keydown')).toHaveLength(1);
     });
 
     it('gives all three back', () => {
         const r = rig();
         r.skip.listen();
         r.skip.unlisten();
-        expect(windowListeners.get('keydown')).toHaveLength(0);
-        expect(windowListeners.get('keyup')).toHaveLength(0);
-        expect(windowListeners.get('blur')).toHaveLength(0);
+        expect(env.windowListeners.get('keydown')).toHaveLength(0);
+        expect(env.windowListeners.get('keyup')).toHaveLength(0);
+        expect(env.windowListeners.get('blur')).toHaveLength(0);
     });
 
     it('is safe to unlisten twice, and before listening', () => {
@@ -404,7 +128,7 @@ describe('listening', () => {
         r.skip.listen();
         r.skip.unlisten();
         r.skip.unlisten();
-        expect(windowListeners.get('keydown')).toHaveLength(0);
+        expect(env.windowListeners.get('keydown')).toHaveLength(0);
     });
 
     it('forgets whatever was held when it stops listening', () => {
@@ -472,7 +196,7 @@ describe('which key it takes', () => {
         r.enabled = false;
         let prevented = 0;
         let stopped = 0;
-        fireWindow('keydown', {
+        env.fireWindow('keydown', {
             code: 'Space',
             preventDefault: () => {
                 prevented++;
@@ -489,7 +213,7 @@ describe('which key it takes', () => {
         const r = rig();
         r.skip.listen();
         let prevented = 0;
-        fireWindow('keydown', {
+        env.fireWindow('keydown', {
             code: 'KeyW',
             preventDefault: () => {
                 prevented++;
@@ -718,7 +442,7 @@ describe('losing focus', () => {
         down();
         wait(0.3);
         expect(r.skip.holding).toBe(true);
-        fireWindow('blur');
+        env.fireWindow('blur');
         expect(r.skip.holding).toBe(false);
         expect(r.skip.boost(0.016)).toBe(0);
     });
@@ -728,7 +452,7 @@ describe('losing focus', () => {
         r.skip.listen();
         tap();
         tap();
-        fireWindow('blur');
+        env.fireWindow('blur');
         tap();
         expect(r.leaves).toEqual([]);
     });
@@ -739,7 +463,7 @@ describe('losing focus', () => {
         tap();
         tap();
         down();
-        fireWindow('blur');
+        env.fireWindow('blur');
         up();
         expect(r.leaves).toEqual([]);
     });
@@ -771,6 +495,6 @@ describe('reset', () => {
         const r = rig();
         r.skip.listen();
         r.skip.reset();
-        expect(windowListeners.get('keydown')).toHaveLength(1);
+        expect(env.windowListeners.get('keydown')).toHaveLength(1);
     });
 });

@@ -12,6 +12,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam, HitZone } from '../core/Vocabulary';
 import { nowMs } from '../core/Clock';
 import { EV, type GameBus } from '../core/Events';
 import { DEG2RAD, clamp01, lerp } from '../core/MathUtil';
@@ -20,7 +21,7 @@ import { isHostile } from './Hostility';
 import { PLAYER_ENTITY_ID } from './LocalIdentity';
 import type { Health } from '../player/Health';
 import type { ShieldProfile, WeaponDef } from '../weapons/WeaponDefs';
-import type { HitboxRig, HitZone } from './HitboxRig';
+import type { HitboxRig } from './HitboxRig';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -34,11 +35,12 @@ export interface Damageable {
    * Which side this target is on, or absent for anything that is not on one — M2's range
    * dummies are damageable and belong to nobody.
    *
-   * Written as the literal union rather than importing `BotTeam` from `ai/`: `combat/`
-   * sits below `ai/` and should not depend upward on it. The two are structurally
-   * identical, so a `Combatant` satisfies this without a cast.
+   * `BotTeam`, at last. This was the literal union `'A' | 'B'` with a comment saying `combat/`
+   * sits below `ai/` and must not depend upward on it, which was true and is the workaround
+   * BACKLOG #2 was opened about: the word lived in `ai/Combatant` and the layer that needed it
+   * could not reach it. It lives in `core/Vocabulary` now, which is below both.
    */
-  readonly team?: 'A' | 'B';
+  readonly team?: BotTeam;
   /**
    * True while this entity cannot be hurt at all (M7 playtest).
    *

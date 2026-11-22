@@ -1,6 +1,6 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { BotTeam } from '../ai/Combatant';
+import type { BotTeam } from '../core/Vocabulary';
 import { DT } from '../core/Loop';
 import { Killstreak, type StreakContext } from './KillstreakBase';
 import type { StreakDef } from './StreakDefs';

@@ -1,5 +1,6 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotState, BotTeam, BotTier, StanceId } from '../core/Vocabulary';
 import type { SkinId } from '../meta/Skins';
 import { HitboxRig, HUMANOID_RIG, rigLayoutFor } from '../combat/HitboxRig';
 import type { DamageSystem } from '../combat/DamageSystem';
@@ -12,7 +13,6 @@ import type { ThrowPhase } from '../equipment/ThrowController';
 import { Health, type HealthConfig } from '../player/Health';
 import type { MovementConfig } from '../player/MovementConfig';
 import { PlayerController } from '../player/PlayerController';
-import type { StanceId } from '../player/Stance';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import type { ViewmodelConfig } from '../weapons/ViewmodelConfig';
 import { heldMoveScale, type WeaponDef } from '../weapons/WeaponDefs';
@@ -26,10 +26,9 @@ import {
   type ActorAnimationInput,
   type BotVisualState,
 } from './BotVisualState';
-import type { BotState } from './BotStates';
-import type { BotTeam, Combatant } from './Combatant';
+import type { Combatant } from './Combatant';
 import { CombatBehaviour } from './CombatBehaviour';
-import type { BotTier, PerceptionConfig, TierConfig, TierTable } from './DifficultyTiers';
+import type { PerceptionConfig, TierConfig, TierTable } from './DifficultyTiers';
 import { Path, type PathClient } from './Pathing';
 import { weaponProfileFor, type WeaponCombatProfile } from './WeaponProfile';
 //#endregion

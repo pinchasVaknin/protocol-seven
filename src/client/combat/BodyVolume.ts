@@ -1,5 +1,5 @@
+import type { StanceId } from '../../shared/core/Vocabulary';
 import { rigLayoutFor, type RigLayout } from '../../shared/combat/HitboxRig';
-import type { StanceId } from '../../shared/player/Stance';
 
 /**
  * Whether a point in the world is inside a body that is drawn there (2026-10-18).

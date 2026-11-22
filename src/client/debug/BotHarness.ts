@@ -1,4 +1,5 @@
-import { BOT_TIERS, type BotTier } from '../../shared/ai/DifficultyTiers';
+import type { BotTier } from '../../shared/core/Vocabulary';
+import { BOT_TIERS } from '../../shared/ai/DifficultyTiers';
 import type { GameModeId } from '../../shared/modes/GameMode';
 import { MODES } from '../../shared/modes/ModeRegistry';
 import type { Loop } from '../engine/FrameLoop';

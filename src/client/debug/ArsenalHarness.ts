@@ -1,5 +1,6 @@
+import type { HitZone } from '../../shared/core/Vocabulary';
 import { DamageSystem } from '../../shared/combat/DamageSystem';
-import { HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
+import { HUMANOID_RIG } from '../../shared/combat/HitboxRig';
 import { TargetDummy, buildDummyMaterials, type DummyMaterials } from '../combat/TargetDummy';
 import { EventBus } from '../../shared/core/EventBus';
 import type { GameEvents } from '../../shared/core/Events';

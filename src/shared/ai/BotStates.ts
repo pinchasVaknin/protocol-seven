@@ -11,27 +11,13 @@
  * single door back into the machine.
  */
 
-// =========================================== TYPES ============================================ \\
-//#region Types
-export type BotState = (typeof BOT_STATES)[number];
+// ========================================== IMPORTS =========================================== \\
+//#region Imports
+import type { BotState } from '../core/Vocabulary';
 //#endregion
 
 // ========================================= CONSTANTS ========================================== \\
 //#region Constants
-const BOT_STATES = [
-  'IDLE',
-  'PATROL',
-  'INVESTIGATE',
-  'ENGAGE',
-  'SUPPRESS',
-  'RELOAD',
-  'SEEK_COVER',
-  'FLANK',
-  'PUSH',
-  'OBJECTIVE',
-  'DEAD',
-] as const;
-
 /**
  * Legal edges.
  *

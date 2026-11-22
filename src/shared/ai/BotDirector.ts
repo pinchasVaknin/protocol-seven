@@ -17,6 +17,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam, BotTier } from '../core/Vocabulary';
 import type { DamageSystem } from '../combat/DamageSystem';
 import { logger } from '../core/Log';
 import { EV, type GameBus, type GameEvents } from '../core/Events';
@@ -39,10 +40,10 @@ import { AiScheduler, type SchedulerConfig } from './AiScheduler';
 import { Bot } from './Bot';
 import { drawBotWeapon } from './BotArsenal';
 import type { BrainDeps } from './BotBrain';
-import type { BotTeam, Combatant } from './Combatant';
+import type { Combatant } from './Combatant';
 import { CoverIndex } from './Cover';
 import type { ObjectiveProvider } from './ObjectiveIntent';
-import { BOT_TIERS, type BotTier, type PerceptionConfig, type TierTable } from './DifficultyTiers';
+import { BOT_TIERS, type PerceptionConfig, type TierTable } from './DifficultyTiers';
 import { NoiseKind, Perception } from './Perception';
 import { Pathfinder } from './Pathing';
 import { dealTiers, seatToVacate } from './RosterDeal';

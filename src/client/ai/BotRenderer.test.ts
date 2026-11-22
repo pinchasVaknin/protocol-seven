@@ -1,7 +1,7 @@
+import type { BotTeam } from '../../shared/core/Vocabulary';
 import * as THREE from 'three';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeBotVisualState, type ActorAnimationInput, type RenderableActor } from '../../shared/ai/BotVisualState';
-import type { BotTeam } from '../../shared/ai/Combatant';
 import { NO_SPECTATOR_TARGET } from '../../shared/modes/SpectatorTarget';
 import type { ViewerContext } from '../../shared/ui/TeamColour';
 import type { ActorAvatar } from '../characters/ActorAvatar';

@@ -1,8 +1,9 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam, BotTier } from '../shared/core/Vocabulary';
 import { DEFAULT_SCHEDULER, type SchedulerConfig } from '../shared/ai/AiScheduler';
 import { BOT_ID_BASE, BotDirector, RESPAWN_SECONDS } from '../shared/ai/BotDirector';
-import type { BotTeam, Combatant } from '../shared/ai/Combatant';
+import type { Combatant } from '../shared/ai/Combatant';
 import { tierForExtraBot } from '../shared/ai/RosterDeal';
 import type { CheatGrants } from '../shared/cheats/Cheats';
 import { hitsFrom, shotsFrom } from '../shared/combat/ShotAccounting';
@@ -34,7 +35,6 @@ import {
   DEFAULT_TIERS,
   tiersFor,
   type BotDifficulty,
-  type BotTier,
   type PerceptionConfig,
   type TierTable,
 } from '../shared/ai/DifficultyTiers';

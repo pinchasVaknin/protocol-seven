@@ -1,3 +1,4 @@
+import type { StanceId } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_MOVEMENT_CONFIG } from './MovementConfig';
 import {
@@ -8,7 +9,6 @@ import {
   LOCOMOTION_IDLE_SPEED,
   LOCOMOTION_RUN_SPEED,
   STANCES,
-  type StanceId,
 } from './Stance';
 
 /**

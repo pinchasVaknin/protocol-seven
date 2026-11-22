@@ -1,6 +1,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { BotTeam, Combatant } from '../ai/Combatant';
+import type { BotTeam } from '../core/Vocabulary';
+import type { Combatant } from '../ai/Combatant';
 import { CombatBehaviour } from '../ai/CombatBehaviour';
 import { BotBlackboard } from '../ai/BotBlackboard';
 import type { TierConfig } from '../ai/DifficultyTiers';

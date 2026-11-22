@@ -12,7 +12,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { HitZone } from '../combat/HitboxRig';
+import type { HitZone } from '../core/Vocabulary';
 import { HIT_ZONES } from '../combat/HitboxRig';
 import { BAD, head, type BadFrame } from './MessageFrame';
 import { dequantPos, MsgS, quantPos } from './Protocol';

@@ -1,6 +1,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { BotTeam, Combatant } from '../ai/Combatant';
+import type { BotTeam } from '../core/Vocabulary';
+import type { Combatant } from '../ai/Combatant';
 import type { ObjectiveTarget } from '../ai/ObjectiveIntent';
 import { makeObjectiveTarget, type MutableObjectiveTarget } from '../ai/ObjectiveIntent';
 import { EV } from '../core/Events';

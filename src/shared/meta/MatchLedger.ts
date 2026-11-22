@@ -37,7 +37,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { HitZone } from '../combat/HitboxRig';
+import type { HitZone } from '../core/Vocabulary';
 import type { ScoreSystem } from '../combat/ScoreSystem';
 import { hitsFrom, shotsFrom } from '../combat/ShotAccounting';
 import { EV, type GameBus } from '../core/Events';

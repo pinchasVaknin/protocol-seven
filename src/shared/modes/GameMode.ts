@@ -16,9 +16,9 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { HitZone } from '../core/Vocabulary';
 import type { Combatant } from '../ai/Combatant';
 import type { ObjectiveZone } from './ObjectiveZone';
-import type { HitZone } from '../combat/HitboxRig';
 import { accuracy, killDeath, type PlayerScore, type ScoreSystem, type ScoreTeam } from '../combat/ScoreSystem';
 import type { GameBus } from '../core/Events';
 import { DT } from '../core/Loop';

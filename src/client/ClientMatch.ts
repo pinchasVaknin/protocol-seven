@@ -31,6 +31,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../shared/core/Vocabulary';
 import * as THREE from 'three';
 import type { ViewerContext } from '../shared/ui/TeamColour';
 import type { SchedulerConfig } from '../shared/ai/AiScheduler';
@@ -38,7 +39,6 @@ import { BotDirector } from '../shared/ai/BotDirector';
 import { BotRenderer } from './ai/BotRenderer';
 import type { CharacterAvatarProviderResolver } from './characters/CharacterAvatarProvider';
 import type { RenderableActor } from '../shared/ai/BotVisualState';
-import type { BotTeam } from '../shared/ai/Combatant';
 import { tiersFor, type BotDifficulty, type PerceptionConfig, type TierTable } from '../shared/ai/DifficultyTiers';
 import { PlayerCombatant } from '../shared/ai/PlayerCombatant';
 import { Cheat } from '../shared/cheats/Cheats';

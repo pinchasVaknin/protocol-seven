@@ -1,3 +1,4 @@
+import type { BotState } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import { installClock } from '../core/Clock';
 import { EV, createGameBus, type GameBus } from '../core/Events';
@@ -20,7 +21,6 @@ import { CoverIndex } from './Cover';
 import { DEFAULT_PERCEPTION, DEFAULT_TIERS } from './DifficultyTiers';
 import { Pathfinder } from './Pathing';
 import { Perception } from './Perception';
-import type { BotState } from './BotStates';
 
 /**
  * One bot, pinned through its public surface.

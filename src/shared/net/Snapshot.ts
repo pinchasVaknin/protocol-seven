@@ -29,9 +29,9 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { StanceId } from '../core/Vocabulary';
 import { ALL_EQUIPMENT, type EquipmentId } from '../equipment/EquipmentDefs';
 import type { ThrowPhase } from '../equipment/ThrowController';
-import type { StanceId } from '../player/Stance';
 import { STANCES } from '../player/Stance';
 import type { PlayerSimState } from '../player/PlayerState';
 import { ALL_WEAPONS } from '../weapons/WeaponDefs';

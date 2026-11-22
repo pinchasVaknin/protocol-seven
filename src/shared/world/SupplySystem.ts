@@ -35,9 +35,9 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { StanceId } from '../core/Vocabulary';
 import { equipmentDef } from '../equipment/EquipmentDefs';
 import type { EquipmentInventory } from '../equipment/EquipmentSystem';
-import type { StanceId } from '../player/Stance';
 import type { Weapon } from '../weapons/WeaponBase';
 import type { WeaponClass, WeaponDef } from '../weapons/WeaponDefs';
 import type { SupplyPointDef } from './maps/types';

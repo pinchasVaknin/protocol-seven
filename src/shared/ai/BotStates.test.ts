@@ -1,5 +1,6 @@
+import type { BotState } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
-import { isFiringState, isLegalBotTransition, isTravellingState, type BotState } from './BotStates';
+import { isFiringState, isLegalBotTransition, isTravellingState } from './BotStates';
 
 /**
  * The bot state machine's vocabulary and its transition table, pinned.

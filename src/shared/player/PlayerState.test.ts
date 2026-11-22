@@ -1,3 +1,4 @@
+import type { StanceId } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import {
   copySnapshot,
@@ -8,7 +9,6 @@ import {
   savePlayerSim,
   type PlayerSimState,
 } from './PlayerState';
-import type { StanceId } from './Stance';
 
 /**
  * The two views of a player, and the rule that keeps the simulation one complete.

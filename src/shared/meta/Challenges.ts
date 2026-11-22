@@ -30,7 +30,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { HitZone } from '../combat/HitboxRig';
+import type { HitZone } from '../core/Vocabulary';
 import type { WeaponClass } from '../weapons/WeaponDefs';
 import { CAMO_PREREQUISITES, type CamoId } from './Camos';
 import { LONGSHOT_METRES } from './XpRules';

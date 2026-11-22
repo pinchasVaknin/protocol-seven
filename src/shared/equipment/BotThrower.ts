@@ -23,9 +23,10 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTier } from '../core/Vocabulary';
 import type { Combatant } from '../ai/Combatant';
 import { isHostile } from '../combat/Hostility';
-import type { BotTier, TierConfig } from '../ai/DifficultyTiers';
+import type { TierConfig } from '../ai/DifficultyTiers';
 import { BOT_TIERS } from '../ai/DifficultyTiers';
 import { DT } from '../core/Loop';
 import { DEG2RAD } from '../core/MathUtil';

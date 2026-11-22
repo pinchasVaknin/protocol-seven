@@ -13,12 +13,13 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { HitZone } from '../../shared/core/Vocabulary';
 import * as THREE from 'three';
 import { DT } from '../../shared/core/Loop';
 import { clamp01, smoothstep } from '../../shared/core/MathUtil';
 import { Health, type HealthConfig } from '../../shared/player/Health';
 import type { Damageable } from '../../shared/combat/DamageSystem';
-import { HitboxRig, HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
+import { HitboxRig, HUMANOID_RIG } from '../../shared/combat/HitboxRig';
 import { GREYBOX_BODY_COLOR, GREYBOX_HEAD_COLOR, zoneGeometry } from './ZoneGeometry';
 //#endregion
 

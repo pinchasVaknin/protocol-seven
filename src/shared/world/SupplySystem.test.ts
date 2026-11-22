@@ -1,8 +1,8 @@
+import type { StanceId } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import { createGameBus } from '../core/Events';
 import { makeEquipmentInventory, type EquipmentInventory } from '../equipment/EquipmentSystem';
 import { equipmentDef } from '../equipment/EquipmentDefs';
-import type { StanceId } from '../player/Stance';
 import { AR_DEFAULT, requireWeapon, type WeaponDef } from '../weapons/WeaponDefs';
 import { Weapon } from '../weapons/WeaponBase';
 import type { SupplyPointDef } from './maps/types';

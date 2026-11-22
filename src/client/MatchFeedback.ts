@@ -21,11 +21,11 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { HitZone } from '../shared/core/Vocabulary';
 import { makeScreenPoint, projectToScreen } from '../shared/ui/ScreenProjection';
 import * as THREE from 'three';
 import type { BotDirector } from '../shared/ai/BotDirector';
 import type { LocalIdentity } from '../shared/combat/LocalIdentity';
-import type { HitZone } from '../shared/combat/HitboxRig';
 import { EV, type GameBus } from '../shared/core/Events';
 import type { Input } from './input/Input';
 import { MIX } from './engine/AudioMix';

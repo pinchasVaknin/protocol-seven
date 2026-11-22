@@ -43,7 +43,8 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import { BOT_TIERS, type BotTier } from './DifficultyTiers';
+import type { BotTier } from '../core/Vocabulary';
+import { BOT_TIERS } from './DifficultyTiers';
 //#endregion
 
 // =========================================== TYPES ============================================ \\

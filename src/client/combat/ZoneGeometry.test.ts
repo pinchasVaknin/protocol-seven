@@ -1,7 +1,8 @@
+import type { HitZone } from '../../shared/core/Vocabulary';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { describe, expect, it } from 'vitest';
-import { HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
+import { HUMANOID_RIG } from '../../shared/combat/HitboxRig';
 import {
   GREYBOX_BODY_COLOR,
   GREYBOX_HEAD_COLOR,

@@ -1,6 +1,7 @@
+import type { BotTeam } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import type { BotDirector } from '../ai/BotDirector';
-import type { BotTeam, Combatant } from '../ai/Combatant';
+import type { Combatant } from '../ai/Combatant';
 import { DEFAULT_TIERS } from '../ai/DifficultyTiers';
 import { DamageSystem } from '../combat/DamageSystem';
 import { HitboxRig } from '../combat/HitboxRig';

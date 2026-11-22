@@ -30,8 +30,8 @@
  * through a wall because the server stopped talking is worse than a body standing still.
  */
 
+import type { StanceId } from '../core/Vocabulary';
 import { angleDelta } from '../core/MathUtil';
-import type { StanceId } from '../player/Stance';
 import { copyEntitySnapshot, makeEntitySnapshot, type EntitySnapshot } from './Snapshot';
 //#endregion
 

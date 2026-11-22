@@ -1,3 +1,4 @@
+import type { BotTier } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import {
   BOT_DIFFICULTIES,
@@ -15,7 +16,6 @@ import {
   perceptionConfigToSource,
   tierTableToSource,
   tiersFor,
-  type BotTier,
   type TierConfig,
 } from './DifficultyTiers';
 

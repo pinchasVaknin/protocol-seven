@@ -35,15 +35,15 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { HitZone } from '../core/Vocabulary';
+import type { StanceId } from '../core/Vocabulary';
 import { beginSlab, makeSlabHit, narrowSlab } from '../core/RaySlab';
 import { simCos, simSin } from '../core/SimMath';
-import { isLowStance, LOCOMOTION_IDLE_SPEED, LOCOMOTION_RUN_SPEED, type StanceId } from '../player/Stance';
+import { isLowStance, LOCOMOTION_IDLE_SPEED, LOCOMOTION_RUN_SPEED } from '../player/Stance';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
 //#region Types
-export type HitZone = 'head' | 'torso' | 'arm' | 'leg';
-
 export interface HitboxDef {
   readonly name: string;
   readonly zone: HitZone;

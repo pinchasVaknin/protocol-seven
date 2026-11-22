@@ -1,9 +1,10 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../../shared/core/Vocabulary';
 import * as THREE from 'three';
 import { DEFAULT_SCHEDULER } from '../../shared/ai/AiScheduler';
 import { BotDirector } from '../../shared/ai/BotDirector';
-import type { BotTeam, Combatant } from '../../shared/ai/Combatant';
+import type { Combatant } from '../../shared/ai/Combatant';
 import { DEFAULT_PERCEPTION, DEFAULT_TIERS, tiersFor } from '../../shared/ai/DifficultyTiers';
 import { isObjectiveProvider } from '../../shared/ai/ObjectiveIntent';
 import { DamageSystem } from '../../shared/combat/DamageSystem';

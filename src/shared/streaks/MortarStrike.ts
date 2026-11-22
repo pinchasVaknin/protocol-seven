@@ -1,7 +1,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../core/Vocabulary';
 import { makeDamageRequest, type DamageRequest } from '../combat/DamageSystem';
-import type { BotTeam } from '../ai/Combatant';
 import { DT } from '../core/Loop';
 import { TAU } from '../core/MathUtil';
 import { makeRayHit, type RayHit } from '../world/Geometry';

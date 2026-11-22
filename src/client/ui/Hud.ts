@@ -19,7 +19,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { HitZone } from '../../shared/combat/HitboxRig';
+import type { HitZone } from '../../shared/core/Vocabulary';
 import type { GameEvents } from '../../shared/core/Events';
 import { clamp01, RAD2DEG } from '../../shared/core/MathUtil';
 import type { HeaderSlot } from '../../shared/modes/GameMode';

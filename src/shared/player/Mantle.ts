@@ -9,6 +9,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { StanceId } from '../core/Vocabulary';
 import { clamp01, smoothstep } from '../core/MathUtil';
 import { DT } from '../core/Loop';
 import type { CollisionWorld } from '../world/CollisionWorld';
@@ -16,7 +17,6 @@ import { makeRayHit } from '../world/Geometry';
 import { capsuleFits } from './Movement';
 import type { MovementConfig } from './MovementConfig';
 import type { PlayerSim } from './PlayerState';
-import type { StanceId } from './Stance';
 import { simCos, simSin } from '../core/SimMath';
 //#endregion
 

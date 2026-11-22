@@ -1,9 +1,9 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { StanceId } from '../core/Vocabulary';
 import type { EquipmentId } from '../equipment/EquipmentDefs';
 import type { ThrowPhase } from '../equipment/ThrowController';
 import type { SkinId } from '../meta/Skins';
-import type { StanceId } from '../player/Stance';
 //#endregion
 
 // =========================================== TYPES ============================================ \\

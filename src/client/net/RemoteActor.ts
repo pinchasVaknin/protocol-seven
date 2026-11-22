@@ -1,12 +1,12 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam, StanceId } from '../../shared/core/Vocabulary';
 import {
   makeBotVisualState,
   type ActorAnimationInput,
   type BotVisualState,
   type RenderableActor,
 } from '../../shared/ai/BotVisualState';
-import type { BotTeam } from '../../shared/ai/Combatant';
 import { DEATH_VARIANTS, deathVariantFor } from '../../shared/ai/BotVisualState';
 import { HitboxRig, HUMANOID_RIG, rigLayoutFor } from '../../shared/combat/HitboxRig';
 import { angleDelta } from '../../shared/core/MathUtil';
@@ -19,7 +19,6 @@ import { EFlag, equipmentIdAt, THROW_PHASES, weaponIdAt, type EntitySnapshot } f
 import type { EquipmentId } from '../../shared/equipment/EquipmentDefs';
 import type { ThrowPhase } from '../../shared/equipment/ThrowController';
 import { skinIdAt, type SkinId } from '../../shared/meta/Skins';
-import type { StanceId } from '../../shared/player/Stance';
 import type { RoundBlocker } from '../../shared/weapons/Ballistics';
 import { WEAPON_DEFS } from '../../shared/weapons/WeaponDefs';
 //#endregion

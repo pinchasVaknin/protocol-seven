@@ -11,13 +11,12 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../core/Vocabulary';
 import type { Damageable } from '../combat/DamageSystem';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
 //#region Types
-export type BotTeam = 'A' | 'B';
-
 export interface Combatant extends Damageable {
   readonly team: BotTeam;
 

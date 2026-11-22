@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**13 open entries: 12 with a heading of their own, and the one §3 still holds inside its last cluster** (#2, which absorbed #19). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two and the whole of Cluster I on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**12 open entries**, every one with a heading of its own: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -175,66 +175,6 @@ and belong in its Step 2 plan.
 Everything else below lands in a **completed** unit's files and therefore needs a session of its
 own. Those sessions are not refactor units: they may change behaviour where the task says so, and
 they are not fenced by R3.
-
-## 3. Sequenced clusters — order matters
-
-### Cluster II — layering: **#2 (absorbs #19)**
-
-#### #2 — Fix `shared/core`'s upward type dependencies, by moving the vocabulary · `needs a decision from the user`
-
-**Files** `src/shared/core/Events.ts`, `src/shared/ai/Combatant.ts`, and every importer across
-`shared/`, `server/` and `client/`. **Origin** A1 and A11; the refactor prompt names both halves
-itself (§8 and §9's A11 note).
-
-**#19 of the chat list is folded in here**, because it is the same defect seen from the other end.
-#2 said the lowest layer of the simulation imports types from four layers above it; #19 said the
-vocabulary those types belong to lives in a leaf. One move fixes both, and doing them separately
-means the second session finds half its work done.
-
-`shared/core/Events.ts` imports upward:
-
-```
-import type { BotTeam }   from '../ai/Combatant'
-import type { BotTier }   from '../ai/DifficultyTiers'
-import type { BotState }  from '../ai/BotStates'
-import type { HitZone }   from '../combat/HitboxRig'
-import type { StanceId }  from '../player/Stance'
-import type { WeaponSlot } from '../weapons/WeaponDefs'
-```
-
-`shared/core` is the foundation every other partition sits on, and today it cannot be loaded or
-reasoned about without `ai`, `combat`, `player` and `weapons`.
-
-`shared/ai/Combatant.ts` exports `BotTeam` (the `'A' | 'B'` every system keys off), `Combatant`
-("a participant in a firefight" — a `Damageable` plus a pose, a facing and a team) and
-`opposingTeam`. The file's own comment explains why it is the right abstraction: it is what makes
-S6.1's symmetry real, so "can a bot see the player" and "can a bot see another bot" are one piece
-of code. Only its address is wrong — `grep -rln "from '.*ai/Combatant'" src/` reaches
-`shared/combat`, `shared/equipment`, `shared/streaks`, `shared/modes`, `shared/net`, the server and
-the client.
-
-**The project has already paid for this twice**, both as deliberate workarounds:
-- `Damageable.team` in `combat/DamageSystem.ts` is the literal union `'A' | 'B'`, not `BotTeam`,
-  with a comment saying *"combat/ sits below ai/ and should not depend upward on it. The two are
-  structurally identical, so a Combatant satisfies this without a cast."*
-- `combat/Hostility.ts` is written *"against the literal union rather than BotTeam for the reason
-  Damageable.team gives"*.
-
-**Scope** (1) decide the home — `shared/core/` is the candidate the whole tree already depends on;
-`shared/combat/` is the other, since `Damageable` is half of what `Combatant` extends; (2) move the
-three exports and update every importer; (3) collapse the two duplicated literal unions onto
-`BotTeam` once the new home makes that legal; (4) also handle `HitZone` / `StanceId` /
-`WeaponSlot`, or record why they stay; (5) **add the missing rule to
-`scripts/check-boundaries.mjs`** — it enforces the partition rules but *not* layering inside
-`shared/`, so without it the next upward import goes in unnoticed. That rule is a large part of the
-value here.
-
-**Do not start without agreeing the move with the user.** This renames and relocates exports across
-the whole tree, which is exactly what A1 and A11 were forbidden from doing.
-
-**Verify** `npm run check` (including `check:boundaries`) + SIM snapshot/compare → `PASS`.
-`Combatant.test.ts` (A11) covers `opposingTeam`, and the twelve other `ai/` test files build
-`Combatant` literals, so a bad move surfaces as a compile error rather than silently.
 
 ## 4. Independent — one decision each
 

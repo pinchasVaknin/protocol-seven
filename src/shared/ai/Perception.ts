@@ -23,13 +23,14 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../core/Vocabulary';
 import { isHostile } from '../combat/Hostility';
 import { DEG2RAD } from '../core/MathUtil';
 import type { Rng } from '../core/Rng';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import { makeRayHit, type RayHit } from '../world/Geometry';
 import type { BotBlackboard } from './BotBlackboard';
-import type { BotTeam, Combatant } from './Combatant';
+import type { Combatant } from './Combatant';
 import type { PerceptionConfig, TierConfig } from './DifficultyTiers';
 import { simCos, simSin } from '../core/SimMath';
 //#endregion

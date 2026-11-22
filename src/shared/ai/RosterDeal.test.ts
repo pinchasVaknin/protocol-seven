@@ -1,6 +1,6 @@
+import type { BotTier } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import { MAPS } from '../modes/ModeRegistry';
-import type { BotTier } from './DifficultyTiers';
 import { auditRosterDeal, dealTiers, seatToVacate, tierForExtraBot } from './RosterDeal';
 
 /**

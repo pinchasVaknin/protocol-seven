@@ -1,6 +1,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { BotTeam, Combatant } from '../shared/ai/Combatant';
+import type { BotTeam } from '../shared/core/Vocabulary';
+import type { Combatant } from '../shared/ai/Combatant';
 import { Cheat, type CheatGrants } from '../shared/cheats/Cheats';
 import {
   DEATH_VARIANTS,

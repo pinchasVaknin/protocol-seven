@@ -7,17 +7,17 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { StanceId } from '../core/Vocabulary';
 import type { MovementConfig } from './MovementConfig';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
 //#region Types
-export type StanceId = 'STAND' | 'CROUCH' | 'SLIDE' | 'AIRBORNE' | 'MANTLE';
 //#endregion
 
 // ========================================= CONSTANTS ========================================== \\
 //#region Constants
-export const STANCES: readonly StanceId[] = ['STAND', 'CROUCH', 'SLIDE', 'AIRBORNE', 'MANTLE'];
+export const STANCES = ['STAND', 'CROUCH', 'SLIDE', 'AIRBORNE', 'MANTLE'] as const satisfies readonly StanceId[];
 
 /**
  * Every legal edge, in one place.

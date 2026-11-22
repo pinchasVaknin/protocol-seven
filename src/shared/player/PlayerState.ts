@@ -1,6 +1,6 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { StanceId } from './Stance';
+import type { StanceId } from '../core/Vocabulary';
 //#endregion
 
 // =========================================== TYPES ============================================ \\

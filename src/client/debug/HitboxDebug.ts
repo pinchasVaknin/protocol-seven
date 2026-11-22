@@ -1,7 +1,8 @@
+import type { HitZone } from '../../shared/core/Vocabulary';
 import * as THREE from 'three';
 import { type DamageSystem } from '../../shared/combat/DamageSystem';
 import { PLAYER_ENTITY_ID } from '../../shared/combat/LocalIdentity';
-import { HIT_ZONES, type HitZone } from '../../shared/combat/HitboxRig';
+import { HIT_ZONES } from '../../shared/combat/HitboxRig';
 
 /**
  * Hitbox rig visualisation (brief S6.3, S7).

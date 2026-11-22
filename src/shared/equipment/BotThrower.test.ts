@@ -1,6 +1,7 @@
+import type { BotTier } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import type { Combatant } from '../ai/Combatant';
-import type { BotTier, TierConfig } from '../ai/DifficultyTiers';
+import type { TierConfig } from '../ai/DifficultyTiers';
 import { HitboxRig } from '../combat/HitboxRig';
 import { DamageSystem } from '../combat/DamageSystem';
 import { createGameBus } from '../core/Events';

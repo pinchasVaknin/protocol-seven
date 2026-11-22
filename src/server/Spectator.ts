@@ -1,8 +1,9 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../shared/core/Vocabulary';
 import { HitboxRig, HUMANOID_RIG } from '../shared/combat/HitboxRig';
 import { PLAYER_ENTITY_ID } from '../shared/combat/LocalIdentity';
-import type { BotTeam, Combatant } from '../shared/ai/Combatant';
+import type { Combatant } from '../shared/ai/Combatant';
 import { Health, type HealthConfig } from '../shared/player/Health';
 //#endregion
 

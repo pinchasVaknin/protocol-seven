@@ -1,8 +1,8 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { HitZone } from '../../shared/core/Vocabulary';
 import type { RenderableActor } from '../../shared/ai/BotVisualState';
 import type { CombatantDirectory } from '../../shared/combat/Killfeed';
-import type { HitZone } from '../../shared/combat/HitboxRig';
 import type { LocalIdentity } from '../../shared/combat/LocalIdentity';
 import { hitsFrom } from '../../shared/combat/ShotAccounting';
 import { EV, type GameBus } from '../../shared/core/Events';

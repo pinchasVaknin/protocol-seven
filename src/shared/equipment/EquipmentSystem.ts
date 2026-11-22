@@ -15,7 +15,8 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { BotTeam, Combatant } from '../ai/Combatant';
+import type { BotTeam } from '../core/Vocabulary';
+import type { Combatant } from '../ai/Combatant';
 import { makeDamageRequest, type DamageRequest, type DamageSystem } from '../combat/DamageSystem';
 import { isHostile } from '../combat/Hostility';
 import { EV, type GameBus } from '../core/Events';

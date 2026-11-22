@@ -1,3 +1,4 @@
+import type { BotTeam } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../core/EventBus';
 import { createGameBus, EV, type GameBus } from '../core/Events';
@@ -12,7 +13,7 @@ import { DamageSystem, type Damageable } from './DamageSystem';
 import { ScoreSystem } from './ScoreSystem';
 import { MatchFlow } from '../modes/MatchFlow';
 import { MAPS, MODES } from '../modes/ModeRegistry';
-import type { BotTeam, Combatant } from '../ai/Combatant';
+import type { Combatant } from '../ai/Combatant';
 
 /**
  * What the fire does after the jet has moved on.

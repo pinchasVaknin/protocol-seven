@@ -1,9 +1,9 @@
+import type { HitZone } from '../../shared/core/Vocabulary';
 import * as THREE from 'three';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createGameBus, EV, type GameBus } from '../../shared/core/Events';
 import { DT } from '../../shared/core/Loop';
 import { DamageSystem } from '../../shared/combat/DamageSystem';
-import type { HitZone } from '../../shared/combat/HitboxRig';
 import { findMap } from '../../shared/modes/ModeRegistry';
 import { loadMapCollision } from '../../shared/world/MapLoader';
 import type { CollisionWorld } from '../../shared/world/CollisionWorld';

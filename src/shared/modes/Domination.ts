@@ -28,8 +28,9 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../core/Vocabulary';
 import type { Combatant } from '../ai/Combatant';
-import { opposingTeam, type BotTeam } from '../ai/Combatant';
+import { opposingTeam } from '../ai/Combatant';
 import {
   makeObjectiveTarget,
   type MutableObjectiveTarget,

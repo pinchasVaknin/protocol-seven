@@ -18,9 +18,9 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { HitZone } from '../core/Vocabulary';
 import { makeDamageRequest, type DamageRequest, type DamageSystem } from '../combat/DamageSystem';
 import { PLAYER_ENTITY_ID } from '../combat/LocalIdentity';
-import type { HitZone } from '../combat/HitboxRig';
 import { shotsFrom } from '../combat/ShotAccounting';
 import { EV, type GameBus } from '../core/Events';
 import { Btn, isDown, justPressed, type InputCommand } from '../core/InputCommand';

@@ -23,9 +23,10 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { HitZone } from '../core/Vocabulary';
 import type { DamageRequest, DamageSystem, Damageable } from '../combat/DamageSystem';
 import { isHostile } from '../combat/Hostility';
-import { makeRigHit, type HitboxRig, type HitZone, type RigHit } from '../combat/HitboxRig';
+import { makeRigHit, type HitboxRig, type RigHit } from '../combat/HitboxRig';
 import { EV, type GameBus } from '../core/Events';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import { makeRayHit, rayBoxExit, type RayHit } from '../world/Geometry';

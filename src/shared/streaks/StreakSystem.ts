@@ -51,8 +51,8 @@
 //#region Imports
 import { nowMs } from '../core/Clock';
 import { SIM_HZ } from '../core/Loop';
+import type { BotTeam } from '../core/Vocabulary';
 import type { Combatant } from '../ai/Combatant';
-import type { BotTeam } from '../ai/Combatant';
 import type { ObjectiveProvider, ObjectiveTarget } from '../ai/ObjectiveIntent';
 import type { ScoreSystem } from '../combat/ScoreSystem';
 import { EV, type GameBus } from '../core/Events';

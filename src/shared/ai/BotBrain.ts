@@ -1,11 +1,12 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotState } from '../core/Vocabulary';
 import { Btn, type MutableInputCommand } from '../core/InputCommand';
 import { DT } from '../core/Loop';
 import { clamp, DEG2RAD } from '../core/MathUtil';
 import type { NavGrid } from '../world/Navmesh';
 import type { Bot } from './Bot';
-import { isFiringState, isLegalBotTransition, isTravellingState, type BotState } from './BotStates';
+import { isFiringState, isLegalBotTransition, isTravellingState } from './BotStates';
 import type { TierConfig } from './DifficultyTiers';
 import type { CoverIndex } from './Cover';
 import {

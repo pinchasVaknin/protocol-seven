@@ -26,8 +26,8 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../core/Vocabulary';
 import type { Combatant } from '../ai/Combatant';
-import type { BotTeam } from '../ai/Combatant';
 import { DT } from '../core/Loop';
 import type { ObjectiveDef } from '../world/maps/types';
 //#endregion

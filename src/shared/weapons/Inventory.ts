@@ -19,10 +19,11 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { WeaponSlot } from '../core/Vocabulary';
 import { EV, type GameBus } from '../core/Events';
 import { DT } from '../core/Loop';
 import { Weapon, type WeaponInput } from './WeaponBase';
-import type { WeaponDef, WeaponSlot } from './WeaponDefs';
+import type { WeaponDef } from './WeaponDefs';
 //#endregion
 
 // =========================================== TYPES ============================================ \\

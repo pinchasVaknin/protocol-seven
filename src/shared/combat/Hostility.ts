@@ -1,3 +1,4 @@
+import type { BotTeam } from '../core/Vocabulary';
 /**
  * One answer to "is `subject` an enemy of `viewer`" (M13 Phase A).
  *
@@ -31,14 +32,12 @@
  * `TeamColour` is the same split on the UI side.
  *
  * Lives in `combat/` rather than `ui/` because `ai/` and `streaks/` are simulation and `combat/`
- * is the layer they already depend on; written against the literal union rather than `BotTeam`
- * for the reason `Damageable.team` gives — `combat/` sits below `ai/`.
+ * is the layer they already depend on. It took `BotTeam` from `core/Vocabulary` on 2026-11-22
+ * (BACKLOG #2): it was written against the literal union, for the reason `Damageable.team` gave
+ * — `combat/` sits below `ai/`, where the word used to live — and `BotTeam` was the name
+ * that workaround needed. The word is below both layers now, so the alias is gone and the two
+ * sides of a firefight are called the same thing everywhere.
  */
-
-// =========================================== TYPES ============================================ \\
-//#region Types
-export type HostilitySide = 'A' | 'B';
-//#endregion
 
 // ===================================== EXPORTED FUNCTIONS ===================================== \\
 //#region Exported Functions
@@ -49,8 +48,8 @@ export type HostilitySide = 'A' | 'B';
  * the viewer's own side and why the self case is the caller's.
  */
 export function isHostile(
-  viewerTeam: HostilitySide,
-  subjectTeam: HostilitySide,
+  viewerTeam: BotTeam,
+  subjectTeam: BotTeam,
   freeForAll: boolean,
 ): boolean {
   if (freeForAll) return true;

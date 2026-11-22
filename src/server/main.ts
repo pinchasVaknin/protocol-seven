@@ -1,3 +1,4 @@
+import type { BotTeam } from '../shared/core/Vocabulary';
 import { installClock } from '../shared/core/Clock';
 import { DT } from '../shared/core/Loop';
 import { logger, type LogLevel } from '../shared/core/Log';
@@ -16,7 +17,6 @@ import { auditCapabilities } from '../shared/debug/CapabilityAudit';
 import { auditHeaderSlots } from '../shared/debug/HeaderSlotAudit';
 import { accuracy } from '../shared/combat/ScoreSystem';
 import { WEAPON_DEFS } from '../shared/weapons/WeaponDefs';
-import type { BotTeam } from '../shared/ai/Combatant';
 
 /**
  * The headless entry point (brief S6.4 and S7).

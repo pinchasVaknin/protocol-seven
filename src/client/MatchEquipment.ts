@@ -8,9 +8,10 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../shared/core/Vocabulary';
 import * as THREE from 'three';
 import type { BotDirector } from '../shared/ai/BotDirector';
-import type { BotTeam, Combatant } from '../shared/ai/Combatant';
+import type { Combatant } from '../shared/ai/Combatant';
 import type { TierTable } from '../shared/ai/DifficultyTiers';
 import type { DamageSystem } from '../shared/combat/DamageSystem';
 import { EV, type GameBus } from '../shared/core/Events';

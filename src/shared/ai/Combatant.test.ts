@@ -1,5 +1,6 @@
+import type { BotTeam } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
-import { opposingTeam, type BotTeam } from './Combatant';
+import { opposingTeam } from './Combatant';
 
 /**
  * The two-sided substrate, pinned.

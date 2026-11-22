@@ -21,9 +21,10 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { HitZone } from '../../shared/core/Vocabulary';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
+import { HUMANOID_RIG } from '../../shared/combat/HitboxRig';
 //#endregion
 
 // ========================================= CONSTANTS ========================================== \\

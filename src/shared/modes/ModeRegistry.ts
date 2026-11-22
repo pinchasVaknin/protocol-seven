@@ -12,7 +12,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { BotTier } from '../ai/DifficultyTiers';
+import type { BotTier } from '../core/Vocabulary';
 import { logger } from '../core/Log';
 import type { MapDef } from '../world/maps/types';
 import { DEPOT_MAP } from '../world/maps/depot';

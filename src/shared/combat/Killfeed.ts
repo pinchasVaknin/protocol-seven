@@ -14,10 +14,10 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { HitZone } from '../core/Vocabulary';
 import type { Combatant } from '../ai/Combatant';
 import { EV, type GameBus } from '../core/Events';
 import { LocalIdentity } from './LocalIdentity';
-import type { HitZone } from './HitboxRig';
 //#endregion
 
 // =========================================== TYPES ============================================ \\

@@ -1,3 +1,4 @@
+import type { HitZone } from '../../shared/core/Vocabulary';
 import {
   DamageSystem,
   damageAtRange,
@@ -5,7 +6,7 @@ import {
   type DamageRequest,
 } from '../../shared/combat/DamageSystem';
 import { PLAYER_ENTITY_ID } from '../../shared/combat/LocalIdentity';
-import { HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
+import { HUMANOID_RIG } from '../../shared/combat/HitboxRig';
 import { TargetDummy, buildDummyMaterials, type DummyMaterials } from '../combat/TargetDummy';
 import { EventBus } from '../../shared/core/EventBus';
 import { EV, type GameEvents } from '../../shared/core/Events';

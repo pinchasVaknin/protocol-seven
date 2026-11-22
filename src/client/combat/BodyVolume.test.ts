@@ -1,6 +1,6 @@
+import type { StanceId } from '../../shared/core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import { HUMANOID_RIG } from '../../shared/combat/HitboxRig';
-import type { StanceId } from '../../shared/player/Stance';
 import { insideDrawnBody, type DrawnBody } from './BodyVolume';
 
 /**

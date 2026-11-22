@@ -29,10 +29,9 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam, HitZone } from '../shared/core/Vocabulary';
 import { RESPAWN_SECONDS } from '../shared/ai/BotDirector';
-import type { BotTeam } from '../shared/ai/Combatant';
 import { makeSpawnChoice, type SpawnChoice } from '../shared/ai/SpawnSelector';
-import type { HitZone } from '../shared/combat/HitboxRig';
 import { EV, type GameBus } from '../shared/core/Events';
 import { DT } from '../shared/core/Loop';
 import { EquipmentSystem } from '../shared/equipment/EquipmentSystem';

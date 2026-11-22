@@ -1,6 +1,6 @@
+import type { BotTeam } from '../shared/core/Vocabulary';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { BOT_ID_BASE } from '../shared/ai/BotDirector';
-import type { BotTeam } from '../shared/ai/Combatant';
 import { CheatState } from '../shared/cheats/Cheats';
 import { installClock } from '../shared/core/Clock';
 import { EV } from '../shared/core/Events';

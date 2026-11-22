@@ -37,7 +37,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { BotTeam } from '../ai/Combatant';
+import type { BotTeam } from '../core/Vocabulary';
 import { Btn, isDown, justPressed, justReleased, type InputCommand } from '../core/InputCommand';
 import { DT } from '../core/Loop';
 import type { PlayerSim } from '../player/PlayerState';

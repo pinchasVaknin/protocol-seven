@@ -28,6 +28,7 @@
  *   client/ -> server/    forbidden.  Two processes; neither links the other.
  *   server/ -> client/    forbidden.  Same.
  *   shared/ -> three      forbidden.  See BAN_THREE_IN_SHARED below.
+ *   shared/core/ -> any other shared/ subdirectory   forbidden.  See FOUNDATION below.
  *   server/ -> three      forbidden.  A headless process does not render.
  *   shared/, server/      may not name a browser global (window, document, localStorage,
  *                         requestAnimationFrame, AudioContext, CanvasTexture,
@@ -58,6 +59,25 @@ const SRC = path.join(ROOT, 'src');
  * check — do not delete the rule.
  */
 const BAN_THREE_IN_SHARED = true;
+
+/**
+ * The one directory inside `shared/` with a layering rule of its own.
+ *
+ * `shared/core/` is the foundation every other partition sits on: the loop, the bus, the
+ * deterministic maths, the input command, the vocabulary. It must be loadable and reasonable
+ * about on its own, and until 2026-11-22 it was not — `core/Events.ts` imported six types
+ * **upward**, from `ai/Combatant`, `ai/DifficultyTiers`, `ai/BotStates`, `combat/HitboxRig`,
+ * `player/Stance` and `weapons/WeaponDefs`, four layers above it (BACKLOG #2, with #19).
+ *
+ * Those six moved to `core/Vocabulary.ts`. This rule is what stops the seventh, and it is the
+ * part of that entry worth the most: each of the six was individually reasonable when it was
+ * written, which is exactly the kind of rule a human cannot be asked to remember.
+ *
+ * It is deliberately only about `core/`. A full layer order for all sixteen directories under
+ * `shared/` would be inventing policy this project has not stated; "the foundation depends on
+ * nothing above it" is policy it has stated, twice, in the two workarounds #2 retired.
+ */
+const FOUNDATION = 'shared/core';
 
 /** partition -> partitions it may not import from. */
 const FORBIDDEN_EDGES = {
@@ -254,6 +274,16 @@ for (const abs of files) {
       const to = partitionOf(target);
       if (to !== null && FORBIDDEN_EDGES[from].includes(to)) {
         report(rel, line, `${from}-no-${to}`, `imports ${to}/ — '${spec}'`);
+      }
+      // The foundation depends on nothing above it. See FOUNDATION.
+      if (rel.startsWith(`${FOUNDATION}/`) && !target.startsWith(`${FOUNDATION}/`)) {
+        report(
+          rel,
+          line,
+          'core-is-the-foundation',
+          `imports '${spec}', which is outside ${FOUNDATION}/ — the vocabulary it needs ` +
+            'belongs in core/Vocabulary.ts, not above it',
+        );
       }
       continue;
     }

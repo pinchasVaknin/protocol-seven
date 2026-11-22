@@ -32,7 +32,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { BotTeam } from '../shared/ai/Combatant';
+import type { BotTeam } from '../shared/core/Vocabulary';
 import { inputLabel } from '../shared/core/Keybinds';
 import type { Keybinds } from '../shared/core/Keybinds';
 import { EquipmentSystem } from '../shared/equipment/EquipmentSystem';

@@ -20,7 +20,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import type { BotTeam } from '../ai/Combatant';
+import type { BotTeam } from '../core/Vocabulary';
 import { DT } from '../core/Loop';
 import { DEG2RAD } from '../core/MathUtil';
 import { simCos, simSin } from '../core/SimMath';

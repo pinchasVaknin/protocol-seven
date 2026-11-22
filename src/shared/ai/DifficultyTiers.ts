@@ -16,13 +16,12 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTier } from '../core/Vocabulary';
 import type { TunableMeta } from '../player/MovementConfig';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
 //#region Types
-export type BotTier = (typeof BOT_TIERS)[number];
-
 export interface TierConfig {
   // -- reaction (S6.3): first valid LOS to first shot ----------------------
   reactionMin: number;
@@ -156,7 +155,7 @@ export interface PerceptionConfig {
 
 // ========================================= CONSTANTS ========================================== \\
 //#region Constants
-export const BOT_TIERS = ['RECRUIT', 'REGULAR', 'HARDENED', 'VETERAN'] as const;
+export const BOT_TIERS = ['RECRUIT', 'REGULAR', 'HARDENED', 'VETERAN'] as const satisfies readonly BotTier[];
 
 /** Every legal choice, in the order a picker should offer them. Easiest first, mix last. */
 export const BOT_DIFFICULTIES: readonly BotDifficulty[] = [...BOT_TIERS, 'MIX'];

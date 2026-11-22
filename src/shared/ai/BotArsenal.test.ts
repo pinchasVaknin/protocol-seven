@@ -1,8 +1,9 @@
+import type { BotTier } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../core/Rng';
 import { requireWeapon } from '../weapons/WeaponDefs';
 import { drawBotWeapon } from './BotArsenal';
-import { BOT_TIERS, type BotTier } from './DifficultyTiers';
+import { BOT_TIERS } from './DifficultyTiers';
 
 /**
  * What a bot brings to the fight, pinned.

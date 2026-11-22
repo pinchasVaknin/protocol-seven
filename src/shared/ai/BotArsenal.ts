@@ -30,9 +30,9 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTier } from '../core/Vocabulary';
 import type { Rng } from '../core/Rng';
 import { cloneWeaponDef, requireWeapon, type WeaponDef } from '../weapons/WeaponDefs';
-import type { BotTier } from './DifficultyTiers';
 //#endregion
 
 // =========================================== TYPES ============================================ \\

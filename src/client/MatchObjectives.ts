@@ -55,8 +55,8 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../shared/core/Vocabulary';
 import * as THREE from 'three';
-import type { BotTeam } from '../shared/ai/Combatant';
 import type { GameBus } from '../shared/core/Events';
 import type { GameMode } from '../shared/modes/GameMode';
 import { palette } from './ui/Palette';

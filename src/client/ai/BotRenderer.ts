@@ -1,8 +1,8 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../../shared/core/Vocabulary';
 import * as THREE from 'three';
 import type { RenderableActor } from '../../shared/ai/BotVisualState';
-import type { BotTeam } from '../../shared/ai/Combatant';
 import { NO_SPECTATOR_TARGET } from '../../shared/modes/SpectatorTarget';
 import { relationTo, type ViewerContext } from '../../shared/ui/TeamColour';
 import { ActorIndicator, buildActorIndicatorAssets } from './ActorIndicator';

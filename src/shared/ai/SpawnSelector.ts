@@ -24,12 +24,13 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { BotTeam } from '../core/Vocabulary';
 import { isHostile } from '../combat/Hostility';
 import { DEG2RAD } from '../core/MathUtil';
 import type { Rng } from '../core/Rng';
 import type { NavGrid } from '../world/Navmesh';
 import type { SpawnZone } from '../world/maps/types';
-import { opposingTeam, type BotTeam, type Combatant } from './Combatant';
+import { opposingTeam, type Combatant } from './Combatant';
 import type { PerceptionConfig } from './DifficultyTiers';
 import type { Perception } from './Perception';
 import { simCos, simSin } from '../core/SimMath';

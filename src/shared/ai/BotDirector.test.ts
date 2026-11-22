@@ -1,3 +1,4 @@
+import type { BotTier } from '../core/Vocabulary';
 import { describe, expect, it } from 'vitest';
 import { installClock } from '../core/Clock';
 import { EV, createGameBus, type GameBus } from '../core/Events';
@@ -14,7 +15,7 @@ import { MAPS } from '../modes/ModeRegistry';
 import { DEFAULT_SCHEDULER } from './AiScheduler';
 import { BOT_ID_BASE, BotDirector, type BotDirectorDeps } from './BotDirector';
 import type { Combatant } from './Combatant';
-import { DEFAULT_PERCEPTION, DEFAULT_TIERS, type BotTier } from './DifficultyTiers';
+import { DEFAULT_PERCEPTION, DEFAULT_TIERS } from './DifficultyTiers';
 import { dealTiers, seatToVacate } from './RosterDeal';
 
 /**

@@ -19,6 +19,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { WeaponSlot } from '../core/Vocabulary';
 import { Btn, isDown } from '../core/InputCommand';
 import { ASSAULT_RIFLES } from './defs/assaultRifles';
 import { LMGS } from './defs/lmgs';
@@ -31,9 +32,6 @@ import { SNIPERS } from './defs/snipers';
 // =========================================== TYPES ============================================ \\
 //#region Types
 export type WeaponClass = 'AR' | 'SMG' | 'LMG' | 'MARKSMAN' | 'SNIPER' | 'SHOTGUN' | 'PISTOL' | 'LAUNCHER';
-
-/** Which inventory slot a weapon occupies (S6.4). */
-export type WeaponSlot = 'primary' | 'secondary';
 
 export type AttachmentSlot =
   | 'optic'

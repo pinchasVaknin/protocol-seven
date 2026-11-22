@@ -13,6 +13,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import type { StanceId } from '../core/Vocabulary';
 import { logger } from '../core/Log';
 import { EV, type GameBus, type SlideEndReason } from '../core/Events';
 import { Btn, isDown, justPressed, type InputCommand } from '../core/InputCommand';
@@ -31,7 +32,7 @@ import {
 import type { MovementConfig } from './MovementConfig';
 import { copySnapshot, makeSnapshot, PlayerSim, type PlayerSnapshot } from './PlayerState';
 import { beginSlide, canStartSlide, endSlide, stepSlide } from './Slide';
-import { capsuleHeightFor, eyeHeightFor, isLegalStanceTransition, type StanceId } from './Stance';
+import { capsuleHeightFor, eyeHeightFor, isLegalStanceTransition } from './Stance';
 import { simCos, simSin } from '../core/SimMath';
 //#endregion
 

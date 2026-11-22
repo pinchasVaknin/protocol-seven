@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**12 open entries**, every one with a heading of its own: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**11 open entries**, every one with a heading of its own: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3; #77 on the same day, measured.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -593,40 +593,6 @@ rate it was measured at. A check that can only produce false negatives is worse 
 declines to run, because C18's silence cost nothing and #75 cost two sessions.
 
 **Verify** reading, and the next unit's live check.
-
-### #77 — One seeded skirmish test times out on a cold full run and passes alone · `needs measurement` *(opened 2026-11-09 by C18)*
-
-**Files** `src/client/world/MenuSkirmish.test.ts` (`deals a different fight for a different
-seed`); `vitest.config.ts` holds the timeout #68 set. **Origin** C18's gate run.
-
-Measured on the same tree, twice in a row:
-
-```
-npm run check, cold        153 s   1 failed — "Test timed out in 30000ms"
-npm run check, warm         67 s   292 files, 6,253 tests, all passed
-the one file, alone       11.7 s   28 tests, all passed
-```
-
-The failing test builds two seeded skirmishes and compares them; it is CPU-bound, it imports
-nothing of C18's, and C18 changed nothing it can see. What changed is the **suite**: 292 files
-now, each in its own worker, and vitest's own note on the cold run was *"transforming modules
-took 437 s"*. Under that contention one 11.7-second file does not get 30 seconds of its own
-within 30 seconds of wall clock.
-
-**This is #68's question asked again from the other side.** #68 raised the per-test timeout from
-five seconds to thirty because it was a hang detector being used as a performance budget. Thirty
-is enough for this test by a factor of two and a half when it is alone, and not enough when 291
-other files are competing — so the number is still measuring the machine rather than the code.
-
-**Decide**, and measure first: raise the timeout again (cheap, and makes it a worse hang
-detector); give this one file its own `testTimeout` (honest, and admits the file is slow); make
-the test cheaper (it is a determinism check, and two skirmishes may be more than it needs);
-or turn on `fsModuleCache`, which vitest's own note suggests and which would cut the 437 s the
-cold run spends transforming before any test starts.
-
-**Verify** `npm run check` from a cold cache, three times, and record how often it goes red.
-
----
 
 ### #42 — Three clients disagree with the server's final scoreboard, one run in five · `open` · *a fix is in place; the cause is still unconfirmed* *(opened 2026-10-19)*
 **Files** `src/server/instance/MatchInstance.ts` (`sendScoreboard`) — B5's file; the check is

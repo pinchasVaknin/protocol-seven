@@ -53,6 +53,17 @@ export default defineConfig({
      * real hang still stops in thirty seconds, which is plain against a suite that finishes in
      * twenty to sixty.
      *
+     * **Not `fsModuleCache: true`**, which the runner advertises on every single run —
+     * *"transforming modules took 244.10s · 41% of tracked time, re-done on every run"*. It was
+     * measured on 2026-11-22, three cold gate runs each way: without it 143 s, 114 s, 172 s of
+     * wall clock; with it 152 s, 121 s, 164 s. The advisory line goes away and the wall clock
+     * does not move, because the transforms already overlap test execution across workers — the
+     * 244 s is spread over 317 of them, not spent before the first one starts. It also did not
+     * prevent the one timeout this suite produces: BACKLOG #77's failure reproduced *with* the
+     * cache on. So the option buys a quieter report and nothing else here, and a persisted
+     * transform cache is a staleness class this project has no need to take on. Left off, with
+     * the numbers, because the runner will keep suggesting it.
+     *
      * **Not `isolate: false`**, which the runner itself advertises underneath that line as
      * *"at least ~19.77 s faster"*. It reuses a worker's module registry across files, and a
      * dozen test files here install a global `document` or an `installClock` that would then

@@ -1,3 +1,4 @@
+import type { NavGrid } from '../../shared/world/NavGrid';
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { EV } from '../../shared/core/Events';
@@ -98,7 +99,29 @@ const characterAssets = {
   avatarProvider: (): unknown => ({}),
 } as unknown as CharacterAssetService;
 
-function makeSkirmish(mapId = 'mp_foundry', seed = 0x4e5a_1000): {
+/**
+ * One navmesh bake per map, for the whole file (BACKLOG #77, fixed 2026-11-22).
+ *
+ * Thirty-one skirmishes are built below and every one of them was on Foundry, so the file baked
+ * the same navmesh thirty-one times. A navmesh is a function of the map's geometry and nothing
+ * else — not the seed, not the roster — and `MenuSkirmishDeps.nav` exists to say so: its own
+ * comment reads *"a navmesh baked for this map already, so the second skirmish on it does not
+ * bake again"*, and the menu backdrop in production already reuses one across seeds. The file
+ * was the only place paying full price, which is what made it the slowest in the suite and the
+ * one that timed out on a loaded machine.
+ *
+ * Safe to share because a baked grid is read-only: `NavGrid`'s arrays are `readonly`, nothing
+ * outside `NavBake` writes to one, and the only writers in the tree are `Pathing.test.ts`
+ * building its own fixtures.
+ */
+const bakedNav = new Map<string, NavGrid>();
+
+function makeSkirmish(
+  mapId = 'mp_foundry',
+  seed = 0x4e5a_1000,
+  /** Set to bake a fresh one, for the two cases whose subject is the baking itself. */
+  freshNav = false,
+): {
   skirmish: MenuSkirmish;
   scene: THREE.Scene;
   map: LoadedMap;
@@ -115,7 +138,9 @@ function makeSkirmish(mapId = 'mp_foundry', seed = 0x4e5a_1000): {
     characterAssets,
     anisotropy: () => 4,
     seed,
+    nav: freshNav ? undefined : bakedNav.get(mapId),
   });
+  bakedNav.set(mapId, skirmish.nav);
   return { skirmish, scene, map };
 }
 
@@ -178,7 +203,9 @@ describe('MenuSkirmish wiring', () => {
   });
 
   it('reuses a navmesh it is given rather than baking another', () => {
-    const first = makeSkirmish();
+    // `freshNav`, so `first` really does bake one and "rather than baking another" means
+    // something — the file shares a bake everywhere else (BACKLOG #77).
+    const first = makeSkirmish('mp_foundry', 0x4e5a_1000, true);
     const entry = findMap('mp_foundry');
     const scene = new THREE.Scene();
     const second = new MenuSkirmish({

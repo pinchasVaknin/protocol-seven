@@ -296,15 +296,21 @@ describe('the raster', () => {
     expect(fillsOf(raster(mapDef({ brushes: [brush()] })))).toEqual([WALL]);
   });
 
-  it('draws a low pitched brush as a WALL — which the minimap draws as a deck', () => {
+  it('draws a low pitched brush as a deck, the same as the minimap does', () => {
     /*
-     * Pins current behaviour; suspected bug: the overlay and the minimap classify brushes
-     * differently. `MortarOverlay.classify` has no pitched-brush branch, so a ramp below 3 m
-     * is a wall here and a deck on the minimap — and this file's own header says the two
-     * "cannot disagree about what a wall is". See the side task this unit opened.
+     * BACKLOG #69, decided 2026-11-22. This case asserted `[WALL]`: the overlay had its own
+     * `classify` with no pitched-brush branch, so a ramp below 3 m was a wall here and a deck
+     * on the minimap — against this file's own header, which said the two "cannot disagree
+     * about what a wall is".
+     *
+     * The minimap's reading won, and the overlay has no `classify` of its own any more: it
+     * draws through `Minimap.drawBrushes`. Both rolled and pitched are checked, because the
+     * rule is about either rotation.
      */
-    const low = brush({ position: { x: 0, y: 1, z: 0 }, size: { x: 4, y: 1, z: 9 }, rotationX: 0.2 });
-    expect(fillsOf(raster(mapDef({ brushes: [low] })))).toEqual([WALL]);
+    const pitched = brush({ position: { x: 0, y: 1, z: 0 }, size: { x: 4, y: 1, z: 9 }, rotationX: 0.2 });
+    expect(fillsOf(raster(mapDef({ brushes: [pitched] })))).toEqual([DECK]);
+    const rolled = brush({ position: { x: 0, y: 1, z: 0 }, size: { x: 4, y: 1, z: 9 }, rotationZ: 0.2 });
+    expect(fillsOf(raster(mapDef({ brushes: [rolled] })))).toEqual([DECK]);
   });
 
   it('ignores a brush marked not solid', () => {

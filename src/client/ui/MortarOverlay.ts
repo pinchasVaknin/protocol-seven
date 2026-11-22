@@ -11,11 +11,23 @@
  * what a wall is; two rasterisers would eventually disagree and the disagreement would be
  * invisible until somebody called a strike into a building that was not there.
  *
- * The footprint is literally `Minimap`'s now. The classification is **not** — this file keeps
- * its own `classify`, and it is not the minimap's: a pitched brush below 3 m is a wall here
- * and a deck there. That is a real disagreement, of exactly the kind the paragraph above says
- * must not exist, and it is filed rather than fixed because deciding which of the two is right
- * is a decision about what the player sees. See BACKLOG #69.
+ * **All of it is literally `Minimap`'s** as of 2026-11-22: the footprint, the brush raster, the
+ * prop raster and the classification, which this file no longer has a copy of. Until then it
+ * kept its own `classify` without the minimap's pitched-brush rule, so a ramp below 3 m was a
+ * wall here and a deck there — a real disagreement of exactly the kind the paragraph above says
+ * must not exist, filed as BACKLOG #69 rather than fixed, because which of the two was right is
+ * a decision about what the player sees.
+ *
+ * The minimap's reading won, and the four things that decided it are written out above
+ * `Minimap.classify`. The short version: this file's own header already promised the two agree,
+ * both carried the same three hex colours, the colour here **gates nothing** — `moveBy` clamps
+ * to the map's bounds and `confirm` tests no terrain, so it never meant "can I drop shells
+ * here" — and a shell called onto a ramp lands on the ramp, because `MortarStrike.groundAt`
+ * casts straight down and takes whatever surface it finds. A ramp drawn as a wall told the
+ * player it was neither a place to hit nor a place anyone could be standing, and it is both.
+ *
+ * What is left here is what this screen alone has: its scale, its cursor, its grid and its
+ * input. The one picture is drawn by one piece of code at two scales.
  *
  * The raster is built once when the overlay is first opened rather than at match start,
  * because most matches never call in a mortar and a 300 x 250 px canvas is not free.
@@ -30,9 +42,9 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import { PROP_SHAPES } from '../../shared/world/maps/props';
-import type { Brush, MapDef } from '../../shared/world/maps/types';
-import { footprint } from './Minimap';
+import { clamp } from '../../shared/core/MathUtil';
+import type { MapDef } from '../../shared/world/maps/types';
+import { drawBrushes, drawProps } from './Minimap';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -51,9 +63,11 @@ export interface MortarOverlayDeps {
 /** Pixels per metre in the overlay raster. Denser than the minimap: this is a big canvas. */
 const PX_PER_M = 9;
 
-const COLOR_WALL = '#2b313b';
-const COLOR_WALL_EDGE = '#3d4552';
-const COLOR_DECK = '#4a5462';
+/**
+ * The wall, edge and deck hexes left with the raster (BACKLOG #69): `Minimap` holds the one
+ * copy, which is the point — they were the same three values in both files, which is what said
+ * out loud that these are one picture at two scales.
+ */
 const COLOR_CURSOR = '#e8604c';
 const COLOR_GRID = 'rgba(232, 234, 238, 0.06)';
 //#endregion
@@ -265,51 +279,4 @@ export class MortarOverlay {
 // ====================================== INTERNAL HELPERS ====================================== \\
 //#region Internal Helpers
 /** Every solid brush, walls first, in this file's own classification. */
-function drawBrushes(ctx: CanvasRenderingContext2D, def: MapDef): void {
-  for (const pass of ['wall', 'deck'] as const) {
-    for (const brush of def.brushes) {
-      if (brush.solid === false) continue;
-      if (classify(brush) !== pass) continue;
-      ctx.fillStyle = pass === 'deck' ? COLOR_DECK : COLOR_WALL;
-      ctx.strokeStyle = COLOR_WALL_EDGE;
-      const planX = brush.size.x * Math.cos(brush.rotationZ ?? 0);
-      const planZ = brush.size.z * Math.cos(brush.rotationX ?? 0);
-      footprint(ctx, brush.position.x, brush.position.z, planX, planZ, brush.rotationY);
-    }
-  }
-}
-
-/** Every solid part of every placed prop, in the wall colour. */
-function drawProps(ctx: CanvasRenderingContext2D, def: MapDef): void {
-  ctx.fillStyle = COLOR_WALL;
-  ctx.strokeStyle = COLOR_WALL_EDGE;
-  for (const placement of def.props) {
-    const shape = PROP_SHAPES[placement.shape];
-    for (const part of shape.parts) {
-      if (!part.solid) continue;
-      const c = Math.cos(placement.rotationY);
-      const s = Math.sin(placement.rotationY);
-      const wx = placement.position.x + part.offset.x * c + part.offset.z * s;
-      const wz = placement.position.z - part.offset.x * s + part.offset.z * c;
-      footprint(ctx, wx, wz, part.size.x, part.size.z, placement.rotationY);
-    }
-  }
-}
-
-/**
- * The same thresholds `Minimap` classifies by — **except the pitched-brush rule, which this
- * one does not have**. See the file header and BACKLOG #69.
- */
-function classify(brush: Brush): 'skip' | 'wall' | 'deck' {
-  const top = brush.position.y + brush.size.y * 0.5;
-  const bottom = brush.position.y - brush.size.y * 0.5;
-  if (top <= 0.1) return 'skip';
-  if (bottom > 5.5) return 'skip';
-  if (bottom > 3.0) return 'deck';
-  return 'wall';
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
-}
 //#endregion

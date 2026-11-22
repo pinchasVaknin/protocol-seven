@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**11 open entries**, every one with a heading of its own: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3; #77 on the same day, measured.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**10 open entries**, every one with a heading of its own: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3; #77 and #69 on the same day, both measured.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -202,51 +202,6 @@ no behaviour change may not do that quietly.
 **Verify** `npm run check`, then C17's checksum A, whose `BINDINGS, a slot armed` and
 `BINDINGS, after a steal` sections both hold that paragraph and will differ by the new
 attribute — re-baseline them in the same commit, with the reason.
-
----
-
-### #69 — The mortar overlay and the minimap disagree about what a wall is · `open` *(opened 2026-11-09 by C15)*
-
-**Files** `src/client/ui/MortarOverlay.ts` (`classify`) and `src/client/ui/Minimap.ts`
-(`classify`). **Origin** C15, found by reading the two files side by side and pinned by its
-characterization tests. Both files are C15's own, which is what makes this a decision rather
-than a fence problem.
-
-`MortarOverlay.ts`'s header says it in as many words:
-
-> *"**Reusing the minimap renderer** means the same brush-classification and footprint code, so
-> the overlay and the minimap agree about what a wall is; two rasterisers would eventually
-> disagree and the disagreement would be invisible until somebody called a strike into a
-> building that was not there."*
-
-They do not agree. The minimap has a rule the overlay has never had:
-
-```
-Minimap.classify        if (brush.rotationX !== undefined || brush.rotationZ !== undefined) return 'deck';
-MortarOverlay.classify  — no such line —
-```
-
-So a **pitched brush sitting below 3 m** — a ramp — is a light deck on the minimap and a dark
-wall on the overlay. Everything else about the two is the same: the 0.1 m floor, the 5.5 m
-roof, the 3.0 m deck line, and `size.y / 2` against `size.y * 0.5`, which is the same double.
-
-**What C15 did and did not do.** The footprint half of that paragraph is now true: `footprint`
-is exported from `Minimap.ts` and the overlay draws through it, which the browser checksum
-proves is a byte-for-byte no-op over the whole of FOUNDRY. The classification half is a
-**behaviour change** — ramps would change colour on the overlay — so it is pinned instead:
-`MortarOverlay.test.ts` has *"draws a low pitched brush as a WALL — which the minimap draws as
-a deck"*, and `Minimap.test.ts` has the matching case the other way.
-
-**The decision is which one is right**, and it is about what the player should see rather than
-about how the code is arranged. A ramp is somewhere a strike's victims can stand, which argues
-for the minimap's reading; the overlay is a *targeting* picture, where "can I drop shells here"
-may want a different answer from "can somebody walk here". Whoever takes it should also decide
-whether the two `drawProps` loops become one — they are identical today, and sharing them needs
-a second export from `Minimap.ts`, which C15 did not ask for.
-
-**Verify** `npm run check`, then C15's BROWSER checksum A: both rasters are in it, digested over
-the whole of FOUNDRY, so either picture moving is a diff. The two pinning tests have to be
-updated in the same commit, with the reason.
 
 ## 5b. Field reports from play — the same kind of bug, with no test holding it
 

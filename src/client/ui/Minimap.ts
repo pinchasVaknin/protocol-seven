@@ -503,7 +503,15 @@ export function footprint(
 // ====================================== INTERNAL HELPERS ====================================== \\
 //#region Internal Helpers
 /** Every solid brush, walls first. */
-function drawBrushes(ctx: CanvasRenderingContext2D, def: MapDef): void {
+/**
+ * Every solid brush of the map, walls first and decks over them.
+ *
+ * Exported for `MortarOverlay`, which drew the same picture with its own copy of this and of
+ * `classify` until BACKLOG #69 — and whose own header promised it did not. The caller owns the
+ * canvas transform, which is the only thing the two screens differ by: the minimap's scale and
+ * the overlay's are different numbers and nothing else here is.
+ */
+export function drawBrushes(ctx: CanvasRenderingContext2D, def: MapDef): void {
   // Two passes so every deck sits above every wall, whatever order the map lists them in.
   for (const pass of ['wall', 'deck'] as const) {
     for (const brush of def.brushes) {
@@ -522,7 +530,8 @@ function drawBrushes(ctx: CanvasRenderingContext2D, def: MapDef): void {
 }
 
 /** Every solid part of every placed prop, in the wall colour. */
-function drawProps(ctx: CanvasRenderingContext2D, def: MapDef): void {
+/** Every solid part of every placed prop, in the wall colour. Exported for the same reason. */
+export function drawProps(ctx: CanvasRenderingContext2D, def: MapDef): void {
   ctx.fillStyle = COLOR_WALL;
   ctx.strokeStyle = COLOR_WALL_EDGE;
   for (const placement of def.props) {
@@ -557,7 +566,28 @@ function tracePip(ctx: CanvasRenderingContext2D, o: ObjectiveDef): void {
   ctx.arc(o.position.x, o.position.z, 1.5, 0, Math.PI * 2);
 }
 
-function classify(brush: Brush): 'skip' | 'wall' | 'deck' {
+/**
+ * What a brush reads as from above: nothing, something in the way, or something to stand on.
+ *
+ * **The pitched-brush rule is the whole of BACKLOG #69, and this is the version that won.** The
+ * mortar overlay had a copy of this function without that line, so a ramp below 3 m was a deck
+ * here and a wall there. Four things decided it:
+ *
+ * 1. The overlay's own file header already promised the two agree — *"two rasterisers would
+ *    eventually disagree and the disagreement would be invisible until somebody called a strike
+ *    into a building that was not there"*. One of them had to move, and the one missing a rule
+ *    is the one that moves.
+ * 2. Both files used the same two hex colours. They are one picture shown at two scales, and a
+ *    player who learns this legend reads the other screen with it.
+ * 3. The overlay's colour **gates nothing**: `moveBy` clamps the cursor to the map's bounds and
+ *    `confirm` tests no terrain, so the colour cannot mean "can I drop shells here" — the
+ *    reading that would have argued for keeping the two apart. It only ever meant "what is the
+ *    ground like here".
+ * 4. And a shell called onto a ramp lands on the ramp: `MortarStrike.groundAt` casts straight
+ *    down and takes whatever surface it finds. Painting a ramp as a wall told the player it was
+ *    neither a place to hit nor a place anyone could be standing, and both are false.
+ */
+export function classify(brush: Brush): 'skip' | 'wall' | 'deck' {
   const top = brush.position.y + brush.size.y / 2;
   const bottom = brush.position.y - brush.size.y / 2;
   if (top <= 0.1) return 'skip';

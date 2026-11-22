@@ -294,8 +294,9 @@ describe('the raster: which brushes are drawn, and as what', () => {
   });
 
   it('draws a pitched brush as a deck however low it sits — a ramp is somewhere to walk', () => {
-    // This rule is the minimap's alone. `MortarOverlay.classify` has no pitched-brush branch,
-    // which is the divergence the side task this unit opened is about.
+    // The rule was the minimap's alone until BACKLOG #69 was decided on 2026-11-22; the mortar
+    // overlay draws through `drawBrushes` now, so `MortarOverlay.test.ts` asserts the same two
+    // cases and the divergence cannot come back.
     const low = brush({ position: { x: 0, y: 1, z: 0 }, size: { x: 4, y: 1, z: 9 }, rotationX: 0.2 });
     expect(fillsOf(rig(mapDef({ brushes: [low] })).raster)).toEqual([DECK]);
     const rolled = brush({ position: { x: 0, y: 1, z: 0 }, size: { x: 4, y: 1, z: 9 }, rotationZ: 0.2 });

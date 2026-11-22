@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAYER_ENTITY_ID } from './DamageSystem';
+import { PLAYER_ENTITY_ID } from './LocalIdentity';
 import { LocalIdentity } from './LocalIdentity';
 
 /**

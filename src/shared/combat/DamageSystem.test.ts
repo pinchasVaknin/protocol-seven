@@ -5,13 +5,13 @@ import { Health } from '../player/Health';
 import { AR_DEFAULT, cloneWeaponDef, requireWeapon, type WeaponDef } from '../weapons/WeaponDefs';
 import {
   DamageSystem,
-  PLAYER_ENTITY_ID,
   damageAtRange,
   makeDamageRequest,
   type Damageable,
   type DamageRequest,
 } from './DamageSystem';
 import { HitboxRig } from './HitboxRig';
+import { PLAYER_ENTITY_ID } from './LocalIdentity';
 
 /**
  * The one door, pinned.
@@ -102,10 +102,6 @@ describe('a fresh request', () => {
       originY: 0,
       originZ: 0,
     });
-  });
-
-  it('is the seat every piece of local presentation was written against', () => {
-    expect(PLAYER_ENTITY_ID).toBe(0);
   });
 });
 

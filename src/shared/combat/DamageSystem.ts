@@ -17,6 +17,7 @@ import { EV, type GameBus } from '../core/Events';
 import { DEG2RAD, clamp01, lerp } from '../core/MathUtil';
 import { simCos, simSin } from '../core/SimMath';
 import { isHostile } from './Hostility';
+import { PLAYER_ENTITY_ID } from './LocalIdentity';
 import type { Health } from '../player/Health';
 import type { ShieldProfile, WeaponDef } from '../weapons/WeaponDefs';
 import type { HitboxRig, HitZone } from './HitboxRig';
@@ -133,8 +134,6 @@ export interface LastHitReport {
 
 // ========================================= CONSTANTS ========================================== \\
 //#region Constants
-export const PLAYER_ENTITY_ID = 0;
-
 /**
  * Metres. Below this the origin and the impact are the same point, and there is no side.
  *

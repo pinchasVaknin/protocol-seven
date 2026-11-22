@@ -1,7 +1,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
 import { HitboxRig, HUMANOID_RIG, rigLayoutFor } from '../combat/HitboxRig';
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../combat/LocalIdentity';
 import type { Health } from '../player/Health';
 import type { PlayerController } from '../player/PlayerController';
 import type { BotTeam, Combatant } from './Combatant';

@@ -16,7 +16,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../combat/LocalIdentity';
 import { EV, type GameBus } from '../core/Events';
 import { Btn, justPressed, type InputCommand } from '../core/InputCommand';
 import { DT } from '../core/Loop';

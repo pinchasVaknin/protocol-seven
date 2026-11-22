@@ -9,7 +9,7 @@ import { makeSyntheticV0Save, migrateSave, normaliseSave } from '../../shared/me
 import { sanitiseLoadout, UnlockState } from '../../shared/meta/Unlocks';
 import { PERKS, type PerkId } from '../../shared/perks/PerkDefs';
 import { STREAK_DEFS, type StreakId } from '../../shared/streaks/StreakDefs';
-import { PLAYER_ENTITY_ID } from '../../shared/combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../../shared/combat/LocalIdentity';
 import { EventBus } from '../../shared/core/EventBus';
 import {
   DETERMINISM_DEFAULTS,

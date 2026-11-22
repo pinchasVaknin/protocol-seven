@@ -32,7 +32,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
 import type { Combatant } from '../ai/Combatant';
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../combat/LocalIdentity';
 import { Killfeed, type CombatantDirectory } from '../combat/Killfeed';
 import { LocalIdentity } from '../combat/LocalIdentity';
 import type { ScoreSystem, ScoreTeam } from '../combat/ScoreSystem';

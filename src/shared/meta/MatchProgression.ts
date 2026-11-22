@@ -16,7 +16,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../combat/LocalIdentity';
 import type { ScoreSystem } from '../combat/ScoreSystem';
 import { EV, type GameBus } from '../core/Events';
 import type { PlayerSim } from '../player/PlayerState';

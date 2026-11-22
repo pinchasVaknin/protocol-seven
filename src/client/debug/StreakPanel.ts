@@ -1,7 +1,7 @@
 import type { GameBus } from '../../shared/core/Events';
 import { EV } from '../../shared/core/Events';
 import type { Match } from '../ClientMatch';
-import { PLAYER_ENTITY_ID } from '../../shared/combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../../shared/combat/LocalIdentity';
 import { STREAK_DEFS, type StreakId } from '../../shared/streaks/StreakDefs';
 import type { DebugOverlay } from './DebugOverlay';
 import { Disposable } from '../../shared/core/Disposable';

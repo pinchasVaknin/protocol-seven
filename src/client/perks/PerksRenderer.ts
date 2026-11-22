@@ -20,7 +20,7 @@
 import * as THREE from 'three';
 import { EV, type GameBus } from '../../shared/core/Events';
 import { clamp01 } from '../../shared/core/MathUtil';
-import { PLAYER_ENTITY_ID } from '../../shared/combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../../shared/combat/LocalIdentity';
 import {
   PICKUP_HEIGHT,
   PICKUP_LIFETIME,

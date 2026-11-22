@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**22 open entries: 16 with a heading of their own, and the six §3 holds inside its three clusters** (#6, #12 and #5; #2, which absorbed #19; #14 and #15). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three and batch I two on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**20 open entries: 14 with a heading of their own, and the six §3 holds inside its three clusters** (#6, #12 and #5; #2, which absorbed #19; #14 and #15). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two and batch J two on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -450,83 +450,7 @@ that does not actually hold it. What is not acceptable is a sixth copy.
 **Verify** `npm run check` + SIM snapshot/compare, plus C2’s own BROWSER check — this is camera
 work and no oracle covers it the way `intro.txt` covered `IntroPlan`.
 
-### #13 — Move `PLAYER_ENTITY_ID` out of `DamageSystem` · `open` · *needs a session of its own (B5 and B6 both declined it)*
-
-**Files** `src/shared/combat/DamageSystem.ts`, `src/shared/combat/LocalIdentity.ts`, every
-importer. **Origin** A9.
-
-`export const PLAYER_ENTITY_ID = 0` is declared in `DamageSystem.ts`. It is not a fact about
-damage: it is the entity id of the single-player seat, and it is what every piece of local
-presentation compares against. `LocalIdentity.ts` — the class whose entire subject is which entity
-this client is — imports it from `DamageSystem`, which reads backwards. A9 could not move it: R2
-freezes the public API.
-
-**Scope** `grep -rn "PLAYER_ENTITY_ID" src/ scripts/ public/ probes/`, decide the home —
-`combat/LocalIdentity.ts` is the obvious candidate since that file is about exactly this and
-`DamageSystem` needs it only as `makeDamageRequest`'s default `sourceId`; `shared/core/` is the
-alternative if a lower layer turns out to need it — then move it, re-exporting from the old
-location only if something outside `src/` depends on the old path.
-
-**Watch for** the constant is reachable at runtime through `window.__p7` and the verification
-scripts under `public/verify/`, so check those as well as `src/`.
-
-**Why neither B5 nor B6 could do it** (2026-10-20 and 2026-10-24). The entry was bound to
-"B5, B6" on the strength of them being importers. B5's files do not mention the constant at
-all. B6's does, in exactly one place — the `PLAYER_ENTITY_ID` argument
-`equipment.simulate(0, 0, 0, PLAYER_TEAM, PLAYER_ENTITY_ID, false)` passes — and the *move* is
-in `DamageSystem.ts` and `LocalIdentity.ts`, which belong to A9 and are in the ratchet. A
-`grep -rn "PLAYER_ENTITY_ID" src/` reaches **30 files**: `shared`, the server, four
-`client/debug` panels, `client/perks`, and the presentation files that compare against it. That
-is a tree-wide rename, which is precisely what R2 and R3 exist to keep out of a unit's commit.
-So this is an unbound task and needs its own session, as #32, #48 and #49 did.
-
-**Verify** `npm run check` + SIM snapshot/compare → `PASS`.
-
 ## 5. Suspected bugs, pinned in tests, awaiting a fix
-
-### #80 — Five of the twelve weapons are framed slightly off their own diagonal in the preview · `open` *(opened 2026-11-11 by C20)*
-
-**Files** `src/client/ui/WeaponPreview.ts` (`buildFitted`). **Pinned by**
-`WeaponPreview.test.ts`, *"frames the two SMGs, the two LMGs and one sniper slightly off"*.
-**Origin** C20's characterization tests.
-
-`buildFitted` measures the model it has just built, scales it so its bounding **diagonal** is
-`FIT_DIAGONAL` (0.62 m), and offsets it by the scaled centre so it turns on the spot. For
-seven of the twelve that is exact to twelve places. For the other five it is not:
-
-```
-smg_wasp         diag 0.612802   off axis 0.006730      1.16% under
-smg_meridian     diag 0.617571   off axis 0.002816      0.39% under
-lmg_bastion      diag 0.623207   off axis 0.004189      0.52% over
-lmg_monolith     diag 0.624919   off axis 0.005917      0.79% over
-sniper_vantage   diag 0.620561   off axis 0.001025      0.09% over
-```
-
-The same numbers come out of node and out of the browser, to six places, so it is the
-arithmetic and not the environment. The box `buildFitted` measures and the box the same model
-reports once its world matrices are flushed are not the same box for these five —
-`Box3.setFromObject` updates an object's **descendants** and not the object itself, and these
-five have a part whose matrix is written after it is built.
-
-**It is small.** Six millimetres off the axis on a model 0.62 m across, on a panel 360 px
-wide: under half a pixel. But the comment above that code says the ordering exists so the
-weapon *"turns on the spot"* rather than wobbling, and for five weapons it wobbles — by less
-than the eye can see, which is exactly why nobody found it.
-
-**Decide** whether to flush the matrices before measuring (`model.root.updateMatrixWorld(true)`
-before the `Box3`, one line) or to leave it and relax the comment. The first is almost
-certainly right and almost certainly invisible; the test pins today's numbers either way, so
-it will say plainly which weapons moved.
-
-**Verify** `npm run check`; C20's dump oracle holds all twelve numbers, so a fix shows up as
-twelve lines of diff and nothing else.
-
----
-
-Each of these is wrong today, was found while writing characterization tests, and was **pinned
-rather than fixed** under §5.9 of the prompt — the test carries
-`// Pins current behaviour; suspected bug: <title>`. Fixing one means updating its pinning test in
-the same commit, with the reason.
 
 ### #76 — The one line of state on the settings screen is told apart only by its position · `open` *(opened 2026-11-09 by C17)*
 

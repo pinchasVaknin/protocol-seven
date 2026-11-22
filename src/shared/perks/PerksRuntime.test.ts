@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BotTeam, Combatant } from '../ai/Combatant';
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../combat/LocalIdentity';
 import { HitboxRig } from '../combat/HitboxRig';
 import { createGameBus, EV, type GameBus } from '../core/Events';
 import { DT } from '../core/Loop';

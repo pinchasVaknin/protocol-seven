@@ -38,7 +38,8 @@ import {
   type PerceptionConfig,
   type TierTable,
 } from '../shared/ai/DifficultyTiers';
-import { DamageSystem, PLAYER_ENTITY_ID } from '../shared/combat/DamageSystem';
+import { DamageSystem } from '../shared/combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../shared/combat/LocalIdentity';
 import { ScoreSystem } from '../shared/combat/ScoreSystem';
 import { createGameBus, EV, type GameBus } from '../shared/core/Events';
 import { DT } from '../shared/core/Loop';

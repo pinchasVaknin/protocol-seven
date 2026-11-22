@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../combat/LocalIdentity';
 import { HUMANOID_RIG, rigLayoutFor } from '../combat/HitboxRig';
 import { Health } from '../player/Health';
 import type { PlayerController } from '../player/PlayerController';

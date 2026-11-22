@@ -25,7 +25,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
 import type { Combatant } from '../ai/Combatant';
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../combat/LocalIdentity';
 import { EV, type GameBus } from '../core/Events';
 import { DT } from '../core/Loop';
 import type { PlayerSim } from '../player/PlayerState';

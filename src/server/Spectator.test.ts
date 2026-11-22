@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAYER_ENTITY_ID } from '../shared/combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../shared/combat/LocalIdentity';
 import { DEFAULT_HEALTH_CONFIG } from '../shared/player/Health';
 import { Spectator } from './Spectator';
 

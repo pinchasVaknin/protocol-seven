@@ -1,4 +1,5 @@
-import { PLAYER_ENTITY_ID, DamageSystem } from '../combat/DamageSystem';
+import { DamageSystem } from '../combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../combat/LocalIdentity';
 import { createGameBus } from '../core/Events';
 import { Btn, type MutableInputCommand } from '../core/InputCommand';
 import { DT } from '../core/Loop';

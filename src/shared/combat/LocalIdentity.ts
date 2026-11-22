@@ -1,6 +1,25 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import { PLAYER_ENTITY_ID } from './DamageSystem';
+//#endregion
+
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/**
+ * The entity id of the single-player seat.
+ *
+ * Declared in `DamageSystem.ts` from M2 until BACKLOG #13 was closed on 2026-11-22, where it
+ * was never a fact about damage: the damage engine read it once, as `makeDamageRequest`'s
+ * default `sourceId`, and twenty-one other files read it to ask "is this mine?". This file
+ * imported it from there, which read backwards — the file whose entire subject is which entity
+ * this client is, asking the damage engine what that entity used to be.
+ *
+ * **Read the file comment above before using it.** On a dedicated server this is not the local
+ * player; it is the empty spectator seat, and a comparison against it is false forever and
+ * silently. `LocalIdentity` is what a client asks instead. What this constant is still honestly
+ * for is the single-player seat in solo play, the server's own bookkeeping of seat zero, and
+ * `makeDamageRequest`'s default.
+ */
+export const PLAYER_ENTITY_ID = 0;
 //#endregion
 
 // ==================================== CLASS LocalIdentity ===================================== \\

@@ -2,9 +2,9 @@ import {
   DamageSystem,
   damageAtRange,
   makeDamageRequest,
-  PLAYER_ENTITY_ID,
   type DamageRequest,
 } from '../../shared/combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../../shared/combat/LocalIdentity';
 import { HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
 import { TargetDummy, buildDummyMaterials, type DummyMaterials } from '../combat/TargetDummy';
 import { EventBus } from '../../shared/core/EventBus';

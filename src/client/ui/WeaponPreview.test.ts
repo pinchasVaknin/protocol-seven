@@ -698,7 +698,8 @@ describe('the framing', () => {
      * Fitting the *diagonal* is what makes one number work for a pistol and a sniper rifle:
      * whatever angle the turntable is at, a box's projected extent is at most its diagonal.
      */
-    it('scales seven of the twelve to exactly the fitted diagonal', () => {
+    it('scales all twelve to exactly the fitted diagonal', () => {
+        // Seven, until BACKLOG #80 was fixed on 2026-11-22; the five below were the exceptions.
         for (const id of [
             'ar_carbine',
             'ar_vulcan',
@@ -707,6 +708,11 @@ describe('the framing', () => {
             'shotgun_breacher',
             'sniper_kestrel',
             'pistol_talon',
+            'smg_wasp',
+            'smg_meridian',
+            'lmg_bastion',
+            'lmg_monolith',
+            'sniper_vantage',
         ]) {
             expect(framingOf(id).diagonal).toBeCloseTo(0.62, 9);
         }
@@ -717,22 +723,35 @@ describe('the framing', () => {
      * subtracting the raw centre would leave the model off the axis by `(fit - 1)` times it
      * -- a weapon that wobbles as it spins rather than turning on the spot.
      */
-    it('centres those seven exactly on the turntable\'s axis', () => {
-        for (const id of ['ar_carbine', 'shotgun_breacher', 'pistol_talon']) {
+    it('centres all of them exactly on the turntable\'s axis', () => {
+        for (const id of ['ar_carbine', 'shotgun_breacher', 'pistol_talon', 'smg_wasp', 'lmg_monolith']) {
             expect(framingOf(id).offAxis).toBeLessThan(1e-9);
         }
     });
 
     /**
-     * Pins current behaviour; suspected bug: five weapons are framed off their own diagonal.
+     * BACKLOG #80, fixed 2026-11-22. These five were the exceptions, and this case recorded
+     * exactly how far off each one was:
      *
-     * The box `buildFitted` measures and the box the same model reports once its world
-     * matrices are flushed are not the same box for these five, so the fit is computed from
-     * the first and the result is the second: up to 0.8% large and up to 6 mm off the axis.
-     * That is the wobble the ordering comment exists to prevent, two orders of magnitude
-     * smaller -- invisible at this canvas size, and real. These are the numbers today.
+     * ```
+     * smg_wasp        0.612802  off axis 0.006730    1.16% under
+     * smg_meridian    0.617571  off axis 0.002816    0.39% under
+     * lmg_bastion     0.623207  off axis 0.004189    0.52% over
+     * lmg_monolith    0.624919  off axis 0.005917    0.79% over
+     * sniper_vantage  0.620561  off axis 0.001025    0.09% over
+     * ```
+     *
+     * `buildFitted` measured a box whose matrices were not settled — `setFromObject` updates
+     * descendants and not the root, and these five have a part whose local matrix is written
+     * after it is parented — so the fit was computed from one box and applied to another. One
+     * `updateMatrixWorld(true)` before the measurement closes all five, which is why the case
+     * above now names twelve weapons instead of seven.
+     *
+     * What is left here is the bound: the old numbers were all inside 2% of the frame, so the
+     * fix had to beat 2% and in fact reaches the same `toBeCloseTo(0.62, 9)` as the other
+     * seven. The 2% assertion stays as the floor nobody may fall back below.
      */
-    it('frames the two SMGs, the two LMGs and one sniper slightly off', () => {
+    it('frames the five that used to be off exactly like the rest', () => {
         const measured = Object.fromEntries(
             ['smg_wasp', 'smg_meridian', 'lmg_bastion', 'lmg_monolith', 'sniper_vantage'].map((id) => {
                 const f = framingOf(id);
@@ -740,17 +759,17 @@ describe('the framing', () => {
             }),
         );
         expect(measured).toEqual({
-            smg_wasp: [0.612802, 0.00673],
-            smg_meridian: [0.617571, 0.002816],
-            lmg_bastion: [0.623207, 0.004189],
-            lmg_monolith: [0.624919, 0.005917],
-            sniper_vantage: [0.620561, 0.001025],
+            smg_wasp: [0.62, 0],
+            smg_meridian: [0.62, 0],
+            lmg_bastion: [0.62, 0],
+            lmg_monolith: [0.62, 0],
+            sniper_vantage: [0.62, 0],
         });
     });
 
-    it('keeps even the worst of them inside two per cent of the frame', () => {
-        // The widest miss is WASP 9 at 1.16% under. Two per cent is the bound that says
-        // "small enough to be invisible", and it is the number the side task has to beat.
+    it('keeps every one of them inside two per cent of the frame', () => {
+        // The floor, kept from when the widest miss was WASP 9 at 1.16% under: 2% is the bound
+        // that said "small enough to be invisible", and nothing may fall back below it.
         for (const id of ['smg_wasp', 'smg_meridian', 'lmg_bastion', 'lmg_monolith', 'sniper_vantage']) {
             expect(Math.abs(framingOf(id).diagonal - 0.62)).toBeLessThan(0.0124);
         }

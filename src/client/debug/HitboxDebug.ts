@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { PLAYER_ENTITY_ID, type DamageSystem } from '../../shared/combat/DamageSystem';
+import { type DamageSystem } from '../../shared/combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../../shared/combat/LocalIdentity';
 import { HIT_ZONES, type HitZone } from '../../shared/combat/HitboxRig';
 
 /**

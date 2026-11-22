@@ -18,7 +18,8 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
-import { makeDamageRequest, PLAYER_ENTITY_ID, type DamageRequest, type DamageSystem } from '../combat/DamageSystem';
+import { makeDamageRequest, type DamageRequest, type DamageSystem } from '../combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../combat/LocalIdentity';
 import type { HitZone } from '../combat/HitboxRig';
 import { shotsFrom } from '../combat/ShotAccounting';
 import { EV, type GameBus } from '../core/Events';

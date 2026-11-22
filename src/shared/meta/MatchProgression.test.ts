@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAYER_ENTITY_ID } from '../combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../combat/LocalIdentity';
 import { ScoreSystem } from '../combat/ScoreSystem';
 import { createGameBus, EV, type GameBus } from '../core/Events';
 import { ChallengeTracker } from './ChallengeTracker';

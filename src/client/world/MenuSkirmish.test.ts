@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { EV } from '../../shared/core/Events';
 import { installClock } from '../../shared/core/Clock';
-import { PLAYER_ENTITY_ID } from '../../shared/combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../../shared/combat/LocalIdentity';
 import { findMap } from '../../shared/modes/ModeRegistry';
 import type { ProceduralTextures } from '../engine/ProceduralTextures';
 import type { CharacterAssetService } from '../characters/CharacterAssetService';

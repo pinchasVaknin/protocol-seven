@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { EventBus } from '../../shared/core/EventBus';
 import { EV, type GameBus, type GameEvents } from '../../shared/core/Events';
-import { PLAYER_ENTITY_ID } from '../../shared/combat/DamageSystem';
+import { PLAYER_ENTITY_ID } from '../../shared/combat/LocalIdentity';
 import { PICKUP_HEIGHT, PICKUP_LIFETIME, type PerksRuntime, type Pickup } from '../../shared/perks/PerksRuntime';
 import { PerksRenderer } from './PerksRenderer';
 

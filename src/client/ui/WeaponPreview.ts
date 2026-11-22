@@ -361,6 +361,19 @@ export class WeaponPreview {
      * The bounding box comes from the geometry that was just built, so a spec change moves
      * the framing with it and there is no second table to keep in step.
      */
+    /**
+     * The matrices are settled first, and that line is the whole of BACKLOG #80.
+     *
+     * `Box3.setFromObject` walks the tree and updates each **descendant**'s world matrix — not
+     * the root's own, and not a child's whose local matrix was written after it was parented.
+     * Five of the twelve weapons have such a part, so the box measured here and the box the
+     * same model reports a frame later were two different boxes: `smg_wasp` came out 1.16%
+     * under its fitted diagonal and 6.7 mm off the turntable's axis, `lmg_monolith` 0.79% over
+     * and 5.9 mm off. Six millimetres on a model 0.62 m across, on a panel 360 px wide, is
+     * under half a pixel — which is why it survived twelve weapons' worth of looking at it,
+     * and it is still the wobble the ordering comment below exists to prevent.
+     */
+    model.root.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(model.root);
     const centre = bounds.getCenter(new THREE.Vector3());
     const span = Math.max(bounds.getSize(new THREE.Vector3()).length(), MIN_SPAN);

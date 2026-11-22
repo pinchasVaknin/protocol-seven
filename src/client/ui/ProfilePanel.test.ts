@@ -6,6 +6,7 @@ import { defaultSettings } from '../../shared/meta/SaveData';
 import { BOT_CHARACTER_IDS, characterDefinition } from '../characters/CharacterCatalog';
 import { Profile } from '../meta/Profile';
 import { ProfilePanel } from './ProfilePanel';
+import { FakeElement, type FakeEvent } from './testing/dom';
 
 /**
  * Characterization tests for the profile panel (refactor unit C18, written before the
@@ -22,113 +23,26 @@ import { ProfilePanel } from './ProfilePanel';
 
 // ---------------------------------------------------------------------------- the DOM double
 
-type Listener = (event: FakeEvent) => void;
+/**
 
-interface FakeEvent {
-    key?: string;
-    stopPropagation: () => void;
-    preventDefault: () => void;
-}
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
 
-class FakeElement {
-    readonly tokens = new Set<string>();
-    readonly children: FakeElement[] = [];
-    readonly attributes = new Map<string, string>();
-    readonly listeners = new Map<string, Listener[]>();
-    readonly dataset: Record<string, string> = {};
-    readonly style: Record<string, string> = {};
-    textContent = '';
-    hidden = false;
-    type = '';
-    value = '';
-    maxLength = -1;
-    spellcheck = true;
-    autocomplete = '';
-    title = '';
-    src = '';
-    alt = '';
-    draggable = true;
-    parent: FakeElement | null = null;
-    focusCount = 0;
+ *
 
-    constructor(readonly tag: string) {}
+ * What stood here was 100 lines of it. This file keeps its own environment: the shared
 
-    get className(): string {
-        return [...this.tokens].join(' ');
-    }
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
 
-    set className(value: string) {
-        this.tokens.clear();
-        for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-    }
+ * `window` on the way past is how a green suite starts meaning something else.
 
-    readonly classList = {
-        add: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.add(token);
-        },
-        remove: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.delete(token);
-        },
-        toggle: (token: string, on?: boolean): void => {
-            if (on ?? !this.tokens.has(token)) this.tokens.add(token);
-            else this.tokens.delete(token);
-        },
-        contains: (token: string): boolean => this.tokens.has(token),
-    };
+ *
 
-    appendChild(child: FakeElement): FakeElement {
-        child.parent = this;
-        this.children.push(child);
-        return child;
-    }
+ * Same two differences as `PauseMenu`: `setAttribute` now reflects `class`, and the focus
 
-    append(...nodes: FakeElement[]): void {
-        for (const node of nodes) this.appendChild(node);
-    }
+ * counter moved into the shared class unchanged.
 
-    replaceChildren(...nodes: FakeElement[]): void {
-        for (const child of this.children) child.parent = null;
-        this.children.length = 0;
-        this.append(...nodes);
-    }
+ */
 
-    setAttribute(name: string, value: string): void {
-        this.attributes.set(name, value);
-    }
-
-    getAttribute(name: string): string | null {
-        return this.attributes.get(name) ?? null;
-    }
-
-    addEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) this.listeners.set(type, [fn]);
-        else held.push(fn);
-    }
-
-    focus(): void {
-        this.focusCount++;
-    }
-
-    querySelector(selector: string): FakeElement | null {
-        return this.queryAll(selector)[0] ?? null;
-    }
-
-    querySelectorAll(selector: string): FakeElement[] {
-        return this.queryAll(selector);
-    }
-
-    private queryAll(selector: string): FakeElement[] {
-        const token = selector.replace(/^\./, '');
-        const out: FakeElement[] = [];
-        const walk = (el: FakeElement): void => {
-            if (el.tokens.has(token)) out.push(el);
-            for (const child of el.children) walk(child);
-        };
-        for (const child of this.children) walk(child);
-        return out;
-    }
-}
 
 function fire(el: FakeElement, type: string, over: Partial<FakeEvent> = {}): void {
     const event: FakeEvent = { stopPropagation: () => undefined, preventDefault: () => undefined, ...over };

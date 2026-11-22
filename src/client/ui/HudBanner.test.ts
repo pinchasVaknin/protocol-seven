@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ViewerContext } from '../../shared/ui/TeamColour';
 import { HudBanner, formatClock, makeBannerState, type BannerState } from './HudBanner';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the score banner (refactor unit C14, written before the refactor).
@@ -18,61 +19,24 @@ import { HudBanner, formatClock, makeBannerState, type BannerState } from './Hud
 
 // ---------------------------------------------------------------------------- the DOM double
 
-class FakeElement {
-  readonly tokens = new Set<string>();
-  /** Unset properties read back as `''`, which is what a real `CSSStyleDeclaration` does. */
-  readonly style: Record<string, string> = { opacity: '', transform: '', visibility: '' };
-  readonly children: FakeElement[] = [];
-  textContent = '';
-  hidden = false;
-  parent: FakeElement | null = null;
+/**
 
-  constructor(readonly tag: string) {}
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
 
-  get className(): string {
-    return [...this.tokens].join(' ');
-  }
+ *
 
-  set className(value: string) {
-    this.tokens.clear();
-    for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-  }
+ * What stood here was 52 lines of it. This file keeps its own environment: the shared
 
-  readonly classList = {
-    toggle: (token: string, on?: boolean): void => {
-      const want = on ?? !this.tokens.has(token);
-      if (want) this.tokens.add(token);
-      else this.tokens.delete(token);
-    },
-    add: (token: string): void => void this.tokens.add(token),
-    remove: (token: string): void => void this.tokens.delete(token),
-    contains: (token: string): boolean => this.tokens.has(token),
-  };
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
 
-  appendChild(child: FakeElement): FakeElement {
-    child.parent = this;
-    this.children.push(child);
-    return child;
-  }
+ * `window` on the way past is how a green suite starts meaning something else.
 
-  append(...nodes: FakeElement[]): void {
-    for (const node of nodes) this.appendChild(node);
-  }
+ */
 
-  get firstElementChild(): FakeElement | null {
-    return this.children[0] ?? null;
-  }
-
-  remove(): void {
-    const siblings = this.parent?.children;
-    if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-    this.parent = null;
-  }
-}
 
 beforeEach(() => {
   (globalThis as Record<string, unknown>).document = {
-    createElement: (tag: string) => new FakeElement(tag),
+    createElement: (tag: string) => new FakeElement(tag, { opacity: '', transform: '', visibility: '' }),
   };
   // The five `x instanceof HTMLElement` guards in the HUD are a real branch: without this they
   // throw rather than return false, which would pin nothing.

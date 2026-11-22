@@ -3,6 +3,7 @@ import type { PlayerScore, ScoreSystem } from '../../shared/combat/ScoreSystem';
 import type { ColumnDef } from '../../shared/modes/GameMode';
 import type { ViewerContext } from '../../shared/ui/TeamColour';
 import { Scoreboard } from './Scoreboard';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the Tab board (refactor unit C15, written before the refactor).
@@ -15,84 +16,64 @@ import { Scoreboard } from './Scoreboard';
 
 // ---------------------------------------------------------------------------- the DOM double
 
-class FakeElement {
-  readonly tokens = new Set<string>();
-  /** Unset properties read back as `''`, which is what a real `CSSStyleDeclaration` does. */
-  readonly style: Record<string, string> & { setProperty: (k: string, v: string) => void };
-  readonly properties = new Map<string, string>();
-  readonly children: FakeElement[] = [];
-  textContent = '';
-  hidden = false;
-  parent: FakeElement | null = null;
+/**
 
-  constructor(readonly tag: string) {
-    this.style = {
-      opacity: '',
-      transform: '',
-      gridTemplateColumns: '',
-      setProperty: (k: string, v: string) => void this.properties.set(k, v),
-    } as unknown as Record<string, string> & { setProperty: (k: string, v: string) => void };
-  }
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
 
-  get className(): string {
-    return [...this.tokens].join(' ');
-  }
+ *
 
-  set className(value: string) {
-    this.tokens.clear();
-    for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-  }
+ * What stood here was 67 lines of it. This file keeps its own environment: the shared
 
-  readonly classList = {
-    toggle: (token: string, on?: boolean): void => {
-      const want = on ?? !this.tokens.has(token);
-      if (want) this.tokens.add(token);
-      else this.tokens.delete(token);
-    },
-    contains: (token: string): boolean => this.tokens.has(token),
-  };
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
 
-  appendChild(child: FakeElement): FakeElement {
-    // A real `appendChild` on a node that already has a parent *moves* it, which is how the
-    // board reorders its blocks and how FFA puts both sets of rows under one body.
-    child.remove();
-    child.parent = this;
-    this.children.push(child);
-    return child;
-  }
+ * `window` on the way past is how a green suite starts meaning something else.
 
-  append(...nodes: FakeElement[]): void {
-    for (const node of nodes) this.appendChild(node);
-  }
+ *
 
-  replaceChildren(...nodes: FakeElement[]): void {
-    for (const child of this.children) child.parent = null;
-    this.children.length = 0;
-    this.append(...nodes);
-  }
+ * Two of its answers are its own and `BoardElement` below keeps both -- see that class.
 
-  get firstElementChild(): FakeElement | null {
-    return this.children[0] ?? null;
-  }
+ */
 
-  remove(): void {
-    const siblings = this.parent?.children;
-    if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-    this.parent = null;
-  }
-}
 
 beforeEach(() => {
   (globalThis as Record<string, unknown>).document = {
-    createElement: (tag: string) => new FakeElement(tag),
+    createElement: (tag: string) => new BoardElement(tag),
   };
-  (globalThis as Record<string, unknown>).HTMLElement = FakeElement;
+  (globalThis as Record<string, unknown>).HTMLElement = BoardElement;
 });
 
 afterEach(() => {
   delete (globalThis as Record<string, unknown>).document;
   delete (globalThis as Record<string, unknown>).HTMLElement;
 });
+
+/**
+ * The two things this suite's own double answered differently, and both are load-bearing.
+ *
+ * **`appendChild` moves a node that already has a parent**, by taking it off the old one
+ * first. That is what a real `appendChild` does, and it is how the board reorders its blocks
+ * and how FFA puts both sets of rows under one body. This file's double is the only one of the
+ * suite's thirty that got it right; the shared one pushes without unlinking, which leaves a
+ * moved node in two children lists at once. Overridden here rather than fixed there, because
+ * fixing it there would change what twenty-odd other suites see and that is its own job --
+ * BACKLOG #79 records it.
+ *
+ * **`style.setProperty` records into `properties`** instead of writing a style key, because the
+ * board sets a custom property (`--sb-cols`) and the suite reads it back by name.
+ */
+class BoardElement extends FakeElement {
+    readonly properties = new Map<string, string>();
+
+    constructor(tag: string) {
+        super(tag, { opacity: '', transform: '', gridTemplateColumns: '' });
+        this.style.setProperty = (k: string, v: string): void => void this.properties.set(k, v);
+    }
+
+    override appendChild(child: FakeElement): FakeElement {
+        child.remove();
+        return super.appendChild(child);
+    }
+}
 
 // ---------------------------------------------------------------------------- the rig
 
@@ -269,7 +250,7 @@ describe('setColumns', () => {
 
   it('hands the body the same template through a custom property', () => {
     const r = rig();
-    const body = blockAt(r, 0).children[1] as FakeElement;
+    const body = blockAt(r, 0).children[1] as BoardElement;
     expect(body.properties.get('--sb-cols')).toBe('minmax(0, 1fr) 4ch 4ch 6ch');
   });
 
@@ -464,7 +445,7 @@ describe('refresh', () => {
 
 describe('dispose', () => {
   it('takes the board off whatever is holding it', () => {
-    const host = new FakeElement('div');
+    const host = new BoardElement('div');
     const board = new Scoreboard(2);
     host.appendChild(board.element as unknown as FakeElement);
     expect(host.children).toHaveLength(1);

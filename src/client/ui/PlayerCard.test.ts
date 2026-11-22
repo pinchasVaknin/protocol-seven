@@ -4,6 +4,7 @@ import { defaultSettings } from '../../shared/meta/SaveData';
 import { characterDefinition, BOT_CHARACTER_IDS } from '../characters/CharacterCatalog';
 import { Profile } from '../meta/Profile';
 import { levelLine, PlayerCard } from './PlayerCard';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the player card (refactor unit C18, written before the refactor).
@@ -19,66 +20,26 @@ import { levelLine, PlayerCard } from './PlayerCard';
 
 // ---------------------------------------------------------------------------- the DOM double
 
-class FakeElement {
-    readonly tokens = new Set<string>();
-    readonly children: FakeElement[] = [];
-    readonly attributes = new Map<string, string>();
-    readonly listeners = new Map<string, (() => void)[]>();
-    textContent = '';
-    hidden = false;
-    type = '';
-    title = '';
-    src = '';
-    alt = '';
-    draggable = true;
-    parent: FakeElement | null = null;
+/**
 
-    constructor(readonly tag: string) {}
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
 
-    get className(): string {
-        return [...this.tokens].join(' ');
-    }
+ *
 
-    set className(value: string) {
-        this.tokens.clear();
-        for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-    }
+ * What stood here was 61 lines of it. This file keeps its own environment: the shared
 
-    readonly classList = {
-        add: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.add(token);
-        },
-        toggle: (token: string, on?: boolean): void => {
-            if (on ?? !this.tokens.has(token)) this.tokens.add(token);
-            else this.tokens.delete(token);
-        },
-        contains: (token: string): boolean => this.tokens.has(token),
-    };
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
 
-    appendChild(child: FakeElement): FakeElement {
-        child.parent = this;
-        this.children.push(child);
-        return child;
-    }
+ * `window` on the way past is how a green suite starts meaning something else.
 
-    append(...nodes: FakeElement[]): void {
-        for (const node of nodes) this.appendChild(node);
-    }
+ *
 
-    setAttribute(name: string, value: string): void {
-        this.attributes.set(name, value);
-    }
+ * Its own `setAttribute` did not reflect `class` into the token set; the shared one does. Its
 
-    getAttribute(name: string): string | null {
-        return this.attributes.get(name) ?? null;
-    }
+ * listener map held `() => void`, which the shared `Listener` now admits -- see its note.
 
-    addEventListener(type: string, fn: () => void): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) this.listeners.set(type, [fn]);
-        else held.push(fn);
-    }
-}
+ */
+
 
 function fire(el: FakeElement, type: string): void {
     for (const fn of [...(el.listeners.get(type) ?? [])]) fn();

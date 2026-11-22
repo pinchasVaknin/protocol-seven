@@ -5,6 +5,7 @@ import { levelProgress, prestigeLabel, xpAtLevelStart } from '../../shared/meta/
 import { requireWeapon } from '../../shared/weapons/WeaponDefs';
 import type { XpLine, XpLines, XpReport } from '../../shared/meta/XpRules';
 import { XpSummary } from './XpSummary';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the XP cadence (refactor unit C18, written before the refactor).
@@ -21,89 +22,41 @@ import { XpSummary } from './XpSummary';
 
 // ---------------------------------------------------------------------------- the DOM double
 
-class FakeElement {
-    readonly tokens = new Set<string>();
-    readonly children: FakeElement[] = [];
-    readonly attributes = new Map<string, string>();
-    readonly listeners = new Map<string, (() => void)[]>();
-    readonly style: Record<string, string> = {};
-    textContent = '';
-    hidden = false;
-    type = '';
-    parent: FakeElement | null = null;
-    /** Reading one is the forced reflow the transitions depend on; counted, never faked away. */
-    offsetWidth = 100;
-    offsetHeight = 20;
+/**
 
-    constructor(readonly tag: string) {}
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
 
-    get className(): string {
-        return [...this.tokens].join(' ');
-    }
+ *
 
-    set className(value: string) {
-        this.tokens.clear();
-        for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-    }
+ * What stood here was 81 lines of it. This file keeps its own environment: the shared
 
-    readonly classList = {
-        add: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.add(token);
-        },
-        remove: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.delete(token);
-        },
-        toggle: (token: string, on?: boolean): void => {
-            if (on ?? !this.tokens.has(token)) this.tokens.add(token);
-            else this.tokens.delete(token);
-        },
-        contains: (token: string): boolean => this.tokens.has(token),
-    };
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
 
-    appendChild(child: FakeElement): FakeElement {
-        child.parent = this;
-        this.children.push(child);
-        return child;
-    }
+ * `window` on the way past is how a green suite starts meaning something else.
 
-    append(...nodes: FakeElement[]): void {
-        for (const node of nodes) this.appendChild(node);
-    }
+ *
 
-    replaceChildren(...nodes: FakeElement[]): void {
-        for (const child of this.children) child.parent = null;
-        this.children.length = 0;
-        this.append(...nodes);
-    }
+ * Its own `setAttribute` did not reflect `class`; the shared one does. The measured box is the
 
-    get childElementCount(): number {
-        return this.children.length;
-    }
+ * one thing it needs its own answer for, so `XpElement` below overrides it and nothing else.
 
-    setAttribute(name: string, value: string): void {
-        this.attributes.set(name, value);
-    }
+ */
 
-    getAttribute(name: string): string | null {
-        return this.attributes.get(name) ?? null;
-    }
-
-    addEventListener(type: string, fn: () => void): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) this.listeners.set(type, [fn]);
-        else held.push(fn);
-    }
-
-    removeEventListener(type: string, fn: () => void): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) return;
-        const at = held.indexOf(fn);
-        if (at >= 0) held.splice(at, 1);
-    }
-}
 
 function fire(el: FakeElement, type: string): void {
     for (const fn of [...(el.listeners.get(type) ?? [])]) fn();
+}
+
+/**
+ * The measured box, which this suite's own double answered differently from every other.
+ *
+ * `offsetWidth` is read to force the reflow the XP bar's transitions depend on, so the number
+ * is part of what the suite asserts rather than a don't-care: the shared default of 200x40 is
+ * a different bar. Nothing else here differs.
+ */
+class XpElement extends FakeElement {
+    override offsetWidth = 100;
+    override offsetHeight = 20;
 }
 
 // ---------------------------------------------------------------------------- the clock
@@ -129,7 +82,7 @@ beforeEach(() => {
     rafQueue = [];
     nowMs = 1000;
     (globalThis as Record<string, unknown>)['document'] = {
-        createElement: (tag: string) => new FakeElement(tag),
+        createElement: (tag: string) => new XpElement(tag),
     };
     (globalThis as Record<string, unknown>)['HTMLElement'] = FakeElement;
     (globalThis as Record<string, unknown>)['requestAnimationFrame'] = (fn: (t: number) => void): number => {

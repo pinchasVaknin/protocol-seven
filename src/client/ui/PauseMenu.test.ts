@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PauseMenu } from './PauseMenu';
+import { FakeElement, type FakeEvent } from './testing/dom';
 
 /**
  * Characterization tests for the pause screen (refactor unit C17, written before the refactor).
@@ -15,94 +16,26 @@ import { PauseMenu } from './PauseMenu';
 
 // ---------------------------------------------------------------------------- the DOM double
 
-type Listener = (event: FakeEvent) => void;
+/**
 
-interface FakeEvent {
-    preventDefault: () => void;
-    stopPropagation: () => void;
-}
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
 
-class FakeElement {
-    readonly tokens = new Set<string>();
-    readonly children: FakeElement[] = [];
-    readonly attributes = new Map<string, string>();
-    readonly listeners = new Map<string, Listener[]>();
-    textContent = '';
-    hidden = false;
-    type = '';
-    value = '';
-    placeholder = '';
-    autocomplete = '';
-    spellcheck = true;
-    maxLength = -1;
-    parent: FakeElement | null = null;
-    /** How many times focus and blur were asked for, which is the whole of `show` and `hide`. */
-    focusCount = 0;
-    blurCount = 0;
+ *
 
-    constructor(readonly tag: string) {}
+ * What stood here was 82 lines of it. This file keeps its own environment: the shared
 
-    get className(): string {
-        return [...this.tokens].join(' ');
-    }
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
 
-    set className(value: string) {
-        this.tokens.clear();
-        for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-    }
+ * `window` on the way past is how a green suite starts meaning something else.
 
-    readonly classList = {
-        add: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.add(token);
-        },
-        remove: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.delete(token);
-        },
-        toggle: (token: string, on?: boolean): void => {
-            if (on ?? !this.tokens.has(token)) this.tokens.add(token);
-            else this.tokens.delete(token);
-        },
-        contains: (token: string): boolean => this.tokens.has(token),
-    };
+ *
 
-    appendChild(child: FakeElement): FakeElement {
-        child.parent = this;
-        this.children.push(child);
-        return child;
-    }
+ * Its own `setAttribute` did not reflect `class`; the shared one does. The focus and blur
 
-    append(...nodes: FakeElement[]): void {
-        for (const node of nodes) this.appendChild(node);
-    }
+ * counters this suite asserts on are in the shared class now, at the same defaults.
 
-    remove(): void {
-        const siblings = this.parent?.children;
-        if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-        this.parent = null;
-    }
+ */
 
-    setAttribute(name: string, value: string): void {
-        this.attributes.set(name, value);
-    }
-
-    getAttribute(name: string): string | null {
-        return this.attributes.get(name) ?? null;
-    }
-
-    addEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) this.listeners.set(type, [fn]);
-        else held.push(fn);
-    }
-
-    focus(): void {
-        this.focusCount++;
-    }
-
-    blur(): void {
-        this.blurCount++;
-    }
-}
 
 function fire(el: FakeElement, type: string): void {
     const event: FakeEvent = { preventDefault: () => undefined, stopPropagation: () => undefined };

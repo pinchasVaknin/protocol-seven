@@ -53,8 +53,15 @@
 
 // =========================================== TYPES ============================================ \\
 //#region Types
-/** A listener as the double stores it: it is handed a `FakeEvent`, never a real one. */
-export type Listener = (event: FakeEvent) => void;
+/**
+ * A listener as the double stores it: it is handed a `FakeEvent`, never a real one.
+ *
+ * The parameter is optional because two suites dispatch by calling the stored function with no
+ * argument at all — the handlers they exercise are `() => void` and read nothing off the event,
+ * so passing one would be inventing a value they never saw. A handler that does take an event
+ * is still assignable here, and nothing about this changes at run time: it is a type.
+ */
+export type Listener = (event?: FakeEvent) => void;
 
 /**
  * The event shape the suite dispatches.
@@ -225,6 +232,29 @@ export class FakeElement {
   draggable = true;
   width = 0;
   height = 0;
+  /**
+   * The form and anchor properties the screens assign, at a real element's own defaults.
+   *
+   * Only four doubles carried any of these and no two disagreed on a default, so they are here
+   * as one set rather than four. They are inert for the rest: a field nothing reads and nothing
+   * writes is a field, and TypeScript is the only reason they have to exist at all — a screen
+   * that sets `input.maxLength` will not compile against a class that has no such property.
+   */
+  tabIndex = -1;
+  placeholder = '';
+  maxLength = -1;
+  readOnly = false;
+  spellcheck = true;
+  autocomplete = '';
+  min = '';
+  max = '';
+  step = '';
+  href = '';
+  target = '';
+  rel = '';
+  /** How many times `focus()` and `blur()` were called. Three suites assert on these. */
+  focusCount = 0;
+  blurCount = 0;
   offsetWidth = 200;
   offsetHeight = 40;
   /** `Splash.skullShift` measures the box with this; 0 unless a test sets it. */
@@ -315,6 +345,26 @@ export class FakeElement {
   }
 
   /**
+   * A deep clone: the tag, the attributes, and every child cloned in turn.
+   *
+   * Four of the suite's doubles carried exactly this and a fifth (`MatchHud`) carried a shallow
+   * one that dropped the children, which is drift rather than a decision — a real
+   * `cloneNode(true)` is deep and `cloneNode(false)` is not, and neither of them read the flag.
+   * The deep one is here because it is what a killfeed row needs: the row is cloned from a
+   * template and the weapon icon inside it has to come along.
+   *
+   * The class comes with it only because `setAttribute` reflects `class` into the token set. In
+   * the copies where it did not, a clone came out unclassed and `querySelector` could not find
+   * it — the same silent hole C19 found, one step further along.
+   */
+  cloneNode(_deep?: boolean): FakeElement {
+    const copy = new FakeElement(this.tag);
+    for (const [key, value] of this.attributes) copy.setAttribute(key, value);
+    for (const child of this.children) copy.appendChild(child.cloneNode(true));
+    return copy;
+  }
+
+  /**
    * `setAttribute('class', …)` writes the token set, as a real element's does.
    *
    * This is how `makeIconSvg` names its icons: an SVG element has no settable `className`, so
@@ -391,8 +441,22 @@ export class FakeElement {
     return this.rect;
   }
 
-  focus(): void {}
-  blur(): void {}
+  /**
+   * Counts the call and does nothing else.
+   *
+   * Three of the suite's doubles counted and the rest were empty, so counting is the superset:
+   * a suite that never reads `focusCount` cannot tell the difference. What it deliberately does
+   * *not* do is move `document.activeElement` — one file's double did that, and a focus call
+   * that silently rewrites a global is the kind of reach a shared double should not have. That
+   * file overrides this method and says so.
+   */
+  focus(): void {
+    this.focusCount++;
+  }
+
+  blur(): void {
+    this.blurCount++;
+  }
 
   /** One class token, searched over the subtree. See the overview on what this is not. */
   querySelector(selector: string): FakeElement | null {

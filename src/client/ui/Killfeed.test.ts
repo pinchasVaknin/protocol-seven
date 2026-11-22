@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { GameEvents } from '../../shared/core/Events';
 import type { ViewerContext } from '../../shared/ui/TeamColour';
 import { KillfeedView } from './Killfeed';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the killfeed's five rows (refactor unit C15, written before the
@@ -14,82 +15,31 @@ import { KillfeedView } from './Killfeed';
 
 // ---------------------------------------------------------------------------- the DOM double
 
-class FakeElement {
-  readonly tokens = new Set<string>();
-  /** Unset properties read back as `''`, which is what a real `CSSStyleDeclaration` does. */
-  readonly style: Record<string, string> = { opacity: '', transform: '' };
-  readonly children: FakeElement[] = [];
-  readonly attributes = new Map<string, string>();
-  textContent = '';
-  hidden = false;
-  parent: FakeElement | null = null;
+/**
 
-  constructor(readonly tag: string) {}
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
 
-  get className(): string {
-    return [...this.tokens].join(' ');
-  }
+ *
 
-  set className(value: string) {
-    this.tokens.clear();
-    for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-  }
+ * What stood here was 72 lines of it. This file keeps its own environment: the shared
 
-  readonly classList = {
-    toggle: (token: string, on?: boolean): void => {
-      const want = on ?? !this.tokens.has(token);
-      if (want) this.tokens.add(token);
-      else this.tokens.delete(token);
-    },
-    contains: (token: string): boolean => this.tokens.has(token),
-  };
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
 
-  appendChild(child: FakeElement): FakeElement {
-    child.parent = this;
-    this.children.push(child);
-    return child;
-  }
+ * `window` on the way past is how a green suite starts meaning something else.
 
-  append(...nodes: FakeElement[]): void {
-    for (const node of nodes) this.appendChild(node);
-  }
+ *
 
-  replaceChildren(...nodes: FakeElement[]): void {
-    for (const child of this.children) child.parent = null;
-    this.children.length = 0;
-    this.append(...nodes);
-  }
+ * Its own `setAttribute` did not reflect `class` into the token set and the shared one does, so
 
-  get firstElementChild(): FakeElement | null {
-    return this.children[0] ?? null;
-  }
+ * C19's fix reaches this file here. Its `cloneNode` was the deep one now in the shared class.
 
-  remove(): void {
-    const siblings = this.parent?.children;
-    if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-    this.parent = null;
-  }
+ */
 
-  setAttribute(name: string, value: string): void {
-    this.attributes.set(name, value);
-  }
-
-  getAttribute(name: string): string | null {
-    return this.attributes.get(name) ?? null;
-  }
-
-  cloneNode(_deep?: boolean): FakeElement {
-    const copy = new FakeElement(this.tag);
-    for (const [key, value] of this.attributes) copy.setAttribute(key, value);
-    for (const child of this.children) copy.appendChild(child.cloneNode(true));
-    return copy;
-  }
-}
 
 beforeEach(() => {
   (globalThis as Record<string, unknown>).document = {
-    createElement: (tag: string) => new FakeElement(tag),
-    createElementNS: (_ns: string, tag: string) => new FakeElement(tag),
+    createElement: (tag: string) => new FakeElement(tag, { opacity: '', transform: '' }),
+    createElementNS: (_ns: string, tag: string) => new FakeElement(tag, { opacity: '', transform: '' }),
   };
   (globalThis as Record<string, unknown>).HTMLElement = FakeElement;
 });

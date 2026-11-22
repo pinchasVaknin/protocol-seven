@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { requireWeapon, type WeaponDef } from '../../shared/weapons/WeaponDefs';
 import { LoadoutStats } from './LoadoutStats';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the stat read-out (refactor unit C16, written before the refactor).
@@ -17,48 +18,20 @@ import { LoadoutStats } from './LoadoutStats';
 
 // ---------------------------------------------------------------------------- the DOM double
 
-class FakeElement {
-    readonly tokens = new Set<string>();
-    readonly children: FakeElement[] = [];
-    textContent = '';
-    parent: FakeElement | null = null;
+/**
 
-    constructor(readonly tag: string) {}
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
 
-    get className(): string {
-        return [...this.tokens].join(' ');
-    }
+ *
 
-    set className(value: string) {
-        this.tokens.clear();
-        for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-    }
+ * What stood here was 43 lines of it. This file keeps its own environment: the shared
 
-    readonly classList = {
-        toggle: (token: string, on?: boolean): void => {
-            const want = on ?? !this.tokens.has(token);
-            if (want) this.tokens.add(token);
-            else this.tokens.delete(token);
-        },
-        contains: (token: string): boolean => this.tokens.has(token),
-    };
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
 
-    appendChild(child: FakeElement): FakeElement {
-        child.parent = this;
-        this.children.push(child);
-        return child;
-    }
+ * `window` on the way past is how a green suite starts meaning something else.
 
-    append(...nodes: FakeElement[]): void {
-        for (const node of nodes) this.appendChild(node);
-    }
+ */
 
-    replaceChildren(...nodes: FakeElement[]): void {
-        for (const child of this.children) child.parent = null;
-        this.children.length = 0;
-        this.append(...nodes);
-    }
-}
 
 beforeEach(() => {
     (globalThis as Record<string, unknown>)['document'] = {

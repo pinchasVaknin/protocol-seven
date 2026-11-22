@@ -560,7 +560,11 @@ const FINISHED = {
   ],
   C22: ['src/client/MatchWorld.ts'],
   // Backlog sessions, 2026-11-21: new files that carry the skeleton from their first commit.
-  BACKLOG: ['src/client/world/StaticMatrices.ts'],
+  BACKLOG: [
+    'src/client/world/StaticMatrices.ts',
+    'src/client/combat/ZoneGeometry.ts',
+    'src/client/engine/CanvasTile.ts',
+  ],
   C23: [
     'src/client/Game.ts',
     'src/client/GameFrame.ts',

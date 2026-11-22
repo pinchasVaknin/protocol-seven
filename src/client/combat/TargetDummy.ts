@@ -14,12 +14,12 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { DT } from '../../shared/core/Loop';
 import { clamp01, smoothstep } from '../../shared/core/MathUtil';
 import { Health, type HealthConfig } from '../../shared/player/Health';
 import type { Damageable } from '../../shared/combat/DamageSystem';
 import { HitboxRig, HUMANOID_RIG, type HitZone } from '../../shared/combat/HitboxRig';
+import { GREYBOX_BODY_COLOR, GREYBOX_HEAD_COLOR, zoneGeometry } from './ZoneGeometry';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -202,8 +202,8 @@ export class TargetDummy implements Damageable {
     this.baseY = spec.y;
     this.baseZ = spec.z;
 
-    this.body = new THREE.Mesh(buildZoneGeometry(['torso', 'arm', 'leg']), materials.body);
-    this.head = new THREE.Mesh(buildZoneGeometry(['head']), materials.head);
+    this.body = new THREE.Mesh(zoneGeometry(['torso', 'arm', 'leg'], 'dummy'), materials.body);
+    this.head = new THREE.Mesh(zoneGeometry(['head'], 'dummy'), materials.head);
     this.body.castShadow = true;
     this.head.castShadow = true;
     this.disposables.push(this.body.geometry, this.head.geometry);
@@ -605,8 +605,8 @@ export class TargetDummy implements Damageable {
 // ===================================== EXPORTED FUNCTIONS ===================================== \\
 //#region Exported Functions
 export function buildDummyMaterials(): DummyMaterials & { dispose(): void } {
-  const body = new THREE.MeshLambertMaterial({ color: 0x59616e });
-  const head = new THREE.MeshLambertMaterial({ color: 0x8a6a3c });
+  const body = new THREE.MeshLambertMaterial({ color: GREYBOX_BODY_COLOR });
+  const head = new THREE.MeshLambertMaterial({ color: GREYBOX_HEAD_COLOR });
   return {
     body,
     head,
@@ -621,18 +621,4 @@ export function buildDummyMaterials(): DummyMaterials & { dispose(): void } {
 // ====================================== INTERNAL HELPERS ====================================== \\
 //#region Internal Helpers
 /** The mesh IS the rig: same boxes, same offsets, no separate art to drift out of sync. */
-function buildZoneGeometry(zones: readonly HitZone[]): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-  for (const box of HUMANOID_RIG.boxes) {
-    if (!zones.includes(box.zone)) continue;
-    const g = new THREE.BoxGeometry(box.sx, box.sy, box.sz);
-    g.translate(box.ox, box.oy, box.oz);
-    parts.push(g);
-  }
-  const merged = mergeGeometries(parts, false);
-  for (const p of parts) p.dispose();
-  if (merged === null) throw new Error('Failed to merge dummy geometry');
-  merged.computeBoundingSphere();
-  return merged;
-}
 //#endregion

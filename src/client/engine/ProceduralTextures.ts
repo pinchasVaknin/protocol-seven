@@ -10,6 +10,7 @@
 //#region Imports
 import * as THREE from 'three';
 import { Rng } from '../../shared/core/Rng';
+import { paintedTile, tiledTexture } from './CanvasTile';
 import { MATERIAL_KEYS, type MaterialKey } from '../../shared/world/maps/types';
 import { materialBaseColor } from '../../shared/world/maps/albedo';
 //#endregion
@@ -105,27 +106,26 @@ export class ProceduralTextures {
   // ===================================== PRIVATE METHODS ====================================== \\
   //#region Private Methods
   private build(key: MaterialKey): MaterialProfile {
-    const canvas = document.createElement('canvas');
-    canvas.width = TEX_SIZE;
-    canvas.height = TEX_SIZE;
-    const ctx = canvas.getContext('2d');
-    if (ctx === null) throw new Error('2D canvas context unavailable; cannot build textures.');
+    const ctx = paintedTile(TEX_SIZE, 'textures');
 
     // A distinct but fixed seed per material.
     const rng = new Rng(0x0be7a704 ^ hashString(key));
     const recipe = RECIPES[key];
     recipe.paint(ctx, rng, materialBaseColor(key));
 
-    return { worldScale: recipe.worldScale, texture: this.makeTexture(canvas) };
+    return { worldScale: recipe.worldScale, texture: this.makeTexture(ctx.canvas) };
   }
 
   /** The tiling, mipmapped, sRGB wrapper every painted tile ends up in. */
+  /**
+   * A world surface's tile: the shared sRGB wrapper, then the mipmap chain.
+   *
+   * The chain is what this one has instead of a `repeat` (BACKLOG #58). A world surface is seen
+   * from any distance and a weapon's is seen from one, so this is the copy that needs filtering
+   * and the other two are the copies that scale the tile.
+   */
   private makeTexture(canvas: HTMLCanvasElement): THREE.Texture {
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = this.maxAnisotropy;
+    const texture = tiledTexture(canvas, this.maxAnisotropy);
     texture.generateMipmaps = true;
     texture.minFilter = THREE.LinearMipmapLinearFilter;
     texture.magFilter = THREE.LinearFilter;

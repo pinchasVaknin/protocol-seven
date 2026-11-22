@@ -10,6 +10,7 @@
 //#region Imports
 import * as THREE from 'three';
 import { Rng } from '../../shared/core/Rng';
+import { paintedTile, tiledTexture } from '../engine/CanvasTile';
 import { camoTexture } from '../meta/CamoTextures';
 import type { CamoId } from '../../shared/meta/Camos';
 import type { SurfaceKey } from './WeaponMeshParts';
@@ -216,20 +217,12 @@ function baseTexture(key: SurfaceKey, anisotropy: number): THREE.Texture {
 }
 
 function makeCanvas(): CanvasRenderingContext2D {
-  const canvas = document.createElement('canvas');
-  canvas.width = TEX;
-  canvas.height = TEX;
-  const ctx = canvas.getContext('2d');
-  if (ctx === null) throw new Error('2D canvas context unavailable; cannot build weapon textures.');
-  return ctx;
+  return paintedTile(TEX, 'weapon textures');
 }
 
+/** A weapon's tile, with the `repeat` that surface wants. The wrapper is shared (BACKLOG #58). */
 function finish(ctx: CanvasRenderingContext2D, anisotropy: number, repeat: number): THREE.Texture {
-  const texture = new THREE.CanvasTexture(ctx.canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = anisotropy;
+  const texture = tiledTexture(ctx.canvas, anisotropy);
   texture.repeat.set(repeat, repeat);
   texture.needsUpdate = true;
   return texture;

@@ -27,6 +27,7 @@
 //#region Imports
 import * as THREE from 'three';
 import { Rng } from '../../shared/core/Rng';
+import { paintedTile, tiledTexture } from '../engine/CanvasTile';
 import type { CamoId } from '../../shared/meta/Camos';
 //#endregion
 
@@ -87,20 +88,12 @@ export function camoPicture(id: CamoId, anisotropy: number): string {
 // ====================================== INTERNAL HELPERS ====================================== \\
 //#region Internal Helpers
 function makeCanvas(): CanvasRenderingContext2D {
-  const canvas = document.createElement('canvas');
-  canvas.width = TEX;
-  canvas.height = TEX;
-  const ctx = canvas.getContext('2d');
-  if (ctx === null) throw new Error('2D canvas context unavailable; cannot build camo textures.');
-  return ctx;
+  return paintedTile(TEX, 'camo textures');
 }
 
+/** A camo's tile. The wrapper is shared (BACKLOG #58); the repeat is this file's. */
 function finish(ctx: CanvasRenderingContext2D, anisotropy: number): THREE.Texture {
-  const texture = new THREE.CanvasTexture(ctx.canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = anisotropy;
+  const texture = tiledTexture(ctx.canvas, anisotropy);
   // Twice around a receiver: large enough for the pattern to read at viewmodel distance,
   // small enough that a barrel is not one flat colour.
   texture.repeat.set(2, 2);

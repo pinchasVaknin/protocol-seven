@@ -54,9 +54,9 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp01, lerp } from '../../shared/core/MathUtil';
-import { HUMANOID_RIG, requireRigBox, type HitZone } from '../../shared/combat/HitboxRig';
+import { HUMANOID_RIG, requireRigBox } from '../../shared/combat/HitboxRig';
+import { GREYBOX_BODY_COLOR, GREYBOX_HEAD_COLOR, mergeParts, zoneGeometry } from '../combat/ZoneGeometry';
 import {
   AMPLITUDE_RESPONSE,
   ARM_PITCH,
@@ -486,12 +486,13 @@ export class BotMesh implements ActorAvatar {
 export function buildBotAssets(): BotAssets {
   // A fallback may be visible while a GLB loads or after an asset error. It must not carry a
   // broad team colour, or its brief appearance would still hide the author's skin/IFF design.
-  const body = new THREE.MeshLambertMaterial({ color: 0x59616e });
-  const head = new THREE.MeshLambertMaterial({ color: 0x8a6a3c });
+  const body = new THREE.MeshLambertMaterial({ color: GREYBOX_BODY_COLOR });
+  const head = new THREE.MeshLambertMaterial({ color: GREYBOX_HEAD_COLOR });
+  // The gear is this file's alone: a dummy has none (BACKLOG #67).
   const gear = new THREE.MeshLambertMaterial({ color: 0x1d2026 });
 
   const bodyGeometry = buildBodyGeometry();
-  const headGeometry = buildZoneGeometry(['head']);
+  const headGeometry = zoneGeometry(['head'], 'bot body');
   const gearGeometry = buildGearGeometry();
   const legGeometry = buildLegGeometry();
 
@@ -543,17 +544,6 @@ function proceduralShoulderFrame(name: 'armL' | 'armR'): THREE.Object3D {
 }
 
 /** Boxes straight off the rig: same offsets, same extents, nothing to drift out of sync. */
-function buildZoneGeometry(zones: readonly HitZone[]): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-  for (const box of HUMANOID_RIG.boxes) {
-    if (!zones.includes(box.zone)) continue;
-    const g = new THREE.BoxGeometry(box.sx, box.sy, box.sz);
-    g.translate(box.ox, box.oy, box.oz);
-    parts.push(g);
-  }
-  return mergeParts(parts, 'bot body');
-}
-
 /**
  * The torso, plus the two arms pitched forward onto the weapon.
  *
@@ -619,20 +609,5 @@ function buildGearGeometry(): THREE.BufferGeometry {
   put(0.15, 0.09, 0.03, 0, 1.68, -0.12);
 
   return mergeParts(parts, 'bot gear');
-}
-
-/**
- * Weld the boxes into one buffer and release the parts.
- *
- * `mergeGeometries` returns null rather than throwing when the parts disagree about their
- * attributes, and a body silently missing its torso is worse than a boot that stops, so every
- * caller checks — which is the whole reason this is one function and not three copies.
- */
-function mergeParts(parts: readonly THREE.BufferGeometry[], what: string): THREE.BufferGeometry {
-  const merged = mergeGeometries(parts as THREE.BufferGeometry[], false);
-  for (const p of parts) p.dispose();
-  if (merged === null) throw new Error(`Failed to merge ${what} geometry`);
-  merged.computeBoundingSphere();
-  return merged;
 }
 //#endregion

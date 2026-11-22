@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**24 open entries: 18 with a heading of their own, and the six §3 holds inside its three clusters** (#6, #12 and #5; #2, which absorbed #19; #14 and #15). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four and batch H three on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**22 open entries: 16 with a heading of their own, and the six §3 holds inside its three clusters** (#6, #12 and #5; #2, which absorbed #19; #14 and #15). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three and batch I two on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -899,76 +899,6 @@ anything, so it is not one; nothing else in `client/weapons/` merges by surface 
 mesh names, vertex counts and bounding boxes against the shipped build. `viewmodel:knife:gunmetal`
 and `viewmodel:knife:polymer` have to come out with the counts they have now.
 
-### #58 — Two files paint a 128 px tile the same way · `open` *(opened 2026-10-31 by C7)*
-**Files** `src/client/weapons/WeaponSurfaces.ts` (`makeCanvas`, `finish`) and
-`src/client/engine/ProceduralTextures.ts` (`build`'s opening, `makeTexture`). **Origin** C7,
-reading its own texture block.
-
-Five lines each, and the same five:
-
-```
-WeaponSurfaces.makeCanvas()          ProceduralTextures.build()
-  createElement('canvas')              createElement('canvas')
-  width = height = TEX (128)           width = height = TEX_SIZE
-  getContext('2d')                     getContext('2d')
-  throw '2D canvas context             throw '2D canvas context
-    unavailable; cannot build            unavailable; cannot build
-    weapon textures.'                    textures.'
-```
-
-and then the wrapper around the result:
-
-```
-WeaponSurfaces.finish()              ProceduralTextures.makeTexture()
-  new CanvasTexture(ctx.canvas)        new CanvasTexture(canvas)
-  wrapS = wrapT = RepeatWrapping       wrapS = wrapT = RepeatWrapping
-  colorSpace = SRGBColorSpace          colorSpace = SRGBColorSpace
-  anisotropy = <given>                 anisotropy = this.maxAnisotropy
-  repeat.set(r, r)                     generateMipmaps = true
-  needsUpdate = true                   minFilter = LinearMipmapLinear
-```
-
-The two are not identical and should not be merged blind: the weapon's tiles set a `repeat`
-per surface and the world's set the mipmap chain. What is shared is the canvas, the sRGB
-tiling wrapper and the one error message, which is three or four lines either way.
-
-**Why C7 did not fold it.** §4.3 sends cross-unit duplication here rather than into a unit's
-own commit, and `ProceduralTextures.ts` is **C4's file and already in the `check:style`
-ratchet**, so R3's fence puts it out of reach. C7 moved its half into `WeaponSurfaces.ts`
-unchanged.
-
-**Decide** where a shared `paintedTile(size)` would live. `client/engine/` is the wrong
-direction (weapons would import from the renderer) and `shared/` is worse (it is a DOM call).
-The honest home is a small `client/engine/CanvasTile.ts` that both import, or nothing at all —
-five lines twice is a defensible price for two files with no dependency on each other.
-
-**Watch for** a third copy — **and there is one.** C12 confirmed on 2026-11-07 that
-`meta/CamoTextures.ts` is the third, and it is the closest of the three to the weapon's:
-
-```
-CamoTextures.makeCanvas()            WeaponSurfaces / ProceduralTextures
-  document.createElement('canvas')     the same, with its own error message
-CamoTextures.finish(ctx, aniso)      WeaponSurfaces.finish()
-  new CanvasTexture(ctx.canvas)        new CanvasTexture(ctx.canvas)
-  wrapS = wrapT = RepeatWrapping       the same
-  colorSpace = SRGBColorSpace          the same
-  anisotropy = <given>                 the same
-  repeat.set(2, 2)                     repeat.set(r, r)   <- the only difference
-  needsUpdate = true                   the same
-```
-
-Five properties, in the same order, differing in one fixed argument. So the decision below is
-now about three files in three finished units rather than two, which strengthens the case for a
-shared `paintedTile(size)` rather than weakening it.
-
-C12 did not fold it: `ProceduralTextures.ts` is C4's and `WeaponSurfaces.ts` is C7's, both
-finished and in the ratchet, and a new `client/engine/CanvasTile.ts` is a new source file,
-which R3 allows only in a design unit.
-
-**Verify** `npm run check`, plus the sixteen texture checksums C4 pinned in
-`ProceduralTextures.test.ts` and the three command logs C7 pinned in `WeaponMesh.test.ts`:
-whatever is shared, both sets of images have to come out unchanged.
-
 ### #55 — The Chopper Gunner optic draws a flat grey field and no map · `open` *(opened 2026-10-25 by C2)*
 **Files** `src/client/engine/Renderer.ts` (`renderGunship`, `GUNSHIP_VERT`, `GUNSHIP_WORLD_FRAG`)
 and whatever hands it the scene and the camera — `src/client/Game.ts` (C23) is the caller.
@@ -1212,10 +1142,27 @@ element tree of every screen in the game.
 
 ### #79 — The DOM double is copied whole into every test file that needs it · `open` *(opened 2026-11-10 by C19; another copy added 2026-11-16 by C23a)*
 
-**Files** every `*.test.ts` in `src/client/ui/` from C14 on — fifteen copies now, seven of them
-added by C19. **Origin** C19's Step 3.
+**Files** 38 `*.test.ts` files across `src/client/` — every one of them, not only `ui/`.
+**Origin** C19's Step 3; counted properly on 2026-11-22 by the batch that closed #58 and #67,
+which found the entry's own figures low.
 
-`FakeElement` and the environment around it are about **255 lines**, and each test file carries
+**Measured, 2026-11-22.** 38 files carry a double and there are **29 distinct texts** among
+them, from **41 lines to 351**, and from **one capability to nineteen**. Every capability a
+browser has is split across the set — `setAttribute` in 28 of 38, `querySelector` in 21,
+`createElementNS` in 26, `getBoundingClientRect` in 21, `requestAnimationFrame` in 20, a
+`localStorage` double in 23, a `window` double in exactly one. Only five texts are shared by
+more than one file at all (the largest group is four: `Emblem`, `FpsCounter`, `WeaponIcons`,
+`WeaponPreview`).
+
+So this is not fifteen copies of one double. It is 29 hand-grown doubles of wildly different
+capability, and that changes the shape of the work: **a test written against a thin double
+asserts what a thin double does**, and putting the richest one under all 38 files can change
+what a suite sees — C19's own `setAttribute('class', …)` fix is the example the entry already
+gives, where a suite silently stopped looking for icons it could not find. Each file has to be
+read when it is converted, not just re-pointed, which is why this is a session of its own and
+not a line in a batch.
+
+`FakeElement` and the environment around it are up to **351 lines**, and each test file carries
 its own copy, because R9 gives a test file no skeleton and R3 gives a unit nowhere shared to put
 one. The copies have **already drifted**: C19 had to teach its own copy that
 `setAttribute('class', …)` writes the token set — which is how every SVG icon in the project is
@@ -1233,47 +1180,6 @@ every new unit's copy should be taken from the newest one rather than from the n
 deliberate break per file to see that the suites still bite.
 
 ---
-
-### #67 — Two files build the rig's boxes the same way, and hold the same two colours · `open` *(opened 2026-11-05 by C11)*
-
-**Files** `src/client/ai/BotMesh.ts` (`buildZoneGeometry`, `buildBotAssets`) and
-`src/client/combat/TargetDummy.ts` (`buildZoneGeometry`, `buildDummyMaterials`). **Origin** C11.
-
-Two duplications, both **inside one unit** — which is what makes this unusual, because R4.3
-normally sends only *cross-unit* duplication here.
-
-**The geometry.** The two `buildZoneGeometry` functions are the same function: same signature,
-same filter on `box.zone`, same `BoxGeometry` + `translate` + merge, same
-`computeBoundingSphere`. Before C11 they differed in exactly one token — the error string
-(`'Failed to merge bot body geometry'` against `'Failed to merge dummy geometry'`).
-
-**The colours.** `buildBotAssets` and `buildDummyMaterials` each build a `MeshLambertMaterial`
-pair at **`0x59616e`** and **`0x8a6a3c`** — the same two hexes, written twice, for the same
-reason (a grey-box body and a head). Neither names the other. Both are now pinned by number in
-C11's tests, so a change to one is a visible disagreement rather than a silent drift.
-
-**Why C11 could not merge them.** Both copies are **non-exported**. Sharing needs one of:
-exporting one of them (a public-API change under R2, which Step 2 would have had to list and the
-user approve — for a helper whose only new caller is in another directory); importing
-`client/combat` → `client/ai`, which is the wrong direction for a firing range to depend on bot
-rendering; or a third file in a shared directory, which R3 allows only in a unit marked
-**design**, and C11 is not one.
-
-**The home this entry proposed does not exist** (checked 2026-11-21, by the batch that closed
-#64). `shared/combat/HitboxRig.ts` cannot offer "the merged geometry of these zones": the
-geometry is `THREE.BoxGeometry` and `mergeGeometries`, and `check-boundaries.mjs` forbids
-`shared/ -> three` outright (`BAN_THREE_IN_SHARED`, and `server/ -> three` beside it, because a
-headless process does not render). The rig *table* is shared and the geometry built from it is
-not, which is the whole point of that boundary. So the choice is narrower than it looked.
-
-**Decide** between a third file on the client side — `client/combat/ZoneGeometry.ts` is the
-least wrong, since `client/combat -> client/ai` is the direction the entry already rejects —
-and leaving two eleven-line functions over the same table, which is also defensible. Note that the grey-box colour pair is a separable decision: it
-could move with the geometry or stay where it is.
-
-**Verify** `npm run check`, plus C11's BROWSER checksum A, which hashes the attribute buffers,
-the index and the bounding sphere of every geometry both files build, and the colour of every
-material — so a merge that moved a single vertex or a single hex shows up as a diff.
 
 ### #53 — The NET oracle fails three different ways when it runs behind the SIM ones · `open` *(opened 2026-10-25 by B8)*
 

@@ -23,3 +23,16 @@ jitter-*.err
 
 # Session reports written beside the repo by the agent. Not part of the build.
 Claude outputs/
+
+# Except the refactor programme's own four instruments, which are tracked on purpose
+# (2026-11-22). An ignore rule does not apply to a file git already follows, so these stay
+# followed and their edits show up in `git status` like any other source file:
+#
+#   Claude outputs/refactor/BACKLOG.md          the side-task backlog
+#   Claude outputs/refactor/REFACTOR-PROMPT.md  the programme's rules and verification sets
+#   Claude outputs/refactor/oracles.mjs         the oracle runner every change is proved with
+#   Claude outputs/refactor/measure.mjs         the function-metrics tool section 4.1 is checked by
+#   Claude outputs/refactor/header.mjs          the section-header generator check-style points at
+#
+# The `cNN-oracle/` snapshot directories beside them are outputs and stay ignored. To follow a
+# new file in that folder, `git add -f` it and add it to the list above.

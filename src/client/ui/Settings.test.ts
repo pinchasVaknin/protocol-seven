@@ -395,6 +395,16 @@ function notes(r: Rig): string[] {
     return findAll(panel(r), 'st-note').map((el) => el.textContent);
 }
 
+/**
+ * The BINDINGS status line, found by its own class rather than by counting (BACKLOG #76).
+ *
+ * The cases below used `notes(r)[0]` for this, which was the complaint that opened the entry:
+ * four paragraphs shared one class and position was the only thing that told them apart.
+ */
+function statusNote(r: Rig): FakeElement {
+    return find(panel(r), 'st-note--status');
+}
+
 function pager(r: Rig): { el: FakeElement; prev: FakeElement; next: FakeElement; count: string } {
     const el = find(panel(r), 'st-pager');
     const [prev, count, next] = el.children;
@@ -845,8 +855,38 @@ describe('BINDINGS', () => {
         const r = rig();
         r.settings.show();
         r.settings.openTab('BINDINGS');
-        expect(notes(r)[0]).toBe('Click a binding to change it. A key taken from another action is removed from it.');
+        expect(statusNote(r).textContent).toBe('Click a binding to change it. A key taken from another action is removed from it.');
         expect(notes(r)[1]).toBe('F11 for fullscreen — required to capture Ctrl+W (crouch + forward)');
+    });
+
+    /**
+     * BACKLOG #76, fixed 2026-11-22. Four paragraphs on this screen carry `st-note` and until
+     * now position was the only thing that told them apart — which is tolerable in a test and
+     * wrong on the screen, because one of the four is the only piece of *state* here that is
+     * not a control.
+     */
+    it('announces the status line, and marks only that one of the four', () => {
+        const r = rig();
+        r.settings.show();
+        r.settings.openTab('BINDINGS');
+        const status = statusNote(r);
+        expect(status.getAttribute('aria-live')).toBe('polite');
+        // It is still an `st-note`: the modifier is an identity, not a different kind of thing.
+        expect(status.classList.contains('st-note')).toBe(true);
+
+        // And it is the only one. The fullscreen hint beside it is prose and says so by not
+        // being announced; a reader told about both would be told about neither.
+        const marked = findAll(panel(r), 'st-note--status');
+        expect(marked.length).toBe(1);
+        expect(notes(r).length).toBe(2);
+    });
+
+    it('does not announce the two notes on INFO, which are prose', () => {
+        const r = rig();
+        r.settings.show();
+        r.settings.openTab('INFO');
+        expect(findAll(panel(r), 'st-note--status').length).toBe(0);
+        expect(notes(r).length).toBeGreaterThan(0);
     });
 
     it('takes the whole width and tightens the panel', () => {
@@ -863,7 +903,7 @@ describe('BINDINGS', () => {
         r.settings.openTab('BINDINGS');
         fire(find(panel(r), 'st-reset'), 'click');
         expect(r.previews[0]?.bindings).toEqual(defaultBindings());
-        expect(notes(r)[0]).toBe('Bindings restored to defaults — APPLY keeps them.');
+        expect(statusNote(r).textContent).toBe('Bindings restored to defaults — APPLY keeps them.');
     });
 });
 
@@ -881,7 +921,7 @@ describe('capturing a key', () => {
         arm(r, 'moveForward', 0);
         expect(keysOf(bindRowFor(r, 'moveForward'))[0]?.textContent).toBe('PRESS…');
         expect(keysOf(bindRowFor(r, 'moveForward'))[0]?.classList.contains('is-armed')).toBe(true);
-        expect(notes(r)[0]).toBe('Press any key or mouse button. Escape cancels.');
+        expect(statusNote(r).textContent).toBe('Press any key or mouse button. Escape cancels.');
         expect(windowCount('keydown')).toBe(1);
         expect(windowCount('mousedown')).toBe(1);
         expect(windowCount('wheel')).toBe(1);
@@ -925,7 +965,7 @@ describe('capturing a key', () => {
         const r = rig();
         arm(r, 'jump', 1);
         fireWindow('keydown', { code: 'F9' });
-        expect(notes(r)[0]).toBe('Click a binding to change it. A key taken from another action is removed from it.');
+        expect(statusNote(r).textContent).toBe('Click a binding to change it. A key taken from another action is removed from it.');
     });
 
     it('moves a key between an action’s own two slots rather than duplicating it', () => {

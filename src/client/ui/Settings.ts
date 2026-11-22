@@ -606,7 +606,7 @@ export class Settings {
     foot.className = 'st-bindings__foot';
     const notes = document.createElement('div');
     notes.className = 'st-bindings__notes';
-    notes.append(note(this.bindingNoteText()), note(FULLSCREEN_HINT));
+    notes.append(statusNote(this.bindingNoteText()), note(FULLSCREEN_HINT));
     const reset = document.createElement('button');
     reset.type = 'button';
     reset.className = 'op-cta op-cta--quiet st-reset';
@@ -1049,11 +1049,35 @@ function helpText(text: string): HTMLElement {
   return p;
 }
 
-/** A line of prose in a section: the binding notes and the two credits notes. */
+/** A line of prose in a section: the fullscreen hint and the two credits notes. */
 function note(text: string): HTMLElement {
   const p = document.createElement('p');
   p.className = 'st-note';
   p.textContent = text;
+  return p;
+}
+
+/**
+ * The one line on this screen that reports **state** rather than reading as prose.
+ *
+ * It says three different things — how to start a rebind, what an armed row is waiting for, and
+ * the news after a key was taken off another action — and it is the only one of the four
+ * `st-note` paragraphs a reader needs to be told has changed (BACKLOG #76).
+ *
+ * `aria-live="polite"` is the point: without it a screen reader is given no reason to announce
+ * `W was taken off "Move forward"`, which is the sentence that tells somebody their binding
+ * moved. Polite rather than assertive because it follows the player's own keystroke — they are
+ * not being interrupted, they are being answered.
+ *
+ * `st-note--status` is an **identity, not a style**: there is no rule for it in `app.css` and
+ * it does not need one, because the four paragraphs look alike on purpose. It exists so this
+ * one can be told apart in the markup at all — until now the only way to find it, in the tests
+ * and for anything else reading the tree, was to count from the top.
+ */
+function statusNote(text: string): HTMLElement {
+  const p = note(text);
+  p.classList.add('st-note--status');
+  p.setAttribute('aria-live', 'polite');
   return p;
 }
 

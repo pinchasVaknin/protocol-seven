@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**9 open entries**, every one with a heading of its own: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3; #77, #69 and #63 on the same day, all three measured.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**6 open entries**, every one with a heading of its own: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3; #77, #69, #63, #76, #85 and #53 on the same day. What is left is the six in §9: each one waits on a person, a machine or a decision this programme cannot supply, and §9 says which.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -177,31 +177,6 @@ own. Those sessions are not refactor units: they may change behaviour where the 
 they are not fenced by R3.
 
 ## 5. Suspected bugs, pinned in tests, awaiting a fix
-
-### #76 — The one line of state on the settings screen is told apart only by its position · `open` *(opened 2026-11-09 by C17)*
-
-**Files** `src/client/ui/Settings.ts` (`createBindingsFoot`, `bindingNoteText`). **Origin** C17,
-found while writing its characterization tests.
-
-Four paragraphs on this screen carry the class `st-note`: two under BINDINGS (the rebinding line
-and the fullscreen hint) and two in INFO (the credits intro and the `CREDITS.md` pointer). They
-are built by the same helper and they can only be read by position — C17's own tests index them
-`notes(r)[0]` and `notes(r)[1]`, because nothing in the markup distinguishes one from another.
-
-That is tolerable in a test and wrong on the screen. The rebinding line is the one piece of
-*state* here that is not a control: it says three different things (idle, armed, and the news
-after a key was taken off something else) and it is the only one of the four a reader needs to
-be told has changed. It has no `aria-live`, no id and no class of its own, so a screen reader is
-given no reason to announce the sentence that says `W was taken off "Move forward"`.
-
-**The fix is a modifier class and a live region** — `st-note--status` and `aria-live="polite"` on
-that one paragraph — and it is an accessibility change rather than a refactor: it adds an
-attribute to the rendered tree, which moves C17's BROWSER checksum A, and a unit that promises
-no behaviour change may not do that quietly.
-
-**Verify** `npm run check`, then C17's checksum A, whose `BINDINGS, a slot armed` and
-`BINDINGS, after a steal` sections both hold that paragraph and will differ by the new
-attribute — re-baseline them in the same commit, with the reason.
 
 ## 5b. Field reports from play — the same kind of bug, with no test holding it
 
@@ -471,48 +446,6 @@ terrain, near-black team-mates, orange enemies.
 
 ## 6. Documentation and housekeeping
 
-### #85 — A live check in the browser pane under-reports whenever Claude's window is behind another · `open` *(opened 2026-11-16 by C23b)*
-
-**Files** none — this is about the instrument, not the game. `REFACTOR-PROMPT.md` §6's
-BROWSER procedure is where it belongs. **Origin** C23b, measuring #75.
-
-The pane throttles `requestAnimationFrame` to about 1 fps, and sometimes suspends it, whenever
-the Claude desktop window is not in front. Everything driven from the render pass therefore
-*appears* not to run: the pre-match countdown never ends, a match never reaches its debrief,
-and anything a frame pass writes is written a handful of times a minute instead of sixty times
-a second.
-
-**It has now produced one wrong entry and one abandoned check.** C18 could not run its live
-check at all and said so. **#75 was worse, because it produced a number**: it reported that
-`Game.updateHudSurfaces` never runs while `PAUSED`, measured as *"paused, over one second — 0
-writes"*, and concluded that a player who types the debug code on the pause screen gets no
-button until they resume. C23b re-measured the same thing with the window in front:
-
-| | #75's measurement | C23b's |
-|---|---|---|
-| writes while paused | 0 over 1 s | **224 over 4 s** |
-| the button, after typing the code on the pause screen | never appears | **appears, without resuming** |
-
-The frame pass runs while paused exactly as the `PAUSED` handler's own comment says it does —
-`draw` calls the surface pass, not `simulate` — and `PauseMenu.setDebugAvailable` is a plain
-assignment, so a pass that ran at all could not have written zero. #75 was the pane, and it is
-closed.
-
-**What to do about it.** The three levers, all proved in C23a and C23b:
-
-- `?nosplash` to skip a splash that needs a real click;
-- `__p7.game.loopHandle.maxStepsPerFrame = 120` with `simSpeed = 8`, which is the lever
-  `public/verify/tdm.js` already uses — 1,800 ticks in 20 s against a throttled pane, enough
-  to carry a match to its debrief;
-- drive state through `__p7.game`'s own public methods rather than waiting for frames.
-
-**Decide** whether §6's BROWSER procedure gains a paragraph saying all of this, and whether a
-live check should refuse to report a *negative* result at all without first proving the frame
-rate it was measured at. A check that can only produce false negatives is worse than one that
-declines to run, because C18's silence cost nothing and #75 cost two sessions.
-
-**Verify** reading, and the next unit's live check.
-
 ### #42 — Three clients disagree with the server's final scoreboard, one run in five · `open` · *a fix is in place; the cause is still unconfirmed* *(opened 2026-10-19)*
 **Files** `src/server/instance/MatchInstance.ts` (`sendScoreboard`) — B5's file; the check is
 `src/server/skirmishHarness.ts`'s 4.3 comparison. **Origin** the session that closed #40.
@@ -680,61 +613,22 @@ deliberate break per file to see that the suites still bite.
 
 ---
 
-### #53 — The NET oracle fails three different ways when it runs behind the SIM ones · `open` *(opened 2026-10-25 by B8)*
+## 9. What the six remaining entries are waiting for
 
-**Files** `Claude outputs/refactor/oracles.mjs` (the `skirmish` child, ~line 179) and
-`REFACTOR-PROMPT.md` §6's NET procedure. **Origin** B8's Step 0, on a clean tree at `9b6460f`.
+Written 2026-11-22, when the backlog came down from 70 to six over one week. Every entry closed
+in that week was closed because somebody could do it. **These six are not like that**, and the
+difference is worth stating once rather than re-deriving it each time somebody opens this file:
+each waits on a person, a machine or a judgement that reading the code cannot supply. None is
+blocked on effort.
 
-B8 could not establish a baseline. Four NET runs on an **untouched** tree produced three
-*different* red lines and one pass:
-
-| # | how it was run | verdict |
+| Entry | What it needs | Who can give it |
 |---|---|---|
-| 1 | `oracles.mjs snapshot --net`, with `npm run check` running beside it | `1 misprediction(s) entering a live match (Tier 1 #20)` |
-| 2 | the harness alone: `MATCH_ROUND_SECONDS=150 node dist-server/skirmishHarness.js --cycles 1 --drop-return 1` | **PASSED** |
-| 3 | `oracles.mjs snapshot --net`, nothing else running | `--drop-return 1 was set and no drop/return cycle completed (F8)` |
-| 4 | `oracles.mjs snapshot --net`, nothing else running | `3 of 3 client(s) saw a summary and were never migrated back (B4)` |
+| **#34** The camera trembles while walking | A reproduction on the reporter's own machine. Every candidate C2 reached is measured clean, and C2's own mouse-path measurement demoted the leading one — the arrival pattern it found is *not* Chrome's. | The person who reported it, with a recording or a frame-time capture |
+| **#42** Three clients disagree with the final board, one run in five | A cause. A fix is in place and holds; what is unconfirmed is *why*. It needs repeated NET runs on a quiet machine, which is now its own subcommand (#53) | A machine that can sit idle for an hour |
+| **#55** The Chopper Gunner optic draws a flat grey field | A look at it in a real browser: call in a chopper on Foundry and on Depot and compare against `renderGunship`'s own three descriptions | Anyone with the game running and a window in front — see §6 and #85 |
+| **#22** Extend the M9 maths table to the engines the project runs on | Those engines installed. The table is a cross-engine claim and cannot be made from one runtime | Whoever can run the project under the other engines |
+| **#78** Division C writes the same three lines of DOM ~500 times | A decision about where a shared element builder lives, then a session to apply it across ~500 sites | The user, then a session of its own |
+| **#79** The DOM double is copied into every test file | The same decision — `src/client/ui/testing/` or a `test/` tree outside `src/` — and then a file-by-file conversion. **Measured 2026-11-22**: 38 files, 29 distinct texts, 41 to 351 lines, one capability to nineteen. A test written against a thin double asserts what a thin double does, so each file has to be read as it is converted, not re-pointed | The user, then a session of its own |
 
-**All three failures are the same failure: the observation window closing before the timeline it
-is measuring.** Run 4 says so in its own numbers — *"post-match hold: 3 client(s) held, **0
-migrated back**; screen said 29.8/29.8/29.8s (server hold 30s)"*, with the run ending at 261 s.
-The clients were two tenths of a second short of the hold they were waiting on. Run 3 is the
-same shape one stage earlier: `--drop-return` had no room left. Run 1 is the load version —
-against run 2 it carried 145/201/150 mispredictions rather than 48/65/57, **20-23 resyncs rather
-than 2-3**, 218-222 catch-up frames rather than 60-66, and `totalStepMs` 13.42 rather than 0.66;
-one of those catch-up corrections landed on tick 16 of the 60-tick post-migration window, which
-is what §8.9 counts.
-
-**The run that passed is the only one that ran alone.** Through `oracles.mjs` the skirmish child
-starts after a server-bundle build and twelve SIM oracles in the same invocation, and then has
-to hold a 150-second match timeline inside a budget whose slack §6 states as *"a constant 20 s
-whatever the round"*. Standalone: 2 passes out of 2 (runs 2 and the baseline B8 then took).
-Through `oracles.mjs`: 0 out of 3, on the same commit, on the same day.
-
-**What B8 did instead**, with the user's approval, and what every unit from here should do until
-this is fixed: take the SIM snapshot with `oracles.mjs snapshot <dir>` (no `--net`), and run the
-NET check as its own invocation with nothing else on the machine —
-
-```
-MATCH_ROUND_SECONDS=150 node --expose-gc dist-server/skirmishHarness.js --cycles 1 --drop-return 1
-```
-
-— reporting both verdicts. `oracles.mjs compare` then covers the eleven SIM files, and the NET
-verdict is quoted from its own run. **Never run `npm run check` beside a NET run**; B8's first
-measurement was ruined that way and the mistake is cheap to repeat.
-
-**Scope** decide between the two fixes and apply one: (1) have `oracles.mjs` run the skirmish
-child in its own invocation, or at least with the SIM work finished and the process settled
-first — the smaller change, and it matches what the measurement says; or (2) raise the harness's
-slack from 20 s, which §6's table already identifies as the lever but which only moves the
-failure rate rather than removing the coupling. Then correct §6's procedure, which currently
-tells a unit to take both halves in one command.
-
-**Why B8 could not do it.** `oracles.mjs` and the prompt are the programme's own instruments,
-and §10 keeps `skirmishHarness.ts` out of every unit's reach — the same reason #43 is still
-open against that file. This needs a session of its own, and it blocks nothing: the separated
-method gives a sound baseline today.
-
-**Verify** five NET runs each way on a quiet machine, which is the measurement §6's own table
-was built from.
-
+**#78 and #79 are one decision and two sessions.** They are the only two left that are purely
+work, and they are the two that cannot start until somebody says where the shared code lives.

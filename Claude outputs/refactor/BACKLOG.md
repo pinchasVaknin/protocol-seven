@@ -176,8 +176,6 @@ Everything else below lands in a **completed** unit's files and therefore needs 
 own. Those sessions are not refactor units: they may change behaviour where the task says so, and
 they are not fenced by R3.
 
-## 4. Independent — one decision each
-
 ## 5. Suspected bugs, pinned in tests, awaiting a fix
 
 ### #76 — The one line of state on the settings screen is told apart only by its position · `open` *(opened 2026-11-09 by C17)*

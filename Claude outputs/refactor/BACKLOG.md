@@ -653,23 +653,27 @@ shared double is provably what they already had.
 **Verify** the whole suite, twice: once to see it pass on the shared double, and once with a
 deliberate break per file to see that the suites still bite.
 
-## 9. What the six remaining entries are waiting for
+## 9. What the three remaining entries are waiting for
 
-Written 2026-11-22, when the backlog came down from 70 to six over one week. Every entry closed
-in that week was closed because somebody could do it. **These six are not like that**, and the
-difference is worth stating once rather than re-deriving it each time somebody opens this file:
-each waits on a person, a machine or a judgement that reading the code cannot supply. None is
-blocked on effort.
+Written 2026-11-22, when the backlog came down from 70 to six over one week, and amended the
+same evening when #78 was done and it came down to three. Every entry closed in that week was
+closed because somebody could do it. **These three are not like that**, and the difference is
+worth stating once rather than re-deriving it each time somebody opens this file: each waits on
+a person, a machine or a session of its own. None is blocked on a decision.
 
 | Entry | What it needs | Who can give it |
 |---|---|---|
 | **#34** The camera trembles while walking | A reproduction on the reporter's own machine. Every candidate C2 reached is measured clean, and C2's own mouse-path measurement demoted the leading one — the arrival pattern it found is *not* Chrome's. | The person who reported it, with a recording or a frame-time capture |
 | **#55** The Chopper Gunner optic draws a flat grey field | A look at it in a real browser: call in a chopper on Foundry and on Depot and compare against `renderGunship`'s own three descriptions | Anyone with the game running and a window in front — see §6 and #85 |
-| **#78** Division C writes the same three lines of DOM ~500 times | **Nothing but the labour.** Decided 2026-11-22: yes, and `src/client/ui/Dom.ts` is the home | A session of its own |
 | **#79** The DOM double is copied into every test file | **Nothing but the labour.** Decided 2026-11-22: `src/client/ui/testing/dom.ts`. Bigger than it looks — 38 files, 29 distinct texts, and each must be read as it is converted | A session of its own |
 
-**#78 and #79 are two sessions and no longer a decision**: both homes were chosen on
-2026-11-22 and the reasoning is in each entry. They are the only two left that are purely work.
+**#79 is the last entry that is purely work.** Its home was chosen on 2026-11-22 and the
+reasoning is in the entry; what it needs is a session that reads each of the 38 test files as it
+converts it, because a test written against a thin double asserts what a thin double does.
 
-The other three wait on something no amount of reading supplies — a reproduction on the
-reporter's machine, a quiet hour, and a window in front.
+**#78 was the other one and it is done** (2026-11-22, commits `5833072` and `7c8c44c`): 340
+sites across 33 files on `src/client/ui/Dom.ts`, with 76 left in seven files for the reason the
+entry names — `el` is an interface field there, so the local cannot be renamed out of the way.
+
+The other two wait on something no amount of reading supplies — a reproduction on the
+reporter's machine and a window in front.

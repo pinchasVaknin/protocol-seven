@@ -13,6 +13,7 @@ import { PLAYER_ENTITY_ID } from '../../shared/combat/LocalIdentity';
 import { EventBus } from '../../shared/core/EventBus';
 import {
   DETERMINISM_DEFAULTS,
+  mathDigest,
   runDeterminismScenario,
   runFingerprint,
 } from '../../shared/debug/Determinism';
@@ -263,13 +264,22 @@ export function installConsoleApi(game: Game, harness: Harness, matchHarness: Ma
      * fingerprints match, the simulation is the same program in both runtimes.
      *
      *   __p7.determinism.fingerprint()   -> compare against the Node run at a glance
+     *   __p7.determinism.math()          -> the ten per-function digests, to see *which* differs
      *   __p7.determinism.download()      -> browser-hashes.json, for the differ
+     *
+     * `math()` was missing until 2026-11-22 (BACKLOG #22), which is why nobody could take the
+     * browser half of that entry: `dist-server/hashRun.js` puts `mathDigest()` in its output and
+     * this handle did not, so the two halves of a check that exists to be compared could be
+     * compared on the fingerprint and not on the function that moved it. A fingerprint says the
+     * runtimes disagree; these ten say which arithmetic did.
      */
     determinism: {
       run: (ticks = DETERMINISM_DEFAULTS.ticks, seed = DETERMINISM_DEFAULTS.seed) =>
         runDeterminismScenario({ ticks, seed }),
       fingerprint: (ticks = DETERMINISM_DEFAULTS.ticks, seed = DETERMINISM_DEFAULTS.seed) =>
         runFingerprint(runDeterminismScenario({ ticks, seed })),
+      /** The ten per-function digests, the same sweep `hashRun` reports. Not frame-driven. */
+      math: () => mathDigest(),
       payload: (ticks = DETERMINISM_DEFAULTS.ticks, seed = DETERMINISM_DEFAULTS.seed) => {
         const samples = runDeterminismScenario({ ticks, seed });
         return {

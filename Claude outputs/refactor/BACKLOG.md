@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**6 open entries**, every one with a heading of its own: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3; #77, #69, #63, #76, #85 and #53 on the same day. What is left is the six in §9: each one waits on a person, a machine or a decision this programme cannot supply, and §9 says which.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**5 open entries**, every one with a heading of its own: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3; #77, #69, #63, #76, #85, #53 and #22 on the same day. What is left is the six in §9: each one waits on a person, a machine or a decision this programme cannot supply, and §9 says which.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -440,6 +440,19 @@ then overwritten. `renderer.info.render` could not answer this from the console 
 **Watch for** this may be the browser pane rather than the game: C2 saw it only there, and never in
 a normal browser window. Reproduce it in Chrome before spending anything on the shader.
 
+**That suspicion got much stronger on 2026-11-22, and the attempt is recorded so the next one is
+cheaper.** A session tried to take the measurement above and could not, because the pane was
+rendering **nothing at all**: `requestAnimationFrame` fired **0 times in 1,000 ms** and **0 times
+in 1,500 ms** again straight after a screenshot, with the Claude window behind another. A
+screenshot forces a *paint* — it came back correctly rendered — but it does not restart the loop.
+`renderGunship` is called from the render pass, so at zero frames it is called zero times and
+every number a console probe could report would be a false negative. See #85, now written into
+§6 of the prompt along with a one-line frame-rate proof to run first.
+
+So: **before touching the shader, run that proof.** If it reads zero, this entry cannot be worked
+on from that session at all — and C2's observation that the flat grey appears only in the pane
+becomes the leading explanation rather than a footnote.
+
 **Verify** BROWSER: call in a chopper on Foundry and on Depot (the map the pass's own notes were
 written against) and compare against the three descriptions in `renderGunship`'s JSDoc — grey
 terrain, near-black team-mates, orange enemies.
@@ -512,30 +525,6 @@ went out on that tick with the previous one younger than `SCOREBOARD_MIN_TICKS`.
 fix's own behaviour held in place; it still is not evidence that the fix removes #42, which
 needs the match that ends **on a kill** described above.
 
-### #22 — Extend the M9 maths table to the engines the project actually runs on · `open` *(opened 2026-10-12)*
-**Files** `src/shared/core/SimMath.ts` (the table in its header), using
-`src/shared/debug/Determinism.ts`.
-
-The table in `SimMath.ts` measured `hypot`, `sqrt`, `exp`, `pow`, `atan2` and `log` as agreeing and
-only `sin`/`cos` as differing — **between Node 24 (V8 13.6) and Chrome 148 (V8 14.x)**. On
-2026-10-12 a Render build on **Node 22 (V8 12.4)** produced a one-ULP difference in
-`MapLuminance`'s `Math.pow`/`Math.hypot` path, which that table never covered. So the "same" row is
-version-scoped and the header does not say so.
-
-That finding was harmless — `MapLuminance` is an instrument, with `server/readability.ts` as its
-only importer — but the **simulation** uses `Math.atan2` and `Math.hypot` on hot paths (`BotBrain`,
-`Movement`, `Projectile`, `CombatBehaviour`), and its cross-runtime guarantee rests on this table.
-
-**The instrument already exists:** `mathDigest()` sweeps 20,000 arguments through all ten functions
-and `npm run hashes` prints the digests. Run it on Node 22 and on a browser build, diff the digests
-against a Node 24 run, and write the result into the table with the engine versions named. If
-`atan2` or `hypot` differ on an engine a player might run, that is a real finding of the same class
-`simSin`/`simCos` were written for; if they agree, the table gets the scope note it is missing.
-
-**Also record there** that a SIM snapshot/compare pair is only meaningful on **one machine and one
-Node build** — the state hashes depend on these functions — and that `npm run readability` is
-immune, because its figures go through `toFixed(3)`/`toFixed(4)`.
-
 ## 6b. Duplication that spans units — opened by A16
 
 ### #78 — Division C writes the same three lines of DOM about five hundred times · `open` *(opened 2026-11-10 by C19)*
@@ -562,10 +551,28 @@ importing sideways is the wrong shape — and putting it in `ScreenChrome.ts`, w
 already imports, would make that file the division's DOM library by accident rather than by
 decision.
 
-**Decide** whether `src/client/ui/Dom.ts` is worth a design unit of its own. If it is, the
-conversion is mechanical and every screen in the division has a characterization suite behind
-it now (C14–C19 together), so it is the cheapest it will ever be. If it is not, say so here and
-stop re-noticing it — three units have now written it down.
+**Decided 2026-11-22: yes, and `src/client/ui/Dom.ts` is the home.** The reasoning, so nobody
+has to take it again:
+
+- The helper cannot change what is rendered. `el(tag, className, text)` produces the same
+  element with the same class and the same text as the three lines it replaces, so the division's
+  BROWSER checksums should not move at all — and a checksum that *does* move is a conversion
+  mistake, which makes them a usefully sharp check rather than a cost.
+- Every screen has a characterization suite now (C14–C19 together), which is exactly the
+  condition the entry names as making this the cheapest it will ever be. That condition will not
+  improve and will decay as screens change.
+- ~500 sites of three lines become ~500 of one. That is the largest single piece of duplication
+  left anywhere in this project.
+- `ScreenChrome.ts` is **not** the home, for the reason the entry gives: it would become the
+  division's DOM library by accident. A file named `Dom.ts` says what it is.
+
+**What is left is the labour, and it is a session of its own**, for one reason: the conversion
+is only mechanical in shape, not in text. Sites differ — some set a third property, some append
+children, some build the element across several statements — so a regex pass over 500 of them
+would be a regex pass that breaks some of them quietly. Each file is read as it is converted,
+and each file's suite is run.
+
+**Do not create `Dom.ts` ahead of that session.** A file with no callers is worse than no file.
 
 **Verify** `npm run check` and every division-C BROWSER checksum, which between them hold the
 element tree of every screen in the game.
@@ -604,14 +611,34 @@ against them silently do not look.
 That drift is the cost, not the line count. A double that differs between files is a set of
 tests that disagree about what a browser does.
 
-**Decide** where a shared `src/client/ui/testing/dom.ts` (or a `test/` fixture outside `src/`)
-should live, which is the same question as **#78** and probably the same answer. Until then,
-every new unit's copy should be taken from the newest one rather than from the nearest.
+**Decided 2026-11-22: `src/client/ui/testing/dom.ts`** — inside `src/`, beside the code it
+doubles for, which is the first of the two the entry offers and the same answer #78 got.
+
+- A `test/` tree outside `src/` would need its own place in three `tsconfig`s and in
+  `check-boundaries`' partition map, which classifies every file under `src/` and would have to
+  learn a fourth kind. That is a change to the project's shape to hold one fixture.
+- `src/client/ui/testing/` is already classified: it is `client`, and the boundary rules it
+  inherits are the right ones — a test double for the DOM has no business importing `server/`
+  either.
+- `vitest.config.ts` includes `src/**/*.test.ts`, so a non-test file in that folder is not
+  collected as a suite and needs no exclusion.
+
+**The labour is still a session of its own, and bigger than the line count suggests.** Measured
+2026-11-22: 38 files, **29 distinct texts**, 41 to 351 lines, one capability to nineteen, and
+every capability split across the set — `setAttribute` in 28 of 38, `querySelector` in 21,
+`createElementNS` in 26, `requestAnimationFrame` in 20, a `window` double in exactly one. Only
+five texts are shared by more than one file.
+
+So this is not re-pointing 38 imports at one file. **A test written against a thin double
+asserts what a thin double does**, and putting the richest one under all of them can change what
+a suite sees — which is the failure this entry already records once, where C19's
+`setAttribute('class', …)` fix revealed suites that had silently stopped finding icons. Every
+file has to be read as it is converted and its suite run, and the conversion order should start
+with the five groups that already share a text (14 files) because those are the ones where the
+shared double is provably what they already had.
 
 **Verify** the whole suite, twice: once to see it pass on the shared double, and once with a
 deliberate break per file to see that the suites still bite.
-
----
 
 ## 9. What the six remaining entries are waiting for
 
@@ -626,9 +653,11 @@ blocked on effort.
 | **#34** The camera trembles while walking | A reproduction on the reporter's own machine. Every candidate C2 reached is measured clean, and C2's own mouse-path measurement demoted the leading one — the arrival pattern it found is *not* Chrome's. | The person who reported it, with a recording or a frame-time capture |
 | **#42** Three clients disagree with the final board, one run in five | A cause. A fix is in place and holds; what is unconfirmed is *why*. It needs repeated NET runs on a quiet machine, which is now its own subcommand (#53) | A machine that can sit idle for an hour |
 | **#55** The Chopper Gunner optic draws a flat grey field | A look at it in a real browser: call in a chopper on Foundry and on Depot and compare against `renderGunship`'s own three descriptions | Anyone with the game running and a window in front — see §6 and #85 |
-| **#22** Extend the M9 maths table to the engines the project runs on | Those engines installed. The table is a cross-engine claim and cannot be made from one runtime | Whoever can run the project under the other engines |
-| **#78** Division C writes the same three lines of DOM ~500 times | A decision about where a shared element builder lives, then a session to apply it across ~500 sites | The user, then a session of its own |
-| **#79** The DOM double is copied into every test file | The same decision — `src/client/ui/testing/` or a `test/` tree outside `src/` — and then a file-by-file conversion. **Measured 2026-11-22**: 38 files, 29 distinct texts, 41 to 351 lines, one capability to nineteen. A test written against a thin double asserts what a thin double does, so each file has to be read as it is converted, not re-pointed | The user, then a session of its own |
+| **#78** Division C writes the same three lines of DOM ~500 times | **Nothing but the labour.** Decided 2026-11-22: yes, and `src/client/ui/Dom.ts` is the home | A session of its own |
+| **#79** The DOM double is copied into every test file | **Nothing but the labour.** Decided 2026-11-22: `src/client/ui/testing/dom.ts`. Bigger than it looks — 38 files, 29 distinct texts, and each must be read as it is converted | A session of its own |
 
-**#78 and #79 are one decision and two sessions.** They are the only two left that are purely
-work, and they are the two that cannot start until somebody says where the shared code lives.
+**#78 and #79 are two sessions and no longer a decision**: both homes were chosen on
+2026-11-22 and the reasoning is in each entry. They are the only two left that are purely work.
+
+The other three wait on something no amount of reading supplies — a reproduction on the
+reporter's machine, a quiet hour, and a window in front.

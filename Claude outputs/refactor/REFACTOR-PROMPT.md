@@ -469,7 +469,20 @@ match's own bus after the last step and printed under `synthetic`. If you change
      `public/verify/tdm.js` already uses — 1,800 ticks in 20 s against a throttled pane, enough
      to carry a match to its debrief; and driving state through `__p7.game`'s own public methods
      rather than waiting for frames.
-   - Batch a `screenshot` before a `javascript_tool` measurement: the screenshot forces a frame.
+   - Batch a `screenshot` before a `javascript_tool` measurement: it forces **a paint**, which is
+     enough to see the screen and not enough to measure with. Measured 2026-11-22 with the window
+     backgrounded: `requestAnimationFrame` fired **0 times in 1,500 ms** both before a screenshot
+     and immediately after one, while the screenshot itself came back correctly rendered. So a
+     screenshot answers "what is on screen"; it does not restart the loop, and anything counted
+     over an interval still counts zero.
+   - The one-line frame-rate proof, to run before any frame-driven measurement:
+     ```js
+     await new Promise(r => { let n = 0; const t0 = performance.now();
+       const tick = () => { n++; performance.now() - t0 < 1000 ? requestAnimationFrame(tick) : r(n); };
+       requestAnimationFrame(tick); });
+     ```
+     Zero means every frame-driven number this session can produce is a false negative. Say so and
+     stop, rather than reporting the zero as a finding.
    - It cannot hold pointer lock, so synthetic keys do not reach a match. To drive input, wrap
      `match.deps.input.sample`.
    - **A BROWSER checksum cannot be re-baselined from a session that cannot run the check.** If a

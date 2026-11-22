@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**16 open entries: 12 with a heading of their own, and the four §3 holds inside its two remaining clusters** (#6, #12 and #5; #2, which absorbed #19). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two and batch L two on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**14 open entries: 12 with a heading of their own, and the two §3 still holds inside its two clusters** (#12; #2, which absorbed #19). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two and Cluster I's first two steps on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -178,35 +178,20 @@ they are not fenced by R3.
 
 ## 3. Sequenced clusters — order matters
 
-### Cluster I — the collision core: **#6 → #12 → #5**
+### Cluster I — the collision core: **#12 alone now**
 
-Three tasks converge on `src/shared/world/Geometry.ts`. In the wrong order the later ones redo
-the earlier ones' work.
+`#6` and `#5` were closed on 2026-11-22 and this is what is left of the cluster. The sequencing
+it was built around is spent: #6 retired `Geometry`'s duplicate `clamp`/`clamp01` in favour of
+`core/MathUtil`'s (identical bodies, and the oracles proved the wiring), and #5 split
+`capsuleBoxPenetration` — 144 lines at complexity 32 — into four named helpers over sixteen
+named scratch slots, bringing the file to **nothing over a limit** and `shared/world` to no
+unexplained violation at all apart from `Raycaster.cast`, whose remainder is an agreed
+exception. Both are proved by a SIM pair in which every oracle is byte-identical, the 3,600-tick
+hash included.
 
-#### #6 — Retire Geometry's duplicate `clamp` helpers · `open` · *do first*
-
-**Files** `src/shared/world/Geometry.ts`, possibly `src/shared/core/MathUtil.ts`. **Origin** A4.
-
-Geometry ends with non-exported `clamp(v, lo, hi)` and `clamp01(v)` whose bodies are byte-identical
-to the exported pair in `core/MathUtil.ts`. The local pair is reachable only from
-`capsuleBoxPenetration`.
-
-Not done in A4 for two reasons worth keeping: R4.3 sends cross-unit duplication here, and
-`MathUtil` belongs to A1 which is finished and in the `check:style` ratchet; and these are the two
-innermost functions on the hottest path in the project — `capsuleBoxPenetration` calls `clamp` six
-times per collider per entity per tick. Today they are module-local and monomorphic. V8 inlines
-across modules in one bundle so importing them is very likely free, but "very likely free" on that
-path is a decision to take deliberately.
-
-**Decide** import from `core/MathUtil` and delete the local pair, or keep the pair and document why
-it exists. Either is defensible; two identical copies with nothing saying which is which is not.
-If importing: this is a new `shared/world` → `shared/core` edge, which is directionally fine and
-`check:boundaries` permits it. While there: `SpatialHash.clampInt` is the integer sibling with no
-`MathUtil` equivalent — it is **not** a duplicate, should stay, and should be mentioned in the
-commit so the next reader does not go looking.
-
-**Verify** `npm run check` + SIM snapshot/compare → `PASS`. The bodies are identical so the
-arithmetic cannot move; the oracle proves the wiring.
+The warning the cluster opened with no longer applies to #12: **it does not have to go first.**
+#5 restructured `capsuleBoxPenetration`, which does not touch `entrySlab` at all — `rayBox` is
+`entrySlab`'s only caller — so nothing #12 does will be redoing #5's work.
 
 #### #12 — Unify the rig slab test with Geometry's · `needs a decision from the user` · *do second*
 
@@ -238,48 +223,34 @@ afterwards means touching the same code twice.
 bullet still stops where it used to. `HitboxRig.test.ts` (A9) pins the rig side: hits per zone, the
 nearest-box choice, normals under yaw, a ray starting inside a box, the parallel-axis case.
 
-#### #5 — Split `capsuleBoxPenetration` in its own unit · `open` · *do last*
 
-**Files** `src/shared/world/Geometry.ts`. **Origin** A4.
+**What the 2026-11-22 batch established, for whoever takes the decision.**
 
-144 lines at cognitive complexity 32, against limits of 50 and 15. A4 brought five of its unit's
-seven over-limit functions inside the limits and left this one completely untouched, on purpose. It
-is the last unexplained violation in `shared/world` apart from `Raycaster.cast`, whose remainder is
-an agreed exception.
+- **The two functions can never be nested.** `narrowSlab` is reached only from
+  `HitboxRig.raySlab`, which is called only from `HitboxRig.ts`'s own box loop; `entrySlab` only
+  from `Geometry.rayBox`, called from `Raycaster.cast` and `NavBake`. Neither subsystem's ray
+  test runs inside the other's. So one *shared* set of module slots would in fact be safe —
+  which was the obstacle that looked fatal.
+- **But sharing the slots across the two is the worst of the three shapes.** It would have
+  `combat/` reading `world/`'s module scratch (or the reverse), which is the coupling A9
+  declined to create in the first place.
+- **There is a third shape neither the entry nor A9 considered**, and it is the one this
+  codebase already uses everywhere else — `stepRise`, `columnRay`, `flameJet`, `LookDir`: one
+  exported `narrowSlab(out, o, d, h, axis)` in `shared/core/`, with each caller keeping its own
+  module-level record. Allocation-free, no shared state, one copy of the arithmetic. The cost is
+  that the hottest path in the project pays a property access where it pays a module-variable
+  access today — which is very probably free and is exactly the kind of "very probably free"
+  #6's own text says to decide deliberately rather than assume.
+- **The NaN difference is real and the forms are not interchangeable.** For a NaN coordinate
+  `o >= -h && o <= h` is **false** (reject) and `!(o < -h || o > h)` is **true** (accept, and
+  report a hit). Rejecting is the safer semantic of the two; whether it is *reachable* was not
+  measured, and should be before either form is imposed on the other caller.
 
-Why it was left: one numerical kernel with about twenty live locals. The two phases that carry the
-complexity — the three-round alternating-projection loop that finds the closest point between the
-capsule segment and the box, and the "capsule axis is inside the box, escape along the shallowest
-face" branch — cannot be handed to helpers without either signatures of eight to ten parameters
-(which the guidance refuses, and which read worse than the original) or roughly twenty
-module-level scratch slots. Twenty slots is a big enough surface that one mis-wired slot is a
-silent collision bug, and it should not ride along in a unit already carrying six other changes.
-
-What A4 established that this task should use:
-- **The pattern is proven.** `entrySlab` (new in A4) and the pre-existing `exitSlab` both work over
-  module-level `let`s, and A4 added `toBoxLocalRay`, which writes six local-space values plus the
-  nine basis values into module slots so its two callers do not pay for the basis reads twice.
-  `capsuleBoxPenetration` wants the same treatment, with a sibling that transforms two *points*
-  (segment A and B) rather than a point and a vector.
-- **The tests exist.** `Geometry.test.ts` has 31 tests; the `capsuleBoxPenetration` half covers
-  clear, exactly tangent (which reports no contact — the test is strict), overlapping from the
-  side, standing on the top face, axis inside the box dead centre and off centre, a degenerate
-  capsule whose endpoints coincide, the grown-AABB early reject on each axis, all against both an
-  axis-aligned and a yawed box. Do not weaken them.
-
-**Scope** (1) add the segment transform and use it to remove the third copy of the world-to-local
-block — `rayBox` and `rayBoxExit` already share `toBoxLocalRay`; (2) split the closest-point solve
-and the shallowest-face escape into named helpers over module scratch; (3) carry every expression
-over character for character — R5 forbids reordering or regrouping any floating-point arithmetic,
-and this function's output feeds the collision resolver and therefore the per-tick hashes.
-
-**Target** within 50 lines and complexity 15, or a documented exception with its numbers and a
-better reason than this one.
-
-**Verify** `npm run check` + SIM snapshot/compare → `PASS`. The 3,600-tick hash is the real test;
-A4's version of this change passed it unchanged and so must this one.
-
----
+**Decide**: (1) one shared helper with per-caller records, accepting the property access; (2)
+share only the arithmetic that does not touch the accumulators, leaving each caller its own five
+lines of narrowing; or (3) keep the two copies and make each one's comment name the other and
+the NaN form it chose. All three are defensible. What is not is two copies with nothing saying
+which is which — which is already half-fixed, since both comments now name the other.
 
 ### Cluster II — layering: **#2 (absorbs #19)**
 

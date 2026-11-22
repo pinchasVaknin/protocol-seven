@@ -1,5 +1,6 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { clamp, clamp01 } from '../core/MathUtil';
 import type { ColliderSet } from './ColliderSet';
 //#endregion
 /**
@@ -75,6 +76,41 @@ let entrySign = 0;
 
 let exitMin = 0;
 let exitMax = 0;
+
+/**
+ * `capsuleBoxPenetration`'s own scratch: the capsule in the box's local frame, the closest pair
+ * of points on it and the contact that came out (BACKLOG #5).
+ *
+ * Sixteen slots, for the reason the nine above exist: that function is 144 lines of one
+ * numerical kernel with about twenty live values, and the two phases carrying its complexity —
+ * the alternating-projection solve and the shallowest-face escape — cannot be handed to helpers
+ * through parameters without signatures of eight to ten arguments. Module-level `let`s are how
+ * the rest of this file already answers that, and they allocate nothing on the path that runs
+ * per collider per entity per tick.
+ *
+ * **Nothing here survives the call that wrote it.** Every slot is written before it is read
+ * within one `capsuleBoxPenetration`, and that function is not re-entrant: it calls only the
+ * four helpers below it, none of which calls back into it.
+ */
+let segAx = 0;
+let segAy = 0;
+let segAz = 0;
+let segBx = 0;
+let segBy = 0;
+let segBz = 0;
+/** The closest point on the capsule's segment. */
+let onSegX = 0;
+let onSegY = 0;
+let onSegZ = 0;
+/** The closest point on the box, in its own frame. */
+let onBoxX = 0;
+let onBoxY = 0;
+let onBoxZ = 0;
+/** The contact, still in the box's frame. */
+let localNx = 0;
+let localNy = 0;
+let localNz = 0;
+let localDepth = 0;
 //#endregion
 
 // ===================================== EXPORTED FUNCTIONS ===================================== \\
@@ -107,155 +143,36 @@ export function capsuleBoxPenetration(
   radius: number,
   out: Contact,
 ): boolean {
-  const cx = set.centerX(i);
-  const cy = set.centerY(i);
-  const cz = set.centerZ(i);
   const hx = set.halfX(i);
   const hy = set.halfY(i);
   const hz = set.halfZ(i);
-
-  // World -> local.
-  let lax: number;
-  let lay: number;
-  let laz: number;
-  let lbx: number;
-  let lby: number;
-  let lbz: number;
-
-  const aligned = set.isAxisAligned(i);
-  const b0 = set.basisAt(i, 0);
-  const b1 = set.basisAt(i, 1);
-  const b2 = set.basisAt(i, 2);
-  const b3 = set.basisAt(i, 3);
-  const b4 = set.basisAt(i, 4);
-  const b5 = set.basisAt(i, 5);
-  const b6 = set.basisAt(i, 6);
-  const b7 = set.basisAt(i, 7);
-  const b8 = set.basisAt(i, 8);
-
-  const dax = ax - cx;
-  const day = ay - cy;
-  const daz = az - cz;
-  const dbx = bx - cx;
-  const dby = by - cy;
-  const dbz = bz - cz;
-
-  if (aligned) {
-    lax = dax;
-    lay = day;
-    laz = daz;
-    lbx = dbx;
-    lby = dby;
-    lbz = dbz;
-  } else {
-    lax = dax * b0 + day * b1 + daz * b2;
-    lay = dax * b3 + day * b4 + daz * b5;
-    laz = dax * b6 + day * b7 + daz * b8;
-    lbx = dbx * b0 + dby * b1 + dbz * b2;
-    lby = dbx * b3 + dby * b4 + dbz * b5;
-    lbz = dbx * b6 + dby * b7 + dbz * b8;
-  }
+  const aligned = toBoxLocalSegment(set, i, ax, ay, az, bx, by, bz);
 
   // Cheap reject: does the segment's local AABB, grown by r, miss the box?
-  if (Math.min(lax, lbx) - radius > hx || Math.max(lax, lbx) + radius < -hx) return false;
-  if (Math.min(lay, lby) - radius > hy || Math.max(lay, lby) + radius < -hy) return false;
-  if (Math.min(laz, lbz) - radius > hz || Math.max(laz, lbz) + radius < -hz) return false;
+  if (Math.min(segAx, segBx) - radius > hx || Math.max(segAx, segBx) + radius < -hx) return false;
+  if (Math.min(segAy, segBy) - radius > hy || Math.max(segAy, segBy) + radius < -hy) return false;
+  if (Math.min(segAz, segBz) - radius > hz || Math.max(segAz, segBz) + radius < -hz) return false;
 
-  const sx = lbx - lax;
-  const sy = lby - lay;
-  const sz = lbz - laz;
-  const segLenSq = sx * sx + sy * sy + sz * sz;
+  solveClosestPoint(hx, hy, hz);
 
-  // Closest point between the segment and the box, by alternating projection.
-  // Seed with the point nearest the box centre (the local origin), then clamp/reproject.
-  // Three rounds is well past convergence for a capsule-sized query.
-  let t = segLenSq > EPS ? clamp01((-lax * sx - lay * sy - laz * sz) / segLenSq) : 0;
-  let pxL = 0;
-  let pyL = 0;
-  let pzL = 0;
-  let qx = 0;
-  let qy = 0;
-  let qz = 0;
-
-  for (let iter = 0; iter < 3; iter++) {
-    pxL = lax + sx * t;
-    pyL = lay + sy * t;
-    pzL = laz + sz * t;
-    qx = clamp(pxL, -hx, hx);
-    qy = clamp(pyL, -hy, hy);
-    qz = clamp(pzL, -hz, hz);
-    if (segLenSq <= EPS) break;
-    t = clamp01(((qx - lax) * sx + (qy - lay) * sy + (qz - laz) * sz) / segLenSq);
-  }
-  pxL = lax + sx * t;
-  pyL = lay + sy * t;
-  pzL = laz + sz * t;
-  qx = clamp(pxL, -hx, hx);
-  qy = clamp(pyL, -hy, hy);
-  qz = clamp(pzL, -hz, hz);
-
-  const vx = pxL - qx;
-  const vy = pyL - qy;
-  const vz = pzL - qz;
+  const vx = onSegX - onBoxX;
+  const vy = onSegY - onBoxY;
+  const vz = onSegZ - onBoxZ;
   const distSq = vx * vx + vy * vy + vz * vz;
-
-  let nlx: number;
-  let nly: number;
-  let nlz: number;
-  let depth: number;
 
   if (distSq > EPS) {
     if (distSq >= radius * radius) return false;
     const dist = Math.sqrt(distSq);
     const inv = 1 / dist;
-    nlx = vx * inv;
-    nly = vy * inv;
-    nlz = vz * inv;
-    depth = radius - dist;
+    localNx = vx * inv;
+    localNy = vy * inv;
+    localNz = vz * inv;
+    localDepth = radius - dist;
   } else {
-    // Capsule axis is inside the box. Escape along the shallowest face.
-    const ox = hx - Math.abs(pxL);
-    const oy = hy - Math.abs(pyL);
-    const oz = hz - Math.abs(pzL);
-    if (ox <= oy && ox <= oz) {
-      nlx = pxL >= 0 ? 1 : -1;
-      nly = 0;
-      nlz = 0;
-      depth = radius + ox;
-      qx = nlx * hx;
-    } else if (oy <= oz) {
-      nlx = 0;
-      nly = pyL >= 0 ? 1 : -1;
-      nlz = 0;
-      depth = radius + oy;
-      qy = nly * hy;
-    } else {
-      nlx = 0;
-      nly = 0;
-      nlz = pzL >= 0 ? 1 : -1;
-      depth = radius + oz;
-      qz = nlz * hz;
-    }
+    escapeShallowestFace(hx, hy, hz, radius);
   }
 
-  // Local -> world.
-  if (aligned) {
-    out.nx = nlx;
-    out.ny = nly;
-    out.nz = nlz;
-    out.px = qx + cx;
-    out.py = qy + cy;
-    out.pz = qz + cz;
-  } else {
-    out.nx = nlx * b0 + nly * b3 + nlz * b6;
-    out.ny = nlx * b1 + nly * b4 + nlz * b7;
-    out.nz = nlx * b2 + nly * b5 + nlz * b8;
-    out.px = cx + qx * b0 + qy * b3 + qz * b6;
-    out.py = cy + qx * b1 + qy * b4 + qz * b7;
-    out.pz = cz + qx * b2 + qy * b5 + qz * b8;
-  }
-  out.depth = depth;
-  out.index = i;
+  writeContact(out, set.centerX(i), set.centerY(i), set.centerZ(i), i, aligned);
   return true;
 }
 
@@ -368,6 +285,167 @@ export function rayBoxExit(
  * only rotated. This was written out in full in both `rayBox` and `rayBoxExit`, and the two
  * copies were the whole of why each was over the line limit.
  */
+/**
+ * The capsule's two endpoints in the box's local frame, plus the basis they came through.
+ *
+ * `toBoxLocalRay`'s sibling for a segment rather than a point and a vector, which is the third
+ * copy of this world-to-local block retired (BACKLOG #5). Returns whether the box is
+ * axis-aligned, exactly as that one does, because the caller needs it again on the way out.
+ *
+ * The basis is read once here and left in `basis0..8` for `writeContact` to turn the local
+ * normal and contact point back into world space — the same bargain the ray version makes.
+ */
+function toBoxLocalSegment(
+  set: ColliderSet,
+  i: number,
+  ax: number,
+  ay: number,
+  az: number,
+  bx: number,
+  by: number,
+  bz: number,
+): boolean {
+  const cx = set.centerX(i);
+  const cy = set.centerY(i);
+  const cz = set.centerZ(i);
+
+  const dax = ax - cx;
+  const day = ay - cy;
+  const daz = az - cz;
+  const dbx = bx - cx;
+  const dby = by - cy;
+  const dbz = bz - cz;
+
+  const aligned = set.isAxisAligned(i);
+  basis0 = set.basisAt(i, 0);
+  basis1 = set.basisAt(i, 1);
+  basis2 = set.basisAt(i, 2);
+  basis3 = set.basisAt(i, 3);
+  basis4 = set.basisAt(i, 4);
+  basis5 = set.basisAt(i, 5);
+  basis6 = set.basisAt(i, 6);
+  basis7 = set.basisAt(i, 7);
+  basis8 = set.basisAt(i, 8);
+
+  if (aligned) {
+    segAx = dax;
+    segAy = day;
+    segAz = daz;
+    segBx = dbx;
+    segBy = dby;
+    segBz = dbz;
+  } else {
+    segAx = dax * basis0 + day * basis1 + daz * basis2;
+    segAy = dax * basis3 + day * basis4 + daz * basis5;
+    segAz = dax * basis6 + day * basis7 + daz * basis8;
+    segBx = dbx * basis0 + dby * basis1 + dbz * basis2;
+    segBy = dbx * basis3 + dby * basis4 + dbz * basis5;
+    segBz = dbx * basis6 + dby * basis7 + dbz * basis8;
+  }
+  return aligned;
+}
+
+/**
+ * The closest pair of points between the capsule's segment and the box, by alternating
+ * projection. Into `onSeg*` and `onBox*`.
+ *
+ * Seed with the point nearest the box centre (the local origin), then clamp and reproject.
+ * Three rounds is well past convergence for a capsule-sized query, and the reprojection after
+ * the loop is what makes the two points consistent with the `t` the last round chose rather
+ * than with the one before it.
+ *
+ * A degenerate capsule — both endpoints at one place — has no `t` to solve for, which is what
+ * the `segLenSq <= EPS` guards are: the seed stays 0 and the loop breaks before reprojecting.
+ */
+function solveClosestPoint(hx: number, hy: number, hz: number): void {
+  const sx = segBx - segAx;
+  const sy = segBy - segAy;
+  const sz = segBz - segAz;
+  const segLenSq = sx * sx + sy * sy + sz * sz;
+
+  let t = segLenSq > EPS ? clamp01((-segAx * sx - segAy * sy - segAz * sz) / segLenSq) : 0;
+
+  for (let iter = 0; iter < 3; iter++) {
+    onSegX = segAx + sx * t;
+    onSegY = segAy + sy * t;
+    onSegZ = segAz + sz * t;
+    onBoxX = clamp(onSegX, -hx, hx);
+    onBoxY = clamp(onSegY, -hy, hy);
+    onBoxZ = clamp(onSegZ, -hz, hz);
+    if (segLenSq <= EPS) break;
+    t = clamp01(
+      ((onBoxX - segAx) * sx + (onBoxY - segAy) * sy + (onBoxZ - segAz) * sz) / segLenSq,
+    );
+  }
+  onSegX = segAx + sx * t;
+  onSegY = segAy + sy * t;
+  onSegZ = segAz + sz * t;
+  onBoxX = clamp(onSegX, -hx, hx);
+  onBoxY = clamp(onSegY, -hy, hy);
+  onBoxZ = clamp(onSegZ, -hz, hz);
+}
+
+/**
+ * The capsule's axis is inside the box: escape along the shallowest face.
+ *
+ * There is no direction to normalise when the closest points coincide, so the normal is a face
+ * normal and the depth is the radius plus how far inside that face the axis sits. The contact
+ * point moves onto the face it escapes through, which is the one line of `onBox*` this writes:
+ * the clamp that produced it put it *at* the axis, which is inside the box and not a surface.
+ */
+function escapeShallowestFace(hx: number, hy: number, hz: number, radius: number): void {
+  const ox = hx - Math.abs(onSegX);
+  const oy = hy - Math.abs(onSegY);
+  const oz = hz - Math.abs(onSegZ);
+  if (ox <= oy && ox <= oz) {
+    localNx = onSegX >= 0 ? 1 : -1;
+    localNy = 0;
+    localNz = 0;
+    localDepth = radius + ox;
+    onBoxX = localNx * hx;
+  } else if (oy <= oz) {
+    localNx = 0;
+    localNy = onSegY >= 0 ? 1 : -1;
+    localNz = 0;
+    localDepth = radius + oy;
+    onBoxY = localNy * hy;
+  } else {
+    localNx = 0;
+    localNy = 0;
+    localNz = onSegZ >= 0 ? 1 : -1;
+    localDepth = radius + oz;
+    onBoxZ = localNz * hz;
+  }
+}
+
+/** The contact, back in world space, through the basis `toBoxLocalSegment` left behind. */
+function writeContact(
+  out: Contact,
+  cx: number,
+  cy: number,
+  cz: number,
+  i: number,
+  aligned: boolean,
+): void {
+  if (aligned) {
+    out.nx = localNx;
+    out.ny = localNy;
+    out.nz = localNz;
+    out.px = onBoxX + cx;
+    out.py = onBoxY + cy;
+    out.pz = onBoxZ + cz;
+  } else {
+    out.nx = localNx * basis0 + localNy * basis3 + localNz * basis6;
+    out.ny = localNx * basis1 + localNy * basis4 + localNz * basis7;
+    out.nz = localNx * basis2 + localNy * basis5 + localNz * basis8;
+    out.px = cx + onBoxX * basis0 + onBoxY * basis3 + onBoxZ * basis6;
+    out.py = cy + onBoxX * basis1 + onBoxY * basis4 + onBoxZ * basis7;
+    out.pz = cz + onBoxX * basis2 + onBoxY * basis5 + onBoxZ * basis8;
+  }
+  out.depth = localDepth;
+  out.index = i;
+}
+
 function toBoxLocalRay(
   set: ColliderSet,
   i: number,
@@ -454,13 +532,5 @@ function exitSlab(o: number, d: number, h: number): boolean {
   if (t1 > exitMin) exitMin = t1;
   if (t2 < exitMax) exitMax = t2;
   return exitMin <= exitMax;
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
-}
-
-function clamp01(v: number): number {
-  return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 //#endregion

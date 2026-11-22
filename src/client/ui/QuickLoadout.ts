@@ -37,6 +37,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import type { LoadoutSlot } from '../../shared/meta/Loadouts';
 //#endregion
 
@@ -90,8 +91,7 @@ export class QuickLoadout {
     this.title.className = 'ql__title op-label';
     this.element.appendChild(this.title);
 
-    const list = document.createElement('div');
-    list.className = 'ql__rows';
+    const list = el('div', 'ql__rows');
     for (let i = 0; i < MAX_ROWS; i++) {
       const { row, name } = createRow(i);
       list.appendChild(row);
@@ -191,15 +191,11 @@ export class QuickLoadout {
 //#region Internal Helpers
 /** One row: the key that picks it, and the name the paint writes into. */
 function createRow(index: number): { row: HTMLElement; name: HTMLElement } {
-  const row = document.createElement('div');
-  row.className = 'ql__row';
+  const row = el('div', 'ql__row');
 
-  const key = document.createElement('span');
-  key.className = 'ql__key op-num';
-  key.textContent = String(index + 1);
+  const key = el('span', 'ql__key op-num', String(index + 1));
 
-  const name = document.createElement('span');
-  name.className = 'ql__name';
+  const name = el('span', 'ql__name');
 
   row.append(key, name);
   return { row, name };

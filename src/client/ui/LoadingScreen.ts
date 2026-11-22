@@ -26,6 +26,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { findMap } from '../../shared/modes/ModeRegistry';
 import type { MapBuildProgress } from '../world/MapRender';
 //#endregion
@@ -63,8 +64,7 @@ export class LoadingScreen {
     this.detail = document.createElement('p');
     this.detail.className = 'op-loading__detail';
 
-    const track = document.createElement('div');
-    track.className = 'op-loading__track';
+    const track = el('div', 'op-loading__track');
     this.fill = document.createElement('div');
     this.fill.className = 'op-loading__fill';
     track.appendChild(this.fill);

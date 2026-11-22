@@ -77,6 +77,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { accuracy, compareRows, killDeath, type PlayerScore, type ScoreSystem, type ScoreTeam } from '../../shared/combat/ScoreSystem';
 import type { ColumnDef, MatchResult } from '../../shared/modes/GameMode';
 import { personalOutcome, type PersonalOutcome } from '../../shared/modes/MatchOutcome';
@@ -613,28 +614,20 @@ export class EndOfMatch {
 
   /** The head: the result small, the score, the reason; the tabs. */
   private createHead(): HeadParts {
-    const element = document.createElement('div');
-    element.className = 'dbf-head';
-    const result = document.createElement('div');
-    result.className = 'dbf-head__result';
-    const word = document.createElement('span');
-    word.className = 'dbf-head__word';
-    const score = document.createElement('span');
-    score.className = 'dbf-head__score op-num';
-    const reason = document.createElement('span');
-    reason.className = 'dbf-head__reason op-label';
+    const element = el('div', 'dbf-head');
+    const result = el('div', 'dbf-head__result');
+    const word = el('span', 'dbf-head__word');
+    const score = el('span', 'dbf-head__score op-num');
+    const reason = el('span', 'dbf-head__reason op-label');
     result.append(word, score, reason);
 
-    const tabs = document.createElement('div');
-    tabs.className = 'dbf-tabs';
+    const tabs = el('div', 'dbf-tabs');
     tabs.setAttribute('role', 'tablist');
     const podiumTab = makeTab('PODIUM');
     const boardTab = makeTab('SCOREBOARD');
     podiumTab.addEventListener('click', () => this.showBoard(false));
     boardTab.addEventListener('click', () => this.showBoard(true));
-    const hint = document.createElement('span');
-    hint.className = 'dbf-tabs__hint op-label';
-    hint.textContent = 'TAB';
+    const hint = el('span', 'dbf-tabs__hint op-label', 'TAB');
     tabs.append(podiumTab, boardTab, hint);
     element.append(result, tabs);
     return { element, word, score, reason, podiumTab, boardTab };
@@ -642,14 +635,11 @@ export class EndOfMatch {
 
   /** The band: the XP strip, and the two ways out. */
   private createBand(): BandParts {
-    const element = document.createElement('div');
-    element.className = 'dbf-band';
-    const xpSlot = document.createElement('div');
-    xpSlot.className = 'dbf-band__xp';
+    const element = el('div', 'dbf-band');
+    const xpSlot = el('div', 'dbf-band__xp');
     xpSlot.hidden = true;
 
-    const actions = document.createElement('div');
-    actions.className = 'dbf-band__actions';
+    const actions = el('div', 'dbf-band__actions');
     const exit = document.createElement('button');
     exit.type = 'button';
     exit.className = 'op-cta op-cta--quiet dbf-exit';
@@ -665,8 +655,7 @@ export class EndOfMatch {
     continueButton.appendChild(makeIconSvg(DOUBLE_CHEVRON, GLYPH_VIEWBOX, 'op-cta__lead'));
     const continueLabel = document.createElement('span');
     continueButton.appendChild(continueLabel);
-    const key = document.createElement('span');
-    key.className = 'dbf-continue__key op-label';
+    const key = el('span', 'dbf-continue__key op-label');
     // The gesture, not the key: a hint that says SPACE on a button a single Space no longer
     // presses is the same lie the button itself would be telling.
     key.textContent = `SPACE ×${SKIP_TAPS_TO_LEAVE}`;
@@ -915,25 +904,17 @@ export class EndOfMatch {
   }
 
   private teamPlate(name: string, points: number, sub: string, relation: 'FRIENDLY' | 'HOSTILE', won: boolean): HTMLElement {
-    const plate = document.createElement('div');
-    plate.className = `dbf-team dbf-team--${relationClass(relation)}`;
+    const plate = el('div', `dbf-team dbf-team--${relationClass(relation)}`);
     plate.classList.toggle('is-winner', won);
     // The side's emblem over the plate's top edge (decision 7): the wolf for this seat's side, the demon for the other.
-    const emblem = document.createElement('img');
-    emblem.className = 'dbf-team__emblem';
+    const emblem = el('img', 'dbf-team__emblem');
     emblem.src = teamEmblemUrl(relation);
     emblem.alt = '';
     emblem.draggable = false;
     plate.appendChild(emblem);
-    const n = document.createElement('span');
-    n.className = 'dbf-team__name';
-    n.textContent = name;
-    const s = document.createElement('span');
-    s.className = 'dbf-team__score op-num';
-    s.textContent = points.toLocaleString();
-    const u = document.createElement('span');
-    u.className = 'dbf-team__sub op-label';
-    u.textContent = sub;
+    const n = el('span', 'dbf-team__name', name);
+    const s = el('span', 'dbf-team__score op-num', points.toLocaleString());
+    const u = el('span', 'dbf-team__sub op-label', sub);
     plate.append(n, s, u);
     return plate;
   }
@@ -941,20 +922,14 @@ export class EndOfMatch {
   /** The mission card: the map's picture and name, the mode and the difficulty, the player's own six figures. */
   private paintMission(score: ScoreSystem, facts: MatchFacts): void {
     this.mission.replaceChildren();
-    const pic = document.createElement('img');
-    pic.className = 'dbf-mission__img';
+    const pic = el('img', 'dbf-mission__img');
     pic.src = facts.mapPicture;
     pic.alt = '';
     pic.draggable = false;
 
-    const where = document.createElement('div');
-    where.className = 'dbf-mission__where';
-    const label = document.createElement('span');
-    label.className = 'op-label';
-    label.textContent = 'COMBAT MAP';
-    const name = document.createElement('span');
-    name.className = 'dbf-mission__map';
-    name.textContent = facts.mapName;
+    const where = el('div', 'dbf-mission__where');
+    const label = el('span', 'op-label', 'COMBAT MAP');
+    const name = el('span', 'dbf-mission__map', facts.mapName);
     const mode = document.createElement('span');
     mode.className = 'dbf-mission__mode';
     mode.textContent = facts.difficulty === null ? facts.modeName.toUpperCase() : `${facts.modeName} · ${facts.difficulty}`.toUpperCase();
@@ -977,17 +952,10 @@ export class EndOfMatch {
   }
 
   private createAwardCell(label: string, row: PlayerScore, value: string): HTMLElement {
-    const cell = document.createElement('div');
-    cell.className = `dbf-award dbf-award--${relationClass(relationTo(this.viewer, row.team))}`;
-    const l = document.createElement('span');
-    l.className = 'op-label';
-    l.textContent = label;
-    const n = document.createElement('span');
-    n.className = 'dbf-award__name';
-    n.textContent = row.displayName;
-    const v = document.createElement('span');
-    v.className = 'dbf-award__value op-num';
-    v.textContent = value;
+    const cell = el('div', `dbf-award dbf-award--${relationClass(relationTo(this.viewer, row.team))}`);
+    const l = el('span', 'op-label', label);
+    const n = el('span', 'dbf-award__name', row.displayName);
+    const v = el('span', 'dbf-award__value op-num', value);
     cell.append(l, n, v);
     return cell;
   }
@@ -1067,27 +1035,21 @@ export function reasonLine(outcome: PersonalOutcome, result: MatchResult, winner
 //#region Internal Helpers
 /** The result card: the word and its reason, the two team plates, the mission card. */
 function createResultCard(): CardParts {
-  const element = document.createElement('div');
-  element.className = 'dbf-card';
-  const hero = document.createElement('div');
-  hero.className = 'dbf-hero';
+  const element = el('div', 'dbf-card');
+  const hero = el('div', 'dbf-hero');
   const heroWord = document.createElement('h1');
   heroWord.className = 'dbf-hero__word';
-  const heroReason = document.createElement('p');
-  heroReason.className = 'dbf-hero__reason op-label';
+  const heroReason = el('p', 'dbf-hero__reason op-label');
   hero.append(heroWord, heroReason);
-  const teams = document.createElement('div');
-  teams.className = 'dbf-teams';
-  const mission = document.createElement('div');
-  mission.className = 'dbf-mission';
+  const teams = el('div', 'dbf-teams');
+  const mission = el('div', 'dbf-mission');
   element.append(hero, teams, mission);
   return { element, heroWord, heroReason, teams, mission };
 }
 
 /** The player's own six figures on the mission card, where the board has a row for them. */
 function missionStats(rows: readonly PlayerScore[]): HTMLElement {
-  const stats = document.createElement('div');
-  stats.className = 'dbf-mission__stats';
+  const stats = el('div', 'dbf-mission__stats');
   const mine = findLocal(rows);
   if (mine === undefined) return stats;
   const pct = accuracy(mine);
@@ -1105,30 +1067,21 @@ function missionStats(rows: readonly PlayerScore[]): HTMLElement {
 
 /** The medal, MVP on the first, and the callsign. */
 function plateHead(row: PlayerScore, rank: number): HTMLElement {
-  const badge = document.createElement('span');
-  badge.className = 'dbf-plate__medal op-num';
-  badge.textContent = String(rank + 1);
-  const who = document.createElement('span');
-  who.className = 'dbf-plate__who';
+  const badge = el('span', 'dbf-plate__medal op-num', String(rank + 1));
+  const who = el('span', 'dbf-plate__who');
   if (rank === 0) {
-    const mvp = document.createElement('span');
-    mvp.className = 'dbf-plate__mvp op-label';
-    mvp.textContent = 'MVP';
+    const mvp = el('span', 'dbf-plate__mvp op-label', 'MVP');
     who.appendChild(mvp);
   }
-  const name = document.createElement('span');
-  name.className = 'dbf-plate__name';
-  name.textContent = row.displayName;
+  const name = el('span', 'dbf-plate__name', row.displayName);
   who.appendChild(name);
-  const head = document.createElement('div');
-  head.className = 'dbf-plate__head';
+  const head = el('div', 'dbf-plate__head');
   head.append(badge, who);
   return head;
 }
 
 function plateStats(row: PlayerScore): HTMLElement {
-  const stats = document.createElement('div');
-  stats.className = 'dbf-plate__stats';
+  const stats = el('div', 'dbf-plate__stats');
   for (const [label, read] of PLATE_FIGURES) stats.appendChild(stat(label, read(row)));
   return stats;
 }
@@ -1162,14 +1115,9 @@ function vs(): HTMLElement {
 }
 
 function stat(label: string, value: string): HTMLElement {
-  const cell = document.createElement('div');
-  cell.className = 'dbf-stat';
-  const l = document.createElement('span');
-  l.className = 'op-label';
-  l.textContent = label;
-  const v = document.createElement('span');
-  v.className = 'dbf-stat__value op-num';
-  v.textContent = value;
+  const cell = el('div', 'dbf-stat');
+  const l = el('span', 'op-label', label);
+  const v = el('span', 'dbf-stat__value op-num', value);
   cell.append(l, v);
   return cell;
 }

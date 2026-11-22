@@ -43,6 +43,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import * as THREE from 'three';
 import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
 import type { ActorAvatar, HeldWeaponAsset } from '../characters/ActorAvatar';
@@ -737,8 +738,7 @@ function sameAttachments(a: readonly AttachmentId[], b: readonly AttachmentId[])
 
 /** The canvas this stage draws on, sized in design-frame pixels and named for a screen reader. */
 function createStageCanvas(options: StageOptions): HTMLCanvasElement {
-  const canvas = document.createElement('canvas');
-  canvas.className = options.canvasClass;
+  const canvas = el('canvas', options.canvasClass);
   canvas.width = options.width;
   canvas.height = options.height;
   canvas.setAttribute('aria-label', options.ariaLabel);

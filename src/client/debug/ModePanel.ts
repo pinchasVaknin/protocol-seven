@@ -1,3 +1,4 @@
+import { el } from '../ui/Dom';
 import type { Match } from '../ClientMatch';
 import { accuracy, type ScoreTeam } from '../../shared/combat/ScoreSystem';
 import { EV, type GameBus } from '../../shared/core/Events';
@@ -132,8 +133,7 @@ export class ModePanel extends Disposable {
 
     this.own(
       bus.on(EV.KillfeedEntry, (p) => {
-        const line = document.createElement('div');
-        line.className = 'dbg-log__line';
+        const line = el('div', 'dbg-log__line');
         const weapon = p.headshot ? `${p.weaponId} · HS` : p.weaponId;
         line.textContent = p.suicide
           ? `— ${p.victimName} (${weapon})`
@@ -296,11 +296,9 @@ export class ModePanel extends Disposable {
   }
 
   private objectiveList(): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.className = 'dbg-log';
+    const wrap = el('div', 'dbg-log');
     for (const o of this.map.def.objectives) {
-      const line = document.createElement('div');
-      line.className = 'dbg-log__line';
+      const line = el('div', 'dbg-log__line');
       line.textContent =
         `${o.kind.toUpperCase()} ${o.label} · ` +
         `${o.position.x.toFixed(0)}, ${o.position.z.toFixed(0)} · r${o.radius.toFixed(1)}`;
@@ -319,8 +317,7 @@ export class ModePanel extends Disposable {
   }
 
   private toggle(label: string, initial: boolean, onChange: (on: boolean) => void): HTMLElement {
-    const wrap = document.createElement('label');
-    wrap.className = 'dbg-toggle';
+    const wrap = el('label', 'dbg-toggle');
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = initial;

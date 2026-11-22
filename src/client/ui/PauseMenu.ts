@@ -39,6 +39,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { createScreen } from './Frame';
 //#endregion
 
@@ -129,9 +130,7 @@ export class PauseMenu {
     this.resumeButton = actions.resume;
     this.debugButton = actions.debug;
 
-    const hint = document.createElement('p');
-    hint.className = 'op-screen__sub';
-    hint.textContent = HINT;
+    const hint = el('p', 'op-screen__sub', HINT);
 
     const code = this.createCodeForm();
     this.codeInput = code.input;
@@ -211,8 +210,7 @@ export class PauseMenu {
     const quit = button('Quit to menu', () => this.deps.onQuit());
     quit.classList.add('op-btn--quiet');
 
-    const element = document.createElement('div');
-    element.className = 'op-actions op-actions--stack';
+    const element = el('div', 'op-actions op-actions--stack');
     element.append(resume, settings, debug, quit);
     return { element, resume, debug };
   }
@@ -226,8 +224,7 @@ export class PauseMenu {
    * noise, and this is not a password field.
    */
   private createCodeForm(): CodeForm {
-    const element = document.createElement('form');
-    element.className = 'op-code';
+    const element = el('form', 'op-code');
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'op-code__input';

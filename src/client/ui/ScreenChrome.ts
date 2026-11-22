@@ -22,6 +22,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { makeMark } from './Emblem';
 import { makeIconSvg } from './WeaponIcons';
 
@@ -72,27 +73,19 @@ export function appVersion(): string {
 }
 
 export function makeScreenHeader(modifier: string, place: ScreenPlace, card: HTMLElement): HTMLElement {
-  const head = document.createElement('header');
-  head.className = `op-head ${modifier}`;
+  const head = el('header', `op-head ${modifier}`);
 
-  const brand = document.createElement('div');
-  brand.className = 'op-head__brand';
+  const brand = el('div', 'op-head__brand');
 
-  const wordmark = document.createElement('span');
-  wordmark.className = 'op-head__wordmark';
-  wordmark.textContent = 'PROTOCOL SEVEN';
+  const wordmark = el('span', 'op-head__wordmark', 'PROTOCOL SEVEN');
 
-  const rule = document.createElement('span');
-  rule.className = 'op-head__rule';
+  const rule = el('span', 'op-head__rule');
 
-  const where = document.createElement('div');
-  where.className = 'op-head__place';
+  const where = el('div', 'op-head__place');
   const title = document.createElement('h1');
   title.className = 'op-head__title';
   title.textContent = place.title;
-  const sub = document.createElement('span');
-  sub.className = 'op-head__sub';
-  sub.textContent = place.subtitle;
+  const sub = el('span', 'op-head__sub', place.subtitle);
   where.append(title, sub);
 
   brand.append(makeMark('op-head__mark'), wordmark, rule, where);
@@ -101,8 +94,7 @@ export function makeScreenHeader(modifier: string, place: ScreenPlace, card: HTM
 }
 
 export function makeScreenFooter(modifier: string, place: ScreenPlace): HTMLElement {
-  const foot = document.createElement('footer');
-  foot.className = `op-foot ${modifier}`;
+  const foot = el('footer', `op-foot ${modifier}`);
   foot.append(makeFootLine(), makeFootStamp(place));
   return foot;
 }
@@ -142,31 +134,21 @@ export function pagerArrow(spec: PagerArrowSpec): HTMLButtonElement {
 //#region Internal Helpers
 /** The footer's first row: the tick, and the game's own three words. */
 function makeFootLine(): HTMLElement {
-  const row = document.createElement('div');
-  row.className = 'op-foot__row';
-  const tick = document.createElement('i');
-  tick.className = 'op-foot__tick';
-  const line = document.createElement('span');
-  line.className = 'op-label op-foot__line';
-  line.textContent = CHROME_LINE;
+  const row = el('div', 'op-foot__row');
+  const tick = el('i', 'op-foot__tick');
+  const line = el('span', 'op-label op-foot__line', CHROME_LINE);
   row.append(tick, line);
   return row;
 }
 
 /** The footer's second row: the rule, the stamp with this screen's name on it, and the bars. */
 function makeFootStamp(place: ScreenPlace): HTMLElement {
-  const row = document.createElement('div');
-  row.className = 'op-foot__row op-foot__row--stamp';
-  const rule = document.createElement('span');
-  rule.className = 'op-foot__rule';
-  const stamp = document.createElement('span');
-  stamp.className = 'op-label op-foot__stamp';
-  stamp.textContent = `PROTOCOL 7 // ${place.title} // V ${appVersion()}`;
-  const bars = document.createElement('span');
-  bars.className = 'op-foot__bars';
+  const row = el('div', 'op-foot__row op-foot__row--stamp');
+  const rule = el('span', 'op-foot__rule');
+  const stamp = el('span', 'op-label op-foot__stamp', `PROTOCOL 7 // ${place.title} // V ${appVersion()}`);
+  const bars = el('span', 'op-foot__bars');
   for (let i = 0; i < FOOT_BARS; i++) {
-    const bar = document.createElement('i');
-    bar.className = 'op-foot__bar';
+    const bar = el('i', 'op-foot__bar');
     // Two of the three lit, as drawn: the third is the one still to earn.
     if (i < FOOT_BARS_LIT) bar.classList.add('is-lit');
     bars.appendChild(bar);

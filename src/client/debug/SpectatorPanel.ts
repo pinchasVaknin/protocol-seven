@@ -1,3 +1,4 @@
+import { el } from '../ui/Dom';
 import type { DebugOverlay } from './DebugOverlay';
 import type { Spectator } from './Spectator';
 
@@ -49,8 +50,7 @@ export class SpectatorPanel {
     this.hidden = this.checkbox(section, 'Invisible — bots ignore you', (on) => spectator.setInvisible(on));
     this.fly = this.checkbox(section, 'Free-cam — fly and noclip', (on) => spectator.setFreeCam(on));
 
-    const help = document.createElement('p');
-    help.className = 'dbg-note';
+    const help = el('p', 'dbg-note');
     help.textContent =
       'Free-cam: WASD flies along your look, Space up, Crouch down, Sprint ×4, ADS ×¼ for close work. ' +
       'These are cheat entitlements (round 4, F14): against a server they need CHEATS_ENABLED, and a ' +
@@ -78,8 +78,7 @@ export class SpectatorPanel {
     label: string,
     onChange: (on: boolean) => void,
   ): HTMLInputElement {
-    const wrap = document.createElement('label');
-    wrap.className = 'dbg-toggle';
+    const wrap = el('label', 'dbg-toggle');
     const input = document.createElement('input');
     input.type = 'checkbox';
     const text = document.createElement('span');

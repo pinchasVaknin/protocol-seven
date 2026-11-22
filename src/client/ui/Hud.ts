@@ -19,6 +19,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import type { HitZone } from '../../shared/core/Vocabulary';
 import type { GameEvents } from '../../shared/core/Events';
 import { clamp01, RAD2DEG } from '../../shared/core/MathUtil';
@@ -656,51 +657,40 @@ export class Hud {
   // ===================================== PRIVATE METHODS ====================================== \\
   //#region Private Methods
   private createCrosshair(): HTMLElement {
-    const crosshair = document.createElement('div');
-    crosshair.className = 'hud-cross';
+    const crosshair = el('div', 'hud-cross');
     for (const side of ['t', 'b', 'l', 'r'] as const) {
-      const line = document.createElement('i');
-      line.className = `hud-cross__line hud-cross__line--${side}`;
+      const line = el('i', `hud-cross__line hud-cross__line--${side}`);
       crosshair.appendChild(line);
       this.lines.push(line);
     }
-    const dot = document.createElement('i');
-    dot.className = 'hud-cross__dot';
+    const dot = el('i', 'hud-cross__dot');
     crosshair.appendChild(dot);
     return crosshair;
   }
 
   private createHitmarker(): HTMLElement {
-    const hitmarker = document.createElement('div');
-    hitmarker.className = 'hud-hit';
+    const hitmarker = el('div', 'hud-hit');
     for (let i = 0; i < 4; i++) hitmarker.appendChild(document.createElement('i'));
     return hitmarker;
   }
 
   private createAmmoBox(): AmmoBox {
-    const box = document.createElement('div');
-    box.className = 'hud-ammo';
-    const mag = document.createElement('span');
-    mag.className = 'hud-ammo__mag op-num';
-    const sep = document.createElement('span');
-    sep.className = 'hud-ammo__sep';
-    sep.textContent = '/';
-    const reserve = document.createElement('span');
-    reserve.className = 'hud-ammo__reserve op-num';
+    const box = el('div', 'hud-ammo');
+    const mag = el('span', 'hud-ammo__mag op-num');
+    const sep = el('span', 'hud-ammo__sep', '/');
+    const reserve = el('span', 'hud-ammo__reserve op-num');
     box.append(mag, sep, reserve);
     return { box, mag, reserve };
   }
 
   private createReloadBar(): HTMLElement {
-    const bar = document.createElement('div');
-    bar.className = 'hud-reload';
+    const bar = el('div', 'hud-reload');
     bar.appendChild(document.createElement('i'));
     return bar;
   }
 
   private createNumberLayer(): HTMLElement {
-    const numberLayer = document.createElement('div');
-    numberLayer.className = 'hud-numbers';
+    const numberLayer = el('div', 'hud-numbers');
     for (let i = 0; i < DAMAGE_NUMBER_POOL; i++) {
       const el = document.createElement('span');
       el.className = 'hud-number op-num';
@@ -718,8 +708,7 @@ export class Hud {
   }
 
   private createDirectionLayer(): HTMLElement {
-    const directionLayer = document.createElement('div');
-    directionLayer.className = 'hud-dirs';
+    const directionLayer = el('div', 'hud-dirs');
     for (let i = 0; i < HIT_DIRECTION_POOL; i++) {
       const el = document.createElement('div');
       el.className = 'hud-dir';
@@ -732,37 +721,30 @@ export class Hud {
   }
 
   private createHealthBar(): HealthBar {
-    const bar = document.createElement('div');
-    bar.className = 'hud-health';
+    const bar = el('div', 'hud-health');
     const fill = document.createElement('i');
     bar.appendChild(fill);
     return { bar, fill };
   }
 
   private createDeadOverlay(): DeadOverlay {
-    const overlay = document.createElement('div');
-    overlay.className = 'hud-dead';
-    const deadLabel = document.createElement('span');
-    deadLabel.className = 'hud-dead__label op-label';
-    deadLabel.textContent = 'You were killed';
-    const count = document.createElement('span');
-    count.className = 'hud-dead__count op-num';
+    const overlay = el('div', 'hud-dead');
+    const deadLabel = el('span', 'hud-dead__label op-label', 'You were killed');
+    const count = el('span', 'hud-dead__count op-num');
     /**
      * F9's detail line, under the countdown.
      *
      * One element rewritten on change rather than four, because the four facts are one sentence
      * and are only ever set together — a death report arrives whole or not at all.
      */
-    const detail = document.createElement('span');
-    detail.className = 'hud-dead__detail op-label';
+    const detail = el('span', 'hud-dead__detail op-label');
     overlay.append(deadLabel, count, detail);
     return { overlay, count, detail };
   }
 
   /** A one-line warning whose element is a `div` holding a `span`, hidden until a `--on` class. */
   private createTag(className: string): HTMLElement {
-    const tag = document.createElement('div');
-    tag.className = className;
+    const tag = el('div', className);
     tag.appendChild(document.createElement('span'));
     return tag;
   }
@@ -776,8 +758,7 @@ export class Hud {
    * one on the minimap.
    */
   private createHeaderStrip(): HTMLElement {
-    const strip = document.createElement('div');
-    strip.className = 'hud-header';
+    const strip = el('div', 'hud-header');
     return strip;
   }
 
@@ -785,12 +766,9 @@ export class Hud {
     this.headerStrip.replaceChildren();
     this.headerCells.length = 0;
     for (let i = 0; i < count; i++) {
-      const root = document.createElement('div');
-      root.className = 'hud-header__cell';
-      const label = document.createElement('span');
-      label.className = 'hud-header__label';
-      const fill = document.createElement('i');
-      fill.className = 'hud-header__fill';
+      const root = el('div', 'hud-header__cell');
+      const label = el('span', 'hud-header__label');
+      const fill = el('i', 'hud-header__fill');
       root.append(label, fill);
       this.headerStrip.appendChild(root);
       this.headerCells.push({ root, fill });

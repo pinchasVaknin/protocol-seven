@@ -1,3 +1,4 @@
+import { el } from '../ui/Dom';
 import type { Profile } from '../meta/Profile';
 import { makeSyntheticV0Save, migrateSave, normaliseSave } from '../../shared/meta/SaveData';
 import type { DebugOverlay, DebugSection } from './DebugOverlay';
@@ -41,24 +42,21 @@ export class SaveInspector {
     this.log = document.createElement('div');
     this.log.className = 'dbg-log';
 
-    const row1 = document.createElement('div');
-    row1.className = 'dbg-buttons';
+    const row1 = el('div', 'dbg-buttons');
     row1.append(
       this.button('REFRESH', () => this.refresh()),
       this.button('APPLY', () => this.apply()),
       this.button('COPY', () => this.copy()),
     );
 
-    const row2 = document.createElement('div');
-    row2.className = 'dbg-buttons';
+    const row2 = el('div', 'dbg-buttons');
     row2.append(
       this.button('FORCE MIGRATION (V0)', () => this.forceMigration()),
       this.button('WRITE V0 AND RELOAD', () => this.writeV0AndReload()),
       this.button('RESET PROGRESS', () => this.reset()),
     );
 
-    const row3 = document.createElement('div');
-    row3.className = 'dbg-buttons';
+    const row3 = el('div', 'dbg-buttons');
     row3.append(
       this.button('+10,000 XP', () => this.grant(10_000)),
       this.button('+100,000 XP', () => this.grant(100_000)),

@@ -27,6 +27,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { camoDef } from '../../shared/meta/Camos';
 import { CHALLENGES, type ChallengeDef } from '../../shared/meta/Challenges';
 import { prestigeLabel } from '../../shared/meta/Levels';
@@ -91,8 +92,7 @@ export class ProfilePanel {
   constructor(deps: ProfilePanelDeps) {
     this.deps = deps;
 
-    const overlay = document.createElement('div');
-    overlay.className = 'op-profile';
+    const overlay = el('div', 'op-profile');
     overlay.hidden = true;
     // The scrim closes it; the panel does not (a click inside stops here).
     overlay.addEventListener('click', () => this.close());
@@ -139,8 +139,7 @@ export class ProfilePanel {
   //#region Private Methods
   /** The dialog itself: it keeps a click to itself, and every key but Escape. */
   private createDialog(): HTMLElement {
-    const panel = document.createElement('section');
-    panel.className = 'op-profile__panel';
+    const panel = el('section', 'op-profile__panel');
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Player profile');
     panel.addEventListener('click', (e) => e.stopPropagation());
@@ -152,11 +151,8 @@ export class ProfilePanel {
   }
 
   private createHead(): HTMLElement {
-    const head = document.createElement('div');
-    head.className = 'op-profile__head';
-    const title = document.createElement('span');
-    title.className = 'op-label op-profile__title';
-    title.textContent = 'PLAYER PROFILE';
+    const head = el('div', 'op-profile__head');
+    const title = el('span', 'op-label op-profile__title', 'PLAYER PROFILE');
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'op-profile__close';
@@ -168,8 +164,7 @@ export class ProfilePanel {
   }
 
   private createTabs(): HTMLElement {
-    const tabs = document.createElement('div');
-    tabs.className = 'op-tabs op-profile__tabs';
+    const tabs = el('div', 'op-tabs op-profile__tabs');
     for (const t of TABS) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -203,12 +198,10 @@ export class ProfilePanel {
   }
 
   private paintOverview(): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.className = 'op-profile__overview';
+    const wrap = el('div', 'op-profile__overview');
 
     // The facts, stacked: the name (editable), the level, prestige and tokens, the record.
-    const facts = document.createElement('div');
-    facts.className = 'op-profile__facts';
+    const facts = el('div', 'op-profile__facts');
     facts.append(this.createNameField(), this.createLevelBlock(), this.createRecordRows());
 
     wrap.append(this.createPortrait(), facts);
@@ -217,27 +210,20 @@ export class ProfilePanel {
 
   /** The portrait: the chosen skin, large, named. */
   private createPortrait(): HTMLElement {
-    const portrait = document.createElement('div');
-    portrait.className = 'op-profile__portrait';
+    const portrait = el('div', 'op-profile__portrait');
     const skin = characterDefinition(this.deps.profile.skinId);
-    const img = document.createElement('img');
-    img.className = 'op-profile__portrait-img';
+    const img = el('img', 'op-profile__portrait-img');
     img.src = skin.thumbUrl;
     img.alt = '';
     img.draggable = false;
-    const skinName = document.createElement('span');
-    skinName.className = 'op-label';
-    skinName.textContent = skin.name;
+    const skinName = el('span', 'op-label', skin.name);
     portrait.append(img, skinName);
     return portrait;
   }
 
   private createNameField(): HTMLElement {
-    const nameField = document.createElement('label');
-    nameField.className = 'op-profile__field';
-    const nameLabel = document.createElement('span');
-    nameLabel.className = 'op-label';
-    nameLabel.textContent = 'CALLSIGN';
+    const nameField = el('label', 'op-profile__field');
+    const nameLabel = el('span', 'op-label', 'CALLSIGN');
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'op-profile__name';
@@ -259,18 +245,11 @@ export class ProfilePanel {
   private createLevelBlock(): HTMLElement {
     const profile = this.deps.profile;
     const progress = profile.progress;
-    const level = document.createElement('div');
-    level.className = 'op-profile__level';
-    const num = document.createElement('span');
-    num.className = 'op-profile__level-num op-num';
-    num.textContent = String(progress.level);
-    const levelText = document.createElement('div');
-    levelText.className = 'op-profile__level-text';
-    const cap = document.createElement('span');
-    cap.className = 'op-label';
-    cap.textContent = levelLine(profile);
-    const detail = document.createElement('span');
-    detail.className = 'op-label op-profile__dim';
+    const level = el('div', 'op-profile__level');
+    const num = el('span', 'op-profile__level-num op-num', String(progress.level));
+    const levelText = el('div', 'op-profile__level-text');
+    const cap = el('span', 'op-label', levelLine(profile));
+    const detail = el('span', 'op-label op-profile__dim');
     detail.textContent = progress.atCap
       ? 'MAX LEVEL · PRESTIGE AVAILABLE'
       : `${progress.into.toLocaleString()} / ${progress.span.toLocaleString()} XP TO ${progress.level + 1}`;
@@ -282,15 +261,10 @@ export class ProfilePanel {
   private createRecordRows(): HTMLElement {
     const profile = this.deps.profile;
     const record = profile.save.profile;
-    const rows = document.createElement('dl');
-    rows.className = 'op-profile__rows';
+    const rows = el('dl', 'op-profile__rows');
     const row = (k: string, v: string): void => {
-      const dt = document.createElement('dt');
-      dt.className = 'op-label';
-      dt.textContent = k;
-      const dd = document.createElement('dd');
-      dd.className = 'op-profile__value';
-      dd.textContent = v;
+      const dt = el('dt', 'op-label', k);
+      const dd = el('dd', 'op-profile__value', v);
       rows.append(dt, dd);
     };
     row('PRESTIGE', profile.prestige > 0 ? prestigeLabel(profile.prestige) : '—');
@@ -301,11 +275,9 @@ export class ProfilePanel {
   }
 
   private paintAchievements(): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.className = 'op-profile__achievements';
+    const wrap = el('div', 'op-profile__achievements');
 
-    const list = document.createElement('div');
-    list.className = 'op-profile__list';
+    const list = el('div', 'op-profile__list');
     for (const def of CHALLENGES) {
       if (def.category !== this.category) continue;
       list.appendChild(this.createChallengeRow(def));
@@ -317,8 +289,7 @@ export class ProfilePanel {
 
   /** One tab per category, each saying how many of its own are done. */
   private createCategoryTabs(): HTMLElement {
-    const cats = document.createElement('div');
-    cats.className = 'op-tabs op-profile__cats';
+    const cats = el('div', 'op-tabs op-profile__cats');
     for (const c of CATEGORIES) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -337,16 +308,14 @@ export class ProfilePanel {
   /** A challenge: what it is, how far along it is, and what it pays. */
   private createChallengeRow(def: ChallengeDef): HTMLElement {
     const state = this.state(def);
-    const rowEl = document.createElement('div');
-    rowEl.className = 'op-profile__row';
+    const rowEl = el('div', 'op-profile__row');
     rowEl.classList.toggle('is-done', state.completed);
     rowEl.append(challengeText(def), challengeProgress(def, state), challengeReward(def));
     return rowEl;
   }
 
   private paintAppearance(): HTMLElement {
-    const grid = document.createElement('div');
-    grid.className = 'op-profile__skins';
+    const grid = el('div', 'op-profile__skins');
     grid.setAttribute('role', 'listbox');
     grid.setAttribute('aria-label', 'Skins');
     for (const id of BOT_CHARACTER_IDS) grid.appendChild(this.createSkinTile(id));
@@ -362,14 +331,11 @@ export class ProfilePanel {
     const on = this.deps.profile.skinId === id;
     tile.classList.toggle('is-on', on);
     tile.setAttribute('aria-selected', on ? 'true' : 'false');
-    const img = document.createElement('img');
-    img.className = 'op-profile__skin-img';
+    const img = el('img', 'op-profile__skin-img');
     img.src = def.thumbUrl;
     img.alt = '';
     img.draggable = false;
-    const name = document.createElement('span');
-    name.className = 'op-label';
-    name.textContent = def.name;
+    const name = el('span', 'op-label', def.name);
     tile.append(img, name);
     tile.addEventListener('click', () => this.pickSkin(id));
     return tile;
@@ -403,8 +369,7 @@ export class ProfilePanel {
 //#region Internal Helpers
 /** The one bar shape this panel draws, for a level and for every challenge. */
 function progressBar(fraction: number): HTMLElement {
-  const bar = document.createElement('div');
-  bar.className = 'op-profile__bar';
+  const bar = el('div', 'op-profile__bar');
   const fill = document.createElement('i');
   fill.style.transform = `scaleX(${fraction.toFixed(BAR_PRECISION)})`;
   bar.appendChild(fill);
@@ -418,22 +383,16 @@ function countIn(category: Category): number {
 }
 
 function challengeText(def: ChallengeDef): HTMLElement {
-  const text = document.createElement('div');
-  text.className = 'op-profile__row-text';
-  const name = document.createElement('span');
-  name.className = 'op-profile__row-name';
-  name.textContent = def.name;
-  const desc = document.createElement('span');
-  desc.className = 'op-profile__row-desc';
-  desc.textContent = def.description;
+  const text = el('div', 'op-profile__row-text');
+  const name = el('span', 'op-profile__row-name', def.name);
+  const desc = el('span', 'op-profile__row-desc', def.description);
   text.append(name, desc);
   return text;
 }
 
 /** The bar and the count beside it: DONE, or how far of how many. */
 function challengeProgress(def: ChallengeDef, state: ChallengeState): HTMLElement {
-  const progressEl = document.createElement('div');
-  progressEl.className = 'op-profile__row-progress';
+  const progressEl = el('div', 'op-profile__row-progress');
   const fraction = def.target > 0 ? Math.min(1, state.progress / def.target) : state.completed ? 1 : 0;
   const count = document.createElement('span');
   count.className = 'op-label op-num';
@@ -444,21 +403,15 @@ function challengeProgress(def: ChallengeDef, state: ChallengeState): HTMLElemen
 
 /** The XP it pays, and the camo it awards where it awards one. */
 function challengeReward(def: ChallengeDef): HTMLElement {
-  const reward = document.createElement('div');
-  reward.className = 'op-profile__row-reward';
-  const xp = document.createElement('span');
-  xp.className = 'op-label';
-  xp.textContent = `+${def.xp} XP`;
+  const reward = el('div', 'op-profile__row-reward');
+  const xp = el('span', 'op-label', `+${def.xp} XP`);
   reward.appendChild(xp);
   if (def.camo !== undefined) {
     const camo = camoDef(def.camo);
-    const swatch = document.createElement('span');
-    swatch.className = 'op-profile__swatch';
+    const swatch = el('span', 'op-profile__swatch');
     swatch.style.background = camo.swatch;
     swatch.title = `${camo.name} camo`;
-    const camoName = document.createElement('span');
-    camoName.className = 'op-label';
-    camoName.textContent = camo.name;
+    const camoName = el('span', 'op-label', camo.name);
     reward.append(swatch, camoName);
   }
   return reward;

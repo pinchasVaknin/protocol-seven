@@ -1,3 +1,4 @@
+import { el } from '../ui/Dom';
 import type { GameBus } from '../../shared/core/Events';
 import { EV } from '../../shared/core/Events';
 import type { Match } from '../ClientMatch';
@@ -166,9 +167,7 @@ export class StreakPanel extends Disposable {
 
   private subscribe(bus: GameBus): void {
     const push = (text: string): void => {
-      const line = document.createElement('div');
-      line.className = 'dbg-log__line';
-      line.textContent = text;
+      const line = el('div', 'dbg-log__line', text);
       this.log.prepend(line);
       while (this.log.childElementCount > 14) this.log.lastElementChild?.remove();
     };

@@ -1,3 +1,4 @@
+import { el } from '../ui/Dom';
 import { EV, type GameBus, type GameEvents } from '../../shared/core/Events';
 import type { Match } from '../ClientMatch';
 import { levelProgress } from '../../shared/meta/Levels';
@@ -93,8 +94,7 @@ export class MetaPanel extends Disposable {
 
     // ---- simulator ----------------------------------------------------------
     const sim = overlay.section('XP simulator', overlay.rightColumn);
-    const buttons = document.createElement('div');
-    buttons.className = 'dbg-buttons';
+    const buttons = el('div', 'dbg-buttons');
     for (const n of [25, 100, 400]) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -304,14 +304,9 @@ function paintTable(host: HTMLElement, rows: readonly Readonly<[string, string]>
   host.dataset['sig'] = signature;
   host.replaceChildren();
   for (const [label, value] of rows) {
-    const row = document.createElement('div');
-    row.className = 'dbg-row';
-    const l = document.createElement('span');
-    l.className = 'dbg-row__label';
-    l.textContent = label;
-    const v = document.createElement('span');
-    v.className = 'dbg-row__value op-num';
-    v.textContent = value;
+    const row = el('div', 'dbg-row');
+    const l = el('span', 'dbg-row__label', label);
+    const v = el('span', 'dbg-row__value op-num', value);
     row.append(l, v);
     host.appendChild(row);
   }

@@ -1,3 +1,4 @@
+import { el } from '../ui/Dom';
 import type { Match } from '../ClientMatch';
 import { ATTACHMENTS, ATTACHMENT_IDS, fitsWeapon, resolveWeaponDef, type AttachmentId } from '../../shared/weapons/Attachments';
 import { ALL_WEAPONS, cloneWeaponDef, type WeaponDef } from '../../shared/weapons/WeaponDefs';
@@ -108,8 +109,7 @@ export class ArsenalPanel {
   // -- controls --------------------------------------------------------------
 
   private buildSlotRow(): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'dbg-chips';
+    const row = el('div', 'dbg-chips');
     for (const [index, label] of [[0, 'PRIMARY'], [1, 'SECONDARY']] as const) {
       const chip = document.createElement('button');
       chip.type = 'button';
@@ -136,8 +136,7 @@ export class ArsenalPanel {
   }
 
   private buildWeaponGrid(): HTMLElement {
-    const grid = document.createElement('div');
-    grid.className = 'dbg-chips dbg-chips--wrap';
+    const grid = el('div', 'dbg-chips dbg-chips--wrap');
     for (const def of ALL_WEAPONS) {
       const chip = document.createElement('button');
       chip.type = 'button';
@@ -166,8 +165,7 @@ export class ArsenalPanel {
   }
 
   private buildAttachmentRow(): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'dbg-chips dbg-chips--wrap';
+    const row = el('div', 'dbg-chips dbg-chips--wrap');
     for (const id of ATTACHMENT_IDS) {
       const def = ATTACHMENTS[id];
       const chip = document.createElement('button');
@@ -202,8 +200,7 @@ export class ArsenalPanel {
   }
 
   private buildActions(): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'dbg-chips';
+    const row = el('div', 'dbg-chips');
 
     row.appendChild(
       this.action('Measure balance table', () => {

@@ -1,3 +1,4 @@
+import { el } from '../ui/Dom';
 import type { CameraRig } from '../engine/CameraRig';
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
 import type { Renderer } from '../engine/Renderer';
@@ -81,23 +82,16 @@ export class DebugSection {
   constructor(title: string) {
     this.element = document.createElement('section');
     this.element.className = 'dbg-section';
-    const head = document.createElement('div');
-    head.className = 'dbg-section__title op-label';
-    head.textContent = title;
+    const head = el('div', 'dbg-section__title op-label', title);
     this.body = document.createElement('div');
     this.body.className = 'dbg-section__body';
     this.element.append(head, this.body);
   }
 
   addField(label: string): Field {
-    const row = document.createElement('div');
-    row.className = 'dbg-row';
-    const name = document.createElement('span');
-    name.className = 'dbg-row__label';
-    name.textContent = label;
-    const value = document.createElement('span');
-    value.className = 'dbg-row__value op-num';
-    value.textContent = '-';
+    const row = el('div', 'dbg-row');
+    const name = el('span', 'dbg-row__label', label);
+    const value = el('span', 'dbg-row__value op-num', '-');
     row.append(name, value);
     this.body.appendChild(row);
     return { el: value, last: '' };
@@ -184,14 +178,9 @@ export class DebugOverlay extends Disposable {
     this.root.className = 'dbg-root';
     this.root.hidden = true;
 
-    const header = document.createElement('div');
-    header.className = 'dbg-header';
-    const headTitle = document.createElement('span');
-    headTitle.className = 'dbg-header__title';
-    headTitle.textContent = 'PROTOCOL SEVEN · DEBUG';
-    const headHint = document.createElement('span');
-    headHint.className = 'dbg-header__hint op-label';
-    headHint.textContent = 'F2 collision · F3 reset stats · Esc close';
+    const header = el('div', 'dbg-header');
+    const headTitle = el('span', 'dbg-header__title', 'PROTOCOL SEVEN · DEBUG');
+    const headHint = el('span', 'dbg-header__hint op-label', 'F2 collision · F3 reset stats · Esc close');
     // The M5 playtest asked for an explicit way out that is not a function key.
     const close = document.createElement('button');
     close.type = 'button';
@@ -202,14 +191,11 @@ export class DebugOverlay extends Disposable {
     header.append(headTitle, headHint, close);
     this.root.appendChild(header);
 
-    const columns = document.createElement('div');
-    columns.className = 'dbg-columns';
+    const columns = el('div', 'dbg-columns');
     this.root.appendChild(columns);
 
-    const left = document.createElement('div');
-    left.className = 'dbg-col';
-    const right = document.createElement('div');
-    right.className = 'dbg-col dbg-col--wide';
+    const left = el('div', 'dbg-col');
+    const right = el('div', 'dbg-col dbg-col--wide');
     columns.append(left, right);
     this.left = left;
     this.right = right;
@@ -280,11 +266,8 @@ export class DebugOverlay extends Disposable {
       }),
     );
 
-    const loadRow = document.createElement('label');
-    loadRow.className = 'dbg-slider';
-    const loadLabel = document.createElement('span');
-    loadLabel.className = 'dbg-slider__label';
-    loadLabel.textContent = 'Synthetic load';
+    const loadRow = el('label', 'dbg-slider');
+    const loadLabel = el('span', 'dbg-slider__label', 'Synthetic load');
     const loadInput = document.createElement('input');
     loadInput.type = 'range';
     loadInput.min = '0';
@@ -292,9 +275,7 @@ export class DebugOverlay extends Disposable {
     loadInput.step = '1';
     loadInput.value = '0';
     loadInput.className = 'dbg-slider__input';
-    const loadValue = document.createElement('span');
-    loadValue.className = 'dbg-slider__value op-num';
-    loadValue.textContent = '0ms';
+    const loadValue = el('span', 'dbg-slider__value op-num', '0ms');
     loadInput.addEventListener('input', () => {
       const ms = Number.parseFloat(loadInput.value);
       ctx.loop.syntheticLoadMs = Number.isFinite(ms) ? ms : 0;
@@ -547,8 +528,7 @@ export class DebugOverlay extends Disposable {
   }
 
   private toggle(label: string, initial: boolean, onChange: (on: boolean) => void): HTMLElement {
-    const wrap = document.createElement('label');
-    wrap.className = 'dbg-toggle';
+    const wrap = el('label', 'dbg-toggle');
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = initial;

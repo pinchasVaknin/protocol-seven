@@ -1,3 +1,4 @@
+import { el } from '../ui/Dom';
 import type { TunableMeta } from '../../shared/player/MovementConfig';
 
 /**
@@ -82,18 +83,13 @@ export class TuningPanel {
     this.group = group;
     this.onChange = onChange;
 
-    const root = document.createElement('section');
-    root.className = 'dbg-tuning';
+    const root = el('section', 'dbg-tuning');
 
-    const header = document.createElement('div');
-    header.className = 'dbg-tuning__head';
-    const title = document.createElement('span');
-    title.className = 'op-label';
-    title.textContent = group.title;
+    const header = el('div', 'dbg-tuning__head');
+    const title = el('span', 'op-label', group.title);
     header.appendChild(title);
 
-    const copy = document.createElement('button');
-    copy.className = 'dbg-btn';
+    const copy = el('button', 'dbg-btn');
     copy.type = 'button';
     copy.textContent = 'Copy config';
     copy.addEventListener('click', () => {
@@ -101,8 +97,7 @@ export class TuningPanel {
     });
     header.appendChild(copy);
 
-    const reset = document.createElement('button');
-    reset.className = 'dbg-btn';
+    const reset = el('button', 'dbg-btn');
     reset.type = 'button';
     reset.textContent = 'Reset';
     reset.addEventListener('click', () => {
@@ -119,9 +114,7 @@ export class TuningPanel {
       const meta = group.meta(key);
       if (meta.group !== lastGroupName) {
         lastGroupName = meta.group;
-        const sub = document.createElement('div');
-        sub.className = 'dbg-tuning__group op-label';
-        sub.textContent = meta.group;
+        const sub = el('div', 'dbg-tuning__group op-label', meta.group);
         root.appendChild(sub);
       }
       root.appendChild(this.buildRow(key, meta));
@@ -140,12 +133,9 @@ export class TuningPanel {
   }
 
   private buildRow(key: string, meta: TunableMeta): HTMLElement {
-    const row = document.createElement('label');
-    row.className = 'dbg-slider';
+    const row = el('label', 'dbg-slider');
 
-    const name = document.createElement('span');
-    name.className = 'dbg-slider__label';
-    name.textContent = meta.label;
+    const name = el('span', 'dbg-slider__label', meta.label);
 
     const input = document.createElement('input');
     input.type = 'range';
@@ -155,9 +145,7 @@ export class TuningPanel {
     input.value = String(this.group.read(key));
     input.className = 'dbg-slider__input';
 
-    const readout = document.createElement('span');
-    readout.className = 'dbg-slider__value op-num';
-    readout.textContent = format(this.group.read(key), meta);
+    const readout = el('span', 'dbg-slider__value op-num', format(this.group.read(key), meta));
 
     input.addEventListener('input', () => {
       const value = Number.parseFloat(input.value);

@@ -67,6 +67,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import type { BotDifficulty } from '../../shared/ai/DifficultyTiers';
 import type { GameModeId } from '../../shared/modes/GameMode';
 import { DEFAULT_MODE_ID, findMap, modesForMap } from '../../shared/modes/ModeRegistry';
@@ -255,12 +256,8 @@ export class Menus {
     this.screen.classList.add('op-screen--gate');
     this.frame.classList.remove('op-menu');
     this.frame.classList.add('op-boot', 'op-gate');
-    const body = document.createElement('p');
-    body.className = 'op-screen__note op-gate__note';
-    body.textContent = detail;
-    const foot = document.createElement('p');
-    foot.className = 'op-label op-gate__foot';
-    foot.textContent = CHROME_LINE;
+    const body = el('p', 'op-screen__note op-gate__note', detail);
+    const foot = el('p', 'op-label op-gate__foot', CHROME_LINE);
     this.viewport.replaceChildren(this.frame);
     this.frame.replaceChildren(makeLockup(), createSubtitle(headline), body, foot);
   }
@@ -339,8 +336,7 @@ export class Menus {
    * (`onCheatCode`) behind it — a code is input, wherever it is typed.
    */
   private buildCodeForm(): HTMLFormElement {
-    const form = document.createElement('form');
-    form.className = 'op-code op-code--menu';
+    const form = el('form', 'op-code op-code--menu');
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'op-code__input';
@@ -367,8 +363,7 @@ export class Menus {
     this.ungate();
     this.frame.classList.remove('op-boot');
     this.frame.classList.add('op-menu');
-    const stage = document.createElement('div');
-    stage.className = 'op-menu__stage';
+    const stage = el('div', 'op-menu__stage');
     const focus = this.page === 'MAIN' ? this.paintNav(stage) : this.paintSetup(stage);
     // The bars on the viewport, the stage in the frame — see the class comment. The frame is
     // re-appended between them so the order is head, frame, foot whatever was there before;
@@ -392,8 +387,7 @@ export class Menus {
 
   /** The four buttons. Returns the one to focus. */
   private paintNav(stage: HTMLElement): HTMLElement {
-    const nav = document.createElement('nav');
-    nav.className = 'op-menu__nav';
+    const nav = el('nav', 'op-menu__nav');
 
     /**
      * **PLAY** is first and primary, and it is one click from shooting: no server picker, no
@@ -417,9 +411,7 @@ export class Menus {
      */
     const foreign = multiplayer.disabled ? null : (this.deps.foreignServer?.() ?? null);
     if (foreign !== null) {
-      const note = document.createElement('span');
-      note.className = 'op-nav__note';
-      note.textContent = `SERVER · ${foreign}`;
+      const note = el('span', 'op-nav__note', `SERVER · ${foreign}`);
       multiplayer.querySelector('.op-nav__label')?.append(note);
       multiplayer.title = `This link points PLAY at ${foreign}, not at this site's own server.`;
     }
@@ -440,9 +432,7 @@ export class Menus {
     b.type = 'button';
     b.className = 'op-nav';
     const icon = makeIconSvg(glyph, GLYPH_VIEWBOX, 'op-nav__icon');
-    const text = document.createElement('span');
-    text.className = 'op-nav__label';
-    text.textContent = label;
+    const text = el('span', 'op-nav__label', label);
     const chevron = makeIconSvg(GLYPH.chevron, GLYPH_VIEWBOX, 'op-nav__chevron');
     b.append(icon, text, chevron);
     b.addEventListener('click', onClick);
@@ -516,9 +506,7 @@ export class Menus {
 //#region Internal Helpers
 /** The one line under the lockup on the boot screen and on the gate. */
 function createSubtitle(text: string): HTMLElement {
-  const p = document.createElement('p');
-  p.className = 'op-screen__sub';
-  p.textContent = text;
+  const p = el('p', 'op-screen__sub', text);
   return p;
 }
 //#endregion

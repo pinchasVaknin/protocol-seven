@@ -1,3 +1,4 @@
+import { el } from './Dom';
 /**
  * The PROTOCOL SEVEN brand (2026-09-15): the human's logo, as the human's logo.
  *
@@ -51,16 +52,13 @@ export function teamEmblemUrl(relation: 'FRIENDLY' | 'HOSTILE'): string {
 
 /** The skull beside the name: the mark, with its eyes as a second layer that breathes. */
 export function makeMark(className: string): HTMLElement {
-  const wrap = document.createElement('span');
-  wrap.className = `op-mark ${className}`;
+  const wrap = el('span', `op-mark ${className}`);
   wrap.setAttribute('aria-hidden', 'true');
-  const face = document.createElement('img');
-  face.className = 'op-mark__face';
+  const face = el('img', 'op-mark__face');
   face.src = `${BRAND_ROOT}/mark.png`;
   face.alt = '';
   face.draggable = false;
-  const eyes = document.createElement('img');
-  eyes.className = 'op-mark__eyes';
+  const eyes = el('img', 'op-mark__eyes');
   eyes.src = `${BRAND_ROOT}/mark-eyes.png`;
   eyes.alt = '';
   eyes.draggable = false;
@@ -70,8 +68,7 @@ export function makeMark(className: string): HTMLElement {
 
 /** The logo, whole, for the boot screen and the device gate. */
 export function makeLockup(): HTMLElement {
-  const img = document.createElement('img');
-  img.className = 'op-lockup';
+  const img = el('img', 'op-lockup');
   img.src = `${BRAND_ROOT}/logo.png`;
   img.alt = 'PROTOCOL SEVEN';
   img.draggable = false;

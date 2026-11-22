@@ -29,6 +29,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { STREAK_COOLDOWN_SECONDS } from '../../shared/streaks/StreakDefs';
 //#endregion
 
@@ -201,28 +202,21 @@ export class HudStreaks {
   // ===================================== PRIVATE METHODS ====================================== \\
   //#region Private Methods
   private createSlotStrip(): HTMLElement {
-    const slots = document.createElement('div');
-    slots.className = 'hud-streaks__slots';
+    const slots = el('div', 'hud-streaks__slots');
     for (let i = 0; i < 3; i++) slots.appendChild(this.createStreakSlot(i));
     return slots;
   }
 
   private createStreakSlot(index: number): HTMLElement {
-    const slot = document.createElement('div');
-    slot.className = 'hud-streaks__slot';
-    const key = document.createElement('b');
-    key.className = 'hud-streaks__key';
-    key.textContent = String(3 + index);
-    const name = document.createElement('span');
-    name.className = 'hud-streaks__name';
+    const slot = el('div', 'hud-streaks__slot');
+    const key = el('b', 'hud-streaks__key', String(3 + index));
+    const name = el('span', 'hud-streaks__name');
     // The price, always and only. `USED` used to share this element; the lockout that
     // replaced it is drawn rather than written, so the cost has one job again.
-    const cost = document.createElement('i');
-    cost.className = 'hud-streaks__cost';
+    const cost = el('i', 'hud-streaks__cost');
     // The lockout, as a fill that drains. Scaled on a transform from the bottom, so the frame
     // that draws it never touches layout.
-    const cool = document.createElement('u');
-    cool.className = 'hud-streaks__cool';
+    const cool = el('u', 'hud-streaks__cool');
     cool.style.transform = 'scaleY(0)';
     slot.append(cool, key, name, cost);
     this.slotEls.push(slot);
@@ -234,26 +228,19 @@ export class HudStreaks {
 
   /** The objective banner, centred above the crosshair. */
   private createObjectiveBanner(): ObjectiveBanner {
-    const root = document.createElement('div');
-    root.className = 'hud-objective';
+    const root = el('div', 'hud-objective');
     root.style.opacity = '0';
 
-    const head = document.createElement('div');
-    head.className = 'hud-objective__head';
-    const label = document.createElement('span');
-    label.className = 'hud-objective__label';
-    const timer = document.createElement('b');
-    timer.className = 'hud-objective__timer';
+    const head = el('div', 'hud-objective__head');
+    const label = el('span', 'hud-objective__label');
+    const timer = el('b', 'hud-objective__timer');
     head.append(label, timer);
     root.appendChild(head);
 
-    const ringWrap = document.createElement('div');
-    ringWrap.className = 'hud-objective__ring';
+    const ringWrap = el('div', 'hud-objective__ring');
     ringWrap.style.opacity = '0';
-    const ringFill = document.createElement('i');
-    ringFill.className = 'hud-objective__ring-fill';
-    const ringLabel = document.createElement('span');
-    ringLabel.className = 'hud-objective__ring-label';
+    const ringFill = el('i', 'hud-objective__ring-fill');
+    const ringLabel = el('span', 'hud-objective__ring-label');
     ringWrap.append(ringFill, ringLabel);
     root.appendChild(ringWrap);
 
@@ -269,16 +256,11 @@ export class HudStreaks {
    * respawns and the count would be meaningless.
    */
   private createAliveStrip(): AliveStrip {
-    const root = document.createElement('div');
-    root.className = 'hud-alive';
+    const root = el('div', 'hud-alive');
     root.style.opacity = '0';
-    const friendly = document.createElement('b');
-    friendly.className = 'hud-alive__count hud-alive__count--friendly';
-    const sep = document.createElement('span');
-    sep.className = 'hud-alive__sep';
-    sep.textContent = 'ALIVE';
-    const enemy = document.createElement('b');
-    enemy.className = 'hud-alive__count hud-alive__count--enemy';
+    const friendly = el('b', 'hud-alive__count hud-alive__count--friendly');
+    const sep = el('span', 'hud-alive__sep', 'ALIVE');
+    const enemy = el('b', 'hud-alive__count hud-alive__count--enemy');
     root.append(friendly, sep, enemy);
     return { root, friendly, enemy };
   }

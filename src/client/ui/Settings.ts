@@ -47,6 +47,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import {
   ACTIONS,
   defaultBindings,
@@ -380,8 +381,7 @@ export class Settings {
   }
 
   private paint(): void {
-    const body = document.createElement('div');
-    body.className = 'st-body';
+    const body = el('div', 'st-body');
     body.append(this.paintRail(), this.paintPanel());
     this.card.refresh();
     const place = { title: 'SYSTEM CONTROL', subtitle: 'CONFIGURE OPERATIVE PARAMETERS' };
@@ -396,8 +396,7 @@ export class Settings {
 
   /** The rail: the five categories, the open one lit. */
   private paintRail(): HTMLElement {
-    const rail = document.createElement('nav');
-    rail.className = 'st-rail';
+    const rail = el('nav', 'st-rail');
     rail.setAttribute('aria-label', 'Settings categories');
     TABS.forEach((def, i) => rail.appendChild(this.createRailItem(def, i)));
     return rail;
@@ -411,12 +410,8 @@ export class Settings {
     b.classList.toggle('is-on', def.id === this.tab);
     b.setAttribute('aria-current', def.id === this.tab ? 'page' : 'false');
     b.appendChild(makeIconSvg(def.glyph, GLYPH_VIEWBOX, 'st-rail__glyph'));
-    const num = document.createElement('span');
-    num.className = 'st-rail__num op-num';
-    num.textContent = `0${index + 1}`;
-    const name = document.createElement('span');
-    name.className = 'st-rail__name';
-    name.textContent = def.id;
+    const num = el('span', 'st-rail__num op-num', `0${index + 1}`);
+    const name = el('span', 'st-rail__name', def.id);
     b.append(num, name, makeIconSvg(CHEVRON, GLYPH_VIEWBOX, 'st-rail__chevron'));
     b.addEventListener('click', () => {
       this.stopCapture();
@@ -430,10 +425,8 @@ export class Settings {
 
   /** The panel: the category's head, its controls beside the side column, and the foot. */
   private paintPanel(): HTMLElement {
-    const panel = document.createElement('section');
-    panel.className = 'st-panel';
-    const main = document.createElement('div');
-    main.className = 'st-main';
+    const panel = el('section', 'st-panel');
+    const main = el('div', 'st-main');
     this.paintCategory(main);
     panel.append(createPanelHead(tabDef(this.tab)), this.createColumns(main), this.createFoot());
     return panel;
@@ -468,8 +461,7 @@ export class Settings {
    * is a binding row that cannot be read.
    */
   private createColumns(main: HTMLElement): HTMLElement {
-    const columns = document.createElement('div');
-    columns.className = 'st-columns';
+    const columns = el('div', 'st-columns');
     if (this.tab === 'BINDINGS') {
       columns.classList.add('st-columns--wide');
       columns.appendChild(main);
@@ -481,8 +473,7 @@ export class Settings {
 
   /** BACK and APPLY, on the bar the other screens end on. */
   private createFoot(): HTMLElement {
-    const foot = document.createElement('div');
-    foot.className = 'op-actionbar op-actionbar--bare st-foot';
+    const foot = el('div', 'op-actionbar op-actionbar--bare st-foot');
     const back = createFootButton('BACK', ARROW_LEFT, 'op-cta op-cta--quiet st-back', () => {
       this.revert();
       this.deps.onBack();
@@ -497,19 +488,13 @@ export class Settings {
 
   /** The side column: the input device, and the operator's portrait under the caption. */
   private paintSide(): HTMLElement {
-    const side = document.createElement('div');
-    side.className = 'st-side';
+    const side = el('div', 'st-side');
 
-    const device = document.createElement('div');
-    device.className = 'st-card';
+    const device = el('div', 'st-card');
     device.appendChild(makeIconSvg(MOUSE_GLYPH, GLYPH_VIEWBOX, 'st-card__glyph'));
-    const dt = document.createElement('div');
-    dt.className = 'st-card__text';
-    const dl = document.createElement('span');
-    dl.className = 'op-label';
-    dl.textContent = 'INPUT DEVICE';
-    const dv = document.createElement('span');
-    dv.className = 'st-card__value';
+    const dt = el('div', 'st-card__text');
+    const dl = el('span', 'op-label', 'INPUT DEVICE');
+    const dv = el('span', 'st-card__value');
     // The device gate (round 5, F1) admits nothing else: a keyboard and a mouse are what a
     // client that reached this screen has.
     dv.textContent = 'MOUSE / KEYBOARD';
@@ -522,23 +507,16 @@ export class Settings {
 
   /** The operator's portrait, shaded, under the caption and its three bars. */
   private createPlate(): HTMLElement {
-    const plate = document.createElement('div');
-    plate.className = 'st-plate';
-    const img = document.createElement('img');
-    img.className = 'st-plate__img';
+    const plate = el('div', 'st-plate');
+    const img = el('img', 'st-plate__img');
     img.src = characterDefinition(this.deps.profile.skinId).thumbUrl;
     img.alt = '';
     img.draggable = false;
-    const shade = document.createElement('div');
-    shade.className = 'st-plate__shade';
-    const caption = document.createElement('span');
-    caption.className = 'st-plate__caption';
-    caption.textContent = PLATE_CAPTION;
-    const bars = document.createElement('span');
-    bars.className = 'st-plate__bars';
+    const shade = el('div', 'st-plate__shade');
+    const caption = el('span', 'st-plate__caption', PLATE_CAPTION);
+    const bars = el('span', 'st-plate__bars');
     for (let i = 0; i < 3; i++) {
-      const bar = document.createElement('i');
-      bar.className = 'st-plate__bar';
+      const bar = el('i', 'st-plate__bar');
       bars.appendChild(bar);
     }
     plate.append(img, shade, caption, bars);
@@ -577,8 +555,7 @@ export class Settings {
   /** The three columns of the binding table, in the order `BINDING_COLUMNS` stands them. */
   private createBindingColumns(bindings: BindingMap): HTMLElement {
     const groups = groupActions();
-    const columns = document.createElement('div');
-    columns.className = 'st-bindings';
+    const columns = el('div', 'st-bindings');
     for (const column of BINDING_COLUMNS) {
       columns.appendChild(this.createBindingColumn(column, groups, bindings));
     }
@@ -590,8 +567,7 @@ export class Settings {
     groups: ReadonlyMap<ActionDef['group'], readonly ActionDef[]>,
     bindings: BindingMap,
   ): HTMLElement {
-    const col = document.createElement('div');
-    col.className = 'st-bindings__column';
+    const col = el('div', 'st-bindings__column');
     for (const group of column) {
       const sec = this.section(group.toUpperCase());
       for (const action of groups.get(group) ?? []) sec.appendChild(this.bindingRow(action, bindings));
@@ -602,10 +578,8 @@ export class Settings {
 
   /** Under the three columns: what to do, the fullscreen hint, and the way back to the defaults. */
   private createBindingsFoot(): HTMLElement {
-    const foot = document.createElement('div');
-    foot.className = 'st-bindings__foot';
-    const notes = document.createElement('div');
-    notes.className = 'st-bindings__notes';
+    const foot = el('div', 'st-bindings__foot');
+    const notes = el('div', 'st-bindings__notes');
     notes.append(statusNote(this.bindingNoteText()), note(FULLSCREEN_HINT));
     const reset = document.createElement('button');
     reset.type = 'button';
@@ -630,16 +604,12 @@ export class Settings {
   }
 
   private bindingRow(action: ActionDef, bindings: BindingMap): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'st-bind';
+    const row = el('div', 'st-bind');
 
-    const label = document.createElement('span');
-    label.className = 'st-bind__label';
-    label.textContent = action.label;
+    const label = el('span', 'st-bind__label', action.label);
     row.appendChild(label);
 
-    const keys = document.createElement('div');
-    keys.className = 'st-bind__keys';
+    const keys = el('div', 'st-bind__keys');
     const list = bindings[action.id] ?? [];
     for (let slot = 0; slot < BINDING_SLOTS; slot++) keys.appendChild(this.keyButton(action.id, slot, list[slot]));
     row.appendChild(keys);
@@ -750,8 +720,7 @@ export class Settings {
     credits.querySelector('.st-sec__head')?.appendChild(this.creditsPager(pages));
     credits.appendChild(note(CREDITS_INTRO));
 
-    const list = document.createElement('div');
-    list.className = 'st-credits';
+    const list = el('div', 'st-credits');
     const first = this.creditsPage * CREDITS_PER_PAGE;
     for (const entry of entries.slice(first, first + CREDITS_PER_PAGE)) creditRow(list, entry);
     credits.appendChild(list);
@@ -768,8 +737,7 @@ export class Settings {
    */
   private createProgressSection(): HTMLElement {
     const progress = this.section('PROGRESS');
-    const wrap = document.createElement('div');
-    wrap.className = 'st-danger';
+    const wrap = el('div', 'st-danger');
     wrap.appendChild(this.createResetButton());
     if (this.resetArmed) wrap.appendChild(resetWarning());
     progress.appendChild(wrap);
@@ -806,12 +774,9 @@ export class Settings {
    * control Create-a-Class pages its lists with (`lo-pager`). Absent when one page holds them.
    */
   private creditsPager(pages: number): HTMLElement {
-    const pager = document.createElement('div');
-    pager.className = 'lo-pager st-pager';
+    const pager = el('div', 'lo-pager st-pager');
     pager.hidden = pages <= 1;
-    const count = document.createElement('span');
-    count.className = 'lo-pager__count op-label';
-    count.textContent = `${this.creditsPage + 1} / ${pages}`;
+    const count = el('span', 'lo-pager__count op-label', `${this.creditsPage + 1} / ${pages}`);
     pager.append(
       this.creditsArrow('‹', 'Previous page of credits', this.creditsPage - 1, pages),
       count,
@@ -879,14 +844,10 @@ export class Settings {
 
   /** A bordered group with a heading, and a glyph beside it where the group has one. */
   private section(title: string, glyph?: string): HTMLElement {
-    const sec = document.createElement('div');
-    sec.className = 'st-sec';
-    const head = document.createElement('div');
-    head.className = 'st-sec__head';
+    const sec = el('div', 'st-sec');
+    const head = el('div', 'st-sec__head');
     if (glyph !== undefined) head.appendChild(makeIconSvg(glyph, GLYPH_VIEWBOX, 'st-sec__glyph'));
-    const label = document.createElement('span');
-    label.className = 'st-sec__title';
-    label.textContent = title;
+    const label = el('span', 'st-sec__title', title);
     head.appendChild(label);
     sec.appendChild(head);
     return sec;
@@ -904,9 +865,7 @@ export class Settings {
   ): HTMLElement {
     const { row, name } = createSettingRow(label);
 
-    const readout = document.createElement('span');
-    readout.className = 'st-row__value op-num';
-    readout.textContent = format(value);
+    const readout = el('span', 'st-row__value op-num', format(value));
 
     const input = createRange(min, max, step, value);
     // No repaint here on purpose: the panel is rebuilt wholesale by `paint`, and rebuilding
@@ -954,8 +913,7 @@ export class Settings {
     const { row, name } = createSettingRow(label, 'st-row--stack');
     row.appendChild(name);
 
-    const list = document.createElement('div');
-    list.className = 'st-choices';
+    const list = el('div', 'st-choices');
     for (const option of options) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -986,17 +944,13 @@ function tabDef(id: Tab): TabDef {
 
 /** The panel's head: the category's glyph, its name and its subtitle. */
 function createPanelHead(def: TabDef): HTMLElement {
-  const head = document.createElement('div');
-  head.className = 'st-panel__head';
+  const head = el('div', 'st-panel__head');
   head.appendChild(makeIconSvg(def.glyph, GLYPH_VIEWBOX, 'st-panel__glyph'));
-  const titles = document.createElement('div');
-  titles.className = 'st-panel__titles';
+  const titles = el('div', 'st-panel__titles');
   const title = document.createElement('h2');
   title.className = 'st-panel__title';
   title.textContent = def.id;
-  const sub = document.createElement('span');
-  sub.className = 'op-label st-panel__sub';
-  sub.textContent = def.subtitle;
+  const sub = el('span', 'op-label st-panel__sub', def.subtitle);
   titles.append(title, sub);
   head.appendChild(titles);
   return head;
@@ -1017,11 +971,8 @@ function createFootButton(text: string, glyph: string, className: string, onClic
 
 /** The box and the label every control row opens with. The modifier is the row's own class. */
 function createSettingRow(label: string, modifier = ''): RowParts {
-  const row = document.createElement('div');
-  row.className = modifier === '' ? 'st-row' : `st-row ${modifier}`;
-  const name = document.createElement('span');
-  name.className = 'st-row__label';
-  name.textContent = label;
+  const row = el('div', modifier === '' ? 'st-row' : `st-row ${modifier}`);
+  const name = el('span', 'st-row__label', label);
   return { row, name };
 }
 
@@ -1043,17 +994,13 @@ function withHelp(row: HTMLElement, help: string | undefined): HTMLElement {
 }
 
 function helpText(text: string): HTMLElement {
-  const p = document.createElement('p');
-  p.className = 'st-row__help';
-  p.textContent = text;
+  const p = el('p', 'st-row__help', text);
   return p;
 }
 
 /** A line of prose in a section: the fullscreen hint and the two credits notes. */
 function note(text: string): HTMLElement {
-  const p = document.createElement('p');
-  p.className = 'st-note';
-  p.textContent = text;
+  const p = el('p', 'st-note', text);
   return p;
 }
 
@@ -1082,9 +1029,7 @@ function statusNote(text: string): HTMLElement {
 }
 
 function resetWarning(): HTMLElement {
-  const warn = document.createElement('span');
-  warn.className = 'op-label st-danger__warn';
-  warn.textContent = RESET_WARNING;
+  const warn = el('span', 'op-label st-danger__warn', RESET_WARNING);
   return warn;
 }
 
@@ -1136,28 +1081,21 @@ function placeInput(bindings: BindingMap, action: ActionId, input: string, slot:
  * and a new tab, so a player reading a credit does not lose the match behind them.
  */
 function creditRow(host: HTMLElement, entry: CreditEntry): void {
-  const source = document.createElement('span');
-  source.className = 'st-credit__source';
+  const source = el('span', 'st-credit__source');
   source.appendChild(creditLink(entry.title, entry.url));
-  const by = document.createElement('span');
-  by.className = 'st-credit__by';
-  by.textContent = ` by ${entry.author}`;
+  const by = el('span', 'st-credit__by', ` by ${entry.author}`);
   source.appendChild(by);
 
-  const licence = document.createElement('span');
-  licence.className = 'st-credit__licence';
+  const licence = el('span', 'st-credit__licence');
   licence.appendChild(creditLink(entry.license, entry.licenseUrl));
 
-  const used = document.createElement('span');
-  used.className = 'st-credit__used';
-  used.textContent = entry.used;
+  const used = el('span', 'st-credit__used', entry.used);
 
   host.append(source, licence, used);
 }
 
 function creditLink(text: string, href: string): HTMLElement {
-  const a = document.createElement('a');
-  a.className = 'st-credit__link';
+  const a = el('a', 'st-credit__link');
   a.href = href;
   a.target = '_blank';
   a.rel = 'noreferrer noopener';

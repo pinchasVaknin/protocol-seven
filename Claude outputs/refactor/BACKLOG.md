@@ -551,13 +551,25 @@ has to take it again:
 - `ScreenChrome.ts` is **not** the home, for the reason the entry gives: it would become the
   division's DOM library by accident. A file named `Dom.ts` says what it is.
 
-**What is left is the labour, and it is a session of its own**, for one reason: the conversion
-is only mechanical in shape, not in text. Sites differ — some set a third property, some append
-children, some build the element across several statements — so a regex pass over 500 of them
-would be a regex pass that breaks some of them quietly. Each file is read as it is converted,
-and each file's suite is run.
+**Most of it was done on 2026-11-22.** `src/client/ui/Dom.ts` exists and **275 sites across 30
+files** go through `el()` — 621 lines deleted for 305 added. The conversion was mechanical where
+the shape was exact and refused everywhere else, which is the only way a pass over this many
+sites is safe:
 
-**Do not create `Dom.ts` ahead of that session.** A file with no callers is worse than no file.
+- Only `const v = createElement(tag); v.className = …;` optionally followed by
+  `v.textContent = …;`, consecutive, same variable, no type annotation. Anything that sets an
+  attribute in between, or builds the element over several statements, was left alone.
+- A site whose own variable is named `el` was skipped, and so was any line that would pass 110
+  columns.
+- **The compiler was the judge, not the regex.** Files were converted, `tsc` was run, and every
+  file it rejected was reverted whole and re-examined — which is how the real hazard surfaced:
+  a handful of files bind `el` as a local or a parameter, so the import is shadowed at some
+  sites and not others. Those are the seven still untouched.
+
+**141 convertible sites remain in 15 files**, and they need the same care rather than another
+pass: seven because `el` is taken there as a local or a parameter (rename the local first), the
+rest because they fell outside the exact shape. That is a smaller, sharper job than the one this
+entry opened with, and it no longer needs a decision.
 
 **Verify** `npm run check` and every division-C BROWSER checksum, which between them hold the
 element tree of every screen in the game.

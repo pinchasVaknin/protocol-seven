@@ -13,6 +13,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import {
   relationClass,
   relationTo,
@@ -225,28 +226,21 @@ export class HudBanner {
    * numerals are all still exactly what is wanted.
    */
   private createTeamSlot(): TeamSlot {
-    const root = document.createElement('div');
-    root.className = 'hud-banner__team';
-    const score = document.createElement('span');
-    score.className = 'hud-banner__score op-num';
-    const track = document.createElement('div');
-    track.className = 'hud-banner__track';
+    const root = el('div', 'hud-banner__team');
+    const score = el('span', 'hud-banner__score op-num');
+    const track = el('div', 'hud-banner__track');
     const bar = document.createElement('i');
     track.appendChild(bar);
-    const label = document.createElement('span');
-    label.className = 'hud-banner__who op-label';
+    const label = el('span', 'hud-banner__who op-label');
     label.hidden = true;
     root.append(label, score, track);
     return { root, score, bar, label };
   }
 
   private createCentre(): BannerCentre {
-    const root = document.createElement('div');
-    root.className = 'hud-banner__centre';
-    const clock = document.createElement('span');
-    clock.className = 'hud-banner__clock op-num';
-    const rounds = document.createElement('span');
-    rounds.className = 'hud-banner__rounds op-label';
+    const root = el('div', 'hud-banner__centre');
+    const clock = el('span', 'hud-banner__clock op-num');
+    const rounds = el('span', 'hud-banner__rounds op-label');
     root.append(clock, rounds);
     return { root, clock, rounds };
   }
@@ -256,8 +250,7 @@ export class HudBanner {
    * it is a state change, and a state change belongs where the player is already looking.
    */
   private createPhaseBlock(): PhaseBlock {
-    const phase = document.createElement('div');
-    phase.className = 'hud-phase';
+    const phase = el('div', 'hud-phase');
     phase.appendChild(document.createElement('span'));
     /**
      * The brief's own line (F10), a second child of the same block.
@@ -268,8 +261,7 @@ export class HudBanner {
      * cost two rounds. The rule is not defensive; without it the brief would stay painted for
      * the rest of the match.
      */
-    const brief = document.createElement('small');
-    brief.className = 'hud-phase__brief';
+    const brief = el('small', 'hud-phase__brief');
     brief.hidden = true;
     phase.appendChild(brief);
     return { phase, brief };

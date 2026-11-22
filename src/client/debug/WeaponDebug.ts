@@ -1,3 +1,4 @@
+import { el } from '../ui/Dom';
 import { EV, type GameBus } from '../../shared/core/Events';
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
 import type { Match } from '../ClientMatch';
@@ -319,8 +320,7 @@ export class WeaponDebug extends Disposable {
   }
 
   private toggle(label: string, initial: boolean, onChange: (on: boolean) => void): HTMLElement {
-    const wrap = document.createElement('label');
-    wrap.className = 'dbg-toggle';
+    const wrap = el('label', 'dbg-toggle');
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = initial;
@@ -354,8 +354,7 @@ function makeCanvas(
   height: number,
   section: { addNode(node: HTMLElement): void },
 ): CanvasRenderingContext2D {
-  const canvas = document.createElement('canvas');
-  canvas.className = 'dbg-graph';
+  const canvas = el('canvas', 'dbg-graph');
   canvas.width = width;
   canvas.height = height;
   canvas.style.height = `${height}px`;

@@ -21,6 +21,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { cssHex, cssRgba, palette } from './Palette';
 import { PROP_SHAPES } from '../../shared/world/maps/props';
 import type { Brush, MapDef, ObjectiveDef, ObjectiveKind } from '../../shared/world/maps/types';
@@ -176,8 +177,7 @@ export class Minimap {
     this.ctx = ctx;
     this.element.appendChild(this.canvas);
 
-    const ring = document.createElement('i');
-    ring.className = 'hud-map__ring';
+    const ring = el('i', 'hud-map__ring');
     this.element.appendChild(ring);
 
     for (let i = 0; i < maxFriendlies; i++) this.friendlies.push({ x: 0, z: 0, yaw: 0, active: false });

@@ -566,6 +566,7 @@ const FINISHED = {
     'src/client/engine/CanvasTile.ts',
     'src/shared/core/RaySlab.ts',
     'src/shared/core/Vocabulary.ts',
+    'src/client/ui/Dom.ts',
   ],
   C23: [
     'src/client/Game.ts',

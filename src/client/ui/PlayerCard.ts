@@ -20,6 +20,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { MAX_LEVEL, prestigeLabel } from '../../shared/meta/Levels';
 import { characterDefinition } from '../characters/CharacterCatalog';
 import type { Profile } from '../meta/Profile';
@@ -79,8 +80,7 @@ export class PlayerCard {
   constructor(deps: PlayerCardDeps) {
     this.deps = deps;
 
-    const card = document.createElement('div');
-    card.className = 'op-card';
+    const card = el('div', 'op-card');
 
     const portrait = createPortrait();
     this.avatar = portrait.avatar;
@@ -90,8 +90,7 @@ export class PlayerCard {
     this.name = text.name;
     this.level = text.level;
 
-    const rule = document.createElement('span');
-    rule.className = 'op-card__rule';
+    const rule = el('span', 'op-card__rule');
 
     card.append(portrait.element, text.element, rule, this.createGear());
     this.element = card;
@@ -147,25 +146,19 @@ export function levelLine(profile: Profile, shown?: number): string {
 // ====================================== INTERNAL HELPERS ====================================== \\
 //#region Internal Helpers
 function createPortrait(): Portrait {
-  const element = document.createElement('span');
-  element.className = 'op-card__portrait';
-  const avatar = document.createElement('img');
-  avatar.className = 'op-card__avatar';
+  const element = el('span', 'op-card__portrait');
+  const avatar = el('img', 'op-card__avatar');
   avatar.alt = '';
   avatar.draggable = false;
-  const dot = document.createElement('i');
-  dot.className = 'op-card__dot';
+  const dot = el('i', 'op-card__dot');
   element.append(avatar, dot);
   return { element, avatar, dot };
 }
 
 function createText(): CardText {
-  const element = document.createElement('div');
-  element.className = 'op-card__text';
-  const name = document.createElement('span');
-  name.className = 'op-card__name';
-  const level = document.createElement('span');
-  level.className = 'op-card__level op-label';
+  const element = el('div', 'op-card__text');
+  const name = el('span', 'op-card__name');
+  const level = el('span', 'op-card__level op-label');
   element.append(name, level);
   return { element, name, level };
 }

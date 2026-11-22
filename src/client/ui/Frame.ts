@@ -1,3 +1,4 @@
+import { el } from './Dom';
 /**
  * The design frame (M15, Phase A1): every front-end screen is laid out at 1920×1080 and the
  * whole frame is scaled to the window.
@@ -109,12 +110,9 @@ export function applyFrameScale(root: HTMLElement, viewportWidth: number, viewpo
  * accident: there is nowhere else to put it.
  */
 export function createScreen(layerClass: string): { layer: HTMLElement; viewport: HTMLElement; frame: HTMLElement } {
-  const layer = document.createElement('div');
-  layer.className = layerClass;
-  const viewport = document.createElement('div');
-  viewport.className = 'op-viewport';
-  const frame = document.createElement('div');
-  frame.className = 'op-frame';
+  const layer = el('div', layerClass);
+  const viewport = el('div', 'op-viewport');
+  const frame = el('div', 'op-frame');
   viewport.appendChild(frame);
   layer.appendChild(viewport);
   return { layer, viewport, frame };

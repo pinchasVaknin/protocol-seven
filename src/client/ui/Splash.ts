@@ -46,6 +46,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
 //#endregion
 
@@ -512,8 +513,7 @@ function place(el: HTMLElement, at: Cut): void {
 
 /** A cut of the logo as an image: never dragged, and never in the accessibility tree. */
 function img(src: string, className: string): HTMLImageElement {
-  const i = document.createElement('img');
-  i.className = className;
+  const i = el('img', className);
   i.src = src;
   i.alt = '';
   i.draggable = false;
@@ -522,8 +522,7 @@ function img(src: string, className: string): HTMLImageElement {
 
 /** The skull and the eyes over it, which are two images of one piece. */
 function createSkull(): HTMLElement {
-  const skull = document.createElement('div');
-  skull.className = 'splash__piece splash__skull';
+  const skull = el('div', 'splash__piece splash__skull');
   place(skull, SKULL);
   skull.appendChild(img(`${BRAND_ROOT}/mark.png`, 'splash__img'));
   skull.appendChild(img(`${BRAND_ROOT}/mark-eyes.png`, 'splash__img splash__eyes'));
@@ -532,16 +531,14 @@ function createSkull(): HTMLElement {
 
 /** PROTOCOL, the rule or SEVEN: one cut, one image. */
 function createWord(at: Cut, src: string, modifier: string): HTMLElement {
-  const word = document.createElement('div');
-  word.className = `splash__piece ${modifier}`;
+  const word = el('div', `splash__piece ${modifier}`);
   place(word, at);
   word.appendChild(img(src, 'splash__img'));
   return word;
 }
 
 function createRing(modifier: string): HTMLElement {
-  const ring = document.createElement('div');
-  ring.className = modifier === '' ? 'splash__ring' : `splash__ring ${modifier}`;
+  const ring = el('div', modifier === '' ? 'splash__ring' : `splash__ring ${modifier}`);
   return ring;
 }
 
@@ -552,8 +549,7 @@ function createRing(modifier: string): HTMLElement {
  * as energy rather than as geometry.
  */
 function createSpark(i: number): HTMLElement {
-  const spark = document.createElement('i');
-  spark.className = 'splash__spark';
+  const spark = el('i', 'splash__spark');
   const angle = (360 / SPARK_COUNT) * i + ((i * 37) % 11) - 5;
   spark.style.setProperty('--angle', `${angle}deg`);
   spark.style.setProperty('--length', `${6 + ((i * 53) % 9)}vmin`);

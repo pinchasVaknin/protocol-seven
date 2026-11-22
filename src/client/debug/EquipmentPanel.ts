@@ -1,3 +1,4 @@
+import { el } from '../ui/Dom';
 import * as THREE from 'three';
 import type { Match } from '../ClientMatch';
 import { DEG2RAD } from '../../shared/core/MathUtil';
@@ -156,8 +157,7 @@ export class EquipmentPanel {
   private buildControls(): HTMLElement {
     const wrap = document.createElement('div');
 
-    const toggles = document.createElement('div');
-    toggles.className = 'dbg-chips';
+    const toggles = el('div', 'dbg-chips');
     toggles.appendChild(
       this.toggle('Trajectory preview', () => {
         this.showTrajectory = !this.showTrajectory;
@@ -172,8 +172,7 @@ export class EquipmentPanel {
     );
     wrap.appendChild(toggles);
 
-    const picker = document.createElement('div');
-    picker.className = 'dbg-chips dbg-chips--wrap';
+    const picker = el('div', 'dbg-chips dbg-chips--wrap');
     for (const def of ALL_EQUIPMENT) {
       const chip = document.createElement('button');
       chip.type = 'button';

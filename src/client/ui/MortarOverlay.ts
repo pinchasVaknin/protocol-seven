@@ -42,6 +42,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { clamp } from '../../shared/core/MathUtil';
 import type { MapDef } from '../../shared/world/maps/types';
 import { drawBrushes, drawProps } from './Minimap';
@@ -113,8 +114,7 @@ export class MortarOverlay {
     this.element.className = 'hud-mortar';
     this.element.hidden = true;
 
-    const frame = document.createElement('div');
-    frame.className = 'hud-mortar__frame';
+    const frame = el('div', 'hud-mortar__frame');
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'hud-mortar__canvas';
     this.canvas.width = this.widthPx;
@@ -124,9 +124,7 @@ export class MortarOverlay {
     this.ctx = ctx;
     frame.appendChild(this.canvas);
 
-    const hint = document.createElement('p');
-    hint.className = 'hud-mortar__hint';
-    hint.textContent = 'MOVE TO AIM · FIRE TO CONFIRM · ESC TO CANCEL';
+    const hint = el('p', 'hud-mortar__hint', 'MOVE TO AIM · FIRE TO CONFIRM · ESC TO CANCEL');
     frame.appendChild(hint);
 
     this.element.appendChild(frame);

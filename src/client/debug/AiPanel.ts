@@ -1,3 +1,4 @@
+import { el } from '../ui/Dom';
 import * as THREE from 'three';
 import {
   DEFAULT_SCHEDULER,
@@ -407,8 +408,7 @@ function button(label: string, onClick: () => void): HTMLElement {
 }
 
 function toggle(label: string, initial: boolean, onChange: (on: boolean) => void): HTMLElement {
-  const wrap = document.createElement('label');
-  wrap.className = 'dbg-toggle';
+  const wrap = el('label', 'dbg-toggle');
   const input = document.createElement('input');
   input.type = 'checkbox';
   input.checked = initial;

@@ -1,5 +1,6 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { DT } from '../../shared/core/Loop';
 import type { VoteInfo } from '../../shared/net/Messages';
 import {
@@ -141,8 +142,7 @@ export class VoteOverlay {
     this.hint.className = 'op-vote__hint';
     this.hint.textContent = 'PRESS 1-5 TO VOTE — KEEP PLAYING';
 
-    const head = document.createElement('div');
-    head.className = 'op-vote__head';
+    const head = el('div', 'op-vote__head');
     head.append(this.heading, this.clock);
 
     this.root.append(this.banner, head, this.optionHost, this.hint);
@@ -422,14 +422,11 @@ export class VoteOverlay {
     button.type = 'button';
     button.className = 'op-vote__option';
 
-    const fill = document.createElement('span');
-    fill.className = 'op-vote__option-fill';
+    const fill = el('span', 'op-vote__option-fill');
 
-    const name = document.createElement('span');
-    name.className = 'op-vote__option-name';
+    const name = el('span', 'op-vote__option-name');
 
-    const count = document.createElement('span');
-    count.className = 'op-vote__option-count';
+    const count = el('span', 'op-vote__option-count');
 
     button.append(fill, name, count);
     /**

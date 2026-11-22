@@ -128,21 +128,52 @@ function fail(lines) {
   process.exit(1);
 }
 
-/** The fields declared on one interface in one file, pinned against one allowlist. */
-function auditInterface(file, name, allowed, describe) {
-  const src = readFileSync(file, 'utf8');
-  const start = src.indexOf(`export interface ${name} {`);
-  if (start < 0) {
+/**
+ * Every field one interface declares, **including the ones it inherits** from an interface in
+ * the same file.
+ *
+ * The `extends` half was added on 2026-11-22, when BACKLOG #15 moved the scoreboard row's
+ * fifteen counter columns into a `ScoreColumns` the held row and the wire row now share. Before
+ * that this function matched `export interface <name> {` literally and read the fields under
+ * it, so the move did two things at once: it stopped the declaration being found at all — which
+ * this check reports rather than shrugging at, and did — and, had the name still matched, it
+ * would have left fifteen of the eighteen fields unaudited while still printing "ok". A check
+ * that silently narrows is worse than one that fails, which is the whole argument for the
+ * allowlist in the first place.
+ *
+ * Only same-file parents are followed, and `Readonly<X>` / `Partial<X>` wrappers are unwrapped.
+ * A parent this cannot find is a failure, not a skip.
+ */
+function fieldsOf(src, file, name, seen = new Set()) {
+  if (seen.has(name)) return [];
+  seen.add(name);
+  const declared = new RegExp(`export interface ${name}(?: extends ([^{]+?))?\\s*\\{`).exec(src);
+  if (declared === null) {
     fail([`could not find ${name} in ${file} — this check has stopped checking`]);
   }
+  const start = declared.index;
   const end = src.indexOf('\n}', start);
   const body = src.slice(start, end);
 
   // `name: type;` at one level of indentation, `readonly` or not. Comments and blank lines
   // fall out naturally.
-  const found = [...body.matchAll(/^\s{2}(?:readonly\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\??\s*:/gm)].map(
+  const own = [...body.matchAll(/^\s{2}(?:readonly\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\??\s*:/gm)].map(
     (m) => m[1],
   );
+
+  const inherited = [];
+  for (const parent of (declared[1] ?? '').split(',')) {
+    const bare = parent.trim().replace(/^(?:Readonly|Partial|Required)<(.+)>$/, '$1').trim();
+    if (bare === '') continue;
+    inherited.push(...fieldsOf(src, file, bare, seen));
+  }
+  return [...inherited, ...own];
+}
+
+/** The fields declared on one interface in one file, pinned against one allowlist. */
+function auditInterface(file, name, allowed, describe) {
+  const src = readFileSync(file, 'utf8');
+  const found = fieldsOf(src, file, name);
 
   const problems = [];
   for (const field of found) {

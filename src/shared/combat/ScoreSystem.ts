@@ -36,23 +36,30 @@ export type ScoreTeam = 'A' | 'B';
  */
 export type ObjectiveStat = 'captures' | 'defends' | 'plants' | 'defuses' | 'tags';
 
-export interface PlayerScore {
-  /**
-   * Which body this row is about. Written by `ScoreSystem.adopt` alone (M13 Phase B): a player
-   * who returns after the reconnect grace is seated as a new entity, and their old row follows
-   * them rather than standing on the board beside a fresh one.
-   */
-  entityId: number;
-  readonly displayName: string;
-  /** Mutable for the same one reason: an adopted row moves to the side its owner was re-seated on. */
-  team: ScoreTeam;
-  /**
-   * True for the human at this keyboard. The scoreboard highlights their row.
-   *
-   * Written by `ScoreSystem` alone — it is re-stamped when a server assigns this client its
-   * entity id, which on a dedicated server happens after the row may already exist.
-   */
-  isLocal: boolean;
+/**
+ * The fifteen counter columns, named once (BACKLOG #15, settled 2026-11-22).
+ *
+ * They were written out in full in five places — `register`'s zeroed literal, `reset`,
+ * `haveColumnsChanged`, `copyColumns`, and the wire row — and they change for exactly one
+ * reason: a new scoreboard column. Two of the five were types, and are one type now. A column
+ * added here reaches `PlayerScore` and `ReplicatedScoreRow` together and cannot be carried by
+ * one and not the other.
+ *
+ * **The other three are still written out, deliberately.** All of `shared/combat` is on R7's
+ * hot-path list, `haveColumnsChanged` and `copyColumns` run per row per snapshot, and the
+ * mergers available are a keyed write over a nineteen-field object V8 currently sees as one
+ * shape, or code generation — neither obviously better than three honest lists.
+ *
+ * What was wrong was never the lists. It was that a column could be left out of one of them
+ * **silently**: a missing `copyColumns` line is a column that never updates, and a missing
+ * `haveColumnsChanged` term is a column whose change does not move `serial`, so it never
+ * replicates at all. Neither is a compile error, and on screen neither looks like anything but
+ * a column of stale numbers. So `SCORE_COLUMNS` below lists them for a test to walk, and
+ * `ScoreSystem.test.ts` drives all fifteen through each of the three sites one at a time.
+ * Adding a column without touching the three lists is a failing test that names the column,
+ * which is the thing the compiler cannot give.
+ */
+export interface ScoreColumns {
   kills: number;
   deaths: number;
   /**
@@ -84,6 +91,25 @@ export interface PlayerScore {
   tags: number;
 }
 
+export interface PlayerScore extends ScoreColumns {
+  /**
+   * Which body this row is about. Written by `ScoreSystem.adopt` alone (M13 Phase B): a player
+   * who returns after the reconnect grace is seated as a new entity, and their old row follows
+   * them rather than standing on the board beside a fresh one.
+   */
+  entityId: number;
+  readonly displayName: string;
+  /** Mutable for the same one reason: an adopted row moves to the side its owner was re-seated on. */
+  team: ScoreTeam;
+  /**
+   * True for the human at this keyboard. The scoreboard highlights their row.
+   *
+   * Written by `ScoreSystem` alone — it is re-stamped when a server assigns this client its
+   * entity id, which on a dedicated server happens after the row may already exist.
+   */
+  isLocal: boolean;
+}
+
 export interface TeamTotals {
   score: number;
   kills: number;
@@ -102,25 +128,10 @@ interface DamageRecord {
  * One row as the wire carries it (M13 Phase B). Every column the modes' `getScoreboardColumns`
  * can read — see `PlayerScore` for what each means — and nothing a client decides for itself.
  */
-export interface ReplicatedScoreRow {
+export interface ReplicatedScoreRow extends Readonly<ScoreColumns> {
   readonly entityId: number;
   readonly displayName: string;
   readonly team: ScoreTeam;
-  readonly kills: number;
-  readonly deaths: number;
-  readonly assists: number;
-  readonly score: number;
-  readonly streak: number;
-  readonly bestStreak: number;
-  readonly shotsFired: number;
-  readonly shotsHit: number;
-  readonly damageDealt: number;
-  readonly headshots: number;
-  readonly captures: number;
-  readonly defends: number;
-  readonly plants: number;
-  readonly defuses: number;
-  readonly tags: number;
 }
 
 /** What a ladder ranks by. Structural, so the wire's summary rows rank the same way. */
@@ -133,6 +144,33 @@ export interface Rankable {
 
 // ========================================= CONSTANTS ========================================== \\
 //#region Constants
+/**
+ * Every counter column, in the order the five lists write them (BACKLOG #15).
+ *
+ * Nothing in this file reads it: it exists for `ScoreSystem.test.ts`, which walks it to prove
+ * that `reset`, `haveColumnsChanged` and `copyColumns` each account for all fifteen. It is
+ * `satisfies` a list of `ScoreColumns`' own keys, so a name that is not a column is a compile
+ * error here; a column *missing* from the list is caught by the test, which compares this
+ * against the keys of a row the real `register` built.
+ */
+export const SCORE_COLUMNS = [
+  'kills',
+  'deaths',
+  'assists',
+  'score',
+  'streak',
+  'bestStreak',
+  'shotsFired',
+  'shotsHit',
+  'damageDealt',
+  'headshots',
+  'captures',
+  'defends',
+  'plants',
+  'defuses',
+  'tags',
+] as const satisfies readonly (keyof ScoreColumns)[];
+
 /**
  * Recent damage, for assist attribution.
  *
@@ -587,6 +625,27 @@ export class ScoreSystem extends Disposable {
   /**
    * Take off the board anything the server no longer lists: a bot that gave its seat to a
    * human. Returns whether anything went.
+   *
+   * **Measured and left alone** (BACKLOG #14, closed 2026-11-22). The `some` inside the
+   * descending loop is O(n·m) with a closure per iteration, on the networked client's snapshot
+   * path, which is exactly the shape R7 asks about — so it was measured against the
+   * alternative the entry proposed: one pass over `rows` into a reused scratch `Set`, then one
+   * pass over `this.all`. 200,000 calls of each, on the engine the gate runs:
+   *
+   * ```
+   * 12 held, all 12 listed    some 148.9 ms   set 208.1 ms    set is 1.40x slower
+   * 12 held, 11 listed        some 150.8 ms   set 211.1 ms    1.40x
+   * 12 held,  6 listed        some 169.0 ms   set 207.9 ms    1.23x
+   * 24 held, all 24 listed    some 263.8 ms   set 333.8 ms    1.27x
+   * 32 held, all 32 listed    some 371.8 ms   set 397.9 ms    1.07x
+   * 32 held, 16 listed        some 402.1 ms   set 437.0 ms    1.09x
+   * ```
+   *
+   * The scratch `Set` is slower at every size tried, and it is still slower at 32 rows — nearly
+   * three times the largest board this game fills. Building the set costs more than the linear
+   * scans it replaces when the scans are this short, and the closure is not the expense the
+   * shape of the code suggests. So this is the right code already, and the measurement is
+   * recorded here so the next reader of that `some` does not have to take it again.
    */
   private pruneRowsMissingFrom(rows: readonly ReplicatedScoreRow[]): boolean {
     let removed = false;

@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { EV, createGameBus, type GameBus } from '../core/Events';
 import { LocalIdentity } from './LocalIdentity';
 import {
+  SCORE_COLUMNS,
   ScoreSystem,
   accuracy,
   compareRows,
   killDeath,
   type PlayerScore,
   type ReplicatedScoreRow,
+  type ScoreColumns,
 } from './ScoreSystem';
 
 /**
@@ -24,7 +26,11 @@ import {
  * removes whatever the server stopped listing.
  */
 
-const ZERO_COLUMNS = {
+/**
+ * Typed, so this copy of the list cannot drift (BACKLOG #15). A column added to `ScoreColumns`
+ * and not added here is a compile error, which is what makes the two walks below exhaustive.
+ */
+const ZERO_COLUMNS: ScoreColumns = {
   kills: 0,
   deaths: 0,
   assists: 0,
@@ -649,24 +655,10 @@ describe('the end of a round and the end of a match', () => {
     score.addRoundWin('A');
     fire(bus, 1, 8, 4);
     score.reset();
+    // Walked rather than written out (BACKLOG #15): this assertion used to name the fifteen
+    // itself, so a sixteenth column would have been left unchecked without anything saying so.
     for (const row of score.rows) {
-      expect({
-        kills: row.kills,
-        deaths: row.deaths,
-        assists: row.assists,
-        score: row.score,
-        streak: row.streak,
-        bestStreak: row.bestStreak,
-        shotsFired: row.shotsFired,
-        shotsHit: row.shotsHit,
-        damageDealt: row.damageDealt,
-        headshots: row.headshots,
-        captures: row.captures,
-        defends: row.defends,
-        plants: row.plants,
-        defuses: row.defuses,
-        tags: row.tags,
-      }).toEqual(ZERO_COLUMNS);
+      for (const key of SCORE_COLUMNS) expect([key, row[key]]).toEqual([key, 0]);
     }
     expect(score.rows.length).toBe(3);
     expect(score.team('A')).toEqual({ score: 0, kills: 0, deaths: 0, rounds: 0 });
@@ -722,4 +714,60 @@ describe('the figures the board is read through', () => {
     ];
     expect([...rows].sort(compareRows)).toEqual([rows[1], rows[2], rows[0]]);
   });
+});
+
+/**
+ * The three lists that are still written out, driven one column at a time (BACKLOG #15).
+ *
+ * `register`'s literal is checked by the compiler, because it builds a whole `PlayerScore`, and
+ * the wire row is the same type as the held row now. The three that remain —  `reset`,
+ * `haveColumnsChanged` and `copyColumns` — assign and compare field by field, so a column left
+ * out of one of them is not a compile error. It is a column that never updates, or a column
+ * whose change does not move `serial` and therefore never replicates at all; on screen both are
+ * a column of stale numbers.
+ *
+ * So each column is driven through all three on its own. A missing `copyColumns` line fails the
+ * copy assertion, a missing `haveColumnsChanged` term fails the serial assertion, and a missing
+ * `reset` line fails the second case — each naming the column in the test's own title.
+ */
+describe('every column, one at a time', () => {
+  /** A `Partial` with one column set, built this way because the key is a variable. */
+  function only(key: (typeof SCORE_COLUMNS)[number], value: number): Partial<ReplicatedScoreRow> {
+    const over: Partial<ReplicatedScoreRow> = {};
+    (over as Record<string, number>)[key] = value;
+    return over;
+  }
+
+  it('is exactly what SCORE_COLUMNS names, and nothing else', () => {
+    expect([...SCORE_COLUMNS].sort()).toEqual(Object.keys(ZERO_COLUMNS).sort());
+  });
+
+  for (const key of SCORE_COLUMNS) {
+    it(`replicates ${key}: the serial moves and the value lands`, () => {
+      const { score } = board();
+      const settled = [wireRow(1, 'ALPHA', 'A'), wireRow(2, 'BRAVO', 'B'), wireRow(3, 'CINDER', 'B')];
+      score.applyReplicated(settled);
+      const before = score.serial;
+      // The same board with one column of one row changed, and nothing else.
+      score.applyReplicated([
+        wireRow(1, 'ALPHA', 'A', only(key, 5)),
+        wireRow(2, 'BRAVO', 'B'),
+        wireRow(3, 'CINDER', 'B'),
+      ]);
+      expect(score.serial).toBeGreaterThan(before);
+      expect(score.row(1)?.[key]).toBe(5);
+    });
+
+    it(`zeroes ${key} on reset`, () => {
+      const { score } = board();
+      score.applyReplicated([
+        wireRow(1, 'ALPHA', 'A', only(key, 7)),
+        wireRow(2, 'BRAVO', 'B'),
+        wireRow(3, 'CINDER', 'B'),
+      ]);
+      expect(score.row(1)?.[key]).toBe(7);
+      score.reset();
+      expect(score.row(1)?.[key]).toBe(0);
+    });
+  }
 });

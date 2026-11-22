@@ -35,6 +35,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { BOT_DIFFICULTIES, BOT_DIFFICULTY_BLURBS, BOT_DIFFICULTY_NAMES, type BotDifficulty } from '../../shared/ai/DifficultyTiers';
 import type { GameModeId } from '../../shared/modes/GameMode';
 import { findMap, MAPS, MODES, modesForMap, type MapEntry, type ModeEntry } from '../../shared/modes/ModeRegistry';
@@ -130,8 +131,7 @@ export function paintPlaySolo(deps: PlaySoloDeps): { root: HTMLElement; focus: H
   const testbed = map.testbed;
   const modeEntry = MODES.find((m) => m.id === selection.modeId) ?? MODES[0]!;
 
-  const root = document.createElement('section');
-  root.className = 'ps';
+  const root = el('section', 'ps');
   root.classList.toggle('ps--testbed', testbed);
 
   root.appendChild(paintLeft(map, deps));
@@ -147,33 +147,24 @@ export function paintPlaySolo(deps: PlaySoloDeps): { root: HTMLElement; focus: H
 // -- the left column: the hero and the strip ---------------------------------------
 
 function paintLeft(map: MapEntry, deps: PlaySoloDeps): HTMLElement {
-  const left = document.createElement('div');
-  left.className = 'ps-left';
+  const left = el('div', 'ps-left');
   left.append(paintHero(map, deps), paintStrip(map, deps));
   return left;
 }
 
 /** The hero: the picture, the pager over it, the name and the tags in its foot. */
 function paintHero(map: MapEntry, deps: PlaySoloDeps): HTMLElement {
-  const hero = document.createElement('div');
-  hero.className = 'ps-hero';
+  const hero = el('div', 'ps-hero');
   const img = mapPicture(map, 'ps-hero__img');
-  const shade = document.createElement('div');
-  shade.className = 'ps-hero__shade';
+  const shade = el('div', 'ps-hero__shade');
 
-  const body = document.createElement('div');
-  body.className = 'ps-hero__body';
-  const label = document.createElement('span');
-  label.className = 'op-label ps-hero__label';
-  label.textContent = map.testbed ? 'TRAINING MAP' : 'COMBAT MAP';
+  const body = el('div', 'ps-hero__body');
+  const label = el('span', 'op-label ps-hero__label', map.testbed ? 'TRAINING MAP' : 'COMBAT MAP');
   const name = document.createElement('h2');
   name.className = 'ps-hero__name';
   name.textContent = map.name;
-  const tagline = document.createElement('span');
-  tagline.className = 'ps-hero__tagline';
-  tagline.textContent = map.tagline;
-  const tags = document.createElement('div');
-  tags.className = 'ps-tags';
+  const tagline = el('span', 'ps-hero__tagline', map.tagline);
+  const tags = el('div', 'ps-tags');
   for (const text of map.tags) tags.appendChild(tagChip(text));
   body.append(label, name, tagline, tags);
 
@@ -184,12 +175,9 @@ function paintHero(map: MapEntry, deps: PlaySoloDeps): HTMLElement {
 /** The pager in the hero's corner: the map's number out of all of them, and a step each way. */
 function paintPager(map: MapEntry, deps: PlaySoloDeps): HTMLElement {
   const index = MAPS.indexOf(map);
-  const pager = document.createElement('div');
-  pager.className = 'ps-pager';
+  const pager = el('div', 'ps-pager');
   const prev = arrowButton(CHEVRON_LEFT, 'Previous map', () => deps.onPickMap(MAPS[(index + MAPS.length - 1) % MAPS.length]!.id));
-  const count = document.createElement('span');
-  count.className = 'ps-pager__count op-num';
-  count.textContent = `${twoDigits(index + 1)} / ${twoDigits(MAPS.length)}`;
+  const count = el('span', 'ps-pager__count op-num', `${twoDigits(index + 1)} / ${twoDigits(MAPS.length)}`);
   const next = arrowButton(CHEVRON, 'Next map', () => deps.onPickMap(MAPS[(index + 1) % MAPS.length]!.id));
   pager.append(prev, count, next);
   return pager;
@@ -197,10 +185,8 @@ function paintPager(map: MapEntry, deps: PlaySoloDeps): HTMLElement {
 
 /** The strip: every map as a card, the testbed badged. */
 function paintStrip(map: MapEntry, deps: PlaySoloDeps): HTMLElement {
-  const maps = document.createElement('div');
-  maps.className = 'ps-maps';
-  const head = document.createElement('div');
-  head.className = 'ps-sec__head';
+  const maps = el('div', 'ps-maps');
+  const head = el('div', 'ps-sec__head');
   head.appendChild(sectionLabel('MAPS'));
   const strip = optionList('ps-maps__strip', 'Maps');
   for (const entry of MAPS) strip.appendChild(mapCard(entry, entry.id === map.id, deps));
@@ -216,12 +202,9 @@ function mapCard(entry: MapEntry, on: boolean, deps: PlaySoloDeps): HTMLButtonEl
   card.classList.toggle('ps-card--testbed', entry.testbed);
   card.setAttribute('role', 'option');
   card.setAttribute('aria-selected', on ? 'true' : 'false');
-  const foot = document.createElement('span');
-  foot.className = 'ps-card__foot';
+  const foot = el('span', 'ps-card__foot');
   if (entry.testbed) foot.appendChild(makeIconSvg(FLASK, GLYPH_VIEWBOX, 'ps-card__badge'));
-  const cname = document.createElement('span');
-  cname.className = 'ps-card__name';
-  cname.textContent = entry.name;
+  const cname = el('span', 'ps-card__name', entry.name);
   foot.appendChild(cname);
   card.append(mapPicture(entry, 'ps-card__img'), foot);
   card.addEventListener('click', () => deps.onPickMap(entry.id));
@@ -231,8 +214,7 @@ function mapCard(entry: MapEntry, on: boolean, deps: PlaySoloDeps): HTMLButtonEl
 // -- the right column: the map row, the modes, the difficulty, the testbed ------------
 
 function paintRight(map: MapEntry, modeEntry: ModeEntry, deps: PlaySoloDeps): HTMLElement {
-  const right = document.createElement('div');
-  right.className = 'ps-right';
+  const right = el('div', 'ps-right');
   right.append(
     paintMapSection(map, deps),
     paintModeSection(map, modeEntry, deps),
@@ -249,9 +231,7 @@ function paintMapSection(map: MapEntry, deps: PlaySoloDeps): HTMLElement {
   row.type = 'button';
   row.className = 'ps-maprow';
   row.title = 'Next map';
-  const rname = document.createElement('span');
-  rname.className = 'ps-maprow__name';
-  rname.textContent = map.name;
+  const rname = el('span', 'ps-maprow__name', map.name);
   row.append(mapPicture(map, 'ps-maprow__img'), rname, makeIconSvg(CHEVRON, GLYPH_VIEWBOX, 'ps-maprow__chevron'));
   const index = MAPS.indexOf(map);
   row.addEventListener('click', () => deps.onPickMap(MAPS[(index + 1) % MAPS.length]!.id));
@@ -290,8 +270,7 @@ function paintDifficultySection(map: MapEntry, deps: PlaySoloDeps): HTMLElement 
     card.addEventListener('click', () => deps.onPickDifficulty(tier));
     diffs.appendChild(card);
   }
-  const blurb = document.createElement('p');
-  blurb.className = 'ps-blurb';
+  const blurb = el('p', 'ps-blurb');
   blurb.textContent = testbed ? 'The range fills no roster; there is nobody for a difficulty to describe.' : `${BOT_DIFFICULTY_BLURBS[deps.selection.difficulty]}.`;
   diffSec.append(diffs, blurb);
   return diffSec;
@@ -299,20 +278,13 @@ function paintDifficultySection(map: MapEntry, deps: PlaySoloDeps): HTMLElement 
 
 /** The TESTBED plate: its own door. */
 function paintTestbedPlate(map: MapEntry, deps: PlaySoloDeps): HTMLElement {
-  const plate = document.createElement('div');
-  plate.className = 'ps-testbed';
+  const plate = el('div', 'ps-testbed');
   plate.classList.toggle('is-on', map.testbed);
-  const top = document.createElement('div');
-  top.className = 'ps-testbed__top';
+  const top = el('div', 'ps-testbed__top');
   top.appendChild(makeIconSvg(FLASK, GLYPH_VIEWBOX, 'ps-testbed__icon'));
-  const titles = document.createElement('div');
-  titles.className = 'ps-testbed__titles';
-  const tt = document.createElement('span');
-  tt.className = 'ps-testbed__title';
-  tt.textContent = 'TESTBED';
-  const ts = document.createElement('span');
-  ts.className = 'op-label ps-testbed__sub';
-  ts.textContent = 'WEAPON TEST FACILITY';
+  const titles = el('div', 'ps-testbed__titles');
+  const tt = el('span', 'ps-testbed__title', 'TESTBED');
+  const ts = el('span', 'op-label ps-testbed__sub', 'WEAPON TEST FACILITY');
   titles.append(tt, ts);
 
   const testbedEntry = MAPS.find((m) => m.testbed);
@@ -333,8 +305,7 @@ function paintTestbedPlate(map: MapEntry, deps: PlaySoloDeps): HTMLElement {
   const rangeClass = ctaButton('ps-testbed__class', 'RANGE CLASS', null, () => deps.onRangeClass());
   top.append(titles, rangeClass, enter);
 
-  const note = document.createElement('div');
-  note.className = 'ps-testbed__note';
+  const note = el('div', 'ps-testbed__note');
   note.appendChild(makeIconSvg(INFO, GLYPH_VIEWBOX, 'ps-testbed__info'));
   const nt = document.createElement('span');
   nt.textContent = 'This map is for training and experimentation only. Game modes and bot difficulty are disabled.';
@@ -350,8 +321,7 @@ function paintBar(
   modeEntry: ModeEntry,
   deps: PlaySoloDeps,
 ): { bar: HTMLElement; launch: HTMLButtonElement } {
-  const bar = document.createElement('div');
-  bar.className = 'op-actionbar ps-bar';
+  const bar = el('div', 'op-actionbar ps-bar');
   // BACK first, at the bar's left end: the same button Settings ends on, in the same place.
   const back = ctaButton('ps-back', 'BACK', ARROW_LEFT, () => deps.onBack());
   const launch = ctaButton(
@@ -367,14 +337,10 @@ function paintBar(
 
 /** OPERATION SUMMARY: the three facts the match will be started from. */
 function paintSummary(map: MapEntry, modeEntry: ModeEntry, deps: PlaySoloDeps): HTMLElement {
-  const summary = document.createElement('div');
-  summary.className = 'op-actionbar__lead ps-summary';
-  const head = document.createElement('span');
-  head.className = 'ps-summary__head';
+  const summary = el('div', 'op-actionbar__lead ps-summary');
+  const head = el('span', 'ps-summary__head');
   head.appendChild(makeIconSvg(CLOCK, GLYPH_VIEWBOX, 'ps-summary__icon'));
-  const ht = document.createElement('span');
-  ht.className = 'ps-summary__title';
-  ht.textContent = 'OPERATION SUMMARY';
+  const ht = el('span', 'ps-summary__title', 'OPERATION SUMMARY');
   head.appendChild(ht);
   summary.appendChild(head);
   const facts: readonly (readonly [string, string])[] = [
@@ -387,16 +353,11 @@ function paintSummary(map: MapEntry, modeEntry: ModeEntry, deps: PlaySoloDeps): 
 }
 
 function fact(label: string, value: string): HTMLElement {
-  const el = document.createElement('span');
-  el.className = 'ps-fact';
-  const l = document.createElement('span');
-  l.className = 'op-label ps-fact__label';
-  l.textContent = label;
-  const v = document.createElement('span');
-  v.className = 'ps-fact__value';
-  v.textContent = value;
-  el.append(l, v);
-  return el;
+  const node = el('span', 'ps-fact');
+  const l = el('span', 'op-label ps-fact__label', label);
+  const v = el('span', 'ps-fact__value', value);
+  node.append(l, v);
+  return node;
 }
 
 // -- primitives ---------------------------------------------------------------------------
@@ -406,8 +367,7 @@ function fact(label: string, value: string): HTMLElement {
  * `object-fit`. Never dragged, and never in the accessibility tree: the name is beside it.
  */
 function mapPicture(map: MapEntry, className: string): HTMLImageElement {
-  const img = document.createElement('img');
-  img.className = className;
+  const img = el('img', className);
   img.src = map.picture;
   img.alt = '';
   img.draggable = false;
@@ -415,8 +375,7 @@ function mapPicture(map: MapEntry, className: string): HTMLImageElement {
 }
 
 function tagChip(text: string): HTMLElement {
-  const tag = document.createElement('span');
-  tag.className = 'ps-tag';
+  const tag = el('span', 'ps-tag');
   tag.appendChild(makeIconSvg(TAG_MARK, GLYPH_VIEWBOX, 'ps-tag__mark'));
   const t = document.createElement('span');
   t.textContent = text;
@@ -426,18 +385,12 @@ function tagChip(text: string): HTMLElement {
 
 /** A numbered block of the right column: `01 MAP`, and the reason it is locked when it is. */
 function numberedSection(number: string, title: string, note = ''): HTMLElement {
-  const sec = document.createElement('div');
-  sec.className = 'ps-sec';
-  const head = document.createElement('div');
-  head.className = 'ps-sec__head';
-  const num = document.createElement('span');
-  num.className = 'ps-sec__num op-num';
-  num.textContent = number;
+  const sec = el('div', 'ps-sec');
+  const head = el('div', 'ps-sec__head');
+  const num = el('span', 'ps-sec__num op-num', number);
   head.append(num, sectionLabel(title));
   if (note !== '') {
-    const n = document.createElement('span');
-    n.className = 'op-label ps-sec__note';
-    n.textContent = note;
+    const n = el('span', 'op-label ps-sec__note', note);
     head.appendChild(n);
   }
   sec.appendChild(head);
@@ -445,16 +398,13 @@ function numberedSection(number: string, title: string, note = ''): HTMLElement 
 }
 
 function sectionLabel(text: string): HTMLElement {
-  const label = document.createElement('span');
-  label.className = 'ps-sec__label';
-  label.textContent = text;
+  const label = el('span', 'ps-sec__label', text);
   return label;
 }
 
 /** A listbox a screen reader is told the name of: the map strip, the modes, the tiers. */
 function optionList(className: string, ariaLabel: string): HTMLElement {
-  const list = document.createElement('div');
-  list.className = className;
+  const list = el('div', className);
   list.setAttribute('role', 'listbox');
   list.setAttribute('aria-label', ariaLabel);
   return list;
@@ -470,9 +420,7 @@ function optionCard(glyph: string, name: string, on: boolean, disabled: boolean)
   card.setAttribute('role', 'option');
   card.setAttribute('aria-selected', on ? 'true' : 'false');
   card.appendChild(makeIconSvg(glyph, GLYPH_VIEWBOX, 'ps-opt__glyph'));
-  const label = document.createElement('span');
-  label.className = 'ps-opt__name';
-  label.textContent = name;
+  const label = el('span', 'ps-opt__name', name);
   card.appendChild(label);
   return card;
 }

@@ -14,6 +14,11 @@
  * text, a tag built in a loop — and are left alone, because a helper that swallowed those would
  * be a helper nobody could read a call to.
  *
+ * Of those 416, **340 across 33 files** now call this function. The 76 that do not are in seven
+ * files where `el` is also an interface field name (`Row.el`), so `{ el, … }` shorthand would
+ * change meaning if the local were renamed out of the way — see BACKLOG #78 for the list and why
+ * each one stayed.
+ *
  * ## Why this file rather than `ScreenChrome`
  *
  * `ScreenChrome` holds the furniture every screen shares: a header, a footer, a pager arrow.

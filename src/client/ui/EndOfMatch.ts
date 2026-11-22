@@ -1108,10 +1108,8 @@ function makeTab(label: string): HTMLButtonElement {
 }
 
 function vs(): HTMLElement {
-  const el = document.createElement('span');
-  el.className = 'dbf-vs';
-  el.textContent = 'VS';
-  return el;
+  const node = el('span', 'dbf-vs', 'VS');
+  return node;
 }
 
 function stat(label: string, value: string): HTMLElement {

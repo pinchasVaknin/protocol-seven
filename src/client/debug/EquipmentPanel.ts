@@ -148,10 +148,9 @@ export class EquipmentPanel {
   // -- internals -------------------------------------------------------------
 
   private note(): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'dbg-note';
-    this.section.element.appendChild(el);
-    return el;
+    const node = el('div', 'dbg-note');
+    this.section.element.appendChild(node);
+    return node;
   }
 
   private buildControls(): HTMLElement {

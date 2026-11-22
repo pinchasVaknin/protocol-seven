@@ -10,6 +10,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import { clamp01 } from '../../shared/core/MathUtil';
 import { BearingIndicator } from './BearingIndicator';
 //#endregion
@@ -187,8 +188,7 @@ export class HudTactical {
     this.weaponPrimary = weapons.primary;
     this.weaponSecondary = weapons.secondary;
 
-    const gear = document.createElement('div');
-    gear.className = 'hud-tac__gear';
+    const gear = el('div', 'hud-tac__gear');
     const lethal = this.createGearSlot();
     this.lethalLabel = lethal.label;
     this.lethalCount = lethal.count;
@@ -297,23 +297,17 @@ export class HudTactical {
   // ===================================== PRIVATE METHODS ====================================== \\
   //#region Private Methods
   private createWeaponPlate(): WeaponPlate {
-    const root = document.createElement('div');
-    root.className = 'hud-tac__weapons';
-    const primary = document.createElement('span');
-    primary.className = 'hud-tac__weapon op-label';
-    const secondary = document.createElement('span');
-    secondary.className = 'hud-tac__weapon hud-tac__weapon--alt op-label';
+    const root = el('div', 'hud-tac__weapons');
+    const primary = el('span', 'hud-tac__weapon op-label');
+    const secondary = el('span', 'hud-tac__weapon hud-tac__weapon--alt op-label');
     root.append(primary, secondary);
     return { root, primary, secondary };
   }
 
   private createGearSlot(): GearSlot {
-    const root = document.createElement('div');
-    root.className = 'hud-tac__slot';
-    const label = document.createElement('span');
-    label.className = 'hud-tac__slot-label op-label';
-    const count = document.createElement('span');
-    count.className = 'hud-tac__slot-count op-num';
+    const root = el('div', 'hud-tac__slot');
+    const label = el('span', 'hud-tac__slot-label op-label');
+    const count = el('span', 'hud-tac__slot-count op-num');
     root.append(label, count);
     return { root, label, count };
   }
@@ -324,39 +318,32 @@ export class HudTactical {
    * grenade count and belongs in the same row (M6, S6.3).
    */
   private createUpgradeSlot(): UpgradeSlot {
-    const root = document.createElement('div');
-    root.className = 'hud-tac__slot hud-tac__slot--upgrade';
-    const fill = document.createElement('i');
-    fill.className = 'hud-tac__charge';
-    const label = document.createElement('span');
-    label.className = 'hud-tac__slot-label op-label';
+    const root = el('div', 'hud-tac__slot hud-tac__slot--upgrade');
+    const fill = el('i', 'hud-tac__charge');
+    const label = el('span', 'hud-tac__slot-label op-label');
     root.append(fill, label);
     return { root, fill, label };
   }
 
   private createBar(className: string): BarPair {
-    const bar = document.createElement('div');
-    bar.className = className;
+    const bar = el('div', className);
     const fill = document.createElement('i');
     bar.appendChild(fill);
     return { bar, fill };
   }
 
   private createFlashLayer(): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'hud-flash';
-    el.style.opacity = '0';
-    return el;
+    const node = el('div', 'hud-flash');
+    node.style.opacity = '0';
+    return node;
   }
 
   private createScopeLayer(): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'hud-scope';
-    el.style.opacity = '0';
-    const reticle = document.createElement('i');
-    reticle.className = 'hud-scope__reticle';
-    el.appendChild(reticle);
-    return el;
+    const node = el('div', 'hud-scope');
+    node.style.opacity = '0';
+    const reticle = el('i', 'hud-scope__reticle');
+    node.appendChild(reticle);
+    return node;
   }
 
   /** The three writes a slot makes. Both slots make them; only the guard above differs. */

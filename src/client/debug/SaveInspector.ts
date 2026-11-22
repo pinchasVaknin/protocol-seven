@@ -212,10 +212,8 @@ export class SaveInspector {
     head.textContent = headline;
     this.log.appendChild(head);
     for (const line of lines) {
-      const el = document.createElement('div');
-      el.className = 'dbg-log__line';
-      el.textContent = line;
-      this.log.appendChild(el);
+      const node = el('div', 'dbg-log__line', line);
+      this.log.appendChild(node);
     }
   }
 }

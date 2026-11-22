@@ -18,6 +18,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { el } from './Dom';
 import type { WeaponDef } from '../../shared/weapons/WeaponDefs';
 //#endregion
 
@@ -198,16 +199,12 @@ export class LoadoutStats {
   // ===================================== PRIVATE METHODS ====================================== \\
   //#region Private Methods
   private makeRow(row: StatRow, baseValue: number, resolvedValue: number, moved: boolean): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'lo-stat';
-    el.classList.toggle('is-changed', moved);
+    const node = el('div', 'lo-stat');
+    node.classList.toggle('is-changed', moved);
 
-    const label = document.createElement('span');
-    label.className = 'lo-stat__label';
-    label.textContent = row.label;
+    const label = el('span', 'lo-stat__label', row.label);
 
-    const value = document.createElement('span');
-    value.className = 'lo-stat__value op-num';
+    const value = el('span', 'lo-stat__value op-num');
 
     if (!moved) {
       value.textContent = format(resolvedValue, row.digits, row.unit);
@@ -215,8 +212,8 @@ export class LoadoutStats {
       value.append(...movedParts(row, baseValue, resolvedValue));
     }
 
-    el.append(label, value);
-    return el;
+    node.append(label, value);
+    return node;
   }
   //#endregion
 }
@@ -226,12 +223,8 @@ export class LoadoutStats {
 //#region Internal Helpers
 /** The three spans a moved row reads as: where it was, an arrow, and where it is now. */
 function movedParts(row: StatRow, baseValue: number, resolvedValue: number): HTMLElement[] {
-  const from = document.createElement('span');
-  from.className = 'lo-stat__from';
-  from.textContent = format(baseValue, row.digits, row.unit);
-  const arrow = document.createElement('span');
-  arrow.className = 'lo-stat__arrow';
-  arrow.textContent = '→';
+  const from = el('span', 'lo-stat__from', format(baseValue, row.digits, row.unit));
+  const arrow = el('span', 'lo-stat__arrow', '→');
   const to = document.createElement('span');
   const better = resolvedValue > baseValue === row.higherIsBetter;
   to.className = `lo-stat__to ${better ? 'is-better' : 'is-worse'}`;
@@ -241,8 +234,7 @@ function movedParts(row: StatRow, baseValue: number, resolvedValue: number): HTM
 
 /** The one line of prose under the table: how many of the rows above it moved. */
 function makeFooter(changed: number): HTMLElement {
-  const footer = document.createElement('div');
-  footer.className = 'lo-stats__footer op-label';
+  const footer = el('div', 'lo-stats__footer op-label');
   footer.textContent =
     changed === 0
       ? 'No modifiers fitted — these are the base values'

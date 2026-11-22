@@ -227,10 +227,9 @@ export class AiPanel {
 
   private ensureLabels(count: number): void {
     while (this.labels.length < count) {
-      const el = document.createElement('div');
-      el.className = 'dbg-botlabel op-label';
-      this.labelLayer.appendChild(el);
-      this.labels.push(el);
+      const node = el('div', 'dbg-botlabel op-label');
+      this.labelLayer.appendChild(node);
+      this.labels.push(node);
     }
   }
 

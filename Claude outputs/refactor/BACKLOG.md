@@ -512,7 +512,7 @@ needs the match that ends **on a kill** described above.
 
 ## 6b. Duplication that spans units — opened by A16
 
-### #78 — Division C writes the same three lines of DOM about five hundred times · `open` *(opened 2026-11-10 by C19)*
+### #78 — Division C writes the same three lines of DOM about five hundred times · `closed` *(opened 2026-11-10 by C19; done 2026-11-22)*
 
 **Files** every screen in `src/client/ui/`. **Origin** C19's Step 1, counted across its own
 eight files first and then the division.
@@ -551,8 +551,9 @@ has to take it again:
 - `ScreenChrome.ts` is **not** the home, for the reason the entry gives: it would become the
   division's DOM library by accident. A file named `Dom.ts` says what it is.
 
-**Most of it was done on 2026-11-22.** `src/client/ui/Dom.ts` exists and **275 sites across 30
-files** go through `el()` — 621 lines deleted for 305 added. The conversion was mechanical where
+**Done 2026-11-22.** `src/client/ui/Dom.ts` exists and **340 sites across 33 files** go
+through `el()` — 792 lines deleted for 394 added, in two commits: 275 sites in the bulk pass and
+65 more in a second pass over the files the first one refused. The conversion was mechanical where
 the shape was exact and refused everywhere else, which is the only way a pass over this many
 sites is safe:
 
@@ -566,10 +567,25 @@ sites is safe:
   a handful of files bind `el` as a local or a parameter, so the import is shadowed at some
   sites and not others. Those are the seven still untouched.
 
-**141 convertible sites remain in 15 files**, and they need the same care rather than another
-pass: seven because `el` is taken there as a local or a parameter (rename the local first), the
-rest because they fell outside the exact shape. That is a smaller, sharper job than the one this
-entry opened with, and it no longer needs a decision.
+**The second pass took the files the first one refused**, by renaming the local `el` to `node`
+inside its own block before converting — again with `tsc` as the judge, one file at a time.
+`HudTactical`, `LoadoutStats` and `PlaySolo` took 59 sites between them that way, and six single
+sites followed in `EndOfMatch`, `AiPanel`, `EquipmentPanel`, `MetaPanel`, `SaveInspector` and
+`StreakPanel`.
+
+**76 sites in 7 files are deliberately left**, and the reason is the same one in five of them:
+`el` is not only a local there, it is an **interface field name** — `Row.el`, `Slot.el` — so
+`{ el, … }` shorthand carries it into an object literal, and renaming the local to `node` makes
+the literal stop typechecking. `Killfeed`, `Scoreboard` and `LoadoutEditor` each failed exactly
+that way and were reverted whole; `Hud` has two such fields and failed the same way in the second
+pass. `XpSummary` binds `el` as a parameter *and* as a local in adjacent functions. The last few
+are `this.body = document.createElement('div')` — an assignment to a field rather than a `const`
+declaration, which the pass never matched on purpose, since the two shapes read differently and
+one regex covering both is a regex nobody can check.
+
+Those seven want a human reading each site, not a third pass. Nothing waits on a decision: the
+helper exists, the division imports it, and the remaining 76 are the sites where the three lines
+are the clearer code.
 
 **Verify** `npm run check` and every division-C BROWSER checksum, which between them hold the
 element tree of every screen in the game.

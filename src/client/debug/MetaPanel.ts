@@ -284,10 +284,8 @@ export class MetaPanel extends Disposable {
     perMatch.textContent = sim.breakdown.map((b) => `${b.label} ${b.xp}`).join(' · ');
     this.simBody.appendChild(perMatch);
     for (const line of simulationToLines(sim)) {
-      const el = document.createElement('div');
-      el.className = 'dbg-log__line';
-      el.textContent = line;
-      this.simBody.appendChild(el);
+      const node = el('div', 'dbg-log__line', line);
+      this.simBody.appendChild(node);
     }
   }
 }

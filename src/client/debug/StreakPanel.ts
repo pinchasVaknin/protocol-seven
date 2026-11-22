@@ -193,12 +193,11 @@ export class StreakPanel extends Disposable {
   }
 
   private button(label: string, onClick: () => void): HTMLElement {
-    const el = document.createElement('button');
-    el.className = 'dbg-btn';
-    el.type = 'button';
-    el.textContent = label;
-    el.addEventListener('click', onClick);
-    return el;
+    const node = el('button', 'dbg-btn');
+    node.type = 'button';
+    node.textContent = label;
+    node.addEventListener('click', onClick);
+    return node;
   }
 }
 

@@ -88,7 +88,7 @@ export class Tdm extends GameMode {
     super(deps);
     this.config = config;
     this.roundSeconds = config.timeLimitSeconds;
-    this.scoreLimit = config.scoreLimit;
+    this.scoreLimit = this.scoreTarget(config.scoreLimit);
   }
   //#endregion
 
@@ -152,7 +152,7 @@ export class Tdm extends GameMode {
     return teamScoreWinCondition(
       this.teamScore('A'),
       this.teamScore('B'),
-      this.config.scoreLimit,
+      this.scoreLimit,
       this.ticksLeft,
       'Score limit',
     );

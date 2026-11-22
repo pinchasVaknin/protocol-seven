@@ -135,7 +135,7 @@ export class KillConfirmed extends GameMode implements ObjectiveProvider {
     super(deps);
     this.config = config;
     this.roundSeconds = config.timeLimitSeconds;
-    this.scoreLimit = config.scoreLimit;
+    this.scoreLimit = this.scoreTarget(config.scoreLimit);
   }
   //#endregion
 
@@ -218,7 +218,7 @@ export class KillConfirmed extends GameMode implements ObjectiveProvider {
     return teamScoreWinCondition(
       this.teamScore('A'),
       this.teamScore('B'),
-      this.config.scoreLimit,
+      this.scoreLimit,
       this.ticksLeft,
       'Tag limit',
     );

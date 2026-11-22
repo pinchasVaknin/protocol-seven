@@ -129,7 +129,7 @@ export class FreeForAll extends GameMode {
     super(deps);
     this.config = config;
     this.roundSeconds = config.timeLimitSeconds;
-    this.scoreLimit = config.scoreLimit;
+    this.scoreLimit = this.scoreTarget(config.scoreLimit);
   }
   //#endregion
 
@@ -196,8 +196,12 @@ export class FreeForAll extends GameMode {
      * otherwise make `ticksLeft <= 0` true on the first tick and end the match instantly —
      * turning "no clock" into "no match". The same trap sits under `scoreLimit`, where
      * `leader.kills >= 0` is true before anybody has fired.
+     *
+     * Guarded on `this.scoreLimit` rather than `this.config.scoreLimit` since BACKLOG #42: the
+     * field is `scoreTarget(config.scoreLimit)`, which is the authored limit unless a harness
+     * lowered it — and an authored 0 comes back 0, so the guard above still holds.
      */
-    if (this.config.scoreLimit > 0 && leader.kills >= this.config.scoreLimit) {
+    if (this.scoreLimit > 0 && leader.kills >= this.scoreLimit) {
       return this.result(leader, 'Kill limit', leader.kills, runnerUp);
     }
     if (this.config.timeLimitSeconds > 0 && this.ticksLeft <= 0) {

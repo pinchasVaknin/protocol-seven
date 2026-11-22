@@ -263,6 +263,7 @@ export class Server {
       currentTick: () => this.loop.currentTick,
       seed: cfg.seed,
       roundSecondsOverride: cfg.matchRoundSeconds,
+      scoreLimitOverride: cfg.matchScoreLimit,
     });
   }
 

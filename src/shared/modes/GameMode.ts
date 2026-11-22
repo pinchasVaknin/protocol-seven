@@ -120,6 +120,20 @@ export interface ModeDeps {
    */
   readonly roundSecondsOverride?: number | undefined;
   /**
+   * The score a match is won at, when a harness needs one it can reach (BACKLOG #42).
+   *
+   * `roundSecondsOverride`'s sibling, and it exists for one measurement the flow check could
+   * not take. Every harness match ends on **time**, because `MATCH_ROUND_SECONDS` guarantees
+   * it — and #42's defect needs a match that ends **on a kill**, with that kill inside the
+   * scoreboard's 250 ms rate-limit window. With no way to lower a mode's limit, the experiment
+   * meant to settle that entry could not be run at all.
+   *
+   * **A limit of 0 means "no limit" and this never overrides it.** Free-for-All's warmup and
+   * Search & Destroy say 0 on purpose; turning that into a number would end a match that is
+   * not supposed to end that way.
+   */
+  readonly scoreLimitOverride?: number | undefined;
+  /**
    * Which authored ruleset this match runs (M11, §6.4).
    *
    * `'STANDARD'` is what the menu and every earlier milestone build. `'SKIRMISH'` is the
@@ -445,6 +459,24 @@ export abstract class GameMode {
     const override = this.deps.roundSecondsOverride;
     const seconds = override !== undefined && override > 0 ? override : authoredSeconds;
     return Math.round(seconds / DT);
+  }
+
+  /**
+   * The score this match is won at: the authored one, or a harness's (BACKLOG #42).
+   *
+   * `roundTicks`' sibling for the other way a match can end. An authored 0 is "no limit" and
+   * comes back 0 whatever the override says — see `ModeDeps.scoreLimitOverride`.
+   *
+   * Every mode that has a limit now seeds its `scoreLimit` field from this **and** decides by
+   * that same field, where before the field and the win condition each read
+   * `config.scoreLimit` separately. That is the smaller half of this change and the more
+   * durable one: the number the HUD's bar counts toward and the number the match actually ends
+   * at are now one number and cannot drift.
+   */
+  protected scoreTarget(authoredLimit: number): number {
+    if (authoredLimit <= 0) return authoredLimit;
+    const override = this.deps.scoreLimitOverride;
+    return override !== undefined && override > 0 ? override : authoredLimit;
   }
   //#endregion
 }

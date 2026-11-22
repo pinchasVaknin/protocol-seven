@@ -133,7 +133,7 @@ export class Domination extends GameMode implements ObjectiveProvider {
     super(deps);
     this.config = config;
     this.roundSeconds = config.timeLimitSeconds;
-    this.scoreLimit = config.scoreLimit;
+    this.scoreLimit = this.scoreTarget(config.scoreLimit);
     for (const def of deps.mapDef.objectives) {
       if (def.kind === 'flag') this.zones.push(new ObjectiveZone(def));
     }
@@ -250,7 +250,7 @@ export class Domination extends GameMode implements ObjectiveProvider {
     return teamScoreWinCondition(
       this.teamScore('A'),
       this.teamScore('B'),
-      this.config.scoreLimit,
+      this.scoreLimit,
       this.ticksLeft,
       'Score limit',
     );

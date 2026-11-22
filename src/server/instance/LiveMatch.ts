@@ -35,6 +35,8 @@ export interface LiveMatchOptions {
   readonly summaryHoldSeconds: number;
   /** Shorten both match clocks, seconds. Zero uses the mode's authored length. Harness only. */
   readonly roundSecondsOverride: number;
+  /** End a match at this score instead of the authored one. Harness only; see BACKLOG #42. */
+  readonly scoreLimitOverride: number;
 }
 //#endregion
 
@@ -578,6 +580,7 @@ function buildDeps(options: LiveMatchOptions): MatchInstanceDeps {
     // Zero means "use the authored length". Passed as undefined rather than 0 so `MatchFlow`
     // and every mode take the same "no override" branch they take in a normal build.
     roundSecondsOverride: options.roundSecondsOverride > 0 ? options.roundSecondsOverride : undefined,
+    scoreLimitOverride: options.scoreLimitOverride > 0 ? options.scoreLimitOverride : undefined,
   });
 
   return {

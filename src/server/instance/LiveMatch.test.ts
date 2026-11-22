@@ -68,6 +68,7 @@ function options(overrides: Partial<LiveMatchOptions> = {}): LiveMatchOptions {
     readyTimeoutMs: READY_TIMEOUT_MS,
     summaryHoldSeconds: SUMMARY_HOLD_SECONDS,
     roundSecondsOverride: 0,
+    scoreLimitOverride: 0,
     ...overrides,
   };
 }

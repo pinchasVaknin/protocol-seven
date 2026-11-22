@@ -95,6 +95,8 @@ export interface InProcessAllocatorOptions {
   readonly seed: number;
   /** Shorten every allocated match's round, seconds. Zero uses the mode's authored length. */
   readonly roundSecondsOverride?: number;
+  /** End a match at this score instead of the authored one. Harness only; see BACKLOG #42. */
+  readonly scoreLimitOverride?: number;
 }
 
 /**
@@ -207,6 +209,7 @@ export class InProcessMatchAllocator implements IMatchAllocator {
       readyTimeoutMs: this.options.readyTimeoutMs,
       summaryHoldSeconds: this.options.summaryHoldSeconds,
       roundSecondsOverride: this.options.roundSecondsOverride ?? 0,
+      scoreLimitOverride: this.options.scoreLimitOverride ?? 0,
     } satisfies LiveMatchOptions);
 
     const handle: MatchHandle = {

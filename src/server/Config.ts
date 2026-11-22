@@ -164,6 +164,19 @@ export interface ServerConfig {
    */
   readonly matchRoundSeconds: number;
 
+  /**
+   * End a live match at this score instead of the mode's authored one. Zero uses the authored.
+   *
+   * Harness only, and the sibling of `matchRoundSeconds` (BACKLOG #42). It exists because
+   * every harness match ends on **time** — the round override guarantees it — and the one
+   * defect that needs a match ending **on a kill** could not be reproduced without a limit a
+   * run can actually reach.
+   *
+   * A mode whose authored limit is 0 means "no limit" and is left alone; see
+   * `ModeDeps.scoreLimitOverride`.
+   */
+  readonly matchScoreLimit: number;
+
   // -- playtest round 4: cheat codes (F14) ------------------------------------
 
   /**
@@ -265,6 +278,7 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
       mapVoteSeconds: intOr(env['MAP_VOTE_SECONDS'], VOTE_CYCLE_CONFIG.mapVoteSeconds, 1, 120),
     },
     matchRoundSeconds: intOr(env['MATCH_ROUND_SECONDS'], 0, 0, 3600),
+    matchScoreLimit: intOr(env['MATCH_SCORE_LIMIT'], 0, 0, 1000),
     cheatsEnabled: (env['CHEATS_ENABLED'] ?? '') === '1',
     // Security audit 2026-10-04, part 3. See the fields' own notes above.
     clientIpHeader: (env['CLIENT_IP_HEADER'] ?? '').trim().toLowerCase(),
@@ -322,7 +336,8 @@ export function usesShortenedTimings(cfg: ServerConfig): boolean {
     cfg.voteCycle.playSeconds !== VOTE_CYCLE_CONFIG.playSeconds ||
     cfg.voteCycle.modeVoteSeconds !== VOTE_CYCLE_CONFIG.modeVoteSeconds ||
     cfg.voteCycle.mapVoteSeconds !== VOTE_CYCLE_CONFIG.mapVoteSeconds ||
-    cfg.matchRoundSeconds > 0
+    cfg.matchRoundSeconds > 0 ||
+    cfg.matchScoreLimit > 0
   );
 }
 

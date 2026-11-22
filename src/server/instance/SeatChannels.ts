@@ -486,6 +486,27 @@ export class SeatChannels {
  * ends it**: the audit caught it as one run in five with two rows off on every client — the
  * killer's kills and the victim's deaths. So `ending` waives the rate limit. It does not waive
  * *changed*: a seat already holding the final serial is sent nothing.
+ *
+ * ## Proved on 2026-11-22, by a controlled pair
+ *
+ * The fix shipped unproven for a month, because every harness match ends on **time** —
+ * `MATCH_ROUND_SECONDS` guarantees it — and a timed ending has no kill in its final seconds, so
+ * `changed` is already false at the forced pass and the rate limit has nothing to skip. An
+ * earlier attempt to force it by widening `SCOREBOARD_MIN_TICKS` to 600 ticks reported
+ * `0 mismatch(es)` for exactly that reason.
+ *
+ * `MATCH_SCORE_LIMIT` was added to make a harness match end **on a kill**, and with it the
+ * experiment is one line each way. Same seed, same flags, `MATCH_SCORE_LIMIT=3`:
+ *
+ * ```
+ * with this clause      FLOW CHECK PASSED.   30 rows compared, 0 mismatch(es)
+ * clause removed        FLOW CHECK FAILED.   30 rows compared, 9 mismatch(es), 3 off per client
+ * with it again         FLOW CHECK PASSED.   30 rows compared, 0 mismatch(es)
+ * ```
+ *
+ * Three rows per client rather than the audit's two, because the kill that ended this match
+ * moved three. The defect reproduces exactly where the mechanism above says it should, and this
+ * clause is what clears it.
  */
 function isBoardDue(
   board: { readonly serial: number; readonly tick: number },

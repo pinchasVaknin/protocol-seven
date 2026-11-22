@@ -137,6 +137,7 @@ function match(id = 1): LiveMatch {
     readyTimeoutMs: 5_000,
     summaryHoldSeconds: 12,
     roundSecondsOverride: 0,
+    scoreLimitOverride: 0,
   });
   live.push(made);
   return made;

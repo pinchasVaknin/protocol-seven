@@ -111,6 +111,13 @@ export interface ServerMatchOptions {
    */
   readonly roundSecondsOverride?: number;
   /**
+   * End a match at this score instead of the mode's authored one. Harness only.
+   *
+   * `roundSecondsOverride`'s sibling and, unlike it, it needs no partner: a score limit is one
+   * number read in one place. See `ModeDeps.scoreLimitOverride` and BACKLOG #42.
+   */
+  readonly scoreLimitOverride?: number;
+  /**
    * Which authored ruleset to run (M11, §6.4). `'SKIRMISH'` puts S&D on its best-of-5.
    * Undefined is `'STANDARD'`, which is what every earlier milestone's harness expects.
    */
@@ -1011,6 +1018,7 @@ export class ServerMatch extends Disposable {
       roster: this.bots.roster,
       mapDef: this.mapEntry.def,
       roundSecondsOverride: options.roundSecondsOverride,
+      scoreLimitOverride: options.scoreLimitOverride,
       variant: options.variant,
     });
   }

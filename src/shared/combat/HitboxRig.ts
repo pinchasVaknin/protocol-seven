@@ -35,6 +35,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { beginSlab, makeSlabHit, narrowSlab } from '../core/RaySlab';
 import { simCos, simSin } from '../core/SimMath';
 import { isLowStance, LOCOMOTION_IDLE_SPEED, LOCOMOTION_RUN_SPEED, type StanceId } from '../player/Stance';
 //#endregion
@@ -310,19 +311,19 @@ export const HUMANOID_LAYOUTS: readonly RigLayout[] = [
   HUMANOID_SLIDE_RIG,
 ];
 
-const EPS = 1e-6;
-
 /**
  * The interval and the face `raySlab` is narrowing, one axis at a time.
  *
- * Module-level rather than an out parameter or a closure: the slab test runs once per box per
- * shot and must not allocate. They are written and read inside a single `raySlab` call, and the
- * axis and the sign are only ever read after one has returned a hit.
+ * Module-level rather than allocated per call: the slab test runs once per box per shot. It is
+ * written and read inside a single `raySlab` call, and the axis and the sign are only ever read
+ * after one has returned a hit.
+ *
+ * The test itself is `core/RaySlab`'s now (BACKLOG #12) and this record is what is handed to
+ * it. It is **this file's own** and is never shared with `world/Geometry`, which keeps one
+ * exactly like it: a shared record would be `combat/` and `world/` reading each other's
+ * scratch, which is the coupling that kept the two copies apart in the first place.
  */
-let slabMin = 0;
-let slabMax = 0;
-let slabAxis = 0;
-let slabSign = 0;
+const slab = makeSlabHit();
 //#endregion
 
 // ====================================== CLASS HitboxRig ======================================= \\
@@ -531,8 +532,8 @@ export class HitboxRig {
       if (t < 0) continue;
       bestT = t;
       bestIndex = i;
-      bestAxis = slabAxis;
-      bestSign = slabSign;
+      bestAxis = slab.axis;
+      bestSign = slab.sign;
     }
 
     this.hitT = bestT;
@@ -787,48 +788,14 @@ function raySlab(
   hz: number,
   maxT: number,
 ): number {
-  slabMin = 0;
-  slabMax = maxT;
-  slabAxis = 0;
-  slabSign = 0;
+  beginSlab(slab, maxT);
 
-  if (!narrowSlab(ox, dx, hx, 0)) return -1;
-  if (!narrowSlab(oy, dy, hy, 1)) return -1;
-  if (!narrowSlab(oz, dz, hz, 2)) return -1;
+  if (!narrowSlab(slab, ox, dx, hx, 0)) return -1;
+  if (!narrowSlab(slab, oy, dy, hy, 1)) return -1;
+  if (!narrowSlab(slab, oz, dz, hz, 2)) return -1;
 
   // The ray started inside the box; report a face pointing back at the shooter.
-  if (slabSign === 0) slabSign = 1;
-  return slabMin;
-}
-
-/**
- * One axis of `raySlab`: narrows `slabMin`/`slabMax` and remembers which face the near
- * intersection came from. False once the interval has closed and the ray has missed.
- *
- * This was written out three times, once per axis, with allocation given as the reason. A
- * module-level function over module-level state allocates nothing — which is the argument
- * `world/Geometry.entrySlab` already makes for the identical test next door. The in-range test
- * for a parallel ray is written as `!(o < -h || o > h)` rather than `o >= -h && o <= h` because
- * that is the form the three copies had, and the two differ for a NaN coordinate.
- */
-function narrowSlab(o: number, d: number, h: number, axis: number): boolean {
-  if (Math.abs(d) < EPS) return !(o < -h || o > h);
-  const inv = 1 / d;
-  let t1 = (-h - o) * inv;
-  let t2 = (h - o) * inv;
-  let s = -1;
-  if (t1 > t2) {
-    const tmp = t1;
-    t1 = t2;
-    t2 = tmp;
-    s = 1;
-  }
-  if (t1 > slabMin) {
-    slabMin = t1;
-    slabAxis = axis;
-    slabSign = s;
-  }
-  if (t2 < slabMax) slabMax = t2;
-  return slabMin <= slabMax;
+  if (slab.sign === 0) slab.sign = 1;
+  return slab.min;
 }
 //#endregion

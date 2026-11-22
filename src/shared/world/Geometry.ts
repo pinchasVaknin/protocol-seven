@@ -1,6 +1,7 @@
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
 import { clamp, clamp01 } from '../core/MathUtil';
+import { beginSlab, makeSlabHit, narrowSlab } from '../core/RaySlab';
 import type { ColliderSet } from './ColliderSet';
 //#endregion
 /**
@@ -69,10 +70,8 @@ let basis6 = 0;
 let basis7 = 0;
 let basis8 = 0;
 
-let entryMin = 0;
-let entryMax = 0;
-let entryAxis = 0;
-let entrySign = 0;
+/** `rayBox`'s own slab record. Handed to `core/RaySlab` (BACKLOG #12); never shared. */
+const entry = makeSlabHit();
 
 let exitMin = 0;
 let exitMax = 0;
@@ -202,18 +201,15 @@ export function rayBox(
 
   // Unrolled per axis over module-level state, the same way `rayBoxExit` does it below: this
   // runs per collider per raycast and must not allocate.
-  entryMin = 0;
-  entryMax = maxT;
-  entryAxis = 0;
-  entrySign = 0;
-  if (!entrySlab(lox, ldx, set.halfX(i), 0)) return false;
-  if (!entrySlab(loy, ldy, set.halfY(i), 1)) return false;
-  if (!entrySlab(loz, ldz, set.halfZ(i), 2)) return false;
+  beginSlab(entry, maxT);
+  if (!narrowSlab(entry, lox, ldx, set.halfX(i), 0)) return false;
+  if (!narrowSlab(entry, loy, ldy, set.halfY(i), 1)) return false;
+  if (!narrowSlab(entry, loz, ldz, set.halfZ(i), 2)) return false;
 
-  out.t = entryMin;
+  out.t = entry.min;
   out.index = i;
 
-  if (entrySign === 0) {
+  if (entry.sign === 0) {
     // Origin was already inside the box: report a normal facing the ray source.
     out.nx = -dx;
     out.ny = -dy;
@@ -221,9 +217,9 @@ export function rayBox(
     return true;
   }
 
-  const nlx = entryAxis === 0 ? entrySign : 0;
-  const nly = entryAxis === 1 ? entrySign : 0;
-  const nlz = entryAxis === 2 ? entrySign : 0;
+  const nlx = entry.axis === 0 ? entry.sign : 0;
+  const nly = entry.axis === 1 ? entry.sign : 0;
+  const nlz = entry.axis === 2 ? entry.sign : 0;
   if (aligned) {
     out.nx = nlx;
     out.ny = nly;
@@ -486,37 +482,6 @@ function toBoxLocalRay(
   localDy = dx * basis3 + dy * basis4 + dz * basis5;
   localDz = dx * basis6 + dy * basis7 + dz * basis8;
   return false;
-}
-
-/**
- * One slab of `rayBox`: narrows `entryMin`/`entryMax` and remembers which face the near
- * intersection came from. False once the interval has closed and the ray has missed.
- *
- * The same test as `exitSlab` below, with the entry face tracked as well — a hit needs to know
- * which way its normal points and an exit distance does not. It was written out three times,
- * once per axis, and the stated reason was allocation; module-level state and a module-level
- * function allocate nothing, which is the argument `exitSlab` already makes for itself. Three
- * copies of a slab test is three places for an epsilon to drift apart.
- */
-function entrySlab(o: number, d: number, h: number, axis: number): boolean {
-  if (Math.abs(d) < EPS) return o >= -h && o <= h;
-  const inv = 1 / d;
-  let t1 = (-h - o) * inv;
-  let t2 = (h - o) * inv;
-  let s = -1;
-  if (t1 > t2) {
-    const tmp = t1;
-    t1 = t2;
-    t2 = tmp;
-    s = 1;
-  }
-  if (t1 > entryMin) {
-    entryMin = t1;
-    entryAxis = axis;
-    entrySign = s;
-  }
-  if (t2 < entryMax) entryMax = t2;
-  return entryMin <= entryMax;
 }
 
 function exitSlab(o: number, d: number, h: number): boolean {

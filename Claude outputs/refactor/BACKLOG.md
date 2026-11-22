@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**14 open entries: 12 with a heading of their own, and the two §3 still holds inside its two clusters** (#12; #2, which absorbed #19). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two and Cluster I's first two steps on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**13 open entries: 12 with a heading of their own, and the one §3 still holds inside its last cluster** (#2, which absorbed #19). (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two and the whole of Cluster I on 2026-11-22.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -177,80 +177,6 @@ own. Those sessions are not refactor units: they may change behaviour where the 
 they are not fenced by R3.
 
 ## 3. Sequenced clusters — order matters
-
-### Cluster I — the collision core: **#12 alone now**
-
-`#6` and `#5` were closed on 2026-11-22 and this is what is left of the cluster. The sequencing
-it was built around is spent: #6 retired `Geometry`'s duplicate `clamp`/`clamp01` in favour of
-`core/MathUtil`'s (identical bodies, and the oracles proved the wiring), and #5 split
-`capsuleBoxPenetration` — 144 lines at complexity 32 — into four named helpers over sixteen
-named scratch slots, bringing the file to **nothing over a limit** and `shared/world` to no
-unexplained violation at all apart from `Raycaster.cast`, whose remainder is an agreed
-exception. Both are proved by a SIM pair in which every oracle is byte-identical, the 3,600-tick
-hash included.
-
-The warning the cluster opened with no longer applies to #12: **it does not have to go first.**
-#5 restructured `capsuleBoxPenetration`, which does not touch `entrySlab` at all — `rayBox` is
-`entrySlab`'s only caller — so nothing #12 does will be redoing #5's work.
-
-#### #12 — Unify the rig slab test with Geometry's · `needs a decision from the user` · *do second*
-
-**Files** `src/shared/combat/HitboxRig.ts`, `src/shared/world/Geometry.ts`, plus a home for the
-shared helper. **Origin** A9.
-
-`HitboxRig.narrowSlab(o, d, h, axis)` and `Geometry.entrySlab(o, d, h, axis)` are the same ray-slab
-test: same `EPS = 1e-6`, the same arithmetic character for character, and the same module-level
-state pattern for the axis and the sign, chosen in both places because the test must not allocate.
-
-A4's commit `389db4e` records that this test was written out **seven** times across the collision
-core and that A4 reduced it to two. HitboxRig's copy was in another unit, outside A4's fence, so it
-stayed — and A9 found it as the third.
-
-**The one real difference has to be settled first:** `entrySlab` tests a parallel ray's in-range
-case as `o >= -h && o <= h`; `narrowSlab` writes `!(o < -h || o > h)`. A9 kept the second form
-deliberately because it is the form the three inline copies it replaced had — **and the two differ
-for a NaN coordinate.** Settle that with a test either way before merging.
-
-Then decide where one shared helper belongs: neither `combat/` nor `world/` obviously owns it,
-`combat/` already imports from `core/`, so `shared/core/` or an exported `Geometry.entrySlab` are
-the candidates. Note `entrySlab` is currently **not exported**, so exporting it is a public-API
-change.
-
-**Why before #5:** #5 restructures Geometry around these helpers. Moving or exporting `entrySlab`
-afterwards means touching the same code twice.
-
-**Verify** `npm run check` + SIM snapshot/compare → `PASS`; the 3,600-tick hash is what proves a
-bullet still stops where it used to. `HitboxRig.test.ts` (A9) pins the rig side: hits per zone, the
-nearest-box choice, normals under yaw, a ray starting inside a box, the parallel-axis case.
-
-
-**What the 2026-11-22 batch established, for whoever takes the decision.**
-
-- **The two functions can never be nested.** `narrowSlab` is reached only from
-  `HitboxRig.raySlab`, which is called only from `HitboxRig.ts`'s own box loop; `entrySlab` only
-  from `Geometry.rayBox`, called from `Raycaster.cast` and `NavBake`. Neither subsystem's ray
-  test runs inside the other's. So one *shared* set of module slots would in fact be safe —
-  which was the obstacle that looked fatal.
-- **But sharing the slots across the two is the worst of the three shapes.** It would have
-  `combat/` reading `world/`'s module scratch (or the reverse), which is the coupling A9
-  declined to create in the first place.
-- **There is a third shape neither the entry nor A9 considered**, and it is the one this
-  codebase already uses everywhere else — `stepRise`, `columnRay`, `flameJet`, `LookDir`: one
-  exported `narrowSlab(out, o, d, h, axis)` in `shared/core/`, with each caller keeping its own
-  module-level record. Allocation-free, no shared state, one copy of the arithmetic. The cost is
-  that the hottest path in the project pays a property access where it pays a module-variable
-  access today — which is very probably free and is exactly the kind of "very probably free"
-  #6's own text says to decide deliberately rather than assume.
-- **The NaN difference is real and the forms are not interchangeable.** For a NaN coordinate
-  `o >= -h && o <= h` is **false** (reject) and `!(o < -h || o > h)` is **true** (accept, and
-  report a hit). Rejecting is the safer semantic of the two; whether it is *reachable* was not
-  measured, and should be before either form is imposed on the other caller.
-
-**Decide**: (1) one shared helper with per-caller records, accepting the property access; (2)
-share only the arithmetic that does not touch the accumulators, leaving each caller its own five
-lines of narrowing; or (3) keep the two copies and make each one's comment name the other and
-the NaN form it chose. All three are defensible. What is not is two copies with nothing saying
-which is which — which is already half-fixed, since both comments now name the other.
 
 ### Cluster II — layering: **#2 (absorbs #19)**
 

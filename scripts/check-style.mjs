@@ -564,6 +564,7 @@ const FINISHED = {
     'src/client/world/StaticMatrices.ts',
     'src/client/combat/ZoneGeometry.ts',
     'src/client/engine/CanvasTile.ts',
+    'src/shared/core/RaySlab.ts',
   ],
   C23: [
     'src/client/Game.ts',

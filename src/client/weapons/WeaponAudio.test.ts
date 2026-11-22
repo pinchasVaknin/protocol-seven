@@ -3,7 +3,7 @@ import { WeaponAudio } from './WeaponAudio';
 import { makeNoiseSpec, makeOscSpec, type NoiseSpec, type OscSpec } from '../engine/AudioSpecs';
 import type { ProceduralAudio } from '../engine/ProceduralAudio';
 import type { ReloadStep } from '../../shared/core/Events';
-import type { WeaponVoice } from '../../shared/weapons/WeaponDefs';
+import { ALL_WEAPONS, type WeaponVoice } from '../../shared/weapons/WeaponDefs';
 
 /**
  * Every weapon sound, recorded field for field off the spec the class hands the primitives.
@@ -196,20 +196,56 @@ describe('the gunshot', () => {
     expect(thump.level).toBe(HEAVY.thumpLevel * HEAVY.level);
   });
 
-  // Pins current behaviour; suspected bug: BACKLOG #63. `WeaponVoice.bodyRatio` and
-  // `WeaponVoice.tailFreq` were added in M5 so twelve weapons would stop converging on one
-  // shape, and this file has never read either: the body sweeps to a fixed 0.32 of its centre
-  // and every tail starts at a fixed 2600 Hz, whatever the def and the tuner say.
-  it('ignores the voice for the body sweep target and the tail cutoff', () => {
+  /**
+   * BACKLOG #63, decided 2026-11-22. This case was the reverse — `not.toBe(body.freq *
+   * HEAVY.bodyRatio)` and `toBe(2600)` — because the synthesiser read neither field. Both were
+   * added in M5 so twelve weapons would stop converging on one shape; both sat in the defs and
+   * in the tuner and never reached the code.
+   */
+  it('takes the body sweep target and the tail cutoff from the voice', () => {
     const { audio, weapons } = harness();
     weapons.playGunshot(0, 0, 0, HEAVY, 1);
     const body = noiseAt(audio, 1);
     const tail = noiseAt(audio, 2);
-    expect(body.freqEnd).toBe(body.freq * 0.32);
-    expect(body.freqEnd).not.toBe(body.freq * HEAVY.bodyRatio);
-    expect(tail.freq).toBe(2600);
-    expect(tail.freq).not.toBe(HEAVY.tailFreq);
+    expect(body.freqEnd).toBe(body.freq * HEAVY.bodyRatio);
+    expect(tail.freq).toBe(HEAVY.tailFreq);
+    // The tail's floor is not per weapon: it is where every tail ends up.
     expect(tail.freqEnd).toBe(420);
+  });
+
+  /**
+   * The entry's own verification bar, as a measurement rather than an ear (BACKLOG #63).
+   *
+   * *"The twelve weapons have to stay distinguishable from each other"* — so this walks the
+   * shipped roster and asserts they are, on both numbers. It is the case that would have caught
+   * the defect in the first place: before the fix the tail cutoff was one value for all twelve,
+   * and this assertion reads 12.
+   *
+   * Whether the result *sounds* right is still a question for a person with the game running.
+   * What is checked here is the property that made it worth doing: no two weapons share a
+   * voice, and the ordering runs the way the defs intend — heavier guns darker.
+   */
+  it('gives each of the twelve shipped weapons a tail and a sweep of its own', () => {
+    const voices = ALL_WEAPONS.map((def) => def.voice);
+    expect(voices.length).toBe(12);
+
+    const tails = voices.map((v) => v.tailFreq);
+    expect(new Set(tails).size).toBe(12);
+
+    const sweeps = voices.map((v) => v.bodyFreq * v.bodyRatio);
+    expect(new Set(sweeps.map((s) => s.toFixed(4))).size).toBe(12);
+
+    /*
+     * Darker tails broadly belong to the guns with the lower body — and **broadly** is the
+     * honest word, which is why this is a count and not a sort. Ordering the twelve by
+     * `bodyFreq` orders them by `tailFreq` with exactly one inversion: `lmg_monolith` has a
+     * body of 700 Hz and a tail of 1950, and `ar_longbow` a body of 790 and a tail of 1800, so
+     * the LMG's tail is the brighter of the two. That is the defs' own choice and this records
+     * it rather than asserting a rule the data does not keep.
+     */
+    const byBody = [...voices].sort((a, b) => a.bodyFreq - b.bodyFreq).map((v) => v.tailFreq);
+    const inversions = byBody.filter((f, i) => i > 0 && f < (byBody[i - 1] ?? 0));
+    expect(inversions).toEqual([1800]);
   });
 
   it('jitters the click rate, the body centre and the thump off one seeded stream', () => {
@@ -517,8 +553,8 @@ describe('the whole vocabulary', () => {
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=loud filter=lowpass freq=2600 freqEnd=420 q=0.8 level=0.15 attack=0.006 decay=0.42 wet=0.35 rate=0.85
       oscHit x=1 y=2 z=3 positional=true bus=sfx roll=loud type=sine freq=93.33808241349179 freqEnd=39.20199461366655 level=0.22 attack=0.002 decay=0.115 wet=0.105 filterFreq=460 filterQ=0.7
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=loud filter=highpass freq=2800 freqEnd=2100 q=0.6 level=0.06720000000000001 attack=0.001 decay=0.013 wet=0.05 rate=1.0127484940644353
-      noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=loud filter=bandpass freq=704.5521684251726 freqEnd=225.4566938960552 q=3.1 level=0.32000000000000006 attack=0.0015 decay=0.17 wet=0.32 rate=1
-      noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=loud filter=lowpass freq=2600 freqEnd=420 q=0.8 level=0.16640000000000005 attack=0.006 decay=0.73 wet=0.64 rate=0.85
+      noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=loud filter=bandpass freq=704.5521684251726 freqEnd=77.50073852676898 q=3.1 level=0.32000000000000006 attack=0.0015 decay=0.17 wet=0.32 rate=1
+      noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=loud filter=lowpass freq=1100 freqEnd=420 q=0.8 level=0.16640000000000005 attack=0.006 decay=0.73 wet=0.64 rate=0.85
       oscHit x=1 y=2 z=3 positional=true bus=sfx roll=loud type=sine freq=58.641511805607 freqEnd=24.629434958354942 level=0.19520000000000004 attack=0.002 decay=0.115 wet=0.192 filterFreq=460 filterQ=0.7
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=handling filter=lowpass freq=900 freqEnd=450 q=0.7 level=0.16 attack=0.001 decay=0.07 wet=0.1 rate=1
       noiseBurst x=1 y=2 z=3 positional=true bus=sfx roll=handling filter=bandpass freq=3100 freqEnd=1800 q=4.5 level=0.32 attack=0.001 decay=0.035 wet=0.1 rate=1

@@ -319,11 +319,20 @@ export class WeaponAudio {
     this.audio.noiseBurst(noise);
   }
 
-  /** 2. body — the band-passed burst whose centre and Q separate an AR from an SMG. */
+  /**
+   * 2. body — the band-passed burst whose centre and Q separate an AR from an SMG.
+   *
+   * The sweep target is `voice.bodyRatio` as of 2026-11-22 (BACKLOG #63). It was a fixed 0.32
+   * — the carbine's own value, frozen for all twelve — so the only thing that separated a
+   * sniper's sweep from an SMG's was `bodyFreq`, and the ratio each def had chosen to make a
+   * heavy weapon fall *further* did nothing. Kestrel's 0.16 against Wasp's 0.45 widens the
+   * sweep targets from 126-624 Hz to 63-878 Hz, and the carbine is the one weapon that does
+   * not move, because 0.32 is where the default came from.
+   */
   private shotBody(noise: NoiseSpec, voice: WeaponVoice, level: number): void {
     noise.filter = 'bandpass';
     noise.freq = voice.bodyFreq * this.rng.range(0.95, 1.06);
-    noise.freqEnd = noise.freq * 0.32;
+    noise.freqEnd = noise.freq * voice.bodyRatio;
     noise.q = voice.bodyQ;
     noise.level = level;
     noise.attack = 0.0015;
@@ -333,10 +342,21 @@ export class WeaponAudio {
     this.audio.noiseBurst(noise);
   }
 
-  /** 4. tail — the room answering back. Scheduled before the thump only because both start now. */
+  /**
+   * 4. tail — the room answering back. Scheduled before the thump only because both start now.
+   *
+   * The cutoff is `voice.tailFreq` as of 2026-11-22 (BACKLOG #63), and this is the half of that
+   * entry that was costing the most: it was a flat 2600 Hz, so **all twelve weapons had the
+   * same tail**, which is exactly the convergence the M5 note that added the field describes.
+   * Twelve defs now give twelve cutoffs, 1400 Hz for the Kestrel up to 3600 for the Wasp — dark
+   * for the heavy guns, bright for the small ones.
+   *
+   * `freqEnd` stays a fixed 420: it is where every tail ends up, not what distinguishes them,
+   * and it is below the tuner's floor of 600 so the slider cannot invert the sweep.
+   */
   private shotTail(noise: NoiseSpec, voice: WeaponVoice, level: number): void {
     noise.filter = 'lowpass';
-    noise.freq = 2600;
+    noise.freq = voice.tailFreq;
     noise.freqEnd = 420;
     noise.q = 0.8;
     noise.level = voice.tailLevel * level;

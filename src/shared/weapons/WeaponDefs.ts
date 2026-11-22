@@ -102,6 +102,15 @@ export interface SpreadProfile {
  * in M5: with twelve weapons sharing one synthesis path, a fixed sweep target and a fixed
  * tail cutoff made the big guns and the small guns converge on the same shape no matter
  * what the other numbers said.
+ *
+ * **That fix reached the synthesiser on 2026-11-22, and not before** (BACKLOG #63). The two
+ * fields landed here and in `WeaponTuning`'s sliders in M5 and `client/weapons/WeaponAudio`
+ * read neither: the body swept to a fixed 0.32 and every tail started at a flat 2600 Hz, which
+ * are the carbine's own two values. So eleven weapons carried a tuned pair that nothing read,
+ * two sliders moved nothing, and all twelve shared one tail — the exact convergence the
+ * paragraph above was written to stop. `WeaponAudio.test.ts` holds the measurement: twelve
+ * distinct tails now where there was one, and sweep targets spanning 63-878 Hz where they
+ * spanned 126-624.
  */
 export interface WeaponVoice {
   level: number;

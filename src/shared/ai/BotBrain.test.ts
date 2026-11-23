@@ -966,6 +966,23 @@ describe('a bot that is not making progress', () => {
     expect({ x: bot.brain.goalX, z: bot.brain.goalZ }).not.toEqual(first);
   });
 
+  it('tally: files a stuck event as live, or as frozen while the countdown holds everybody still', () => {
+    const live = rig();
+    live.bot.brain.state = 'PATROL';
+    layPath(live.bot, [[AT.x, AT.y, AT.z - 30]]);
+    for (let i = 0; i < 66; i++) steerOnce(live.bot);
+    expect(live.brain.tally.summary().stuckLive).toBe(1);
+    expect(live.brain.tally.summary().stuckFrozen).toBe(0);
+
+    const frozen = rig();
+    Object.assign(frozen.brain, { frozen: () => true });
+    frozen.bot.brain.state = 'PATROL';
+    layPath(frozen.bot, [[AT.x, AT.y, AT.z - 30]]);
+    for (let i = 0; i < 66; i++) steerOnce(frozen.bot);
+    expect(frozen.brain.tally.summary().stuckFrozen).toBe(1);
+    expect(frozen.brain.tally.summary().stuckLive).toBe(0);
+  });
+
   it('drops a tactical goal instead of retrying the same route', () => {
     const r = rig();
     engaged(r);

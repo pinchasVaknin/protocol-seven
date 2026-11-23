@@ -172,6 +172,12 @@ export interface BotReport {
   stuckEvents: number;
   pathFailures: number;
   /**
+   * What the bots did, as raw counts (bot AI plan, S0). Counts only, never a ratio, so a harness
+   * can sum matches and divide once. `freshContacts` and `firstBursts` are the two halves of
+   * the first-burst rule's coverage.
+   */
+  tactics: TacticalSummary & { freshContacts: number; firstBursts: number };
+  /**
    * How the roster moved, rather than how well it shot (M13).
    *
    * `sprintFlips` over `travelTicks` is the sprint decision's dither rate, which is the number
@@ -179,12 +185,6 @@ export interface BotReport {
    * the share of travel spent at sprint speed, which is what says whether holding the dither
    * down cost the roster its pace or bought it some.
    */
-  /**
-   * What the bots did, as raw counts (bot AI plan, S0). Counts only, never a ratio, so a harness
-   * can sum matches and divide once. `freshContacts` and `firstBursts` are the two halves of
-   * the first-burst rule's coverage.
-   */
-  tactics: TacticalSummary & { freshContacts: number; firstBursts: number };
   locomotion: {
     sprintFlips: number;
     sprintStarts: number;
@@ -410,18 +410,7 @@ export class BotDirector extends Disposable {
     );
     this.scheduler = new AiScheduler(deps.scheduler);
 
-    this.brainDeps = {
-      nav: this.nav,
-      pathfinder: this.pathfinder,
-      cover: this.cover,
-      perception: this.perception,
-      patrolCells,
-      objectives: () => this.objectives,
-      streakObjectives: () => this.streakObjectives,
-      pushScale: () => this.pushAggressionScale,
-      tally: this.tally,
-      frozen: () => this.inputFrozen,
-    };
+    this.brainDeps = this.makeBrainDeps(patrolCells);
 
     this.roster.push(deps.player);
 
@@ -939,7 +928,6 @@ export class BotDirector extends Disposable {
     }
   }
 
-  /** The scheduler's own cost, which is what says whether the AI fits in a tick. */
   /**
    * The tally's per-tick measurements, after every bot has stepped (bot AI plan, S0).
    *
@@ -957,6 +945,23 @@ export class BotDirector extends Disposable {
     if (tick % 30 === 0) this.tally.sampleTeams(bots, this.roster);
   }
 
+  /** Everything one bot's brain is handed, built once the nav, pathfinder and cover exist. */
+  private makeBrainDeps(patrolCells: BrainDeps['patrolCells']): BrainDeps {
+    return {
+      nav: this.nav,
+      pathfinder: this.pathfinder,
+      cover: this.cover,
+      perception: this.perception,
+      patrolCells,
+      objectives: () => this.objectives,
+      streakObjectives: () => this.streakObjectives,
+      pushScale: () => this.pushAggressionScale,
+      tally: this.tally,
+      frozen: () => this.inputFrozen,
+    };
+  }
+
+  /** The tally's counts plus the two halves of the first-burst rule, for `report`. */
   private tacticsReport(): BotReport['tactics'] {
     return {
       ...this.tally.summary(),
@@ -965,6 +970,7 @@ export class BotDirector extends Disposable {
     };
   }
 
+  /** The scheduler's own cost, which is what says whether the AI fits in a tick. */
   private aiReport(): BotReport['ai'] {
     return {
       lastMs: this.scheduler.lastMs,

@@ -686,7 +686,81 @@ describe('the report', () => {
   });
 });
 
+describe('the tactical tally, as the director wires it (bot AI plan, S0)', () => {
+  it('files a death under the state the bot died in, not under the DEAD that follows', () => {
+    const { director, bus } = populated(1, 1);
+    const victim = director.bots[0];
+    expect(victim).toBeDefined();
+    if (victim === undefined) return;
+    victim.brain.state = 'OBJECTIVE';
+    bus.emit(EV.EntityKilled, {
+      targetId: victim.entityId,
+      sourceId: 0,
+      weaponId: 'ar_carbine',
+      zone: 'torso',
+      killerHealth: 80,
+    });
+    const tactics = director.report().tactics;
+    expect(tactics.deaths).toBe(1);
+    expect(tactics.deathsObjective).toBe(1);
+  });
+
+  it('samples the teams twice a second, after the bots have stepped', () => {
+    const { director } = populated(2, 2);
+    director.simulate(29, 29 * 16);
+    expect(director.report().tactics.livingSamples).toBe(0);
+    director.simulate(30, 30 * 16);
+    expect(director.report().tactics.livingSamples).toBe(4);
+  });
+
+  it('counts a bot that holds a dead target, once per tick', () => {
+    const { director } = populated(2, 2);
+    const [holder, corpse] = director.bots;
+    if (holder === undefined || corpse === undefined) throw new Error('roster too small');
+    corpse.health.applyDamage(1000);
+    // A sighting makes `hasKnownTarget` true; `tallyTick` is private, and it is the thing under test.
+    holder.blackboard.noteSighting(corpse.entityId, holder.px + 5, 1.6, holder.pz, 0, 5, 0);
+    (director as unknown as { tallyTick(tick: number): void }).tallyTick(1);
+    const tactics = director.report().tactics;
+    expect(tactics.knownTargetTicks).toBe(1);
+    expect(tactics.deadTargetTicks).toBe(1);
+  });
+
+  it('tells the brain whether the countdown is holding everybody still', () => {
+    const { director } = populated(2, 2);
+    director.inputFrozen = true;
+    for (let tick = 1; tick <= 240; tick++) director.simulate(tick, tick * 16);
+    const tactics = director.report().tactics;
+    expect(tactics.stuckFrozen).toBeGreaterThan(0);
+    expect(tactics.stuckLive).toBe(0);
+  });
+
+  it('reports the first-burst count the bots hold, and the perception’s fresh contacts', () => {
+    const { director } = populated(2, 2);
+    for (const bot of director.bots) bot.combat.firstBursts = 3;
+    director.perception.stats.freshContacts = 7;
+    const tactics = director.report().tactics;
+    expect(tactics.firstBursts).toBe(12);
+    expect(tactics.freshContacts).toBe(7);
+  });
+});
+
 describe('zeroing the counters between measurements', () => {
+  it('clears the tally, the first bursts and the fresh contacts with the rest', () => {
+    const { director } = populated(2, 2);
+    for (let tick = 1; tick <= 60; tick++) director.simulate(tick, tick * 16);
+    for (const bot of director.bots) bot.combat.firstBursts = 3;
+    director.perception.stats.freshContacts = 7;
+    expect(director.report().tactics.livingSamples).toBeGreaterThan(0);
+
+    director.resetCounters();
+    const tactics = director.report().tactics;
+    expect(tactics.livingSamples).toBe(0);
+    expect(tactics.steerTicks).toBe(0);
+    expect(tactics.firstBursts).toBe(0);
+    expect(tactics.freshContacts).toBe(0);
+  });
+
   it('clears every per-bot tally the report sums', () => {
     const { director, bus } = populated(2, 2);
     const bot = director.bots[0];

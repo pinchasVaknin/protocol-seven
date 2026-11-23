@@ -147,6 +147,22 @@ describe('TacticalTally', () => {
       expect(t.summary().multiTargets).toBe(0);
     });
 
+    it('the cross threshold is 45 degrees: 44 is not a cross, 46 is', () => {
+      for (const [degrees, crosses] of [
+        [44, 0],
+        [46, 1],
+      ] as const) {
+        const t = new TacticalTally();
+        const a = (degrees * Math.PI) / 180;
+        const bots = [
+          bot({ id: 1, x: 10, z: 0, hasLos: true, targetId: 900 }),
+          bot({ id: 2, x: 10 * simCos(a), z: 10 * simSin(a), hasLos: true, targetId: 900 }),
+        ];
+        t.sampleTeams(bots, [TARGET]);
+        expect(t.summary().crossTargets, `${degrees} degrees`).toBe(crosses);
+      }
+    });
+
     it('measures the angle the short way round', () => {
       const t = new TacticalTally();
       // 170 and -170 degrees are 20 apart, not 340.
@@ -202,6 +218,17 @@ describe('TacticalTally', () => {
       t.sampleTeams([bot({ id: 1 }), bot({ id: 2, x: 20, hasLos: true, targetId: 900, known: true })], [TARGET]);
       expect(t.summary().uninformed).toBe(1);
       expect(t.summary().livingSamples).toBe(2);
+    });
+
+    it('the radius is 30 m: a sighted team-mate 29 m away informs, 31 m away does not', () => {
+      for (const [x, counted] of [
+        [29, 1],
+        [31, 0],
+      ] as const) {
+        const t = new TacticalTally();
+        t.sampleTeams([bot({ id: 1 }), bot({ id: 2, x, hasLos: true, targetId: 900, known: true })], [TARGET]);
+        expect(t.summary().uninformed, `${x} m`).toBe(counted);
+      }
     });
 
     it('does not count it past 30 m, or when the bot has a lead', () => {

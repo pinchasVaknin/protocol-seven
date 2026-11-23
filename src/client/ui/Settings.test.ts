@@ -4,6 +4,7 @@ import { COLORBLIND_MODES, defaultSettings, SHADOW_QUALITIES, type SettingsV1 } 
 import { Profile } from '../meta/Profile';
 import { CHARACTER_CREDIT, MODEL_CREDITS, CREDITS_NOTE } from './CreditsData';
 import { Settings } from './Settings';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the settings screen (refactor unit C17, written before the
@@ -34,152 +35,20 @@ interface FakeEvent {
     stopPropagation: () => void;
 }
 
-class FakeElement {
-    readonly tokens = new Set<string>();
-    readonly children: FakeElement[] = [];
-    readonly attributes = new Map<string, string>();
-    readonly listeners = new Map<string, Listener[]>();
-    readonly dataset: Record<string, string> = {};
-    readonly style: Record<string, string> & { setProperty: (name: string, value: string) => void } = Object.assign(
-        {} as Record<string, string>,
-        {
-            setProperty: (name: string, value: string): void => {
-                this.style[name] = value;
-            },
-        },
-    );
+/**
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
+ *
+ * What stood here was 146 lines of it. This file keeps its own environment: the shared
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
+ * `window` on the way past is how a green suite starts meaning something else.
+ *
+ * Its own `setAttribute` did not reflect `class`; the shared one does. Its `querySelector` walked
+ * with an early exit where the shared one collects and takes the first -- the same element either
+ * way. Its `getBoundingClientRect` answered a zero box and is never called, by this suite or by
+ * `Settings` itself, so the shared one replaces a dead method. The focus and blur counters it
+ * asserts on, and its deep `cloneNode`, are in the shared class now.
+ */
 
-    textContent = '';
-    hidden = false;
-    disabled = false;
-    tabIndex = -1;
-    spellcheck = true;
-    autocomplete = '';
-    type = '';
-    value = '';
-    min = '';
-    max = '';
-    step = '';
-    maxLength = -1;
-    readOnly = false;
-    draggable = true;
-    src = '';
-    alt = '';
-    href = '';
-    target = '';
-    rel = '';
-    placeholder = '';
-    parent: FakeElement | null = null;
-    focusCount = 0;
-    blurCount = 0;
-
-    constructor(readonly tag: string) {}
-
-    get className(): string {
-        return [...this.tokens].join(' ');
-    }
-
-    set className(value: string) {
-        this.tokens.clear();
-        for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-    }
-
-    readonly classList = {
-        add: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.add(token);
-        },
-        remove: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.delete(token);
-        },
-        toggle: (token: string, on?: boolean): void => {
-            if (on ?? !this.tokens.has(token)) this.tokens.add(token);
-            else this.tokens.delete(token);
-        },
-        contains: (token: string): boolean => this.tokens.has(token),
-    };
-
-    appendChild(child: FakeElement): FakeElement {
-        child.parent = this;
-        this.children.push(child);
-        return child;
-    }
-
-    append(...nodes: FakeElement[]): void {
-        for (const node of nodes) this.appendChild(node);
-    }
-
-    replaceChildren(...nodes: FakeElement[]): void {
-        for (const child of this.children) child.parent = null;
-        this.children.length = 0;
-        this.append(...nodes);
-    }
-
-    get firstElementChild(): FakeElement | null {
-        return this.children[0] ?? null;
-    }
-
-    remove(): void {
-        const siblings = this.parent?.children;
-        if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-        this.parent = null;
-    }
-
-    setAttribute(name: string, value: string): void {
-        this.attributes.set(name, value);
-    }
-
-    getAttribute(name: string): string | null {
-        return this.attributes.get(name) ?? null;
-    }
-
-    addEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) this.listeners.set(type, [fn]);
-        else held.push(fn);
-    }
-
-    removeEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) return;
-        const at = held.indexOf(fn);
-        if (at >= 0) held.splice(at, 1);
-    }
-
-    /** One class selector, which is all this screen asks for (`.st-sec__head`). */
-    querySelector(selector: string): FakeElement | null {
-        const token = selector.replace(/^\./, '');
-        let found: FakeElement | null = null;
-        const walk = (el: FakeElement): void => {
-            if (found !== null) return;
-            if (el.tokens.has(token)) {
-                found = el;
-                return;
-            }
-            for (const child of el.children) walk(child);
-        };
-        for (const child of this.children) walk(child);
-        return found;
-    }
-
-    getBoundingClientRect(): { left: number; top: number; right: number; bottom: number; width: number; height: number } {
-        return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
-    }
-
-    focus(): void {
-        this.focusCount++;
-    }
-
-    blur(): void {
-        this.blurCount++;
-    }
-
-    cloneNode(_deep?: boolean): FakeElement {
-        const copy = new FakeElement(this.tag);
-        for (const [key, value] of this.attributes) copy.setAttribute(key, value);
-        for (const child of this.children) copy.appendChild(child.cloneNode(true));
-        return copy;
-    }
-}
 
 function fire(el: FakeElement, type: string, over: Partial<FakeEvent> = {}): void {
     const event: FakeEvent = { preventDefault: () => undefined, stopPropagation: () => undefined, ...over };

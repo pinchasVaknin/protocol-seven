@@ -9,6 +9,7 @@ import { BOT_CHARACTER_IDS } from '../characters/CharacterCatalog';
 import { CharacterAssetService } from '../characters/CharacterAssetService';
 import { Profile } from '../meta/Profile';
 import { EndOfMatch, reasonLine, type LineupSource, type MatchFacts } from './EndOfMatch';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the debrief (refactor unit C18, written before the refactor).
@@ -40,172 +41,18 @@ interface FakeEvent {
     stopPropagation: () => void;
 }
 
-/** A 2D context that refuses nothing: the podium's weapon textures draw into one. */
-function fakeContext(canvas: unknown): unknown {
-    const target: Record<string, unknown> = {
-        canvas,
-        createLinearGradient: () => ({ addColorStop: (): void => undefined }),
-        createRadialGradient: () => ({ addColorStop: (): void => undefined }),
-        createPattern: () => null,
-        createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(Math.max(1, w * h * 4)), width: w, height: h }),
-        getImageData: (_x: number, _y: number, w: number, h: number) => ({
-            data: new Uint8ClampedArray(Math.max(1, w * h * 4)),
-            width: w,
-            height: h,
-        }),
-        measureText: () => ({ width: 10 }),
-    };
-    return new Proxy(target, {
-        get: (t, key) => (key in t ? t[key as string] : () => undefined),
-        set: (t, key, value) => {
-            t[key as string] = value;
-            return true;
-        },
-    });
-}
+/**
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
+ *
+ * What stood here was 142 lines of it. This file keeps its own environment: the shared
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
+ * `window` on the way past is how a green suite starts meaning something else.
+ *
+ * Its own `setAttribute` did not reflect `class`; the shared one does. Its `getContext` took no
+ * kind and always answered; the shared one answers `null` for anything but `2d`, and no client
+ * code asks for another -- the context itself was byte-identical to the shared one.
+ */
 
-class FakeElement {
-    readonly tokens = new Set<string>();
-    readonly children: FakeElement[] = [];
-    readonly attributes = new Map<string, string>();
-    readonly listeners = new Map<string, Listener[]>();
-    readonly dataset: Record<string, string> = {};
-    readonly style: Record<string, string> & { setProperty: (n: string, v: string) => void } = Object.assign(
-        {} as Record<string, string>,
-        {
-            setProperty: (n: string, v: string): void => {
-                this.style[n] = v;
-            },
-        },
-    );
-
-    textContent = '';
-    hidden = false;
-    disabled = false;
-    type = '';
-    value = '';
-    title = '';
-    src = '';
-    alt = '';
-    draggable = true;
-    width = 0;
-    height = 0;
-    offsetWidth = 200;
-    offsetHeight = 40;
-    parent: FakeElement | null = null;
-    /** What `getBoundingClientRect` answers; the FLIP is measured off two of these. */
-    rect = { left: 0, top: 0, right: 200, bottom: 40, width: 200, height: 40 };
-
-    constructor(readonly tag: string) {}
-
-    get className(): string {
-        return [...this.tokens].join(' ');
-    }
-
-    set className(value: string) {
-        this.tokens.clear();
-        for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-    }
-
-    readonly classList = {
-        add: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.add(token);
-        },
-        remove: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.delete(token);
-        },
-        toggle: (token: string, on?: boolean): void => {
-            if (on ?? !this.tokens.has(token)) this.tokens.add(token);
-            else this.tokens.delete(token);
-        },
-        contains: (token: string): boolean => this.tokens.has(token),
-    };
-
-    appendChild(child: FakeElement): FakeElement {
-        child.parent = this;
-        this.children.push(child);
-        return child;
-    }
-
-    append(...nodes: FakeElement[]): void {
-        for (const node of nodes) this.appendChild(node);
-    }
-
-    replaceChildren(...nodes: FakeElement[]): void {
-        for (const child of this.children) child.parent = null;
-        this.children.length = 0;
-        this.append(...nodes);
-    }
-
-    remove(): void {
-        const siblings = this.parent?.children;
-        if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-        this.parent = null;
-    }
-
-    get childElementCount(): number {
-        return this.children.length;
-    }
-
-    get firstElementChild(): FakeElement | null {
-        return this.children[0] ?? null;
-    }
-
-    setAttribute(name: string, value: string): void {
-        this.attributes.set(name, value);
-    }
-
-    getAttribute(name: string): string | null {
-        return this.attributes.get(name) ?? null;
-    }
-
-    addEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) this.listeners.set(type, [fn]);
-        else held.push(fn);
-    }
-
-    removeEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) return;
-        const at = held.indexOf(fn);
-        if (at >= 0) held.splice(at, 1);
-    }
-
-    getContext(): unknown {
-        return fakeContext(this);
-    }
-
-    toDataURL(): string {
-        return 'data:image/png;base64,x';
-    }
-
-    getBoundingClientRect(): FakeElement['rect'] {
-        return this.rect;
-    }
-
-    focus(): void {}
-    blur(): void {}
-
-    querySelector(selector: string): FakeElement | null {
-        return this.queryAll(selector)[0] ?? null;
-    }
-
-    querySelectorAll(selector: string): FakeElement[] {
-        return this.queryAll(selector);
-    }
-
-    private queryAll(selector: string): FakeElement[] {
-        const token = selector.replace(/^\./, '');
-        const out: FakeElement[] = [];
-        const walk = (el: FakeElement): void => {
-            if (el.tokens.has(token)) out.push(el);
-            for (const child of el.children) walk(child);
-        };
-        for (const child of this.children) walk(child);
-        return out;
-    }
-}
 
 function fire(el: FakeElement, type: string, over: Partial<FakeEvent> = {}): void {
     const event: FakeEvent = { preventDefault: () => undefined, stopPropagation: () => undefined, ...over };

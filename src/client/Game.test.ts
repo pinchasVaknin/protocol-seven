@@ -8,6 +8,7 @@ import { Cheat, CheatOutcome, cheatCodeToggling } from '../shared/cheats/Cheats'
 import type { WelcomeInfo } from '../shared/net/Messages';
 import type { SummaryInfo } from '../shared/net/Messages';
 import { Game } from './Game';
+import { FakeElement } from './ui/testing/dom';
 
 /**
  * Characterization tests for the application root (refactor unit C23, written before the
@@ -463,189 +464,23 @@ interface FakeEvent {
     stopPropagation: () => void;
 }
 
-class FakeElement {
-    readonly tokens = new Set<string>();
-    readonly children: FakeElement[] = [];
-    readonly attributes = new Map<string, string>();
-    readonly listeners = new Map<string, Listener[]>();
-    readonly dataset: Record<string, string> = {};
-    readonly style: Record<string, string> & { setProperty: (n: string, v: string) => void } = Object.assign(
-        {} as Record<string, string>,
-        {
-            setProperty: (n: string, v: string): void => {
-                this.style[n] = v;
-            },
-        },
-    );
+/**
+ * The element class is shared: `ui/testing/dom.ts` (BACKLOG #79).
+ *
+ * What stood here was 183 lines of it. This file keeps its own environment: the shared
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
+ * `window` on the way past is how a green suite starts meaning something else.
+ *
+ * Its element class was a strict subset of the shared one -- the rich 2D context, the reflecting
+ * `setAttribute`, `getAttributeNames`, `hasAttribute` and `requestPointerLock` are all in the
+ * shared class now. Its *environment* is the superset and stays: it is the only file that
+ * registers `Element` and `HTMLCanvasElement` globally, the only one with `setInterval`, a
+ * `navigator`, a `window.location` the tests rewrite per case, a `document.hidden` behind a
+ * getter and a `requestAnimationFrame` that keeps the callback so a test can step frames -- and
+ * its `matchMedia` answers `pointer: fine` where every other double answers reduced motion,
+ * which is a different answer to the same call.
+ */
 
-    textContent = '';
-    hidden = false;
-    disabled = false;
-    type = '';
-    value = '';
-    title = '';
-    src = '';
-    alt = '';
-    width = 0;
-    height = 0;
-    offsetWidth = 200;
-    offsetHeight = 40;
-    clientWidth = 0;
-    clientHeight = 0;
-    parent: FakeElement | null = null;
-    rect = { left: 0, top: 0, right: 200, bottom: 40, width: 200, height: 40 };
-
-    constructor(readonly tag: string) {}
-
-    get className(): string {
-        return [...this.tokens].join(' ');
-    }
-
-    set className(value: string) {
-        this.tokens.clear();
-        for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-    }
-
-    readonly classList = {
-        add: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.add(token);
-        },
-        remove: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.delete(token);
-        },
-        toggle: (token: string, on?: boolean): void => {
-            if (on ?? !this.tokens.has(token)) this.tokens.add(token);
-            else this.tokens.delete(token);
-        },
-        contains: (token: string): boolean => this.tokens.has(token),
-    };
-
-    animate(): { onfinish: null; cancel: () => void; finish: () => void } {
-        return { onfinish: null, cancel: (): void => undefined, finish: (): void => undefined };
-    }
-
-    appendChild(child: FakeElement): FakeElement {
-        child.parent = this;
-        this.children.push(child);
-        return child;
-    }
-
-    append(...nodes: FakeElement[]): void {
-        for (const node of nodes) this.appendChild(node);
-    }
-
-    replaceChildren(...nodes: FakeElement[]): void {
-        for (const child of this.children) child.parent = null;
-        this.children.length = 0;
-        this.append(...nodes);
-    }
-
-    remove(): void {
-        const siblings = this.parent?.children;
-        if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-        this.parent = null;
-    }
-
-    get childElementCount(): number {
-        return this.children.length;
-    }
-
-    get firstElementChild(): FakeElement | null {
-        return this.children[0] ?? null;
-    }
-
-    setAttribute(name: string, value: string): void {
-        this.attributes.set(name, value);
-        if (name === 'class') this.className = value;
-    }
-
-    getAttribute(name: string): string | null {
-        return this.attributes.get(name) ?? null;
-    }
-
-    getAttributeNames(): string[] {
-        return [...this.attributes.keys()];
-    }
-
-    hasAttribute(name: string): boolean {
-        return this.attributes.has(name);
-    }
-
-    removeAttribute(name: string): void {
-        this.attributes.delete(name);
-    }
-
-    addEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) this.listeners.set(type, [fn]);
-        else held.push(fn);
-    }
-
-    removeEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) return;
-        const at = held.indexOf(fn);
-        if (at >= 0) held.splice(at, 1);
-    }
-
-    getContext(kind: string): unknown {
-        if (kind !== '2d') return null;
-        const target: Record<string, unknown> = {
-            canvas: this,
-            createLinearGradient: () => ({ addColorStop: (): void => undefined }),
-            createRadialGradient: () => ({ addColorStop: (): void => undefined }),
-            createPattern: () => null,
-            createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(Math.max(1, w * h * 4)), width: w, height: h }),
-            getImageData: (_x: number, _y: number, w: number, h: number) => ({
-                data: new Uint8ClampedArray(Math.max(1, w * h * 4)),
-                width: w,
-                height: h,
-            }),
-            measureText: () => ({ width: 10 }),
-        };
-        return new Proxy(target, {
-            get: (t, key) => (key in t ? t[key as string] : () => undefined),
-            set: (t, key, value) => {
-                t[key as string] = value;
-                return true;
-            },
-        });
-    }
-
-    toDataURL(): string {
-        return 'data:image/png;base64,x';
-    }
-
-    requestPointerLock(): void {}
-    setPointerCapture(): void {}
-    releasePointerCapture(): void {}
-
-    getBoundingClientRect(): FakeElement['rect'] {
-        return this.rect;
-    }
-
-    focus(): void {}
-    blur(): void {}
-
-    querySelector(selector: string): FakeElement | null {
-        return this.queryAll(selector)[0] ?? null;
-    }
-
-    querySelectorAll(selector: string): FakeElement[] {
-        return this.queryAll(selector);
-    }
-
-    private queryAll(selector: string): FakeElement[] {
-        const token = selector.replace(/^\./, '');
-        const out: FakeElement[] = [];
-        const walk = (el: FakeElement): void => {
-            if (el.tokens.has(token)) out.push(el);
-            for (const child of el.children) walk(child);
-        };
-        for (const child of this.children) walk(child);
-        return out;
-    }
-}
 
 // ---------------------------------------------------------------------------- the environment
 

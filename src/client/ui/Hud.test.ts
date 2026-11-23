@@ -11,6 +11,7 @@ import type { ViewerContext } from '../../shared/ui/TeamColour';
 import type { MapDef } from '../../shared/world/maps/types';
 import { Hud, LOW_HEALTH_THRESHOLD, makeHudState, type DeathReport, type HudState } from './Hud';
 import { viewport } from './Viewport';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the in-match HUD (refactor unit C14, written before the refactor).
@@ -100,83 +101,19 @@ class RecordingContext {
   }
 }
 
-class FakeElement {
-  readonly tokens = new Set<string>();
-  /** Unset properties read back as `''`, which is what a real `CSSStyleDeclaration` does. */
-  readonly style: Record<string, string> = { opacity: '', transform: '', visibility: '' };
-  readonly children: FakeElement[] = [];
-  readonly attributes = new Map<string, string>();
-  textContent = '';
-  hidden = false;
-  width = 0;
-  height = 0;
-  parent: FakeElement | null = null;
-  ctx: RecordingContext | null = null;
+/**
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
+ *
+ * What stood here was 77 lines of it. This file keeps its own environment: the shared
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
+ * `window` on the way past is how a green suite starts meaning something else.
+ *
+ * Its `getContext` is its own and `HudElement` below keeps it -- see that class. Its own
+ * `setAttribute` did not reflect `class` into the token set and the shared one does; its deep
+ * `cloneNode` is the one in the shared class. The style seed is what it carried, and this suite
+ * is one of the three that assert on an untouched key reading back as `''`.
+ */
 
-  constructor(readonly tag: string) {}
-
-  get className(): string {
-    return [...this.tokens].join(' ');
-  }
-
-  set className(value: string) {
-    this.tokens.clear();
-    for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-  }
-
-  readonly classList = {
-    toggle: (token: string, on?: boolean): void => {
-      const want = on ?? !this.tokens.has(token);
-      if (want) this.tokens.add(token);
-      else this.tokens.delete(token);
-    },
-    add: (token: string): void => void this.tokens.add(token),
-    remove: (token: string): void => void this.tokens.delete(token),
-    contains: (token: string): boolean => this.tokens.has(token),
-  };
-
-  appendChild(child: FakeElement): FakeElement {
-    child.parent = this;
-    this.children.push(child);
-    return child;
-  }
-
-  append(...nodes: FakeElement[]): void {
-    for (const node of nodes) this.appendChild(node);
-  }
-
-  replaceChildren(...nodes: FakeElement[]): void {
-    for (const child of this.children) child.parent = null;
-    this.children.length = 0;
-    this.append(...nodes);
-  }
-
-  get firstElementChild(): FakeElement | null {
-    return this.children[0] ?? null;
-  }
-
-  remove(): void {
-    const siblings = this.parent?.children;
-    if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-    this.parent = null;
-  }
-
-  setAttribute(name: string, value: string): void {
-    this.attributes.set(name, value);
-  }
-
-  cloneNode(_deep?: boolean): FakeElement {
-    const copy = new FakeElement(this.tag);
-    for (const [key, value] of this.attributes) copy.setAttribute(key, value);
-    return copy;
-  }
-
-  getContext(kind: string): RecordingContext | null {
-    if (kind !== '2d') return null;
-    this.ctx ??= new RecordingContext();
-    return this.ctx;
-  }
-}
 
 let nowMs = 1_000;
 const realNow = performance.now.bind(performance);
@@ -185,10 +122,10 @@ beforeEach(() => {
   nowMs = 1_000;
   performance.now = () => nowMs;
   (globalThis as Record<string, unknown>).document = {
-    createElement: (tag: string) => new FakeElement(tag),
-    createElementNS: (_ns: string, tag: string) => new FakeElement(tag),
+    createElement: (tag: string) => new HudElement(tag, { opacity: '', transform: '', visibility: '' }),
+    createElementNS: (_ns: string, tag: string) => new HudElement(tag, { opacity: '', transform: '', visibility: '' }),
   };
-  (globalThis as Record<string, unknown>).HTMLElement = FakeElement;
+  (globalThis as Record<string, unknown>).HTMLElement = HudElement;
   // The crosshair asks `ui/Viewport` for the window height. Setting it keeps the gap a
   // function of the state alone, and stops the getter reaching for a `window` that is not here.
   viewport.set(1920, 1080);
@@ -199,6 +136,23 @@ afterEach(() => {
   delete (globalThis as Record<string, unknown>).document;
   delete (globalThis as Record<string, unknown>).HTMLElement;
 });
+
+/**
+ * The recording canvas. The minimap inside the HUD is the real class and bakes a raster at
+ * construction, so what it drew is what this suite reads back off `calls`.
+ *
+ * The shared `getContext` answers a `Proxy` that refuses nothing and records nothing, which is
+ * right for a screen that only has to finish drawing and wrong here.
+ */
+class HudElement extends FakeElement {
+  ctx: RecordingContext | null = null;
+
+  override getContext(kind: string): RecordingContext | null {
+    if (kind !== '2d') return null;
+    this.ctx ??= new RecordingContext();
+    return this.ctx;
+  }
+}
 
 // ---------------------------------------------------------------------------- the rig
 

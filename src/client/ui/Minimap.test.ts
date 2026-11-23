@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Brush, MapDef } from '../../shared/world/maps/types';
 import { Minimap } from './Minimap';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the minimap (refactor unit C15, written before the refactor).
@@ -118,30 +119,32 @@ class RecordingContext {
   }
 }
 
-class FakeElement {
-  readonly children: FakeElement[] = [];
-  readonly style: Record<string, string> = {};
-  width = 0;
-  height = 0;
-  className = '';
-  parent: FakeElement | null = null;
+/**
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
+ *
+ * What stood here was 29 lines of it. This file keeps its own environment: the shared
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
+ * `window` on the way past is how a green suite starts meaning something else.
+ *
+ * Its `getContext` is the one thing it needs its own answer for, and `MapElement` below keeps it --
+ * see that class. Its `className` was a plain string field rather than a view over a token set;
+ * every write in this screen is one class string and every assertion reads it back whole, so the
+ * shared getter answers identically.
+ */
+
+
+/**
+ * The recording canvas, which is the whole reason this suite has a double at all.
+ *
+ * The shared `getContext` hands back a `Proxy` that refuses nothing and records nothing --
+ * right for a screen that merely has to finish drawing, wrong here, where what the screen drew
+ * *is* the assertion. One context per canvas, built on first ask and kept, so a test can read
+ * `calls` after the frame.
+ */
+class MapElement extends FakeElement {
   ctx: RecordingContext | null = null;
 
-  constructor(readonly tag: string) {}
-
-  appendChild(child: FakeElement): FakeElement {
-    child.parent = this;
-    this.children.push(child);
-    return child;
-  }
-
-  remove(): void {
-    const siblings = this.parent?.children;
-    if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-    this.parent = null;
-  }
-
-  getContext(kind: string): RecordingContext | null {
+  override getContext(kind: string): RecordingContext | null {
     if (kind !== '2d') return null;
     this.ctx ??= new RecordingContext();
     return this.ctx;
@@ -149,13 +152,13 @@ class FakeElement {
 }
 
 /** Canvases in creation order: the live one first, then the raster. */
-let canvases: FakeElement[] = [];
+let canvases: MapElement[] = [];
 
 beforeEach(() => {
   canvases = [];
   (globalThis as Record<string, unknown>).document = {
     createElement: (tag: string) => {
-      const el = new FakeElement(tag);
+      const el = new MapElement(tag);
       if (tag === 'canvas') canvases.push(el);
       return el;
     },

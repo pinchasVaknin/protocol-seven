@@ -10,6 +10,7 @@ import type { MatchFlow } from '../../shared/modes/MatchFlow';
 import type { MapDef } from '../../shared/world/maps/types';
 import { MatchHud } from './MatchHud';
 import { viewport } from './Viewport';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for the presentation composition root (refactor unit C15, written
@@ -54,98 +55,24 @@ class RecordingContext {
   }
 }
 
-class FakeElement {
-  readonly tokens = new Set<string>();
-  readonly style: Record<string, string> & { setProperty: (k: string, v: string) => void };
-  readonly properties = new Map<string, string>();
-  readonly children: FakeElement[] = [];
-  readonly attributes = new Map<string, string>();
-  textContent = '';
-  hidden = false;
-  width = 0;
-  height = 0;
-  parent: FakeElement | null = null;
-  ctx: RecordingContext | null = null;
+/**
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
+ *
+ * What stood here was 85 lines of it. This file keeps its own environment: the shared
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
+ * `window` on the way past is how a green suite starts meaning something else.
+ *
+ * Four of its answers are its own and `MatchHudElement` below keeps all four -- see that class.
+ * Its own `setAttribute` did not reflect `class` into the token set and the shared one does.
+ */
 
-  constructor(readonly tag: string) {
-    this.style = {
-      opacity: '',
-      transform: '',
-      visibility: '',
-      gridTemplateColumns: '',
-      setProperty: (k: string, v: string) => void this.properties.set(k, v),
-    } as unknown as Record<string, string> & { setProperty: (k: string, v: string) => void };
-  }
-
-  get className(): string {
-    return [...this.tokens].join(' ');
-  }
-
-  set className(value: string) {
-    this.tokens.clear();
-    for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-  }
-
-  readonly classList = {
-    toggle: (token: string, on?: boolean): void => {
-      const want = on ?? !this.tokens.has(token);
-      if (want) this.tokens.add(token);
-      else this.tokens.delete(token);
-    },
-    remove: (token: string): void => void this.tokens.delete(token),
-    contains: (token: string): boolean => this.tokens.has(token),
-  };
-
-  appendChild(child: FakeElement): FakeElement {
-    child.remove();
-    child.parent = this;
-    this.children.push(child);
-    return child;
-  }
-
-  append(...nodes: FakeElement[]): void {
-    for (const node of nodes) this.appendChild(node);
-  }
-
-  replaceChildren(...nodes: FakeElement[]): void {
-    for (const child of this.children) child.parent = null;
-    this.children.length = 0;
-    this.append(...nodes);
-  }
-
-  get firstElementChild(): FakeElement | null {
-    return this.children[0] ?? null;
-  }
-
-  remove(): void {
-    const siblings = this.parent?.children;
-    if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-    this.parent = null;
-  }
-
-  setAttribute(name: string, value: string): void {
-    this.attributes.set(name, value);
-  }
-
-  cloneNode(): FakeElement {
-    const copy = new FakeElement(this.tag);
-    for (const [k, v] of this.attributes) copy.setAttribute(k, v);
-    return copy;
-  }
-
-  getContext(kind: string): RecordingContext | null {
-    if (kind !== '2d') return null;
-    this.ctx ??= new RecordingContext();
-    return this.ctx;
-  }
-}
 
 beforeEach(() => {
   (globalThis as Record<string, unknown>).document = {
-    createElement: (tag: string) => new FakeElement(tag),
-    createElementNS: (_ns: string, tag: string) => new FakeElement(tag),
+    createElement: (tag: string) => new MatchHudElement(tag),
+    createElementNS: (_ns: string, tag: string) => new MatchHudElement(tag),
   };
-  (globalThis as Record<string, unknown>).HTMLElement = FakeElement;
+  (globalThis as Record<string, unknown>).HTMLElement = MatchHudElement;
   viewport.set(1920, 1080);
 });
 
@@ -153,6 +80,52 @@ afterEach(() => {
   delete (globalThis as Record<string, unknown>).document;
   delete (globalThis as Record<string, unknown>).HTMLElement;
 });
+
+/**
+ * Four answers this suite's own double gave that the shared class does not, kept as they were.
+ *
+ * **`getContext` records.** The shared one answers a `Proxy` that refuses nothing and records
+ * nothing; here what the HUD drew is the assertion.
+ *
+ * **`appendChild` moves a node that already has a parent.** This and `Scoreboard`'s were the
+ * only two of the thirty doubles that did, which is what a real one does; the shared one pushes
+ * without unlinking. Kept here rather than fixed there — see BACKLOG #79.
+ *
+ * **`cloneNode` is shallow.** Also drift: the other four copies cloned children, and
+ * `Killfeed` calls it with `true` to bring a weapon icon along, so under this double the cloned
+ * icon arrives empty. Kept because changing it would change what this suite sees, and recorded
+ * in #79 as the one divergence here that looks like a defect rather than a choice.
+ *
+ * **`style.setProperty` records into `properties`** instead of writing a style key, for the
+ * custom properties the HUD sets.
+ */
+class MatchHudElement extends FakeElement {
+  readonly properties = new Map<string, string>();
+
+  constructor(tag: string) {
+    super(tag, { opacity: '', transform: '', visibility: '', gridTemplateColumns: '' });
+    this.style.setProperty = (k: string, v: string): void => void this.properties.set(k, v);
+  }
+
+  ctx: RecordingContext | null = null;
+
+  override getContext(kind: string): RecordingContext | null {
+    if (kind !== '2d') return null;
+    this.ctx ??= new RecordingContext();
+    return this.ctx;
+  }
+
+  override appendChild(child: FakeElement): FakeElement {
+    child.remove();
+    return super.appendChild(child);
+  }
+
+  override cloneNode(): FakeElement {
+    const copy = new MatchHudElement(this.tag);
+    for (const [k, v] of this.attributes) copy.setAttribute(k, v);
+    return copy;
+  }
+}
 
 // ---------------------------------------------------------------------------- the rig
 
@@ -358,7 +331,7 @@ describe('enemy gunfire pings the minimap', () => {
   function pings(r: Rig): number {
     // A ping is only visible through the draw, so count the ring arcs the frame makes.
     const calls: string[] = [];
-    const canvas = (r.hud.hud.minimap.element as unknown as FakeElement).children[0];
+    const canvas = (r.hud.hud.minimap.element as unknown as MatchHudElement).children[0] as MatchHudElement | undefined;
     const ctx = canvas?.ctx;
     if (ctx != null) {
       const arc = ctx.arc.bind(ctx);

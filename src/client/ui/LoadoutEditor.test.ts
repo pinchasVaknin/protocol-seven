@@ -13,6 +13,7 @@ import { CharacterAssetService } from '../characters/CharacterAssetService';
 import { BOT_CHARACTER_IDS, characterDefinition } from '../characters/CharacterCatalog';
 import { Profile } from '../meta/Profile';
 import { LoadoutEditor } from './LoadoutEditor';
+import { FakeElement } from './testing/dom';
 
 /**
  * Characterization tests for Create-a-Class (refactor unit C16, written before the refactor).
@@ -40,35 +41,6 @@ import { LoadoutEditor } from './LoadoutEditor';
 
 // ---------------------------------------------------------------------------- the DOM double
 
-/** A 2D context that records nothing and refuses nothing: the camo textures draw into one. */
-function fakeContext(canvas: FakeElement): unknown {
-    const target: Record<string, unknown> = {
-        canvas,
-        createLinearGradient: () => ({ addColorStop: (): void => undefined }),
-        createRadialGradient: () => ({ addColorStop: (): void => undefined }),
-        createPattern: () => null,
-        createImageData: (w: number, h: number) => ({
-            data: new Uint8ClampedArray(Math.max(1, w * h * 4)),
-            width: w,
-            height: h,
-        }),
-        getImageData: (_x: number, _y: number, w: number, h: number) => ({
-            data: new Uint8ClampedArray(Math.max(1, w * h * 4)),
-            width: w,
-            height: h,
-        }),
-    };
-    return new Proxy(target, {
-        get: (t, key) => (key in t ? t[key as string] : () => undefined),
-        set: (t, key, value) => {
-            t[key as string] = value;
-            return true;
-        },
-    });
-}
-
-type Listener = (event: FakeEvent) => void;
-
 interface FakeEvent {
     key?: string;
     clientX?: number;
@@ -77,146 +49,19 @@ interface FakeEvent {
     stopPropagation: () => void;
 }
 
-class FakeElement {
-    readonly tokens = new Set<string>();
-    readonly children: FakeElement[] = [];
-    readonly attributes = new Map<string, string>();
-    readonly listeners = new Map<string, Listener[]>();
-    readonly dataset: Record<string, string> = {};
-    /** Unset properties read back as `''`, which is what a real `CSSStyleDeclaration` does. */
-    readonly style: Record<string, string> & { setProperty: (name: string, value: string) => void } = Object.assign(
-        { display: '', left: '', top: '' } as Record<string, string>,
-        {
-            setProperty: (name: string, value: string): void => {
-                this.style[name] = value;
-            },
-        },
-    );
+/**
+ * The element class is shared: `testing/dom.ts` (BACKLOG #79).
+ *
+ * What stood here was 140 lines of it. This file keeps its own environment: the shared
+ * `installFakeDom` installs globals this suite has never run with, and handing a suite a
+ * `window` on the way past is how a green suite starts meaning something else.
+ *
+ * Two things are its own and `EditorElement` below keeps both -- see that class. Its own
+ * `setAttribute` did not reflect `class` and the shared one does; its `toDataURL` spelled the
+ * tag into the data URL where the shared one ends in `x`, and the one assertion on it checks the
+ * `data:image/png;base64,` prefix, which both satisfy.
+ */
 
-    textContent = '';
-    hidden = false;
-    disabled = false;
-    tabIndex = -1;
-    spellcheck = true;
-    autocomplete = '';
-    type = '';
-    value = '';
-    maxLength = -1;
-    readOnly = false;
-    draggable = true;
-    src = '';
-    alt = '';
-    width = 0;
-    height = 0;
-    parent: FakeElement | null = null;
-    /** What `getBoundingClientRect` answers. Written by the tests that care. */
-    rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
-    offsetWidth = 0;
-    offsetHeight = 0;
-
-    constructor(readonly tag: string) {}
-
-    get className(): string {
-        return [...this.tokens].join(' ');
-    }
-
-    set className(value: string) {
-        this.tokens.clear();
-        for (const token of value.split(' ')) if (token !== '') this.tokens.add(token);
-    }
-
-    readonly classList = {
-        add: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.add(token);
-        },
-        remove: (...tokens: string[]): void => {
-            for (const token of tokens) this.tokens.delete(token);
-        },
-        toggle: (token: string, on?: boolean): void => {
-            const want = on ?? !this.tokens.has(token);
-            if (want) this.tokens.add(token);
-            else this.tokens.delete(token);
-        },
-        contains: (token: string): boolean => this.tokens.has(token),
-    };
-
-    appendChild(child: FakeElement): FakeElement {
-        child.parent = this;
-        this.children.push(child);
-        return child;
-    }
-
-    append(...nodes: FakeElement[]): void {
-        for (const node of nodes) this.appendChild(node);
-    }
-
-    replaceChildren(...nodes: FakeElement[]): void {
-        for (const child of this.children) child.parent = null;
-        this.children.length = 0;
-        this.append(...nodes);
-    }
-
-    get firstElementChild(): FakeElement | null {
-        return this.children[0] ?? null;
-    }
-
-    remove(): void {
-        const siblings = this.parent?.children;
-        if (siblings !== undefined) siblings.splice(siblings.indexOf(this), 1);
-        this.parent = null;
-    }
-
-    setAttribute(name: string, value: string): void {
-        this.attributes.set(name, value);
-    }
-
-    getAttribute(name: string): string | null {
-        return this.attributes.get(name) ?? null;
-    }
-
-    removeAttribute(name: string): void {
-        this.attributes.delete(name);
-    }
-
-    addEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) this.listeners.set(type, [fn]);
-        else held.push(fn);
-    }
-
-    removeEventListener(type: string, fn: Listener): void {
-        const held = this.listeners.get(type);
-        if (held === undefined) return;
-        const at = held.indexOf(fn);
-        if (at >= 0) held.splice(at, 1);
-    }
-
-    getBoundingClientRect(): typeof this.rect {
-        return this.rect;
-    }
-
-    getContext(_kind: string): unknown {
-        return fakeContext(this);
-    }
-
-    toDataURL(_type?: string): string {
-        return `data:image/png;base64,${this.tag}`;
-    }
-
-    focus(): void {
-        (globalThis as Record<string, unknown>)['document'] = {
-            ...((globalThis as Record<string, unknown>)['document'] as object),
-            activeElement: this,
-        };
-    }
-
-    cloneNode(_deep?: boolean): FakeElement {
-        const copy = new FakeElement(this.tag);
-        for (const [key, value] of this.attributes) copy.setAttribute(key, value);
-        for (const child of this.children) copy.appendChild(child.cloneNode(true));
-        return copy;
-    }
-}
 
 /** Fire one listener type on an element, with the event shape the handlers actually read. */
 function fire(el: FakeElement, type: string, over: Partial<FakeEvent> = {}): void {
@@ -247,8 +92,8 @@ function installEnvironment(): void {
         },
     };
     (globalThis as Record<string, unknown>)['document'] = {
-        createElement: (tag: string) => new FakeElement(tag),
-        createElementNS: (_ns: string, tag: string) => new FakeElement(tag),
+        createElement: (tag: string) => new EditorElement(tag),
+        createElementNS: (_ns: string, tag: string) => new EditorElement(tag),
         activeElement: null,
     };
     (globalThis as Record<string, unknown>)['HTMLElement'] = FakeElement;
@@ -294,6 +139,33 @@ afterEach(() => {
     delete (globalThis as Record<string, unknown>)['localStorage'];
     delete (globalThis as Record<string, unknown>)['window'];
 });
+
+/**
+ * The two answers this suite's own double gave that the shared class does not.
+ *
+ * **An unmeasured box reads zero**, not 200x40. The tooltip placement this suite exercises
+ * writes `rect`, `offsetWidth` and `offsetHeight` on the elements it cares about and leaves
+ * every other element unmeasured, so a non-zero default is a layout the screen never saw. The
+ * suite happens to stay green either way, which is exactly why this is kept rather than
+ * dropped: a green suite is not a measurement.
+ *
+ * **`focus()` moves `document.activeElement`.** The shared one counts the call and nothing
+ * else, deliberately — a focus that silently rewrites a global is a reach a double shared by
+ * thirty files should not have. This screen's own double did it, so it does it here.
+ */
+class EditorElement extends FakeElement {
+    override rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+    override offsetWidth = 0;
+    override offsetHeight = 0;
+
+    override focus(): void {
+        super.focus();
+        (globalThis as Record<string, unknown>)['document'] = {
+            ...((globalThis as Record<string, unknown>)['document'] as object),
+            activeElement: this,
+        };
+    }
+}
 
 // ---------------------------------------------------------------------------- the rig
 

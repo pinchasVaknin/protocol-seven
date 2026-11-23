@@ -592,7 +592,7 @@ element tree of every screen in the game.
 
 ---
 
-### #79 — The DOM double is copied whole into every test file that needs it · `open` *(opened 2026-11-10 by C19; another copy added 2026-11-16 by C23a)*
+### #79 — The DOM double is copied whole into every test file that needs it · `closed` *(opened 2026-11-10 by C19; another copy added 2026-11-16 by C23a; done 2026-11-23)*
 
 **Files** 38 `*.test.ts` files across `src/client/` — every one of them, not only `ui/`.
 **Origin** C19's Step 3; counted properly on 2026-11-22 by the batch that closed #58 and #67,
@@ -653,27 +653,171 @@ shared double is provably what they already had.
 **Verify** the whole suite, twice: once to see it pass on the shared double, and once with a
 deliberate break per file to see that the suites still bite.
 
-## 9. What the three remaining entries are waiting for
+---
 
-Written 2026-11-22, when the backlog came down from 70 to six over one week, and amended the
-same evening when #78 was done and it came down to three. Every entry closed in that week was
-closed because somebody could do it. **These three are not like that**, and the difference is
-worth stating once rather than re-deriving it each time somebody opens this file: each waits on
-a person, a machine or a session of its own. None is blocked on a decision.
+## Done, 2026-11-23 — `src/client/ui/testing/dom.ts`, 715 lines, 37 of the 38 files on it
+
+Commits `d3cbded`, `70b8b72` and the one that carries this note. **6,813 lines of hand-grown
+double out, 1,440 in**, across 39 files. The gate is green on the whole tree at each commit: 14
+audits, `check:style` (the new file is registered under the BACKLOG unit and passes the
+skeleton check), 317 test files / 7,203 tests, three typechecks. `measure.mjs` puts `dom.ts` at
+59 functions with none over the §4.1 limits — longest 20 lines, highest complexity 8.
+
+### The measurement, re-taken before any of it
+
+The entry's own figures were close and one of them was an artefact. 38 files is right. **29
+distinct texts** is right only if the per-file rig helpers that sit inside the same `the DOM
+double` section are counted as part of the double; strip those and it is **26 distinct
+element-and-environment texts**, in which **14 files share a text with another file** — which
+is the entry's own 14, reached a different way. The share groups are three, not five: seven
+files (`LoadingScreen`, `Menus`, `PlaySolo`, `ScreenChrome`, `SpaceSkip`, `Splash`,
+`VoteOverlay`), five (`CharacterStage`, `Emblem`, `FpsCounter`, `WeaponIcons`,
+`WeaponPreview`) and two (`HudStreaks`, `HudTactical`). The entry's "largest group is four" was
+the raw-text grouping; on the double proper `CharacterStage` joins those four. The range is 46
+to 561 lines of double per file, not 41 to 351 — the entry measured from a tighter boundary.
+
+Everything else in the entry held, including the thing it was written about.
+
+### What one file is, and what it is not
+
+`FakeElement`, `FakeAnimation` and a `FakeDom` handle that installs the environment on
+`globalThis` and takes it off again. `installFakeDom()` returns the handle; the state a test
+reads — the listeners `window` was given, the timers pending, the animations that ran — hangs
+off it instead of off a drawer of module-level `let`s, and `restore()` replaces the list of
+global names that every `afterEach` repeated.
+
+**The element is shared; the environment mostly is not.** Measured per file: of the 24 files
+that still had a double after the first pass, 17 would have *gained* globals from
+`installFakeDom` that they have never run with — a `window`, a `localStorage`, a fake clock,
+`performance`, `requestAnimationFrame`. A suite that is green today without a global `window`
+is not a suite to hand one to on the way past: a `typeof window` guard anywhere under it takes
+the other branch and nothing says so. So 12 files use the whole environment (the three share
+groups' richest text was written into the file verbatim, plus the four `src/client/` files
+whose double was that text plus `getAttributeNames`/`hasAttribute`) and 25 import the element
+class alone and keep their own `beforeEach` untouched. That is where the duplication actually
+was.
+
+Six files subclass the shared element to keep one answer of their own, and each subclass says
+why on itself: `XpElement`, `BoardElement`, `EditorElement`, `MapElement`, `OverlayElement`,
+`HudElement`, `MatchHudElement`.
+
+### What reading each file turned up
+
+This is the part the entry asked for and the reason it could not be a sweep.
+
+- **Ten of the copies still had C19's bug.** `setAttribute('class', …)` did not write the token
+  set, so every SVG icon — which is how this whole project classes its glyphs, an SVG element
+  having no settable `className` — was invisible to `querySelector`. C19 fixed its own copy on
+  2026-11-10 and the fix never travelled: `EndOfMatch`, `Hud`, `Killfeed`, `LoadoutEditor`,
+  `MatchHud`, `PauseMenu`, `PlayerCard`, `ProfilePanel`, `Settings`, `XpSummary`. All ten now
+  reflect it. **Every one of their suites stayed green**, so the holes were latent rather than
+  load-bearing — but they were holes, and a tenth of this suite was asserting against a
+  document in which icons cannot be found.
+- **`appendChild` is wrong in the shared double and in 28 of the 30 copies.** A real
+  `appendChild` *moves* a node that already has a parent, by unlinking it first. `Scoreboard`'s
+  double and `MatchHud`'s were the only two that did; the rest push without unlinking, which
+  leaves a moved node in two children lists at once. Both keep their own as an override and the
+  shared one is unchanged, because fixing it there would change what twenty-odd suites see and
+  that is not this entry's job. **It is the next one** — see §9.
+- **`cloneNode` had drifted four-deep-to-one-shallow.** Four copies cloned children and
+  `MatchHud`'s did not, and none of the five read the `deep` flag. `Killfeed` calls it with
+  `true` to bring a weapon icon along, so under `MatchHud`'s double the cloned icon arrives
+  empty. The deep one is shared; `MatchHudElement` keeps the shallow one, and of all the
+  divergence found here this is the one that looks like a defect rather than a choice.
+- **`style` is pinned in two opposite directions.** Six copies pre-seeded `opacity`, `transform`
+  and sometimes `visibility` to `''` so an untouched key read back empty, with the note *"which
+  is what a real `CSSStyleDeclaration` does"* — and three of them assert on it (`HudTactical`
+  twice, on a cook bar and a breath bar nothing has touched; `Hud` on the crosshair's
+  `visibility`; `BearingIndicator` on an arrow's `transform`). Meanwhile `Splash` asserts
+  `protocol.style['visibility']` is **undefined** before the stage that writes it runs. So
+  neither answer could be the rule: `FakeElement` takes an optional style seed and the six that
+  want it pass it.
+- **`focus()` had three behaviours** — empty, a counter, and one that rewrites
+  `document.activeElement`. The counter is the superset (a suite that never reads `focusCount`
+  cannot tell) and is shared; the one that reaches into a global is `EditorElement`'s, because a
+  focus call that silently rewrites a global is not a reach a double shared by thirty files
+  should have.
+- **Four files' `getContext` records**, and what the screen drew is the assertion. The shared one
+  answers a `Proxy` that refuses nothing and records nothing — right for a screen that only has
+  to finish drawing, useless here. The four recorders had themselves drifted three ways
+  (`Minimap` and `MortarOverlay` identical, `Hud` recording method calls but not property
+  writes, `MatchHud`'s methods recording nothing at all). The *canvas* double is a second
+  decision and a second file, so it stays local in all four and only the element is shared.
+- **Smaller divergence, each checked rather than assumed.** `XpSummary` measures a 100x20 box
+  where every other copy says 200x40 and reads `offsetWidth` to force the reflow its
+  transitions depend on, so the number is asserted — `XpElement` keeps it. `Settings`'
+  `getBoundingClientRect` answered a zero box and is called by nothing, in the suite or in
+  `Settings` itself, so the shared one replaced a dead method. `LoadoutEditor` leaves most
+  elements unmeasured and `EditorElement` keeps zero as the default, *although the suite stays
+  green either way* — which is why it was kept rather than dropped. `ClientMatch` held
+  `clientWidth`/`clientHeight` at 240x160 and nothing in the tree reads either outside
+  `probes/`. `Minimap` and `MortarOverlay` held `className` as a plain string field rather than
+  a view over a token set; every write in those two screens is one class string read back
+  whole, so the shared getter answers identically. `EndOfMatch`'s and `LoadoutEditor`'s
+  `getContext` took no kind and always answered where the shared one answers `null` for
+  anything but `2d`, and no client code asks for another kind. The form and anchor fields
+  (`tabIndex`, `maxLength`, `placeholder`, `readOnly`, `href`, …) were in four copies at
+  identical defaults and are one set now; they exist for the typechecker, since a screen that
+  assigns `input.maxLength` will not compile without them. `Listener`'s event parameter is
+  optional, because two suites dispatch by calling the stored function with no argument against
+  handlers that read nothing off it — type-only, nothing changes at run time.
+
+### Does the suite still bite — per file, as asked
+
+For each of the 37: something the suite should catch was broken in the module under test, that
+one suite was run and had to fail, then the module was restored and the suite had to pass
+again. **All 37 bit.** The first-choice mutation (the module's first CSS-class literal) was
+wrong for twelve of them and each needed a hand-picked target, which is the hazard's own shape:
+
+- `Menus` does not assert `op-menu__stage` **or** `op-menu` anywhere; `op-menu__nav` bites.
+- The first string literal in `Splash.ts` is an easing name, not a class.
+- `SpaceSkip`, `BearingIndicator`, `Scoreboard`, `ClientMatch`, `MatchHud` and `Game` have no
+  mutable class literal in the relevant path, so the targets were `MS_PER_SECOND`, the
+  `hud-bearing` template literal, `sb__title`, the `Btn.Streak1` slot map, `minimap.friendlies`
+  and `Game`'s initial state.
+- `MatchEquipment`, `GameScreens`, `MatchMeta` and `GameLoadout` have no CSS classes at all —
+  they are logic — and the first constants tried (`REPLICATED_EASE_RATE`,
+  `SUMMARY_ROWS_PER_TEAM`, `speedScale`) turned out not to be exercised either. The targets
+  that bit were `adoptProjectiles`, `createMenus` and `asModeId`.
+
+### The one file left, and why
+
+**`src/client/input/Input.test.ts`** keeps its own double, and should. It is not this double at
+all: `FakeTarget` and `FakeCanvas` are event-target doubles whose `dispatch` synthesises
+`defaultPrevented`, its own `FakeElement` is two fields (`tagName`, `isContentEditable`) that
+exist only for the focus guard to recognise, and its document carries `pointerLockElement`,
+`fullscreenElement` and `exitPointerLock`. There is no element tree in it. Forcing it into
+`dom.ts` would put two unrelated doubles in one file to make a count come out even.
+
+## 9. What the two remaining entries are waiting for
+
+Written 2026-11-22, when the backlog came down from 70 to six over one week; amended the same
+evening when #78 was done and it came down to three, and **again on 2026-11-23, when #79 was
+done and the heading stopped being true**. Two entries are left and neither is work. Every
+entry closed in that week was closed because somebody could do it. **These two are not like
+that**, and the difference is worth stating once rather than re-deriving it each time somebody
+opens this file: each waits on a person or a machine. Neither is blocked on a decision.
 
 | Entry | What it needs | Who can give it |
 |---|---|---|
 | **#34** The camera trembles while walking | A reproduction on the reporter's own machine. Every candidate C2 reached is measured clean, and C2's own mouse-path measurement demoted the leading one — the arrival pattern it found is *not* Chrome's. | The person who reported it, with a recording or a frame-time capture |
 | **#55** The Chopper Gunner optic draws a flat grey field | A look at it in a real browser: call in a chopper on Foundry and on Depot and compare against `renderGunship`'s own three descriptions | Anyone with the game running and a window in front — see §6 and #85 |
-| **#79** The DOM double is copied into every test file | **Nothing but the labour.** Decided 2026-11-22: `src/client/ui/testing/dom.ts`. Bigger than it looks — 38 files, 29 distinct texts, and each must be read as it is converted | A session of its own |
 
-**#79 is the last entry that is purely work.** Its home was chosen on 2026-11-22 and the
-reasoning is in the entry; what it needs is a session that reads each of the 38 test files as it
-converts it, because a test written against a thin double asserts what a thin double does.
+**Both of the entries that were purely work are now done.** #78 on 2026-11-22 (commits
+`5833072` and `7c8c44c`): 340 sites across 33 files on `src/client/ui/Dom.ts`, with 76 left in
+seven files for the reason the entry names — `el` is an interface field there, so the local
+cannot be renamed out of the way. #79 on 2026-11-23 (commits `d3cbded`, `70b8b72` and the one
+carrying its note): 37 of the 38 test files on `src/client/ui/testing/dom.ts`, 6,813 lines of
+double out and 1,440 in, with `input/Input.test.ts` left because what it doubles is an event
+target and not an element tree.
 
-**#78 was the other one and it is done** (2026-11-22, commits `5833072` and `7c8c44c`): 340
-sites across 33 files on `src/client/ui/Dom.ts`, with 76 left in seven files for the reason the
-entry names — `el` is an interface field there, so the local cannot be renamed out of the way.
-
-The other two wait on something no amount of reading supplies — a reproduction on the
+What is left waits on something no amount of reading supplies — a reproduction on the
 reporter's machine and a window in front.
+
+**One new entry came out of #79 and is worth opening before anybody forgets the measurement.**
+The shared DOM double's `appendChild` does not unlink a node from its previous parent, so a
+moved node sits in two children lists at once. A real one unlinks; two of the thirty copies did
+(`Scoreboard`'s and `MatchHud`'s, which keep theirs as overrides) and twenty-eight did not.
+Fixing it in `ui/testing/dom.ts` is one line and would change what every suite on the shared
+double sees, which is why #79 did not do it — it is a behaviour change wanting its own run of
+the gate, not a line in a conversion.

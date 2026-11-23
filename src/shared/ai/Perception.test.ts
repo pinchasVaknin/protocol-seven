@@ -412,8 +412,9 @@ describe('the diagnostics', () => {
     expect(a.perception.stats.coneChecks).toBe(2);
     expect(a.perception.stats.losRays).toBe(2);
     expect(a.perception.stats.sightings).toBe(1);
+    expect(a.perception.stats.freshContacts).toBe(1);
     a.perception.resetStats();
-    expect(a.perception.stats).toEqual({ coneChecks: 0, losRays: 0, sightings: 0 });
+    expect(a.perception.stats).toEqual({ coneChecks: 0, losRays: 0, sightings: 0, freshContacts: 0 });
     expect(a.perception.smokeBlocked).toBe(0);
   });
 });

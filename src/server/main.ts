@@ -77,6 +77,12 @@ interface Args {
    * shotgun in eight measures carbines. Empty is the shipped per-tier draw.
    */
   botWeapon: string;
+  /**
+   * Print one extra `match.tactics` line per match (bot AI plan, S0). Off by default and a
+   * separate line rather than a field of `match.end`: the oracles read `match.end` and do not
+   * pass the flag, and the line carries a wall-clock figure that differs on every run.
+   */
+  tactics: boolean;
   format: LogFormat;
   level: LogLevel;
 }
@@ -93,6 +99,7 @@ function parseArgs(argv: readonly string[]): Args {
     minutes: 0,
     asap: false,
     botWeapon: '',
+    tactics: false,
     // A redirected log is being read by something. Default to JSON when stdout is not a
     // terminal, so `npm run server > run.log` produces a parseable file without a flag.
     format: process.stdout.isTTY === true ? 'text' : 'json',
@@ -156,6 +163,9 @@ function parseArgs(argv: readonly string[]): Args {
         args.botWeapon = raw;
         break;
       }
+      case '--tactics':
+        args.tactics = true;
+        break;
       case '--json':
         args.format = 'json';
         break;
@@ -297,6 +307,22 @@ function reportMatch(
      * all, so `sprintShare` has to hold while `flipsPerTravelSecond` falls.
      */
     locomotion: locomotionSummary(report),
+  });
+  if (args.tactics) reportTactics(report, match, result?.winner ?? 'INCOMPLETE');
+}
+
+/** The `--tactics` line: the tally's raw counts, summed and divided later by the bench. */
+function reportTactics(
+  report: ReturnType<ServerMatch['report']>,
+  match: ServerMatch,
+  winner: string,
+): void {
+  metric('harness', 'match.tactics', {
+    ...report.tactics,
+    aiP99: report.ai.p99Ms,
+    aiMean: report.ai.meanMs,
+    ticks: match.tickCount,
+    winner,
   });
 }
 

@@ -16,6 +16,7 @@ import {
 } from './ObjectiveIntent';
 import type { Perception } from './Perception';
 import type { Pathfinder } from './Pathing';
+import type { TacticalTally } from './TacticalTally';
 import { simCos, simSin } from '../core/SimMath';
 //#endregion
 
@@ -39,6 +40,10 @@ export interface BrainDeps {
   readonly streakObjectives: () => ObjectiveProvider | null;
   /** Match-wide multiplier on `pushAggression` (M7). One life makes bots cautious. */
   readonly pushScale: () => number;
+  /** The measuring instrument (S0 of the bot AI plan). Counts only; no decision reads it. */
+  readonly tally: TacticalTally;
+  /** True while nobody may move: the countdown and the hold between rounds. Read by the tally. */
+  readonly frozen: () => boolean;
 }
 
 type GoalKind = 'NONE' | 'PATROL' | 'INVESTIGATE' | 'COVER' | 'FLANK' | 'PUSH' | 'OBJECTIVE';
@@ -296,6 +301,7 @@ export class BotBrain {
     const tier = bot.tier;
     const seeing = bb.hasLos;
     const hurt = bot.healthFraction < tier.coverHealthFraction;
+    this.deps.tally.noteDecision(this.state, seeing, hurt);
 
     if (this.tryReload(bot, seeing)) return;
 
@@ -366,6 +372,7 @@ export class BotBrain {
    */
   steer(bot: Bot, cmd: MutableInputCommand, roster: readonly Bot[]): void {
     this.stateTime += DT;
+    this.deps.tally.noteTick(this.state, bot.path.active);
     const tier = bot.tier;
     const bb = bot.blackboard;
     const combat = bot.combat;
@@ -760,7 +767,10 @@ export class BotBrain {
 
   private transition(bot: Bot, next: BotState): void {
     if (this.state === next) return;
-    if (!isLegalBotTransition(this.state, next)) return;
+    if (!isLegalBotTransition(this.state, next)) {
+      this.deps.tally.noteRejected();
+      return;
+    }
     if (this.state === 'SEEK_COVER' && next !== 'SEEK_COVER') {
       this.deps.cover.release(bot.entityId);
       this.coverSlot = -1;
@@ -800,6 +810,7 @@ export class BotBrain {
     if (moved >= STUCK_DISTANCE) return;
 
     this.stuckEvents++;
+    this.deps.tally.noteStuck(this.deps.frozen());
     // Drop the path and rotate the goal: asking for the same route again would wedge
     // against the same corner. A patrol picks somewhere else; a tactical goal is retried
     // from scratch next evaluation.

@@ -58,6 +58,8 @@ export interface PerceptionStats {
   coneChecks: number;
   losRays: number;
   sightings: number;
+  /** Sightings that began a new contact: a new enemy, or the old one long lost (bot AI plan, S0). */
+  freshContacts: number;
 }
 
 /**
@@ -195,7 +197,7 @@ export class Perception {
    */
   freeForAll = false;
 
-  readonly stats: PerceptionStats = { coneChecks: 0, losRays: 0, sightings: 0 };
+  readonly stats: PerceptionStats = { coneChecks: 0, losRays: 0, sightings: 0, freshContacts: 0 };
   readonly noise = new NoiseField();
 
   /**
@@ -252,6 +254,7 @@ export class Perception {
     this.stats.coneChecks = 0;
     this.stats.losRays = 0;
     this.stats.sightings = 0;
+    this.stats.freshContacts = 0;
     this.smokeBlocked = 0;
   }
 
@@ -281,7 +284,10 @@ export class Perception {
 
     // A fresh contact — new enemy, or the old one long lost — pays the reaction delay.
     const fresh = bb.targetId !== this.bestId || bb.sinceLos > 1.2;
-    if (fresh) bb.armReaction(rng.range(tier.reactionMin, tier.reactionMax));
+    if (fresh) {
+      bb.armReaction(rng.range(tier.reactionMin, tier.reactionMax));
+      this.stats.freshContacts++;
+    }
     this.stats.sightings++;
     bb.noteSighting(
       this.bestId,

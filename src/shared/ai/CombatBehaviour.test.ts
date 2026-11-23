@@ -83,6 +83,14 @@ describe('a fresh contact', () => {
     expect(cb.aimErrorDeg).toBeGreaterThan(TIER.aimConeDeg);
   });
 
+  it('is counted, and a respawn does not lose the count', () => {
+    const cb = new CombatBehaviour();
+    cb.onContact(TIER, new Rng(11));
+    cb.onContact(TIER, new Rng(12));
+    cb.reset(0, 0);
+    expect(cb.firstBursts).toBe(2);
+  });
+
   it('arms a burst of the tier length', () => {
     const cb = aiming();
     cb.onContact(TIER, new Rng(11));

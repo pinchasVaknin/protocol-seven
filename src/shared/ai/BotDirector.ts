@@ -50,6 +50,7 @@ import { dealTiers, seatToVacate } from './RosterDeal';
 import { hitsFrom, shotsFrom } from '../combat/ShotAccounting';
 import { makeSpawnChoice, SpawnSelector, type SpawnChoice } from './SpawnSelector';
 import { simCos } from '../core/SimMath';
+import { TacticalTally, type TacticalSummary } from './TacticalTally';
 import { Disposable } from '../core/Disposable';
 //#endregion
 
@@ -178,6 +179,12 @@ export interface BotReport {
    * the share of travel spent at sprint speed, which is what says whether holding the dither
    * down cost the roster its pace or bought it some.
    */
+  /**
+   * What the bots did, as raw counts (bot AI plan, S0). Counts only, never a ratio, so a harness
+   * can sum matches and divide once. `freshContacts` and `firstBursts` are the two halves of
+   * the first-burst rule's coverage.
+   */
+  tactics: TacticalSummary & { freshContacts: number; firstBursts: number };
   locomotion: {
     sprintFlips: number;
     sprintStarts: number;
@@ -362,6 +369,7 @@ export class BotDirector extends Disposable {
 
   private readonly deps: BotDirectorDeps;
   private readonly brainDeps: BrainDeps;
+  private readonly tally = new TacticalTally();
   private readonly byId = new Map<number, Bot>();
   private readonly rng: Rng;
   private readonly choice: SpawnChoice = makeSpawnChoice();
@@ -411,6 +419,8 @@ export class BotDirector extends Disposable {
       objectives: () => this.objectives,
       streakObjectives: () => this.streakObjectives,
       pushScale: () => this.pushAggressionScale,
+      tally: this.tally,
+      frozen: () => this.inputFrozen,
     };
 
     this.roster.push(deps.player);
@@ -596,6 +606,7 @@ export class BotDirector extends Disposable {
       bot.advance(tick, nowMs, bots, this.inputFrozen);
     }
 
+    this.tallyTick(tick);
     scheduler.runPathBudget(this.pathfinder);
     scheduler.endTick();
   }
@@ -644,6 +655,7 @@ export class BotDirector extends Disposable {
       perTeamTier,
       stuckEvents: this.bots.reduce((n, b) => n + b.brain.stuckEvents, 0),
       pathFailures: this.bots.reduce((n, b) => n + b.brain.pathFailures, 0),
+      tactics: this.tacticsReport(),
       locomotion: this.locomotionReport(),
     };
   }
@@ -660,7 +672,9 @@ export class BotDirector extends Disposable {
     this.pathfinder.resetCounters();
     this.spawns.resetStats();
     this.perception.resetStats();
+    this.tally.reset();
     for (const bot of this.bots) {
+      bot.combat.firstBursts = 0;
       bot.shotsFired = 0;
       bot.shotsHit = 0;
       bot.kills = 0;
@@ -861,6 +875,8 @@ export class BotDirector extends Disposable {
     if (killer !== undefined) killer.kills++;
     const victim = this.byId.get(p.targetId);
     if (victim === undefined) return;
+    // Before `onKilled`, which overwrites the state the tally files the death under.
+    this.tally.noteDeath(victim, this.bots);
     const source = this.combatant(p.sourceId);
     const dx = source === undefined ? 0 : victim.px - source.px;
     const dz = source === undefined ? 1 : victim.pz - source.pz;
@@ -924,6 +940,31 @@ export class BotDirector extends Disposable {
   }
 
   /** The scheduler's own cost, which is what says whether the AI fits in a tick. */
+  /**
+   * The tally's per-tick measurements, after every bot has stepped (bot AI plan, S0).
+   *
+   * Reads only: how many living bots hold a target that is already dead, and, twice a second, the
+   * team-wide figures. Nothing here writes to a bot or draws a random number.
+   */
+  private tallyTick(tick: number): void {
+    const bots = this.bots;
+    for (let i = 0; i < bots.length; i++) {
+      const bot = bots[i];
+      if (bot === undefined || !bot.health.alive || !bot.blackboard.hasKnownTarget) continue;
+      const target = this.byId.get(bot.blackboard.targetId);
+      this.tally.noteKnownTarget(target !== undefined && !target.health.alive);
+    }
+    if (tick % 30 === 0) this.tally.sampleTeams(bots, this.roster);
+  }
+
+  private tacticsReport(): BotReport['tactics'] {
+    return {
+      ...this.tally.summary(),
+      freshContacts: this.perception.stats.freshContacts,
+      firstBursts: this.bots.reduce((n, b) => n + b.combat.firstBursts, 0),
+    };
+  }
+
   private aiReport(): BotReport['ai'] {
     return {
       lastMs: this.scheduler.lastMs,

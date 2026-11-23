@@ -17,6 +17,7 @@ import { GREYBOX_MAP } from '../world/maps/greybox';
 import { Bot, type BotDeps, type BotSpec } from './Bot';
 import { navBakeOptionsFor } from './BotDirector';
 import type { BrainDeps } from './BotBrain';
+import { TacticalTally } from './TacticalTally';
 import { CoverIndex } from './Cover';
 import { DEFAULT_PERCEPTION, DEFAULT_TIERS } from './DifficultyTiers';
 import { Pathfinder } from './Pathing';
@@ -77,6 +78,8 @@ function rig(spec: Partial<BotSpec> = {}): Rig {
     objectives: () => null,
     streakObjectives: () => null,
     pushScale: () => 1,
+    tally: new TacticalTally(),
+    frozen: () => false,
   };
   const deps: BotDeps = {
     world: COLLISION.collision,

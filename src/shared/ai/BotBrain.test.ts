@@ -15,6 +15,7 @@ import { GREYBOX_MAP } from '../world/maps/greybox';
 import { Bot, type BotDeps } from './Bot';
 import { navBakeOptionsFor } from './BotDirector';
 import type { BrainDeps } from './BotBrain';
+import { TacticalTally } from './TacticalTally';
 import { CoverIndex } from './Cover';
 import { cloneTierTable, DEFAULT_PERCEPTION, DEFAULT_TIERS, type TierTable } from './DifficultyTiers';
 import { makeObjectiveTarget, type ObjectiveProvider, type ObjectiveTarget } from './ObjectiveIntent';
@@ -111,6 +112,8 @@ function rig(tiers: TierTable = CALM, seed = 1234, at = AT): Rig {
     objectives: () => objectives,
     streakObjectives: () => streakObjectives,
     pushScale: () => 1,
+    tally: new TacticalTally(),
+    frozen: () => false,
   };
   const deps: BotDeps = {
     world: COLLISION.collision,
@@ -306,6 +309,27 @@ describe('deciding, in order of urgency', () => {
     bot.blackboard.confidence = 0.9;
     bot.brain.decide(bot);
     expect(bot.brain.state).toBe('IDLE');
+  });
+
+  it('tally: counts the decision, and the refusal a hurt bot in IDLE gets for asking for cover', () => {
+    // S1 of the bot AI plan removes the refusal, and this test with it.
+    const { bot, brain } = rig();
+    sees(bot, 10);
+    bot.health.applyDamage(100);
+    bot.brain.decide(bot);
+    const s = brain.tally.summary();
+    expect(s.decisions).toBe(1);
+    expect(s.losDecisions).toBe(1);
+    expect(s.idleLosDecisions).toBe(1);
+    expect(s.hurtDecisions).toBe(1);
+    expect(s.rejected).toBe(1);
+  });
+
+  it('tally: counts a steer tick in the state the bot is in', () => {
+    const { bot, brain } = rig();
+    steerOnce(bot);
+    expect(brain.tally.summary().steerTicks).toBe(1);
+    expect(brain.tally.summary().stateTicks.IDLE).toBe(1);
   });
 
   it('holds a committed flank through a changing tactical picture (M4)', () => {

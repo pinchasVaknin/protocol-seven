@@ -68,6 +68,14 @@ export class CombatBehaviour {
   aimOffSolutionDeg = 0;
   burstRemaining = 0;
 
+  /**
+   * Contacts this body has opened with a deliberately wrong burst (bot AI plan, S0).
+   *
+   * Not cleared by `reset()`: a respawn must not lose the count. The director clears it with the
+   * rest of its counters.
+   */
+  firstBursts = 0;
+
   /** Aim error in degrees, screen-relative. Yaw positive = right. */
   private errYaw = 0;
   private errPitch = 0;
@@ -105,6 +113,7 @@ export class CombatBehaviour {
    * rounds are wrong on purpose (S6.4), and restarts the burst counter.
    */
   onContact(tier: TierConfig, rng: Rng): void {
+    this.firstBursts++;
     const angle = rng.float() * TAU;
     this.errYaw = simCos(angle) * tier.firstBurstConeDeg;
     this.errPitch = simSin(angle) * tier.firstBurstConeDeg;

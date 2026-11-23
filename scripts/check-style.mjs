@@ -583,6 +583,7 @@ const FINISHED = {
     'src/client/MatchStreakLedger.ts',
     'src/client/MatchSurfaces.ts',
   ],
+  M20: ['src/shared/ai/TacticalTally.ts'],
 };
 
 // ---------------------------------------------------------------------------

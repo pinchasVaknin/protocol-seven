@@ -21,7 +21,6 @@ import { SupplySystem } from '../shared/world/SupplySystem';
 import { BurnSystem } from '../shared/combat/BurnSystem';
 import { burnWeapon } from '../shared/streaks/StreakWeapons';
 import type { LifeStockReport } from '../shared/equipment/LifeStockAudit';
-import { MELEE_SWING_SECONDS } from '../shared/weapons/Melee';
 import { DEFAULT_EQUIPMENT_CONFIG, type EquipmentConfig } from '../shared/equipment/EquipmentConfig';
 import { AR_DEFAULT, PISTOL_DEFAULT } from '../shared/weapons/WeaponDefs';
 import { EventCollector } from './net/EventCollector';
@@ -213,7 +212,7 @@ const BOT_ID_FLOOR = BOT_ID_BASE;
  *
  * - **No local player.** S4.9: every player is a client. The roster's player seat is a
  *   `Spectator` that never participates — the same mechanism the M3 AFK harness used.
- * - **No weapons for a human, no viewmodel, no melee.** Bots draw their own weapons
+ * - **No weapons for a human, no viewmodel.** Bots draw their own weapons
  *   (`ai/BotArsenal`), and the rest of that list is a local-player presentation system.
  * - **Killstreaks run here and cross the wire as of M11 Gate B** (§8.22). Earned from the
  *   authoritative score, spent through `MsgC.Streak`, replicated per recipient — bodies to
@@ -1494,24 +1493,17 @@ export class ServerMatch extends Disposable {
   }
 
   /**
-   * Every connected human's knife, for the pose alone (protocol 20).
+   * Every connected human's knife (v30; the pose alone since protocol 20).
    *
-   * The asymmetry with `stepThrowers` above is the point and is worth stating rather than
-   * hiding. A throw is simulated here: the server owns a `ThrowController` per player, the cook
-   * and the release are authoritative, and `handBusy` is read off the thing that decides. A
-   * *swing* is not simulated here at all — `weapons/Melee.ts` lives in `ClientMatch` and applies
-   * its damage there — so this cannot read a state machine, because there is none to read.
+   * The same `weapons/Melee` the client runs, fed the same press edge through the same three
+   * gates — a grenade in the hand (`handBusy`), the gunship's camera (`flyingChopper`) and the
+   * mortar's map (`Btn.Targeting`, in the same command). Until v30 this ran a pose timer and
+   * nothing else, because the swing was the client's; and a networked client has no remote body in
+   * its damage list to hit, so online a knife did no damage to anybody.
    *
-   * What it reads instead is the input, which is authoritative: `Btn.Melee` arrived in a command
-   * this player signed, and the rising edge of it is the frame they asked to swing. The timer runs
-   * on the shared `MELEE_SWING_SECONDS`, so the pose lasts exactly as long as the swing the client
-   * is running. It reproduces the client's three gates, all of which it holds now (2026-09-28): a
-   * knife is refused while a grenade is in the hand (`handBusy`), while the gunship has the camera
-   * (`flyingChopper`) and while the mortar's map is up (`Btn.Targeting`, in the same command). It
-   * used to reproduce none, and a watcher saw a swing for every one the client had refused.
-   * Nothing else in the match can observe this field.
-   *
-   * Driven from the command the body just consumed, for the reason `stepThrowers` gives.
+   * Here rather than in `NetPlayer.advance` because `MatchThrows.stepThrowers` has to have said
+   * whose hand is on a grenade first. That puts it outside the bracket `stepPlayer` opens, so the
+   * strike opens its own.
    */
   private stepMelee(): void {
     for (const player of this.players) {
@@ -1525,16 +1517,32 @@ export class ServerMatch extends Disposable {
         !player.flyingChopper &&
         !isDown(buttons, Btn.Targeting);
       player.meleePrevButtons = buttons;
-      // A corpse is not swinging, and a swing that survived a respawn would be drawn on the
-      // next life — the same reason `ThrowController.step` takes `alive`.
-      if (!player.alive) {
-        player.meleeSeconds = 0;
-        continue;
-      }
-      // The edge restarts it rather than extending it: holding the key is one swing on the
-      // client too, and the cooldown there is longer than the swing.
-      if (pressed) player.meleeSeconds = MELEE_SWING_SECONDS;
-      else if (player.meleeSeconds > 0) player.meleeSeconds = Math.max(0, player.meleeSeconds - DT);
+      this.stepKnife(player, pressed);
+      player.meleeSeconds = player.melee.remainingSeconds;
+    }
+  }
+
+  /**
+   * One swing's tick, with the world put where the swinger saw it on the tick that strikes.
+   *
+   * The same lag compensation a round gets (S4.13), and for the same reason: a body two metres
+   * away at a sprint is a metre from where the client drew it. On that one tick and no other,
+   * because the rest of a swing touches nothing.
+   */
+  private stepKnife(player: NetPlayer, pressed: boolean): void {
+    const sim = player.controller.sim;
+    if (!player.alive || !player.melee.strikesNextStep) {
+      // A corpse is not swinging: `step` drops a swing in progress, so one that survived a
+      // respawn cannot land on whoever is standing in front of the next life.
+      player.melee.step(pressed, sim, player.alive);
+      return;
+    }
+    this.rewind.begin(player.entityId, this.currentTick, this.viewLag(player.entityId));
+    try {
+      player.melee.step(pressed, sim, true);
+    } finally {
+      // `finally` for the reason `stepPlayer` gives: a restore that is skipped is permanent.
+      this.rewind.end();
     }
   }
 

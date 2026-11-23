@@ -23,6 +23,7 @@ import { PlayerController } from '../shared/player/PlayerController';
 import { savePlayerSim, type PlayerSimState, makePlayerSimState } from '../shared/player/PlayerState';
 import type { ViewmodelConfig } from '../shared/weapons/ViewmodelConfig';
 import { heldMoveScale, type WeaponDef } from '../shared/weapons/WeaponDefs';
+import { Melee } from '../shared/weapons/Melee';
 import { handsOffWeapon, WeaponSystem } from '../shared/weapons/WeaponSystem';
 import type { CollisionWorld } from '../shared/world/CollisionWorld';
 import { InputBuffer } from './net/InputBuffer';
@@ -152,19 +153,20 @@ export class NetPlayer implements Combatant {
   flyingChopper = false;
 
   /**
-   * Seconds left of the knife swing this body is **drawn** taking (protocol 20).
+   * The knife (v30): the same state machine `ClientMatch` runs, and the one whose hits count.
    *
-   * The one presentation fact on this class the simulation here does not own. `weapons/Melee.ts`
-   * runs in `ClientMatch` and resolves its damage there, so the server sees a swing only as
-   * `Btn.Melee` in an input command. `ServerMatch.stepMelee` edge-detects that bit and runs this
-   * down by `MELEE_SWING_SECONDS`, which is the shared constant the client's own state machine is
-   * built from — so the pose everybody else sees starts on the tick the swinger asked for it and
-   * lasts as long as their swing does.
+   * Stepped by `ServerMatch.stepMelee` rather than by `advance`, because what refuses a swing
+   * is decided after the body has moved: a grenade in the hand is `MatchThrows`' answer.
+   */
+  readonly melee: Melee;
+
+  /**
+   * Seconds left of the knife swing this body is taking (protocol 20): the pose everybody else
+   * draws, and the trigger `handsOffWeapon` holds shut.
    *
-   * It decides nothing. No damage, no hit, no block: a body drawn mid-swing that the client
-   * never let swing is a body that pressed the knife with a grenade in its hand, and the only
-   * consequence is one animation. Kept here beside `handBusy` because both are written once a
-   * tick by the match and read once a tick by the snapshot.
+   * Written once a tick by `ServerMatch.stepMelee` off `melee`, and read once a tick by the
+   * snapshot — the same arrangement `handBusy` has beside it. A field rather than a getter over
+   * `melee` because the rifle asks on the tick *after*, and has to be told what the last one said.
    */
   meleeSeconds = 0;
 
@@ -257,6 +259,8 @@ export class NetPlayer implements Combatant {
     // Per-entity salt so two players firing the same weapon on the same tick do not draw
     // identical spread. Since M10 this is a salt, not a stream position — see `WeaponSystem`.
     this.weapons.reseed(0x5bf0_3d17 ^ (entityId * 0x9e37_79b9));
+
+    this.melee = new Melee({ world: deps.world, damage: deps.damage, bus: deps.bus, sourceId: entityId });
 
     /**
      * Lightweight, on the authoritative side.
@@ -402,6 +406,10 @@ export class NetPlayer implements Combatant {
     this.health.reset();
     this.controller.spawn(x, y, z, yaw);
     this.weapons.reset();
+    // A round reset respawns the living too, and a swing must not come with them. The client's
+    // own copy is reset at the same moment.
+    this.melee.reset();
+    this.meleeSeconds = 0;
     this.respawnTimer = 0;
     this.visual.spawnSerial++;
     this.rig.setLayout(HUMANOID_RIG);

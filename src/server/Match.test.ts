@@ -723,6 +723,207 @@ describe('ServerMatch', () => {
     });
   });
 
+  describe('the knife', () => {
+    /** Ticks from the press to the strike: the wind-up, and one more because it lands *past* zero. */
+    const STRIKE_TICKS = 8;
+
+    interface Duel {
+      readonly m: ServerMatch;
+      readonly player: NetPlayer;
+      readonly foe: ServerMatch['bots']['bots'][number];
+      /** The next tick to step. */
+      tick: number;
+      readonly kills: { weaponId: string; sourceId: number; targetId: number }[];
+      /** Damage the player did to the foe. */
+      dealt: number;
+    }
+
+    /** A live match with one human, and one enemy bot to stand in front of them. */
+    function duel(overrides: Partial<ServerMatchOptions> = {}): Duel {
+      const m = match({ bots: 4, rosterOverride: 4, ...overrides });
+      const player = join(m);
+      const tick = goLive(m);
+      const foe = m.bots.bots.find((b) => b.team !== player.team);
+      if (foe === undefined) throw new Error('no enemy on the roster');
+      const d: Duel = { m, player, foe, tick, kills: [], dealt: 0 };
+      m.bus.on(EV.EntityKilled, (e) => {
+        if (e.sourceId !== player.entityId) return;
+        d.kills.push({ weaponId: e.weaponId, sourceId: e.sourceId, targetId: e.targetId });
+      });
+      m.bus.on(EV.DamageDealt, (e) => {
+        if (e.sourceId === player.entityId && e.targetId === foe.entityId) d.dealt += e.amount;
+      });
+      return d;
+    }
+
+    /** Stand `bot` down the player's -z, where a yaw of zero is looking. */
+    function place(d: Duel, bot: Duel['foe'], metres: number): void {
+      const sim = d.player.controller.sim;
+      bot.controller.spawn(sim.x, sim.y, sim.z - metres, Math.PI);
+      bot.rig.setTransform(sim.x, sim.y, sim.z - metres, Math.PI);
+    }
+
+    /** One tick with the foe held at `metres`, the player looking at it and unable to lose. */
+    function hold(d: Duel, buttons: number, metres: number): void {
+      place(d, d.foe, metres);
+      d.player.health.reset();
+      command.seq++;
+      command.tickIndex = d.tick;
+      command.buttons = buttons;
+      command.yaw = 0;
+      command.pitch = 0;
+      expect(d.player.input.accept(command, d.tick)).toBe(true);
+      d.m.step(d.tick++);
+    }
+
+    /** A press, then long enough for the strike to have landed. */
+    function swing(d: Duel, metres: number): void {
+      hold(d, Btn.Melee, metres);
+      for (let i = 0; i < STRIKE_TICKS + 4; i++) hold(d, 0, metres);
+    }
+
+    it('kills a full-health enemy in reach, on the server', () => {
+      // It dealt nothing at all: the swing lived in `ClientMatch`, whose damage list holds no
+      // remote body, and the server ran a pose timer.
+      const d = duel();
+      expect(d.foe.health.current).toBe(d.foe.health.max);
+      swing(d, 1.3);
+      expect(d.foe.health.alive).toBe(false);
+      expect(d.kills).toEqual([
+        { weaponId: 'melee_knife', sourceId: d.player.entityId, targetId: d.foe.entityId },
+      ]);
+    });
+
+    it('lands after the wind-up and not on the press', () => {
+      const d = duel();
+      hold(d, Btn.Melee, 1.3);
+      for (let i = 0; i < STRIKE_TICKS - 2; i++) hold(d, 0, 1.3);
+      expect(d.dealt).toBe(0);
+      for (let i = 0; i < 3; i++) hold(d, 0, 1.3);
+      expect(d.dealt).toBeGreaterThan(0);
+    });
+
+    it('cannot reach past its two metres', () => {
+      const d = duel();
+      swing(d, 2.6);
+      expect(d.dealt).toBe(0);
+    });
+
+    it('leaves a team-mate unhurt', () => {
+      const d = duel();
+      const mate = d.m.bots.bots.find((b) => b.team === d.player.team);
+      if (mate === undefined) throw new Error('no team-mate on the roster');
+      let dealt = 0;
+      d.m.bus.on(EV.DamageDealt, (e) => {
+        if (e.sourceId === d.player.entityId && e.targetId === mate.entityId) dealt += e.amount;
+      });
+      const struck: boolean[] = [];
+      d.m.bus.on(EV.MeleeSwing, (e) => struck.push(e.hit));
+      for (let i = 0; i < STRIKE_TICKS + 4; i++) {
+        place(d, mate, 1.2);
+        hold(d, i === 0 ? Btn.Melee : 0, 40);
+      }
+      // The swing happened, and it did nothing.
+      expect(struck).toEqual([false]);
+      expect(dealt).toBe(0);
+    });
+
+    it('takes no health in the arena', () => {
+      const d = duel({ modeId: 'FFA', variant: 'WARMUP' });
+      swing(d, 1.3);
+      expect(d.foe.health.alive).toBe(true);
+      expect(d.foe.health.current).toBe(d.foe.health.max);
+    });
+
+    it('resolves the strike against what the swinger was looking at', () => {
+      // 100 ms behind: the body was in front of them until a few ticks before the strike.
+      const d = duel();
+      d.m.viewLagMsFor = () => 100;
+      for (let i = 0; i < 20; i++) hold(d, 0, 1.3);
+      hold(d, Btn.Melee, 1.3);
+      for (let i = 0; i < STRIKE_TICKS - 4; i++) hold(d, 0, 1.3);
+      for (let i = 0; i < 6; i++) hold(d, 0, 6);
+      expect(d.dealt).toBeGreaterThan(0);
+    });
+
+    it('resolves it against the present with the compensation off', () => {
+      const d = duel();
+      d.m.viewLagMsFor = () => 100;
+      d.m.rewindDisabled = true;
+      for (let i = 0; i < 20; i++) hold(d, 0, 1.3);
+      hold(d, Btn.Melee, 1.3);
+      for (let i = 0; i < STRIKE_TICKS - 4; i++) hold(d, 0, 1.3);
+      for (let i = 0; i < 6; i++) hold(d, 0, 6);
+      expect(d.dealt).toBe(0);
+    });
+
+    it('rewinds for the strike and for nothing else, and puts it back', () => {
+      const d = duel();
+      d.m.viewLagMsFor = () => 100;
+      for (let i = 0; i < 20; i++) hold(d, 0, 6);
+      const perTick = (): number => {
+        const at = d.m.rewind.rewoundShots;
+        hold(d, 0, 6);
+        return d.m.rewind.rewoundShots - at;
+      };
+      const quiet = perTick();
+      hold(d, Btn.Melee, 6);
+      const counts: number[] = [];
+      for (let i = 0; i < STRIKE_TICKS + 4; i++) counts.push(perTick() - quiet);
+      // One extra bracket on one tick, beside the one every player's step already has.
+      expect(counts.filter((n) => n === 1)).toHaveLength(1);
+      expect(counts.filter((n) => n !== 0 && n !== 1)).toHaveLength(0);
+      // Left open, a bracket leaves every rig in the past: `presentOf` answers only inside one.
+      expect(d.m.rewind.presentOf(d.foe.entityId)).toBeUndefined();
+    });
+
+    it('is one swing for two presses inside the cooldown', () => {
+      const d = duel();
+      let swings = 0;
+      d.m.bus.on(EV.MeleeSwing, () => swings++);
+      hold(d, Btn.Melee, 6);
+      for (let i = 0; i < 37; i++) hold(d, 0, 6);
+      // The swing is over (0.54 s) and the cooldown (0.72 s) is not.
+      expect(d.player.meleeSeconds).toBe(0);
+      hold(d, Btn.Melee, 6);
+      expect(d.player.meleeSeconds).toBe(0);
+      for (let i = 0; i < STRIKE_TICKS + 2; i++) hold(d, 0, 6);
+      expect(swings).toBe(1);
+    });
+
+    it('never lands for a swinger who died in the wind-up', () => {
+      const d = duel();
+      let swings = 0;
+      d.m.bus.on(EV.MeleeSwing, () => swings++);
+      hold(d, Btn.Melee, 1.3);
+      d.player.onKilled(0, 1, 5);
+      for (let i = 0; i < STRIKE_TICKS + 4; i++) {
+        place(d, d.foe, 1.3);
+        d.m.step(d.tick++);
+      }
+      expect(swings).toBe(0);
+      expect(d.dealt).toBe(0);
+    });
+
+    it('is dropped by a respawn, which a round reset gives the living too', () => {
+      const d = duel();
+      hold(d, Btn.Melee, 6);
+      expect(d.player.melee.busy).toBe(true);
+      d.player.spawn(d.player.px, d.player.py, d.player.pz, 0);
+      expect(d.player.melee.busy).toBe(false);
+      expect(d.player.meleeSeconds).toBe(0);
+    });
+
+    it('does not start while the match is frozen', () => {
+      const m = match({ bots: 4, rosterOverride: 4 });
+      const player = join(m);
+      expect(m.inputFrozen).toBe(true);
+      press(player, 0, Btn.Melee);
+      m.step(0);
+      expect(player.meleeSeconds).toBe(0);
+    });
+  });
+
   describe('the bomb', () => {
     it('begins a plant for a carrier holding Use on a site', () => {
       // The whole interaction lived on the client, so nobody in a networked S&D could touch

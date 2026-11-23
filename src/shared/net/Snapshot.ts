@@ -37,6 +37,7 @@ import type { PlayerSimState } from '../player/PlayerState';
 import { ALL_WEAPONS } from '../weapons/WeaponDefs';
 import { NO_SKIN_INDEX } from '../meta/Skins';
 import { STREAK_WEAPON_IDS } from '../streaks/StreakWeapons';
+import { MELEE_WEAPON_ID } from '../weapons/Melee';
 import type { ByteReader, ByteWriter } from './Wire';
 import {
   dequantAngle,
@@ -158,12 +159,10 @@ export const EFlag = {
   /**
    * This body is mid-knife-swing (protocol 20).
    *
-   * Presentation only, and the one flag here whose fact the server does not already hold:
-   * `weapons/Melee.ts` runs in `ClientMatch` and resolves its damage there, so the server sees
-   * the swing as a bit in an input command and nothing more. It derives the pose from that bit
-   * (`ServerMatch.stepMelee`) on the same edge the client does, with the same shared constants,
-   * and it applies no damage and decides no hit — the swing a remote body is *drawn* taking is
-   * the swing its owner asked for, which is all a pose has ever needed to be true about.
+   * Presentation only: what a swing *does* is the damage event's to say. The fact is the server's
+   * own since v30 — `ServerMatch.stepMelee` runs the same `weapons/Melee` the swinger's client
+   * does, off the same edge of the same command — so the swing a remote body is drawn taking is
+   * the swing that is resolved. Until then it was a timer beside a swing only the client had.
    */
   Melee: 1 << 9,
   /**
@@ -220,7 +219,8 @@ const F = {
 export const THROW_PHASES: readonly ThrowPhase[] = ['IDLE', 'READY', 'COOKING', 'THROWING'];
 
 /**
- * The wire's weapon table: every loadout weapon, then the three killstreak weapons (v19).
+ * The wire's weapon table: every loadout weapon, then the killstreak weapons (v19), then the
+ * knife (v30).
  *
  * `EntitySnapshot.weaponIndex` only ever names something a body is holding, so for that field
  * the tail is unreachable. `KilledEvent.weaponIndex` is the one that needed it: a sentry kill
@@ -234,6 +234,7 @@ export const THROW_PHASES: readonly ThrowPhase[] = ['IDLE', 'READY', 'COOKING', 
 const WIRE_WEAPON_IDS: readonly string[] = [
   ...ALL_WEAPONS.map((def) => def.id),
   ...STREAK_WEAPON_IDS,
+  MELEE_WEAPON_ID,
 ];
 
 /**

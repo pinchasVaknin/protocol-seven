@@ -6,6 +6,7 @@ import type { BombInfo, TagInfo } from '../modes/GameMode';
 import { makePlayerSimState } from '../player/PlayerState';
 import { ALL_WEAPONS } from '../weapons/WeaponDefs';
 import { STREAK_WEAPON_IDS } from '../streaks/StreakWeapons';
+import { MELEE_WEAPON_ID } from '../weapons/Melee';
 import {
   beginEvents,
   bombStateCode,
@@ -186,6 +187,13 @@ describe('the wire weapon table', () => {
       expect(index).toBeLessThan(255);
       expect(weaponIdAt(index)).toBe(id);
     }
+  });
+
+  it('names the knife last, so a knife kill is not "no weapon"', () => {
+    const index = weaponIndexOf(MELEE_WEAPON_ID);
+    expect(index).toBe(ALL_WEAPONS.length + STREAK_WEAPON_IDS.length);
+    expect(weaponIdAt(index)).toBe(MELEE_WEAPON_ID);
+    expect(index).toBeLessThan(255);
   });
 
   it('still answers 255 for a stranger, and the table fits under it', () => {

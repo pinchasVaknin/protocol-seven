@@ -26,6 +26,12 @@ export type RejectCodeId = (typeof RejectCode)[keyof typeof RejectCode];
 /**
  * Bump on any layout change to any message in this file.
  *
+ * v30 (2026-11-23, the human): **a knife that kills, and the id its kill arrives with.** The swing
+ * ran in `ClientMatch` alone, whose damage list holds no remote body, so online it dealt nothing at
+ * all; `ServerMatch` resolves it now. Not a byte moved: `melee_knife` is one more id at the end of
+ * the weapon table, where 255 — *no weapon* — is what a knife kill would otherwise have said. A v29
+ * client would read the new index as nothing, so the version moves.
+ *
  * v29 (2026-10-05, the human): **a shot nobody here can see or hear arrives as its impact.**
  * `Ev.Impact` (7) carries a round's terminus and material and nothing else — no shooter, no muzzle,
  * no direction (which would point back at the muzzle). The server sends it instead of `Fired` for a
@@ -239,7 +245,7 @@ export type RejectCodeId = (typeof RejectCode)[keyof typeof RejectCode];
  * grew an instance id and a migration tick — a client that cannot tell which instance a
  * snapshot describes will apply a live match's world to its warmup arena.
  */
-export const PROTOCOL_VERSION = 29;
+export const PROTOCOL_VERSION = 30;
 
 /** Four bytes at the head of every frame. Cheap rejection of anything not ours. */
 export const MAGIC = 0x4f50_5231; // 'OPR1'

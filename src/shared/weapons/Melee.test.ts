@@ -8,7 +8,8 @@ import { DEFAULT_HEALTH_CONFIG, Health } from '../player/Health';
 import { PlayerSim } from '../player/PlayerState';
 import { ColliderSet } from '../world/ColliderSet';
 import { CollisionWorld } from '../world/CollisionWorld';
-import { Melee, MELEE_SWING_SECONDS, type MeleeDeps, type MeleePhase } from './Melee';
+import { anyWeaponDef } from './AnyWeapon';
+import { Melee, MELEE_SWING_SECONDS, MELEE_WEAPON_ID, type MeleeDeps, type MeleePhase } from './Melee';
 
 /**
  * The knife: a timed animation with exactly one tick that touches anything.
@@ -112,6 +113,43 @@ describe('the phase machine', () => {
       last = h.melee.fraction;
     }
     expect(last).toBeGreaterThan(0.5);
+  });
+
+  it('says which step is the strike, so a server can rewind for that one and no other', () => {
+    const h = harness();
+    expect(h.melee.strikesNextStep).toBe(false);
+    h.melee.step(true, h.sim, true);
+    let strikes = 0;
+    for (let i = 0; i < 40; i++) {
+      const expected = h.melee.strikesNextStep;
+      const swings = h.swings.length;
+      h.melee.step(false, h.sim, true);
+      expect(h.swings.length - swings, `tick ${i}`).toBe(expected ? 1 : 0);
+      if (expected) strikes++;
+    }
+    expect(strikes).toBe(1);
+  });
+
+  it('counts the swing down from its whole length to nothing', () => {
+    const h = harness();
+    expect(h.melee.remainingSeconds).toBe(0);
+    h.melee.step(true, h.sim, true);
+    expect(h.melee.remainingSeconds).toBeCloseTo(MELEE_SWING_SECONDS, 5);
+    h.melee.step(false, h.sim, true);
+    expect(h.melee.remainingSeconds).toBeCloseTo(MELEE_SWING_SECONDS - DT, 5);
+    let last = h.melee.remainingSeconds;
+    for (let i = 0; i < 40; i++) {
+      h.melee.step(false, h.sim, true);
+      expect(h.melee.remainingSeconds).toBeLessThanOrEqual(last);
+      expect(h.melee.remainingSeconds > 0).toBe(h.melee.busy);
+      last = h.melee.remainingSeconds;
+    }
+    expect(last).toBe(0);
+  });
+
+  it('is in the catalogue from the moment somebody can swing one', () => {
+    harness();
+    expect(anyWeaponDef(MELEE_WEAPON_ID)?.name).toBe('KNIFE');
   });
 
   it('refuses a second swing until the cooldown is out', () => {

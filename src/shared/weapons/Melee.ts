@@ -45,6 +45,7 @@ import { clamp01 } from '../core/MathUtil';
 import type { PlayerSim } from '../player/PlayerState';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import { makeRayHit, type RayHit } from '../world/Geometry';
+import { registerWeaponDef } from './AnyWeapon';
 import { AR_DEFAULT, cloneWeaponDef, type WeaponDef } from './WeaponDefs';
 import { simCos, simSin } from '../core/SimMath';
 //#endregion
@@ -64,6 +65,9 @@ export interface MeleeDeps {
 
 // ========================================= CONSTANTS ========================================== \\
 //#region Constants
+/** The knife's id in the killfeed and at the end of the wire's weapon table (v30). */
+export const MELEE_WEAPON_ID = 'melee_knife';
+
 /** Seconds the arm takes to come back before the strike lands. */
 const WINDUP_SECONDS = 0.12;
 /** Seconds after the strike before the weapon is usable again. */
@@ -160,6 +164,23 @@ export class Melee {
     const total = MELEE_SWING_SECONDS;
     const done = this.phase === 'WINDUP' ? WINDUP_SECONDS - this.timer : WINDUP_SECONDS + (RECOVER_SECONDS - this.timer);
     return clamp01(done / Math.max(total, 1e-3));
+  }
+
+  /**
+   * Whether the next `step` is the one tick that touches anything.
+   *
+   * For the server, which resolves the strike against what the swinger was looking at and has
+   * to put the world there first (S4.13). Asked before the step rather than answered by it,
+   * because by then the search has run. The arithmetic is `step`'s own.
+   */
+  get strikesNextStep(): boolean {
+    return this.phase === 'WINDUP' && this.timer - DT <= 0;
+  }
+
+  /** Seconds of the swing still to run, zero when the hands are free. The pose's clock. */
+  get remainingSeconds(): number {
+    if (this.phase === 'IDLE') return 0;
+    return this.phase === 'WINDUP' ? this.timer + RECOVER_SECONDS : this.timer;
   }
 
   reset(): void {
@@ -315,7 +336,7 @@ export class Melee {
 function meleeWeapon(): WeaponDef {
   if (knifeDef !== null) return knifeDef;
   const def = cloneWeaponDef(AR_DEFAULT);
-  def.id = 'melee_knife';
+  def.id = MELEE_WEAPON_ID;
   def.name = 'KNIFE';
   def.damage.near = MELEE_DAMAGE;
   def.damage.far = MELEE_DAMAGE;
@@ -328,6 +349,9 @@ function meleeWeapon(): WeaponDef {
   def.damageFalloff.end = 1001;
   def.penetration = 0;
   def.minimapPing = false;
+  // The one place the knife is built is the one place it is catalogued, as a streak weapon's is.
+  // See `anyWeaponDef`: the death report reads its name off the id a kill arrived with.
+  registerWeaponDef(def);
   knifeDef = def;
   return def;
 }

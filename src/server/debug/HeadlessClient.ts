@@ -200,11 +200,11 @@ export interface HeadlessClientOptions {
   /**
    * Swing the knife every N ticks, or 0 never (protocol 20).
    *
-   * The knife had never been exercised over the network at all: `weapons/Melee.ts` runs in
-   * `ClientMatch` and resolves its own damage, so nothing about a swing left the client and
-   * nothing here pressed the button. Protocol 20 gives a swing a replicated *pose*
-   * (`ServerMatch.stepMelee` derives `EFlag.Melee` from this very bit), and a flag nothing
-   * presses is a flag nothing can check — so the harness presses it.
+   * The knife had never been exercised over the network at all: the swing ran in `ClientMatch`
+   * alone, so nothing about it left the client and nothing here pressed the button. Protocol 20
+   * gave it a replicated *pose* (`EFlag.Melee`, off this very bit) and protocol 30 its damage, both
+   * from `ServerMatch.stepMelee`; a flag nothing presses is a flag nothing can check — so the
+   * harness presses it.
    */
   readonly meleeEveryTicks?: number;
   /**

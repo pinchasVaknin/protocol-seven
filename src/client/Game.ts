@@ -76,7 +76,6 @@ import type { BotHarness } from './debug/BotHarness';
 import type { DebugSuite } from './debug/DebugSuite';
 import { FrameStats } from './debug/FrameStats';
 import { installConsoleApi } from './debug/ConsoleApi';
-import { airPoseWatchWanted, setAirPoseWatch } from './characters/AirPoseWatch';
 import { consoleApiWanted } from './debug/ConsoleGate';
 import { Harness } from './debug/Harness';
 import { MatchHarness } from './debug/MatchHarness';
@@ -843,9 +842,6 @@ export class Game {
     if (consoleApiWanted(window.location.search, import.meta.env.DEV)) {
       installConsoleApi(this, this.harness, this.matchHarness);
     }
-    // `?airpose` only, and never by default: BACKLOG #87's instrument, which costs one property
-    // read per body per frame while it is off. See `AirPoseWatch` for the threshold's numbers.
-    setAirPoseWatch(airPoseWatchWanted(window.location.search));
     window.setTimeout(() => this.openFrontEnd(), 32);
   }
 

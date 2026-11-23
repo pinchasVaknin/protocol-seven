@@ -46,7 +46,6 @@ import {
 import {
   decodeHeader,
   makeSnapshotHeader,
-  ENTITY_STANCE_BIT,
   readEntity,
   readEvents,
   readOwnerState,
@@ -84,7 +83,6 @@ import { copyEntitySnapshot, EFlag, makeEntitySnapshot, type EntitySnapshot } fr
 import { NO_SKIN_INDEX } from '../meta/Skins';
 import type { INetLink } from './Transport';
 import { ByteReader, ByteWriter } from './Wire';
-import { noteStanceDelta, STANCE_TRACE } from './StanceTrace';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -1113,22 +1111,8 @@ export class NetClient {
       }
       const wasDormant = interp.sampleCount > 0 && (interp.latest.flags & EFlag.Dormant) !== 0;
       copyEntitySnapshot(interp.latest, this.entityScratch);
-      const before = this.entityScratch.stance;
-      const mask = readEntity(this.reader, this.entityScratch);
+      readEntity(this.reader, this.entityScratch);
       if (this.reader.overran) return false;
-
-      // BACKLOG #87: did a stance change travel at all? Off by default — see `StanceTrace`.
-      if (STANCE_TRACE.on) {
-        noteStanceDelta({
-          entityId: id,
-          sent: (mask & ENTITY_STANCE_BIT) !== 0,
-          before,
-          after: this.entityScratch.stance,
-          wasDormant,
-          nowDormant: (this.entityScratch.flags & EFlag.Dormant) !== 0,
-          serverMs,
-        });
-      }
 
       /**
        * A body this client could not see has just come into view (protocol 28): start its

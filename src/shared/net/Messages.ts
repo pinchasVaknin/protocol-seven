@@ -62,7 +62,7 @@ import {
 } from './MessageSnapshot';
 import { MAGIC, MsgC, MsgS, type MsgCId, type MsgSId } from './Protocol';
 import { ByteReader, ByteWriter } from './Wire';
-import { ENTITY_STANCE_BIT, readEntity, readOwnerState } from './Snapshot';
+import { readEntity, readOwnerState } from './Snapshot';
 
 /*
  * The surface this file has always had, kept whole where every caller already imports it.
@@ -141,7 +141,7 @@ export {
   writeSnapshotOwner,
   type SnapshotHeader,
 } from './MessageSnapshot';
-export { readOwnerState, readEntity, ENTITY_STANCE_BIT };
+export { readOwnerState, readEntity };
 export { ByteReader, ByteWriter };
 //#endregion
 

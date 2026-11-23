@@ -27,6 +27,7 @@ import type { MatchHarness } from './MatchHarness';
 import { simulateXp, simulationToLines } from '../../shared/meta/XpSimulator';
 import { cssHex, palette } from '../ui/Palette';
 import { gpuWarmup } from '../engine/GpuWarmup';
+import { airPoseReport, resetAirPoseWatch } from '../characters/AirPoseWatch';
 
 /**
  * `window.__p7`, the console surface the acceptance measurements are read from.
@@ -304,6 +305,9 @@ export function installConsoleApi(game: Game, harness: Harness, matchHarness: Ma
       },
     },
   };
+  // BACKLOG #87's instrument. Answers `{ on: false }` unless the page was opened with
+  // `?airpose`, and an empty report from a watch that is off says nothing — check `on` first.
+  Object.assign(api, { airPose: airPoseReport, airPoseReset: resetAirPoseWatch });
   Object.defineProperty(window, '__p7', { value: api, configurable: true });
 }
 

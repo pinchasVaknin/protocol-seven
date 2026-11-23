@@ -158,6 +158,7 @@ export const UNDOCUMENTED_URL_KEYS: ReadonlyMap<string, string> = new Map([
   ['skin', 'client/probes/skinThumb — which skin the thumbnail page renders for scripts/skin-thumbs.mjs'],
   ['weapon', 'client/probes/handTuner — which weapon the dev hand tuner (probes/hand-tuner.html) opens on'],
   ['nosplash', 'client/ui/Splash — skips the splash before the menu (M17, C6); the harness skips it by its own flag'],
+  ['airpose', 'client/characters/AirPoseWatch — watches for a body drawn in the air pose while it walks (BACKLOG #87); off unless asked for'],
 ]);
 
 /**

@@ -18,6 +18,7 @@ import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
 import { DEFAULT_MOVEMENT_CONFIG } from '../../shared/player/MovementConfig';
 import { MELEE_SWING_SECONDS } from '../../shared/weapons/Melee';
 import { ThrowLayer } from './ThrowLayer';
+import { WATCH, watchAirPose } from './AirPoseWatch';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -280,6 +281,8 @@ export class CharacterAnimator {
     const low = isLowStance(input);
     const sliding = input.stance === 'SLIDE';
     const airborne = this.settleAirborne(isAirborne(input), dt);
+    // Off by default: one property read, and nothing built. See `AirPoseWatch` (BACKLOG #87).
+    if (WATCH.on) this.reportAirPose(input, airborne, planarSpeed, dt);
     const gesture = selectGesture(input, planarSpeed);
     if (gesture === null) this.gestureLatch = null;
 
@@ -531,6 +534,28 @@ export class CharacterAnimator {
     }
     this.airborneHeldFor += Math.max(0, dt);
     return this.airborneHeldFor >= GROUND_EDGE_GRACE ? true : this.wasAirborne;
+  }
+
+  /**
+   * Hand this frame to BACKLOG #87's watch. Reached only when the watch is on, so the sample is
+   * never built on a normal run — the guard is at the call site for that reason.
+   */
+  private reportAirPose(
+    input: ActorAnimationInput,
+    airborne: boolean,
+    planarSpeed: number,
+    dt: number,
+  ): void {
+    watchAirPose({
+      entityId: this.entityId,
+      stance: input.stance,
+      rawAirborne: isAirborne(input),
+      airborne,
+      planarSpeed,
+      dt,
+      active: this.active?.id ?? null,
+      transition: this.transition?.id ?? null,
+    });
   }
 
   /** Start a one-shot that owns the body, with `resume` waiting behind it. */

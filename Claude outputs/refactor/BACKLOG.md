@@ -565,6 +565,52 @@ catalogued one, held too long.
 **Verify** nothing yet. No reproduction, so there is nothing to pin: the first piece of work is a
 reproduction, not a fix.
 
+---
+
+### Hunted 2026-11-23, not caught — and what is now ruled out, with numbers
+
+A session went looking for it and failed, which is worth as much as the entry itself: four of
+the five places it could have been are now measured clean, so the next person starts at the
+fifth rather than at the beginning.
+
+| Layer | How it was tested | Result |
+|---|---|---|
+| The simulation | Real `PlayerController`, 400 random input scripts x 600 ticks, then scripted slides, jump-cancels, mantles, ledges and a low ceiling | **Clean.** 6,023 jumps, 6,006 landings, and `AIRBORNE>STAND` 4,227 + `AIRBORNE>CROUCH` 1,779 = 6,006 — every landing cleared the stance. Never `grounded && AIRBORNE` for more than one tick. Bots run the same controller, so this covers them |
+| The height squash | Read both avatar paths | **Not it.** `CharacterAvatar` and `BotMesh` both `void heightScale` and set `scale(1,1,1)`; the compression was retired in M13 C2 |
+| The animator | 600 seeds x 900 frames of random stance scripts over all five stances | **Clean.** Never held `jumpLaunch` for 30 frames with the stance off `AIRBORNE` |
+| The replicated chain | Real controller -> real `EntityInterpolator` with jitter and 0/12/24/36 % packet loss -> real animator, 120 runs x 1,800 ticks | **Bounded, not stuck.** Worst hold **317 ms**, in the `frozen` and `extrapolated` outcomes. That is the interpolation delay plus `MAX_EXTRAPOLATION_MS` (250), and it is a flicker |
+| A live match | 24 bots, `?nosplash`, two runs of about a minute | **Did not occur.** Twelve airborne-and-moving episodes, longest **567 ms**, none over 600 |
+
+The last row is the useful one: **an ordinary jump taken while moving holds the air pose for up
+to about 570 ms**, so the honest population and the defect are an order of magnitude apart.
+
+**The sideways-movement lead, checked on its own and answered.** There is **no directional
+locomotion in the game at all** — `selectLocomotion` takes `planarSpeed`, the stance and the
+weapon, and never a direction — so strafing plays the *forward* walk loop. That is a real
+limitation of the asset pack and worth its own entry if anybody minds it, but it cannot be this
+bug: every slot the selector can return is catalogued and loaded, so strafing cannot select a
+missing clip, and selecting a missing clip was the one way it could have mattered. `resolve`
+throws on an unloaded slot, and that throw would land *before* `setLocomotion` updates
+`wasAirborne`, which would strand exactly this pose. It cannot happen from here.
+
+**So the instrument, rather than another guess: `?airpose`.** `src/client/characters/AirPoseWatch.ts`,
+off unless the page asks for it, costing one property read per body per frame while off. It
+times every episode of airborne-and-moving per body, keeps the distribution, and warns once with
+the whole state the moment one runs past **1,200 ms** — twice the longest honest jump and nearly
+four times the worst thing the network can do. Read it with `__p7.airPose()`; clear it with
+`__p7.airPoseReset()`.
+
+Verified live on 2026-11-23, both ways: with the flag off the report is `{ on: false }` and
+nothing is measured through a whole match; with `?airpose` it recorded a real jump at **566 ms**
+and tripped nothing.
+
+**What a trip will settle in one line.** The row carries `stance`, `rawAirborne` (before
+`GROUND_EDGE_GRACE`) and `airborne` (after it), so the two ends separate themselves: if the raw
+and settled answers agree on `AIRBORNE` while the body walks, the stance being fed in is wrong
+and the defect is upstream of the animator; if they disagree, it is the grace. It also carries
+`active` and `transition`, which say whether the body is holding the clamped launch or stuck in
+a one-shot that never finished.
+
 ## 6. Documentation and housekeeping
 
 ## The mechanism, and what has been done about it

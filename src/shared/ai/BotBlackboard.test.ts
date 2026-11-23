@@ -23,6 +23,31 @@ function seen(x = 0, z = -10, targetId = 2): BotBlackboard {
   return bb;
 }
 
+describe('forgetting a target (S1)', () => {
+  it('drops the belief and keeps the last known position as data', () => {
+    const bb = seen(5, -7);
+    bb.age(DECAY, NOISE_MEMORY);
+    expect(bb.losHeld).toBeGreaterThan(0);
+    bb.forgetTarget();
+    expect(bb.targetId).toBe(-1);
+    expect(bb.hasLos).toBe(false);
+    expect(bb.confidence).toBe(0);
+    expect(bb.losHeld).toBe(0);
+    expect(bb.hasKnownTarget).toBe(false);
+    expect(bb.lastKnownX).toBe(5);
+    expect(bb.lastKnownZ).toBe(-7);
+  });
+
+  it('starts the velocity estimate over, so a new target is not led by an old one', () => {
+    const bb = seen(5, -7);
+    bb.noteSighting(2, 6, 1.26, -7, 0, 9, 0.1);
+    expect(bb.lastKnownVx).not.toBe(0);
+    bb.forgetTarget();
+    bb.noteSighting(2, 7, 1.26, -7, 0, 9, 0.1);
+    expect(bb.lastKnownVx).toBe(0);
+  });
+});
+
 describe('a blackboard that has never seen anything', () => {
   it('believes nothing, and says so in every field', () => {
     const bb = new BotBlackboard();

@@ -686,6 +686,51 @@ describe('the report', () => {
   });
 });
 
+describe('forgetting the dead (bot AI plan, S1)', () => {
+  /** Two bots and a body 99, each told it is hunting that body; `seeing` says who has it in view. */
+  function hunters(seeing: readonly boolean[]): { director: BotDirector; bus: GameBus; bots: BotDirectorBots } {
+    const { director, bus } = populated(2, 1);
+    const bots = director.bots.slice(0, 2);
+    bots.forEach((bot, i) => {
+      bot.blackboard.noteSighting(99, 5, 1.6, 5, 0, 7, 0);
+      bot.blackboard.hasLos = seeing[i] ?? false;
+    });
+    return { director, bus, bots };
+  }
+  type BotDirectorBots = BotDirector['bots'];
+
+  function kill(bus: GameBus, targetId: number, sourceId: number): void {
+    bus.emit(EV.EntityKilled, { targetId, sourceId, weaponId: 'ar_carbine', zone: 'torso', killerHealth: 80 });
+  }
+
+  it('makes the killer forget the target even when it cannot see the body', () => {
+    const { bus, bots } = hunters([false, false]);
+    kill(bus, 99, bots[0]?.entityId ?? 0);
+    expect(bots[0]?.blackboard.targetId).toBe(-1);
+    expect(bots[0]?.blackboard.hasKnownTarget).toBe(false);
+  });
+
+  it('makes a witness forget, and leaves a bot that only remembers believing', () => {
+    const { bus, bots } = hunters([true, false]);
+    kill(bus, 99, 0);
+    expect(bots[0]?.blackboard.targetId).toBe(-1);
+    expect(bots[1]?.blackboard.targetId).toBe(99);
+    expect(bots[1]?.blackboard.hasKnownTarget).toBe(true);
+  });
+
+  it('forgets a victim that is not a bot, a human, too', () => {
+    const { bus, bots } = hunters([true, true]);
+    kill(bus, 99, 0);
+    for (const bot of bots) expect(bot.blackboard.targetId).toBe(-1);
+  });
+
+  it('leaves a bot hunting somebody else alone', () => {
+    const { bus, bots } = hunters([true, true]);
+    kill(bus, 98, bots[0]?.entityId ?? 0);
+    for (const bot of bots) expect(bot.blackboard.targetId).toBe(99);
+  });
+});
+
 describe('the tactical tally, as the director wires it (bot AI plan, S0)', () => {
   it('files a death under the state the bot died in, not under the DEAD that follows', () => {
     const { director, bus } = populated(1, 1);

@@ -6,6 +6,7 @@ import { DT } from '../core/Loop';
 import { clamp, DEG2RAD } from '../core/MathUtil';
 import type { NavGrid } from '../world/Navmesh';
 import type { Bot } from './Bot';
+import type { BotBlackboard } from './BotBlackboard';
 import { isFiringState, isLegalBotTransition, isTravellingState } from './BotStates';
 import type { TierConfig } from './DifficultyTiers';
 import type { CoverIndex } from './Cover';
@@ -548,6 +549,11 @@ export class BotBrain {
   /** What to do about a target, seen or merely believed in. True when it decided something. */
   private decideAgainstTarget(bot: Bot, tier: TierConfig, seeing: boolean, hurt: boolean): boolean {
     if (hurt && this.trySeekCover(bot)) return true;
+    // States that do not shoot may not enter the tactical ones, so the first move out of them is
+    // a contact, not a manoeuvre (S1).
+    if (this.state === 'IDLE' || this.state === 'PATROL' || this.state === 'INVESTIGATE') {
+      return this.enterContact(bot, seeing);
+    }
     if (seeing) {
       this.decideVisibleTarget(bot, tier);
       return true;
@@ -576,10 +582,42 @@ export class BotBrain {
     this.transition(bot, 'ENGAGE');
   }
 
+  /**
+   * The first move of a bot that does not shoot, against a target it knows of (S1).
+   *
+   * Seen: fight. Lost a moment ago, by a bot that was already looking: shoot at the spot. Else walk
+   * to where it was last seen, unless the bot is standing there, in which case there is nothing
+   * to decide and the caller goes on to investigate or patrol.
+   */
+  private enterContact(bot: Bot, seeing: boolean): boolean {
+    const bb = bot.blackboard;
+    if (seeing) {
+      this.setGoalNone();
+      this.transition(bot, 'ENGAGE');
+      return true;
+    }
+    if (this.state === 'INVESTIGATE' && this.isFreshLoss(bb)) {
+      this.setGoalNone();
+      this.transition(bot, 'SUPPRESS');
+      return true;
+    }
+    if (Math.hypot(bb.lastKnownX - bot.px, bb.lastKnownZ - bot.pz) <= GOAL_RADIUS) return false;
+    const cell = this.deps.nav.nearestCell(bb.lastKnownX, bb.lastKnownFeetY, bb.lastKnownZ);
+    if (cell < 0) return false;
+    this.setGoalAtCell('INVESTIGATE', cell);
+    this.transition(bot, 'INVESTIGATE');
+    return true;
+  }
+
+  /** A target lost so recently, and so surely, that shooting at where it was is still worth a beat. */
+  private isFreshLoss(bb: BotBlackboard): boolean {
+    return bb.sinceLos < 1.4 && bb.confidence > 0.35;
+  }
+
   /** Believed but not seen. Shoot at the last known position for a beat, then move. */
   private decideLostTarget(bot: Bot, tier: TierConfig): boolean {
     const bb = bot.blackboard;
-    if (bb.sinceLos < 1.4 && bb.confidence > 0.35) {
+    if (this.isFreshLoss(bb)) {
       this.setGoalNone();
       this.transition(bot, 'SUPPRESS');
       return true;
@@ -607,6 +645,7 @@ export class BotBrain {
   // -- goal selection --------------------------------------------------------
 
   private trySeekCover(bot: Bot): boolean {
+    if (!isLegalBotTransition(this.state, 'SEEK_COVER')) return false;
     const bb = bot.blackboard;
     if (!bb.hasKnownTarget) return false;
     const slot = this.deps.cover.select(
@@ -631,6 +670,7 @@ export class BotBrain {
   }
 
   private tryPush(bot: Bot): boolean {
+    if (!isLegalBotTransition(this.state, 'PUSH')) return false;
     const bb = bot.blackboard;
     if (!bb.hasKnownTarget) return false;
     const cell = this.deps.nav.nearestCell(bb.lastKnownX, bb.lastKnownFeetY, bb.lastKnownZ);
@@ -650,6 +690,7 @@ export class BotBrain {
    * freezing against a failed path request.
    */
   private tryFallBack(bot: Bot, preferredRange: number): boolean {
+    if (!isLegalBotTransition(this.state, 'PUSH')) return false;
     const bb = bot.blackboard;
     if (!bb.hasKnownTarget) return false;
     const nav = this.deps.nav;
@@ -679,6 +720,7 @@ export class BotBrain {
    * one the navmesh accepts wins. A flank that takes 2 ms to compute is not a flank.
    */
   private tryFlank(bot: Bot): boolean {
+    if (!isLegalBotTransition(this.state, 'FLANK')) return false;
     const bb = bot.blackboard;
     if (!bb.hasKnownTarget) return false;
     const toBotX = bot.px - bb.lastKnownX;

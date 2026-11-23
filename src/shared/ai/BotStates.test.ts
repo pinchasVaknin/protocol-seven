@@ -34,8 +34,8 @@ const OUT_DEGREE = {
   IDLE: 6,
   PATROL: 6,
   INVESTIGATE: 8,
-  ENGAGE: 8,
-  SUPPRESS: 8,
+  ENGAGE: 9,
+  SUPPRESS: 9,
   RELOAD: 10,
   SEEK_COVER: 9,
   FLANK: 9,
@@ -94,6 +94,11 @@ describe('the legal edges of the bot state machine', () => {
     expect(isLegalBotTransition('PATROL', 'PUSH')).toBe(false);
     expect(isLegalBotTransition('PATROL', 'ENGAGE')).toBe(true);
     expect(isLegalBotTransition('PATROL', 'INVESTIGATE')).toBe(true);
+  });
+
+  it('lets a fight end in patrol, because a dead target may leave the bot nothing to fight (S1)', () => {
+    expect(isLegalBotTransition('ENGAGE', 'PATROL')).toBe(true);
+    expect(isLegalBotTransition('SUPPRESS', 'PATROL')).toBe(true);
   });
 
   it('lets an objective be abandoned for anything at all', () => {

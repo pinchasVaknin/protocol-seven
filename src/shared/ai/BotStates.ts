@@ -7,6 +7,9 @@
  * hidden state in scattered booleans — the corollary is that there must be no hidden
  * *transitions* either.
  *
+ * ENGAGE and SUPPRESS may end in PATROL (S1): a killed target is forgotten, and a bot left with
+ * nothing to fight and nothing to look for has nowhere else to go.
+ *
  * Every state can die. Only DEAD can lead back to IDLE, which is what makes a respawn the
  * single door back into the machine.
  */
@@ -39,8 +42,8 @@ const LEGAL: Readonly<Record<BotState, readonly BotState[]>> = {
   IDLE: ['PATROL', 'INVESTIGATE', 'ENGAGE', 'RELOAD', 'OBJECTIVE', 'DEAD'],
   PATROL: ['IDLE', 'INVESTIGATE', 'ENGAGE', 'RELOAD', 'OBJECTIVE', 'DEAD'],
   INVESTIGATE: ['PATROL', 'IDLE', 'ENGAGE', 'SUPPRESS', 'RELOAD', 'SEEK_COVER', 'OBJECTIVE', 'DEAD'],
-  ENGAGE: ['SUPPRESS', 'RELOAD', 'SEEK_COVER', 'FLANK', 'PUSH', 'INVESTIGATE', 'OBJECTIVE', 'DEAD'],
-  SUPPRESS: ['ENGAGE', 'INVESTIGATE', 'RELOAD', 'SEEK_COVER', 'PUSH', 'FLANK', 'OBJECTIVE', 'DEAD'],
+  ENGAGE: ['SUPPRESS', 'RELOAD', 'SEEK_COVER', 'FLANK', 'PUSH', 'INVESTIGATE', 'PATROL', 'OBJECTIVE', 'DEAD'],
+  SUPPRESS: ['ENGAGE', 'INVESTIGATE', 'RELOAD', 'SEEK_COVER', 'PUSH', 'FLANK', 'PATROL', 'OBJECTIVE', 'DEAD'],
   RELOAD: ['ENGAGE', 'SUPPRESS', 'PATROL', 'INVESTIGATE', 'SEEK_COVER', 'PUSH', 'FLANK', 'IDLE', 'OBJECTIVE', 'DEAD'],
   SEEK_COVER: ['ENGAGE', 'SUPPRESS', 'RELOAD', 'PUSH', 'FLANK', 'INVESTIGATE', 'PATROL', 'OBJECTIVE', 'DEAD'],
   FLANK: ['ENGAGE', 'SUPPRESS', 'RELOAD', 'SEEK_COVER', 'PUSH', 'INVESTIGATE', 'PATROL', 'OBJECTIVE', 'DEAD'],

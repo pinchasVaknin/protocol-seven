@@ -862,6 +862,7 @@ export class BotDirector extends Disposable {
   private onEntityKilled(p: GameEvents[typeof EV.EntityKilled]): void {
     const killer = this.byId.get(p.sourceId);
     if (killer !== undefined) killer.kills++;
+    this.forgetKilledTarget(p.targetId, p.sourceId);
     const victim = this.byId.get(p.targetId);
     if (victim === undefined) return;
     // Before `onKilled`, which overwrites the state the tally files the death under.
@@ -870,6 +871,18 @@ export class BotDirector extends Disposable {
     const dx = source === undefined ? 0 : victim.px - source.px;
     const dz = source === undefined ? 1 : victim.pz - source.pz;
     victim.onKilled(dx, dz, RESPAWN_SECONDS);
+  }
+
+  /**
+   * A kill ends the belief in it for whoever saw it happen (S1): the killer, and any bot with the
+   * body in sight. A bot that only remembered the target keeps remembering until its memory runs out.
+   */
+  private forgetKilledTarget(victimId: number, killerId: number): void {
+    for (const bot of this.bots) {
+      const bb = bot.blackboard;
+      if (bb.targetId !== victimId) continue;
+      if (bot.entityId === killerId || bb.hasLos) bb.forgetTarget();
+    }
   }
 
   private combatant(entityId: number): Combatant | undefined {

@@ -102,6 +102,20 @@ export class BotBlackboard {
     this.sightings = 0;
   }
 
+  /**
+   * The target is dead, or otherwise known to be gone: stop believing in it (S1).
+   *
+   * Only the belief goes. Where it was last seen stays as data, because it is still the best
+   * place to start looking.
+   */
+  forgetTarget(): void {
+    this.targetId = -1;
+    this.hasLos = false;
+    this.confidence = 0;
+    this.losHeld = 0;
+    this.sightings = 0;
+  }
+
   /** One sim tick of ageing. Runs every tick even though sensing is at 10 Hz. */
   age(confidenceDecay: number, noiseMemory: number): void {
     this.sinceLos += DT;

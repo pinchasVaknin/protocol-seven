@@ -299,30 +299,91 @@ describe('deciding, in order of urgency', () => {
     expect(r.bot.brain.coverSlot).toBeGreaterThanOrEqual(0);
   });
 
-  it('refuses the tactical states to a bot that has only just spawned', () => {
-    // The machine's doing, not the brain's: a decision that asks for SUPPRESS out of IDLE is
-    // simply not applied, and this is where that becomes visible.
+  it('sends a bot that has only just spawned to look where the unseen target was (S1)', () => {
+    // SUPPRESS is not reachable from IDLE, so the bot walks to the spot instead of shooting at it.
     const { bot } = rig();
-    bot.blackboard.noteSighting(2, AT.x + 10, 1.6, AT.z, 0, 10, 0);
-    bot.blackboard.hasLos = false;
-    bot.blackboard.sinceLos = 1.0;
-    bot.blackboard.confidence = 0.9;
+    remembers(bot, 10, 1.0, 0.9);
     bot.brain.decide(bot);
-    expect(bot.brain.state).toBe('IDLE');
+    expect(bot.brain.state).toBe('INVESTIGATE');
+    expect(bot.brain.goal).toBe('INVESTIGATE');
+    expect(Math.hypot(bot.brain.goalX - (AT.x + 10), bot.brain.goalZ - AT.z)).toBeLessThan(4);
   });
 
-  it('tally: counts the decision, and the refusal a hurt bot in IDLE gets for asking for cover', () => {
-    // S1 of the bot AI plan removes the refusal, and this test with it.
+  it('fights a target it sees while patrolling, with no goal (S1)', () => {
+    const { bot } = rig();
+    bot.brain.state = 'PATROL';
+    bot.brain.goalX = 1;
+    sees(bot, 10);
+    bot.brain.decide(bot);
+    expect(bot.brain.state).toBe('ENGAGE');
+    expect(bot.brain.goal).toBe('NONE');
+  });
+
+  it('shoots at the spot for a beat when an investigating bot has just lost the target (S1)', () => {
+    const { bot } = rig();
+    bot.brain.state = 'INVESTIGATE';
+    remembers(bot, 10, 0.5, 0.9);
+    bot.brain.decide(bot);
+    expect(bot.brain.state).toBe('SUPPRESS');
+    expect(bot.brain.goal).toBe('NONE');
+  });
+
+  it('walks on to the spot once that beat has passed (S1)', () => {
+    const { bot } = rig();
+    bot.brain.state = 'INVESTIGATE';
+    remembers(bot, 10, 2.0, 0.9);
+    bot.brain.decide(bot);
+    expect(bot.brain.state).toBe('INVESTIGATE');
+    expect(bot.brain.goal).toBe('INVESTIGATE');
+  });
+
+  it('goes back to patrol when it is standing on the last known spot and nothing is there (S1)', () => {
+    const { bot } = rig();
+    bot.brain.state = 'INVESTIGATE';
+    remembers(bot, 0.5, 2.0, 0.9);
+    bot.brain.decide(bot);
+    expect(bot.brain.state).toBe('PATROL');
+  });
+
+  it('reloads a dry magazine while seeing, in PATROL, since cover is out of reach (S1)', () => {
+    const { bot } = rig();
+    bot.brain.state = 'PATROL';
+    bot.weapons.weapon.mag = 0;
+    sees(bot, 10);
+    bot.brain.decide(bot);
+    expect(bot.brain.state).toBe('RELOAD');
+  });
+
+  it('a hurt bot in IDLE that sees an enemy fights instead of asking to be refused (S1)', () => {
     const { bot, brain } = rig();
     sees(bot, 10);
     bot.health.applyDamage(100);
+    bot.brain.decide(bot);
+    expect(bot.brain.state).toBe('ENGAGE');
+    expect(brain.tally.summary().rejected).toBe(0);
+  });
+
+  it('no manoeuvre is tried from a state that may not enter it, and none leaves a goal or a slot behind (S1)', () => {
+    const { bot, brain } = rig(CALM, 1234, OPEN);
+    bot.brain.state = 'PATROL';
+    sees(bot, 10);
+    const tries = bot.brain as unknown as Record<string, (b: unknown, r?: number) => boolean>;
+    for (const name of ['tryPush', 'tryFallBack', 'tryFlank', 'trySeekCover']) {
+      expect(tries[name]?.call(bot.brain, bot, 21), name).toBe(false);
+      expect(bot.brain.goal, name).toBe('NONE');
+      expect(bot.brain.coverSlot, name).toBe(-1);
+    }
+    expect(brain.tally.summary().rejected).toBe(0);
+  });
+
+  it('tally: counts the decision', () => {
+    const { bot, brain } = rig();
+    sees(bot, 10);
     bot.brain.decide(bot);
     const s = brain.tally.summary();
     expect(s.decisions).toBe(1);
     expect(s.losDecisions).toBe(1);
     expect(s.idleLosDecisions).toBe(1);
-    expect(s.hurtDecisions).toBe(1);
-    expect(s.rejected).toBe(1);
   });
 
   it('tally: counts a steer tick in the state the bot is in', () => {
@@ -674,7 +735,9 @@ describe('asking for a route', () => {
   });
 
   it('drops a tactical goal that could not be reached', () => {
-    const { bot } = rig();
+    const r = rig();
+    const { bot } = r;
+    engaged(r, 10);
     remembers(bot, 10, 2.0, 0.9);
     bot.brain.decide(bot);
     expect(bot.brain.goal).toBe('PUSH');
@@ -842,7 +905,9 @@ describe('steering in a firefight', () => {
     }
     // Three seconds of fire with the bursts and pauses the tier draws: SUPPRESS is the one
     // state that shoots without a line, which is what makes a lost contact cost the player.
-    expect(fired).toBe(164);
+    // S1: the first contact out of IDLE no longer rolls the push and flank dice, so the bot's
+    // random stream is further on than it was, and the bursts fall a round differently.
+    expect(fired).toBe(163);
   });
 
   it('holds its trigger with no target at all', () => {

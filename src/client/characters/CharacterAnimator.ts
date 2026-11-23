@@ -122,6 +122,27 @@ const GROUND_EDGE_GRACE = 0.08;
  * it was ever a gait change.
  */
 const LOOP_SETTLE_SECONDS = 0.1;
+
+/**
+ * How long a body may be drawn in the air pose before the animator stops believing it (#87).
+ *
+ * **This is a watchdog, not a rule, and it is deliberately dumber than everything around it.**
+ * The stuck mid-air leg pose was chased through the simulation, the animator, the interpolator,
+ * the replication path and the dormancy record. Three fixes came out of that, each correct about
+ * the case it was built for, and the body was still stuck. So this one does not reason about
+ * *why* the pose is being held: it watches the only fact that is true in every report — a body
+ * drawn knees-up, for seconds — and when the clock runs out it throws the animation away and
+ * lets `setLocomotion` restate it from the simulation on the same frame.
+ *
+ * **Why 1.5 seconds is safe.** An honest jump-while-moving holds the air pose for at most
+ * **567 ms**, measured over twelve episodes in a live match, with nothing over 600; the whole
+ * replicated chain at 36 % packet loss holds it for **317 ms** worst case. 1.5 s is over twice
+ * the longest honest episode. The cost when it is wrong is one body standing upright during the
+ * tail of a fall longer than a second and a half, which no drop on these maps produces short of
+ * the kill plane. The cost of not having it is a body stuck for a whole life, which is what was
+ * reported, four times.
+ */
+const AIR_POSE_WATCHDOG_SECONDS = 1.5;
 //#endregion
 
 // ================================== CLASS CharacterAnimator =================================== \\
@@ -186,6 +207,18 @@ export class CharacterAnimator {
   private gestureLatch: CharacterAnimationId | null = null;
   /** Seconds the raw ground state has disagreed with `wasAirborne`. See `GROUND_EDGE_GRACE`. */
   private airborneHeldFor = 0;
+  /** Seconds this body has been drawn in the air pose. See `AIR_POSE_WATCHDOG_SECONDS`. */
+  private airPoseHeldFor = 0;
+  /**
+   * Set when the watchdog trips: this body's claim to be airborne is no longer believed, until
+   * it says something else at least once.
+   *
+   * Without the latch the watchdog is a flicker rather than a fix. If whatever feeds the stance
+   * is stuck on `AIRBORNE` — which is what every report looks like — resetting the animation
+   * would start the launch again on the next frame, and the body would cycle through the air
+   * pose every second and a half for ever. One wrong claim, once, and then it is ignored.
+   */
+  private airPoseDistrusted = false;
   /** The loop the mixer has been told about, the one arguing for its place, and for how long. */
   private settledLoop: CharacterAnimationId | null = null;
   private candidateLoop: CharacterAnimationId | null = null;
@@ -269,6 +302,7 @@ export class CharacterAnimator {
     dt: number,
   ): void {
     if (this.dead) return;
+    this.watchAirPose(dt);
 
     const desired = this.settleLoop(
       // The loop already on the body decides which side of the run band it is on — see
@@ -279,7 +313,11 @@ export class CharacterAnimator {
     );
     const low = isLowStance(input);
     const sliding = input.stance === 'SLIDE';
-    const airborne = this.settleAirborne(isAirborne(input), dt);
+    // One honest claim clears the distrust the watchdog set: a body that says anything other
+    // than `AIRBORNE`, even for one frame, is a body whose stance is moving again.
+    const rawAirborne = isAirborne(input);
+    if (!rawAirborne) this.airPoseDistrusted = false;
+    const airborne = this.settleAirborne(rawAirborne && !this.airPoseDistrusted, dt);
     const gesture = selectGesture(input, planarSpeed);
     if (gesture === null) this.gestureLatch = null;
 
@@ -364,6 +402,8 @@ export class CharacterAnimator {
    */
   resetToStand(): void {
     this.dead = false;
+    this.airPoseHeldFor = 0;
+    this.airPoseDistrusted = false;
     this.throwLayer.reset();
     this.transition = null;
     this.gestureLatch = null;
@@ -532,6 +572,32 @@ export class CharacterAnimator {
     this.candidateLoop = null;
     this.candidateHeldFor = 0;
     return desired;
+  }
+
+  /**
+   * The last word on the air pose: hold it too long and the animation is thrown away (#87).
+   *
+   * Keyed on the clip that is actually in front rather than on any belief about why it is
+   * there, because the belief is the thing that kept turning out to be wrong. `jumpLaunch` is
+   * the only clip that can hold a body knees-up — it clamps on its last frame on purpose, and
+   * that frame *is* the air pose — so if it is still the active clip after
+   * `AIR_POSE_WATCHDOG_SECONDS`, the body is stuck whatever the reason.
+   *
+   * Running at the top of `setLocomotion` is what makes the recovery invisible: the reset lands
+   * and the rest of the same call picks a loop from this frame's input, so nothing is ever
+   * drawn in the bind pose.
+   */
+  private watchAirPose(dt: number): void {
+    if (this.active?.id !== 'jumpLaunch') {
+      this.airPoseHeldFor = 0;
+      return;
+    }
+    this.airPoseHeldFor += Math.max(0, dt);
+    if (this.airPoseHeldFor < AIR_POSE_WATCHDOG_SECONDS) return;
+    this.resetToStand();
+    // After the reset, which clears it: this body does not get to claim the air again until it
+    // has claimed something else first. See `airPoseDistrusted`.
+    this.airPoseDistrusted = true;
   }
 
   /**

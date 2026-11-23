@@ -740,6 +740,34 @@ limit of relevance cannot stutter the loop. Eight cases hold it, four in `Charac
 and four in `BotRenderer` — including the contrast that made the defect: `endDeath` on a body
 never seen to die still does nothing, and that is why the renderer now calls both.
 
+### The watchdog — the fourth fix, and the one that does not ask why
+
+Reported broken a fourth time, with nothing left to say about it. Three fixes had each been
+correct about the case they were built for, and the body was still stuck, so the last one stops
+diagnosing: **`jumpLaunch` active for more than 1.5 s means the body is stuck, whatever is
+feeding it, and the animation is thrown away.** It is keyed on the clip in front rather than on
+the stance, because the stance is the fact that kept being wrong, and it runs at the top of
+`setLocomotion` so the same call picks the right loop and nothing is drawn in the bind pose.
+
+The latch beside it is the part that was nearly missed. A watchdog alone would be a flicker: if
+the stance never comes off `AIRBORNE`, the reset starts the launch again on the next frame and
+the body cycles through the air pose every second and a half for ever. So a trip also distrusts
+this body's claim to be airborne **until it claims something else once**. One honest ground
+frame clears it, so a real jump afterwards is still a real jump.
+
+1.5 s is over twice the longest honest episode ever measured here (567 ms live, 317 ms through
+the replicated chain at 36 % loss). The cost of a false trip is a body standing upright through
+the tail of a fall longer than that, which no drop on these maps produces short of the kill
+plane. Five cases hold it, including ten seconds of a stance stuck on `AIRBORNE` — the reported
+bug, written as a test.
+
+**What this says about the three fixes above it.** They stay, and they are not wasted: each
+removed a real way for the pose to get stuck, and the watchdog is a net under all of them rather
+than a replacement. But the honest reading is that the diagnosis was never finished — four
+rounds of it, each ending in a measurement that was true and a conclusion that was not complete.
+Where a defect is cosmetic, bounded and reported again and again, the net belongs in the first
+commit and the diagnosis can continue underneath it.
+
 ### Three instruments, four wrong filters, and the lesson that cost the most
 
 Every instrument built for this hunt was first written with a filter that would have hidden the

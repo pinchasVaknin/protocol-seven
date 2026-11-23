@@ -398,8 +398,9 @@ describe('CharacterAnimator: starting over', () => {
   it('throws the clamped air pose away and stands up on the next frame', () => {
     const a = animator();
     run(a, {}, WALKING, 0.4);
-    // Long enough that the launch has finished and is being held on its last frame.
-    run(a, { stance: 'AIRBORNE' }, STILL, 2);
+    // Long enough that the launch has finished and is being held on its last frame, and
+    // short enough that the watchdog has not yet taken it away (`AIR_POSE_WATCHDOG_SECONDS`).
+    run(a, { stance: 'AIRBORNE' }, STILL, 1.2);
     expect(playing(a)).toBe('jumpLaunch');
 
     a.resetToStand();
@@ -416,7 +417,7 @@ describe('CharacterAnimator: starting over', () => {
   it('forgets it was airborne, so the next ground frame is not a landing', () => {
     const a = animator();
     run(a, {}, WALKING, 0.4);
-    run(a, { stance: 'AIRBORNE' }, STILL, 2);
+    run(a, { stance: 'AIRBORNE' }, STILL, 1.2);
 
     a.resetToStand();
     a.setLocomotion(input(), WALKING, true, false, FRAME);
@@ -445,10 +446,79 @@ describe('CharacterAnimator: starting over', () => {
   it('is not what `endDeath` does on a body that was never seen to die', () => {
     const a = animator();
     run(a, {}, WALKING, 0.4);
-    run(a, { stance: 'AIRBORNE' }, STILL, 2);
+    run(a, { stance: 'AIRBORNE' }, STILL, 1.2);
     expect(playing(a)).toBe('jumpLaunch');
 
     a.endDeath();
+
+    expect(playing(a)).toBe('jumpLaunch');
+  });
+});
+
+// ==================================== the air-pose watchdog ===================================
+
+/**
+ * BACKLOG #87, the fourth and last fix: the one that does not care why.
+ *
+ * Three correct fixes shipped before this and the body was still stuck, so this one stops
+ * reasoning about the cause. It watches the only fact every report agrees on — a body drawn
+ * knees-up for seconds — and throws the animation away when the clock runs out, whatever is
+ * feeding the stance.
+ *
+ * The latch is what makes it a fix rather than a flicker: a stance stuck on `AIRBORNE` would
+ * otherwise start the launch again on the very next frame.
+ */
+describe('CharacterAnimator: the air-pose watchdog', () => {
+  it('holds an honest jump for as long as it lasts', () => {
+    const a = animator();
+    run(a, {}, WALKING, 0.4);
+    // Well past the longest jump measured live (567 ms) and still under the watchdog.
+    run(a, { stance: 'AIRBORNE' }, WALKING, 1.2);
+    expect(playing(a)).toBe('jumpLaunch');
+  });
+
+  it('gives up on a body that has been in the air too long', () => {
+    const a = animator();
+    run(a, {}, WALKING, 0.4);
+    run(a, { stance: 'AIRBORNE' }, WALKING, 1.2);
+    expect(playing(a)).toBe('jumpLaunch');
+
+    run(a, { stance: 'AIRBORNE' }, WALKING, 0.5);
+
+    // Walking, on the ground, with its weapon up — which is what the body was doing all along.
+    expect(playing(a)).toBe('walkWeaponReady');
+  });
+
+  it('never flickers back into the air while the stance stays stuck', () => {
+    const a = animator();
+    run(a, {}, WALKING, 0.4);
+    // Ten seconds of a stance that insists the body is airborne, which is the reported bug.
+    run(a, { stance: 'AIRBORNE' }, WALKING, 10);
+
+    expect(playing(a)).toBe('walkWeaponReady');
+  });
+
+  it('believes the body again once its stance says anything else', () => {
+    const a = animator();
+    run(a, {}, WALKING, 0.4);
+    run(a, { stance: 'AIRBORNE' }, WALKING, 2);
+    expect(playing(a)).toBe('walkWeaponReady');
+
+    // One honest ground frame clears the distrust; the next jump is a jump again.
+    run(a, {}, WALKING, 0.2);
+    run(a, { stance: 'AIRBORNE' }, WALKING, 0.3);
+
+    expect(playing(a)).toBe('jumpLaunch');
+  });
+
+  it('starts its clock over for every new life', () => {
+    const a = animator();
+    run(a, {}, WALKING, 0.4);
+    run(a, { stance: 'AIRBORNE' }, WALKING, 1.2);
+    // A respawn lands mid-air on the reset's own terms; the watchdog must not fire early
+    // because of the life before it.
+    a.resetToStand();
+    run(a, { stance: 'AIRBORNE' }, WALKING, 1.2);
 
     expect(playing(a)).toBe('jumpLaunch');
   });

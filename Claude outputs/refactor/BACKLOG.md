@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**1 open entry** — **#87**, in §5c, opened 2026-11-23 from play and the only heading in this file not marked `closed`: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. **This line was itself stale until 2026-11-23**: it said four open and, in the same parenthesis, six in §9, and both numbers had been wrong since the evening #78 closed — which is the failure mode it warns about, committed by the warning. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3; #77, #69, #63, #76, #85, #53, #22 and #42 on the same day; **#78 on 2026-11-22, and #79, #34 and #55 on 2026-11-23** — the last two by the user looking at them rather than by an edit, and neither fixed by anything here. What is left is #87, which waits on a reproduction; §9 says so and says what the two loose findings from #79 are.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**0 open entries** — #87 was the last and closed on 2026-11-23, the day it opened, so every heading in this file is now marked `closed`: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. **This line was itself stale until 2026-11-23**: it said four open and, in the same parenthesis, six in §9, and both numbers had been wrong since the evening #78 closed — which is the failure mode it warns about, committed by the warning. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3; #77, #69, #63, #76, #85, #53, #22 and #42 on the same day; **#78 on 2026-11-22, and #79, #34 and #55 on 2026-11-23** — the last two by the user looking at them rather than by an edit, and neither fixed by anything here. and #87 on the same day it opened, once the reporter's note that it happened on the external server and not the local one ruled out everything a local match can do. Nothing is left; §9 says so and says what the two loose findings from #79 are.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -511,7 +511,7 @@ fourth entry under §5b because that section's three were all filed on 2026-10-1
 counts them. Same difference from §5, though: nothing pins this, so no test records it and no
 oracle will notice when it changes.
 
-### #87 — A body keeps the mid-air leg pose while walking normally along the ground · `open` · *intermittent; no reliable reproduction yet* *(opened 2026-11-23 by the user, from play)*
+### #87 — A body keeps the mid-air leg pose while walking normally along the ground · `closed` · *a frozen body held a transient stance; fixed in `RemoteActor`* *(opened 2026-11-23 by the user, from play; fixed the same day)*
 **Files** `src/client/characters/CharacterAnimator.ts` (`handleGroundOrSlideEdge`) and
 `src/client/characters/AnimationSelector.ts` (`isAirborne`, `selectGroundTransition`) at the
 reading end; `src/shared/player/PlayerController.ts` (the two `setStance('AIRBORNE')` calls and the
@@ -610,6 +610,67 @@ and settled answers agree on `AIRBORNE` while the body walks, the stance being f
 and the defect is upstream of the animator; if they disagree, it is the grace. It also carries
 `active` and `transition`, which say whether the body is holding the clamped launch or stuck in
 a one-shot that never finished.
+
+---
+
+### Found and fixed 2026-11-23 — it was `frozen`, and the clue was "the external server"
+
+**The reporter's own observation closed it**: it happens on the external server and never on the
+local one. That is decisive on its own, because a local match has no interpolation at all — a
+bot's stance is read straight off its `PlayerController`, which is the thing already measured
+clean above. Only a networked body goes through `EntityInterpolator`, and only a networked body
+can starve.
+
+**The mechanism, reproduced deterministically.** `EntityInterpolator.sample` hands the newest
+sample's stance to anything that asks. When the buffer starves past `MAX_EXTRAPOLATION_MS`
+(250 ms) it stops predicting and **freezes**: `write(newest.state, out)` with `out.frozen = true`
+— the last pose it was told, held still, for as long as the silence lasts. If the last thing it
+was told was `AIRBORNE`, that is what it keeps answering.
+
+And `jumpLaunch` clamps on its last frame **on purpose**, because that frame *is* the air pose.
+So the animation does exactly what it is built to do, forever:
+
+```
+one snapshot carrying AIRBORNE, then silence
+  0.5 s   jumpLaunch   frozen: true
+  2.0 s   jumpLaunch   frozen: true
+  5.0 s   jumpLaunch   frozen: true
+ 10.0 s   jumpLaunch   frozen: true
+```
+
+A body hanging in the air with its knees up, not moving — which is the screenshot the report
+came with.
+
+**The fix is one condition, in the one place that already knows the pose is stale.**
+`RemoteActor.animation` drops `AIRBORNE` for `STAND` when `frozen`. Everything else survives the
+freeze honestly: a body that was crouching still *is* crouching as far as anyone knows. But
+`AIRBORNE` is not a state, it is a moment, and the animation reads it as one — so the client
+stops asserting a transient whose end it can no longer see. After the fix the same replay lands
+`jumpLand` and settles into `walkWeaponReady`.
+
+**What was deliberately not changed.** `get stance()` still reports what the wire last carried,
+so `rigLayoutFor` and the hitbox overlay are untouched and cannot start disagreeing with it —
+and `isLowStance` is false for both `AIRBORNE` and `STAND`, so the layout does not move either
+way. Extrapolation *inside* the cap keeps the air pose, because that is the interpolator still
+doing its job and a jump in flight should look like one. `Interpolation` itself is untouched:
+freezing and reporting the last known stance is the correct contract for a buffer that has run
+dry; acting on a stale transient is the consumer's mistake, not the buffer's.
+
+Pinned by three cases in `src/client/net/RemoteActor.test.ts`: the frozen jump drops to `STAND`,
+the raw stance stays `AIRBORNE`, and a frozen *crouch* and an extrapolated jump are both left
+alone.
+
+### The instrument was wrong in a way worth recording
+
+`?airpose` shipped a commit earlier tripping on a body that was airborne **and moving**, on the
+reasoning that a body standing still in the air is simply mid-jump. That is backwards, and it is
+the kind of mistake this file exists to write down: **the defect freezes a body at a dead stop**,
+so `planarSpeed` is zero for the whole episode and the instrument would have watched #87 happen
+and reported nothing. It now trips on duration alone and keeps `planarSpeed` on the row as data.
+
+The measurements that set its threshold still stand and are still useful: an ordinary
+jump-while-moving holds the air pose for at most **567 ms** live, and the replicated chain at
+36 % packet loss for **317 ms**, against a threshold of 1,200.
 
 ## 6. Documentation and housekeeping
 
@@ -943,16 +1004,19 @@ exist only for the focus guard to recognise, and its document carries `pointerLo
 `fullscreenElement` and `exitPointerLock`. There is no element tree in it. Forcing it into
 `dom.ts` would put two unrelated doubles in one file to make a count come out even.
 
-## 9. What the one remaining entry is waiting for
+## 9. Nothing is waiting
 
 Written 2026-11-22, when the backlog came down from 70 to six over one week; amended that
 evening when #78 was done, again on 2026-11-23 when #79 was done, and **rewritten the same day,
 when #34 and #55 were both closed and the section had nothing left to describe**. Every entry
 this section was written about is now gone, and the one entry open is new.
 
-| Entry | What it needs | Who can give it |
-|---|---|---|
-| **#87** A body keeps the mid-air leg pose while walking | **A reproduction.** It is intermittent, across maps, and nothing pins it; the first piece of work is making it happen on purpose, not fixing it. The entry names the two candidates and the one reading that would separate them — watch the replicated `stance` on a stuck body | Anyone who can make it happen twice. After that it is ordinary work, in a session of its own: `client/characters/` is C5's and `shared/player/` is A8's, both closed and in the ratchet, so no unit can reach it under R3 |
+**Every entry this file has ever held is closed.** #87 was the last, and it closed the same day
+it opened: the reporter's note that it happened on the external server and not the local one
+ruled out everything a local match can do, and the defect was a frozen interpolation holding a
+transient stance. See the entry.
+
+The table this section carried is gone with it.
 
 **All four entries this section has ever listed are closed, and they closed in two different
 ways, which is worth keeping straight.**

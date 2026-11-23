@@ -239,9 +239,29 @@ export class RemoteActor implements RenderableActor, RoundBlocker {
     return this.pose.stance;
   }
 
-  /** The same narrow animation contract a local `Bot` exposes, sourced from snapshots. */
+  /**
+   * The same narrow animation contract a local `Bot` exposes, sourced from snapshots.
+   *
+   * **`AIRBORNE` is dropped on a frozen body** (BACKLOG #87). `frozen` means the buffer starved
+   * past `MAX_EXTRAPOLATION_MS` and the interpolator stopped predicting: the pose it hands back
+   * is the last one it was told, held still. Every other field survives that honestly — a body
+   * that was crouching still *is* crouching as far as anyone knows — but `AIRBORNE` is not a
+   * state, it is a moment, and the animation reads it as one. `jumpLaunch` clamps on its last
+   * frame **on purpose**, so a body frozen mid-jump holds the air pose, knees up, for as long as
+   * the silence lasts. On an external server that is seconds, and it is what #87 reported.
+   *
+   * Reproduced exactly: one snapshot carrying `AIRBORNE`, then nothing, and the body is still in
+   * `jumpLaunch` ten seconds later with `frozen` true.
+   *
+   * `STAND` and not the stance before it, because nothing here remembers one, and not a guess at
+   * a landing either: the point is only to stop asserting a transient the client can no longer
+   * see the end of. `isLowStance` is false for both `AIRBORNE` and `STAND`, so the hitbox layout
+   * this body wears does not move — `get stance()` below is untouched and still reports what the
+   * wire last said, which is what `rigLayoutFor` and anything else wanting the raw fact reads.
+   */
   get animation(): ActorAnimationInput {
-    this.animation_.stance = this.pose.stance;
+    this.animation_.stance =
+      this.frozen && this.pose.stance === 'AIRBORNE' ? 'STAND' : this.pose.stance;
     this.animation_.aiming = this.ads;
     this.animation_.sprinting = this.sprinting;
     this.animation_.reloading = this.reloading;

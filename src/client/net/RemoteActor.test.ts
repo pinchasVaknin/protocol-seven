@@ -592,3 +592,108 @@ describe('RemoteActor: the pose', () => {
     expect(actor.rig.yaw).toBe(0.5);
   });
 });
+
+// ============================ the air pose a frozen body used to keep ==========================
+
+/**
+ * BACKLOG #87: a body whose snapshots stop while it is mid-jump.
+ *
+ * `jumpLaunch` clamps on its last frame on purpose and that frame is the air pose, so an
+ * animation told `AIRBORNE` keeps knees-up for as long as it is told it. Once the buffer has
+ * starved past `MAX_EXTRAPOLATION_MS` the interpolator stops predicting and holds its last
+ * sample still — and the last sample said `AIRBORNE`, forever. On an external server that is a
+ * body hanging in the air in a sitting pose, which is exactly what was reported from play.
+ *
+ * It was reproduced before it was fixed: one snapshot carrying `AIRBORNE`, then silence, and the
+ * animator was still in `jumpLaunch` ten seconds later.
+ */
+describe('RemoteActor: a frozen body does not keep the air pose', () => {
+  /** Well past `MAX_EXTRAPOLATION_MS` (250), so the buffer has given up predicting. */
+  const LONG_SILENCE_MS = 4_000;
+
+  it('stops reporting AIRBORNE to the animation once the pose is frozen', () => {
+    const actor = new RemoteActor(7, STAND_MAX);
+    const interp = buffer(
+      body(7, (e) => {
+        e.stance = 'AIRBORNE';
+      }),
+      0,
+    );
+
+    actor.update(interp, 0);
+    expect(actor.animation.stance).toBe('AIRBORNE');
+    expect(actor.frozen).toBe(false);
+
+    // The snapshots stop here. Nothing more is pushed; only the clock moves.
+    actor.update(interp, LONG_SILENCE_MS);
+
+    expect(actor.frozen).toBe(true);
+    expect(actor.animation.stance).toBe('STAND');
+  });
+
+  /**
+   * The raw fact is untouched. `rigLayoutFor` reads `stance` and the hitbox overlay draws what
+   * it returns, so the two must not start disagreeing about what the wire said — only the
+   * animation declines to act on a transient it can no longer see the end of.
+   */
+  it('still reports the stance the wire last carried', () => {
+    const actor = new RemoteActor(7, STAND_MAX);
+    const interp = buffer(
+      body(7, (e) => {
+        e.stance = 'AIRBORNE';
+      }),
+      0,
+    );
+
+    actor.update(interp, 0);
+    actor.update(interp, LONG_SILENCE_MS);
+
+    expect(actor.frozen).toBe(true);
+    expect(actor.stance).toBe('AIRBORNE');
+  });
+
+  /**
+   * Only `AIRBORNE`, and only when frozen. A crouching body that goes quiet still *is*
+   * crouching as far as anybody knows, and extrapolation inside the cap is the interpolator
+   * still doing its job — a real jump in flight has to keep its pose.
+   */
+  it('leaves a frozen crouch alone, and leaves an extrapolated jump alone', () => {
+    // Each body is seen once before the silence, because the first sighting snaps the buffer to
+    // the render time (`snapOnRespawn`) and a body that has only ever been seen late is not
+    // starved, it is new.
+    const crouchBuffer = buffer(
+      body(7, (e) => {
+        e.stance = 'CROUCH';
+      }),
+      0,
+    );
+    const crouched = new RemoteActor(7, STAND_MAX);
+    crouched.update(crouchBuffer, 0);
+    crouched.update(crouchBuffer, LONG_SILENCE_MS);
+
+    expect(crouched.frozen).toBe(true);
+    expect(crouched.animation.stance).toBe('CROUCH');
+
+    const jumping = new RemoteActor(7, STAND_MAX);
+    const interp = new EntityInterpolator();
+    interp.push(
+      body(7, (e) => {
+        e.stance = 'AIRBORNE';
+      }),
+      0,
+    );
+    interp.push(
+      body(7, (e) => {
+        e.stance = 'AIRBORNE';
+        e.x = 1;
+      }),
+      50,
+    );
+    jumping.update(interp, 0);
+    // 100 ms past the newest sample: inside the cap, so predicted rather than frozen.
+    jumping.update(interp, 150);
+
+    expect(jumping.frozen).toBe(false);
+    expect(jumping.animation.stance).toBe('AIRBORNE');
+  });
+});

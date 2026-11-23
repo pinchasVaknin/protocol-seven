@@ -36,6 +36,17 @@
  * network can do, so a trip is a defect and not a slow frame. It never has to be exactly right,
  * because the two populations are an order of magnitude apart.
  *
+ * ## Movement is recorded, and deliberately not required
+ *
+ * The first version of this file tripped only on a body that was airborne **and** moving, on the
+ * reasoning that a body standing still in the air is simply mid-jump. That was backwards. The
+ * defect it was written for freezes a body at a dead stop with `planarSpeed` at zero for the
+ * whole episode, so the instrument would have watched #87 happen and said nothing. Duration
+ * alone is the signature; `planarSpeed` stays on the row because it says which kind was caught.
+ *
+ * A body genuinely falling for over a second is possible on a tall map, so a trip is a row to
+ * read rather than a proof on its own.
+ *
  * ## What it costs when it is off
  *
  * One property read per body per frame, at the single call site. Nothing is allocated and
@@ -76,7 +87,7 @@ export interface AirPoseSample {
 
 /** A body caught past the threshold, kept for the report. */
 export interface AirPoseTrip extends AirPoseSample {
-  /** How long the body had been airborne-and-moving when it was caught, ms. */
+  /** How long the body had been drawn airborne when it was caught, ms. */
   readonly heldMs: number;
 }
 
@@ -97,9 +108,6 @@ export interface AirPoseReport {
 /** Longer than this, airborne and moving, is the defect. See the overview for the two numbers. */
 const STUCK_MS = 1_200;
 
-/** Below this a body is not moving, and a held air pose is a body standing still in the air. */
-const MOVING_SPEED = 0.12;
-
 /** Episodes kept for the report. Enough to see the distribution; not a leak over a long session. */
 const MAX_EPISODES = 256;
 
@@ -113,7 +121,7 @@ const MAX_EPISODES = 256;
  */
 export const WATCH = { on: false };
 
-/** Milliseconds each body has been airborne-and-moving, by entity id. */
+/** Milliseconds each body has been drawn airborne, by entity id. */
 const held = new Map<number, number>();
 
 /** Bodies already reported for the episode they are in, so one episode warns once. */
@@ -147,12 +155,11 @@ export function setAirPoseWatch(on: boolean): void {
 /**
  * One frame of one body. Called only when `WATCH.on`, from `CharacterAnimator.setLocomotion`.
  *
- * Counts the episode, ends it when the body stops being airborne-and-moving, and warns once
- * when it runs past `STUCK_MS`.
+ * Counts the episode, ends it when the body stops being airborne, and warns once when one runs
+ * past `STUCK_MS`.
  */
 export function watchAirPose(sample: AirPoseSample): void {
-  const moving = sample.planarSpeed > MOVING_SPEED;
-  if (!sample.airborne || !moving) {
+  if (!sample.airborne) {
     endEpisode(sample.entityId);
     return;
   }

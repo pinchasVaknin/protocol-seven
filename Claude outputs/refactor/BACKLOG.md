@@ -9,7 +9,7 @@ entry says **why it was not done in its unit**, because that reason is the expen
 usually a rule (R2 freezes the public surface, R3 fences the unit, R7 protects hot paths) or a
 measurement nobody has taken yet.
 
-**4 open entries**, every one with a heading of its own: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3; #77, #69, #63, #76, #85, #53, #22 and #42 on the same day. What is left is the six in §9: each one waits on a person, a machine or a decision this programme cannot supply, and §9 says which.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
+**1 open entry** — **#87**, in §5c, opened 2026-11-23 from play and the only heading in this file not marked `closed`: §3 is empty, and the sequenced clusters it held — the collision core and the layering — are both done. (Counted, not remembered — and counted *both* ways, because counting the headings alone is how this line goes wrong: batch F's first attempt at it read the headings and forgot the clusters, exactly as an earlier reading had drifted eight low. **This line was itself stale until 2026-11-23**: it said four open and, in the same parenthesis, six in §9, and both numbers had been wrong since the evening #78 closed — which is the failure mode it warns about, committed by the warning. Batch A closed ten on 2026-11-17; batches B, C, D and E closed eight, six, five and three on 2026-11-21; batch F closed seven, batch G four, batch H three, batch I two, batch J two, batch K two, batch L two, the whole of Cluster I and #2 with #19 on 2026-11-22, which emptied §3; #77, #69, #63, #76, #85, #53, #22 and #42 on the same day; **#78 on 2026-11-22, and #79, #34 and #55 on 2026-11-23** — the last two by the user looking at them rather than by an edit, and neither fixed by anything here. What is left is #87, which waits on a reproduction; §9 says so and says what the two loose findings from #79 are.) #1–#21 came over from chat across units A1–A12, unedited in substance; #22
 and #24 were opened since, **#26 and #27 by A16** on 2026-10-12, **#28 by A17** on 2026-10-13, **#29 by A19** on 2026-10-14, **#30 and #31 by A20** on the same day, **A21 none** and **#32 by A22** on 2026-10-14; **A23 closed #1's shared half** on 2026-10-17 and **A24 folded `IntroPlan`'s copy** on 2026-10-18, neither opening any. **#33, #34 and #35 are the user's own field reports**, filed on 2026-10-19 from playing the game rather than from writing a test; §5b holds them. **B1 opened #36–#41** on 2026-10-19, the first entries from division B, and **#40 was closed the same day** by the session that corrected §6's NET oracle — which opened **#42** and **#43** with the first findings that corrected oracle produced. **B3 closed #31 and opened #48** on 2026-10-19, and **B4 opened #49** the same day, having found
 nothing bound to its own four files — and #49 was closed in the same sitting, in a commit of its own; **C1 folded #1's `IntroCamera` half** on 2026-10-25, under an approved behaviour change at one input, leaving the entry open against its last file, and **opened #54**; **B2b opened #44–#46** the same day, and **#44 was closed** on the same day by the session that cleared `lastImpactMaterial` per tick — whose own finding became **#47**, opened and closed on 2026-10-19 by the sixth oracle it asked for. Fourteen numbers are gone and
 are not reused: **#19** is folded into #2 (the same defect from both ends), **#23** was closed by
@@ -186,7 +186,7 @@ what happens today and no oracle will notice when it changes. All three are clie
 three land in division C files, so each is bound to the unit that owns them (§1) and is done under
 that unit's approval, not here.
 
-### #34 — The camera trembles while walking the arena · `open` · *every candidate reached so far is measured clean; nothing is confirmed against the reporter's own machine* *(rewritten 2026-10-25, extended and corrected 2026-10-26, by C2)*
+### #34 — The camera trembles while walking the arena · `closed` · *not reproducible on the reporter's own machine; nothing was fixed* *(rewritten 2026-10-25, extended and corrected 2026-10-26, by C2; closed 2026-11-23 by the reporter)*
 **Files** **not** `src/client/engine/CameraRig.ts` or `FrameLoop.ts` — those are measured clean
 below. The four places left to look are named at the end. **Origin** reported from play,
 2026-10-19; reproduced and measured by C2 on 2026-10-25, on the clean tree before it edited
@@ -317,6 +317,26 @@ walking**, which is continuous, and walking on the flat produced a camera static
 **Do not spend more on `src/client/engine/` or on `src/shared/player/Movement.ts` for this entry.**
 Both are measured clean, twice. The shadow tier was also ruled out by the user on 2026-10-25.
 
+---
+
+### Closed 2026-11-23 — the reporter looked again and it is gone
+
+The one thing this entry always needed was a look on the machine that saw it, and §9 said so for
+a month. On 2026-11-23 the reporter reviewed it and reported the camera fine.
+
+**Closed as not reproducible, and that is not the same as fixed.** No edit in this programme was
+ever aimed at it: both historical causes were measured not to reproduce, `src/client/engine/` and
+`src/shared/player/Movement.ts` are clean twice over, the shadow tier was ruled out, and the mouse
+path came out *prior strongly against* without ever being confirmed against the user's own browser
+and mouse. So nothing here earned the closure — the symptom simply is not there any more, on the
+only machine whose answer counts.
+
+**Everything measured above stays, and it stays for a reason.** If the trembling comes back, this
+entry is the map: four places are already eliminated with numbers, and the one candidate still
+unmeasured is named with the recorder written and ready for it — `p7-mouse-recorder.js`, needing
+Claude in Chrome connected and ten seconds of the user moving the mouse. Reopen rather than
+rediscover.
+
 ## The mouse path, measured — the first candidate with a visible number *(2026-10-26)*
 
 `Input.onMouseMove` (`src/client/input/Input.ts:209`) integrates the view angle **per event**, and
@@ -407,7 +427,7 @@ latency instead of the full tick the position path pays. That changes the input 
 documented design decision, so it needs the user's call and a session of its own; `Input.ts` is
 **C1**'s file and in the `check:style` ratchet, so no later unit can reach it under R3 either.
 
-### #55 — The Chopper Gunner optic draws a flat grey field and no map · `open` *(opened 2026-10-25 by C2)*
+### #55 — The Chopper Gunner optic draws a flat grey field and no map · `closed` · *it was the browser pane, as C2 suspected from the first day* *(opened 2026-10-25 by C2; closed 2026-11-23 in a real browser)*
 **Files** `src/client/engine/Renderer.ts` (`renderGunship`, `GUNSHIP_VERT`, `GUNSHIP_WORLD_FRAG`)
 and whatever hands it the scene and the camera — `src/client/Game.ts` (C23) is the caller.
 **Origin** C2's BROWSER check, 2026-10-25.
@@ -456,6 +476,94 @@ becomes the leading explanation rather than a footnote.
 **Verify** BROWSER: call in a chopper on Foundry and on Depot (the map the pass's own notes were
 written against) and compare against the three descriptions in `renderGunship`'s JSDoc — grey
 terrain, near-black team-mates, orange enemies.
+
+---
+
+### Closed 2026-11-23 — looked at in a real browser, and the optic is correct
+
+The user reviewed it in the game and reported the optic fine. That is the one observation this
+entry was waiting for, and it settles it in the direction the entry had been pointing since the
+day it was opened.
+
+**`renderGunship` was never the defect.** C2's **Watch for** said it on 2026-10-25 — *"this may be
+the browser pane rather than the game: C2 saw it only there, and never in a normal browser
+window"* — and every measurement after that strengthened it rather than the shader: all three
+thermal materials built, three passes run, no console error in a dev build with
+`checkShaderErrors` on, the camera airborne at y = 34 with `layers.mask === 1`. Then the 2026-11-22
+attempt could not take a single honest reading because the pane was rendering **nothing at all**:
+`requestAnimationFrame` fired **0 times in 1,000 ms**, twice. At zero frames `renderGunship` is
+called zero times and every console number is a false negative — which is #85, and which is also
+the whole explanation of a flat grey field.
+
+**So the flat grey was an artefact of where it was being looked at.** Nothing in
+`src/client/engine/Renderer.ts` is changed by this closure, and nothing should be: C2 had already
+proved by substitution and by hash that its own edit was not the cause, putting the original file
+back on disk and seeing the same flat optic.
+
+**The lesson is #85's and it is already written into §6 of the prompt** — run the one-line
+frame-rate proof before believing anything the pane renders, or does not render. This entry is the
+case that proves why: a month of a shader bug that was a stalled animation frame.
+
+## 5c. Field report from play — the mid-air leg pose *(2026-11-23)*
+
+Reported by the user on 2026-11-23, from **playing the game**, and its own section rather than a
+fourth entry under §5b because that section's three were all filed on 2026-10-19 and its preamble
+counts them. Same difference from §5, though: nothing pins this, so no test records it and no
+oracle will notice when it changes.
+
+### #87 — A body keeps the mid-air leg pose while walking normally along the ground · `open` · *intermittent; no reliable reproduction yet* *(opened 2026-11-23 by the user, from play)*
+**Files** `src/client/characters/CharacterAnimator.ts` (`handleGroundOrSlideEdge`) and
+`src/client/characters/AnimationSelector.ts` (`isAirborne`, `selectGroundTransition`) at the
+reading end; `src/shared/player/PlayerController.ts` (the two `setStance('AIRBORNE')` calls and the
+`sim.grounded && sim.stance === 'AIRBORNE'` clear) at the writing end. **Origin** reported from
+play, 2026-11-23. **Unit** `client/characters/` is **C5**, which is closed and in the `check:style`
+ratchet; `shared/player/` is **A8**'s. Neither can be reached under R3, so this needs a session of
+its own whichever end it turns out to be.
+
+Intermittently during a match, across maps, a body gets stuck in the jumping-or-falling leg pose
+while it goes on moving and walking normally along the ground. The legs are in the air and the body
+is not.
+
+**Why that symptom is a precise clue rather than a vague one.** `selectGroundTransition` is two
+clips on purpose, and `AnimationSelector` says why on itself: *"the launch clamps on its last frame
+and that frame **is** the air pose, whether the body is up for a hop or falling down"*. So the
+mid-air pose is not a glitched blend or a missing clip — it is `jumpLaunch`, clamped and holding,
+exactly as designed, for a body the animator still believes is airborne. And the walking looks
+normal at the same time because position replication is independent of stance: the locomotion layer
+keeps running whatever the stance says.
+
+So the question is not *why is the leg pose wrong* but **why does the ground edge never arrive**.
+
+**Where to start — two candidates, neither measured.**
+
+1. **The replicated stance stays `AIRBORNE` after the body has landed.** `isAirborne` reads
+   `input.stance === 'AIRBORNE'` off the replicated stance and nothing else — deliberately, since
+   `AIRBORNE` has been a `StanceId` on the wire since S5.3. The clear-on-landing is one branch in
+   `PlayerController`, `if (sim.grounded && sim.stance === 'AIRBORNE')`. If `sim.grounded` is false
+   on the tick that would have cleared it, or that branch is skipped, the stance stays `AIRBORNE`,
+   `selectGroundTransition` keeps answering `jumpLaunch`, and **no edge is ever detected at all**,
+   because `this.wasAirborne !== airborne` never becomes true. This is the candidate that matches
+   the symptom with nothing left over, and it is the one to measure first.
+2. **The edge arrives and is consumed by the slide branch.** In `handleGroundOrSlideEdge` the
+   airborne-change edge is handled before the slide edge, and if `sliding` is true on that frame it
+   calls `beginSlide()` and **never begins `jumpLand`** — one edge, spent on the slide. A landing
+   that coincides with a slide would take this path. It fits a *missed* landing transition, though
+   it fits the held air pose less well than (1), since `beginSlide` does put a clip on the legs.
+
+**What would settle it in one reading.** The stance is on the wire, so log or watch the replicated
+`stance` for a stuck body at the moment the symptom appears. If it reads `AIRBORNE` while the body
+walks, it is (1) and the defect is in `shared/player/`, not in the animator. If it reads `STAND`
+while the legs are in the air, it is the animator's edge and (2) or something near it.
+
+**Watch for** two things that make an intermittent report like this expensive. The symptom is on
+*another* body as the viewer sees it, so it is the replicated path and not the local player's
+prediction — check whether it ever happens to the player's own legs, because that answers which
+path on its own. And `check:animations` will not catch any of this: it proves every slot the
+selector can return is non-empty and asked for, which is true here — the wrong clip is a correctly
+catalogued one, held too long.
+
+**Verify** nothing yet. No reproduction, so there is nothing to pin: the first piece of work is a
+reproduction, not a fix.
 
 ## 6. Documentation and housekeeping
 
@@ -789,35 +897,54 @@ exist only for the focus guard to recognise, and its document carries `pointerLo
 `fullscreenElement` and `exitPointerLock`. There is no element tree in it. Forcing it into
 `dom.ts` would put two unrelated doubles in one file to make a count come out even.
 
-## 9. What the two remaining entries are waiting for
+## 9. What the one remaining entry is waiting for
 
-Written 2026-11-22, when the backlog came down from 70 to six over one week; amended the same
-evening when #78 was done and it came down to three, and **again on 2026-11-23, when #79 was
-done and the heading stopped being true**. Two entries are left and neither is work. Every
-entry closed in that week was closed because somebody could do it. **These two are not like
-that**, and the difference is worth stating once rather than re-deriving it each time somebody
-opens this file: each waits on a person or a machine. Neither is blocked on a decision.
+Written 2026-11-22, when the backlog came down from 70 to six over one week; amended that
+evening when #78 was done, again on 2026-11-23 when #79 was done, and **rewritten the same day,
+when #34 and #55 were both closed and the section had nothing left to describe**. Every entry
+this section was written about is now gone, and the one entry open is new.
 
 | Entry | What it needs | Who can give it |
 |---|---|---|
-| **#34** The camera trembles while walking | A reproduction on the reporter's own machine. Every candidate C2 reached is measured clean, and C2's own mouse-path measurement demoted the leading one — the arrival pattern it found is *not* Chrome's. | The person who reported it, with a recording or a frame-time capture |
-| **#55** The Chopper Gunner optic draws a flat grey field | A look at it in a real browser: call in a chopper on Foundry and on Depot and compare against `renderGunship`'s own three descriptions | Anyone with the game running and a window in front — see §6 and #85 |
+| **#87** A body keeps the mid-air leg pose while walking | **A reproduction.** It is intermittent, across maps, and nothing pins it; the first piece of work is making it happen on purpose, not fixing it. The entry names the two candidates and the one reading that would separate them — watch the replicated `stance` on a stuck body | Anyone who can make it happen twice. After that it is ordinary work, in a session of its own: `client/characters/` is C5's and `shared/player/` is A8's, both closed and in the ratchet, so no unit can reach it under R3 |
 
-**Both of the entries that were purely work are now done.** #78 on 2026-11-22 (commits
-`5833072` and `7c8c44c`): 340 sites across 33 files on `src/client/ui/Dom.ts`, with 76 left in
-seven files for the reason the entry names — `el` is an interface field there, so the local
-cannot be renamed out of the way. #79 on 2026-11-23 (commits `d3cbded`, `70b8b72` and the one
-carrying its note): 37 of the 38 test files on `src/client/ui/testing/dom.ts`, 6,813 lines of
-double out and 1,440 in, with `input/Input.test.ts` left because what it doubles is an event
-target and not an element tree.
+**All four entries this section has ever listed are closed, and they closed in two different
+ways, which is worth keeping straight.**
 
-What is left waits on something no amount of reading supplies — a reproduction on the
-reporter's machine and a window in front.
+*The two that were work, and were done.* #78 on 2026-11-22 (commits `5833072` and `7c8c44c`):
+340 sites across 33 files on `src/client/ui/Dom.ts`, with 76 left in seven files because `el` is
+an interface field there and the local cannot be renamed out of the way. #79 on 2026-11-23
+(commits `d3cbded`, `70b8b72`, `bde9a64`): 37 of the 38 test files on
+`src/client/ui/testing/dom.ts`, 6,813 lines of double out and 1,440 in, with
+`input/Input.test.ts` left because what it doubles is an event target and not an element tree.
 
-**One new entry came out of #79 and is worth opening before anybody forgets the measurement.**
-The shared DOM double's `appendChild` does not unlink a node from its previous parent, so a
-moved node sits in two children lists at once. A real one unlinks; two of the thirty copies did
-(`Scoreboard`'s and `MatchHud`'s, which keep theirs as overrides) and twenty-eight did not.
-Fixing it in `ui/testing/dom.ts` is one line and would change what every suite on the shared
-double sees, which is why #79 did not do it — it is a behaviour change wanting its own run of
-the gate, not a line in a conversion.
+*The two that waited on a person or a machine, and were looked at.* Both closed on 2026-11-23,
+when the user reviewed them and reported both fine — and **neither was fixed by anything in this
+programme**, which is the part to remember. #34 is closed **as not reproducible**: nothing was
+ever aimed at it, both historical causes were measured not to reproduce, and the one candidate
+still unmeasured is named in the entry with a recorder written and ready, so if the trembling
+returns the entry is a map and not a blank page. #55 is closed **because it was the browser
+pane**, which is what C2's **Watch for** said on the day it was opened and what the 2026-11-22
+attempt proved by failing — `requestAnimationFrame` fired 0 times in 1,000 ms, twice, and at
+zero frames every console number about a render pass is a false negative. `Renderer.ts` is
+unchanged and should stay so.
+
+So the thing §9 existed to say — *these wait on a person, a machine or a decision this programme
+cannot supply* — is now true of exactly one entry, and what #87 waits on is the cheapest kind of
+help there is: somebody seeing it happen twice.
+
+**Two findings are loose and neither has an entry yet.** Recorded here rather than lost, because
+both came with a measurement that nobody will want to retake.
+
+1. **The shared DOM double's `appendChild` does not unlink a node from its previous parent**, so
+   a moved node sits in two children lists at once. A real one unlinks; two of the thirty copies
+   did (`Scoreboard`'s and `MatchHud`'s, which keep theirs as overrides) and twenty-eight did
+   not. The fix in `ui/testing/dom.ts` is one line and changes what every suite on the shared
+   double sees, which is why #79 did not do it — it is a behaviour change wanting its own run of
+   the gate, not a line in a conversion. *(From #79. Left here deliberately on 2026-11-23 rather
+   than opened as an entry.)*
+2. **`MatchHud`'s `cloneNode` is shallow where the other four copies were deep**, and none of the
+   five read the `deep` flag. `Killfeed` calls it with `true` to bring a weapon icon along, so
+   under that double a cloned icon arrives empty and anything asserting on its contents there is
+   vacuous. Kept as an override under R1. Of all the drift #79 found this is the one that looks
+   like a defect rather than a choice. *(From #79.)*

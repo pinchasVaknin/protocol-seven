@@ -294,6 +294,68 @@ describe('what the mode tells a bot to do', () => {
     for (const n of perFlag.values()) expect(n).toBeLessThanOrEqual(3);
   });
 
+  /** The flag in the middle, which nobody holds at the start of a round. */
+  function middle(mode: Domination): { readonly id: string; readonly x: number; readonly z: number } {
+    const zone = mode.objectiveZones.find((z) => z.owner === 'NONE');
+    if (zone === undefined) throw new Error('Foundry should open with a neutral flag');
+    return { id: zone.id, x: zone.def.position.x, z: zone.def.position.z };
+  }
+
+  it('does not let the enemy use up a side’s places at a flag', () => {
+    // The cap counted every assignment on the map, so three enemies walking to the middle flag
+    // took all three places and a bot standing beside it was sent somewhere else.
+    const { mode } = rig();
+    const flag = middle(mode);
+    for (let i = 0; i < 3; i++) {
+      expect(mode.assign(body(100 + i, 'A', flag.x, flag.z))?.id).toBe(flag.id);
+    }
+    expect(mode.assign(body(110, 'B', flag.x, flag.z))?.id).toBe(flag.id);
+  });
+
+  it('still refuses a side its fourth attacker at one flag', () => {
+    const { mode } = rig();
+    const flag = middle(mode);
+    for (let i = 0; i < 3; i++) {
+      expect(mode.assign(body(110 + i, 'B', flag.x, flag.z))?.id).toBe(flag.id);
+    }
+    expect(mode.assign(body(113, 'B', flag.x, flag.z))?.id).not.toBe(flag.id);
+  });
+
+  it('charges the crowding penalty for a side’s own bots and not for the enemy’s', () => {
+    // Two enemies sent to the middle used to make it twelve metres further away for everybody.
+    const alone = rig();
+    const crowded = rig();
+    const flag = middle(crowded.mode);
+    for (let i = 0; i < 2; i++) crowded.mode.assign(body(100 + i, 'A', flag.x, flag.z));
+    const far = crowded.mode.objectiveZones.find((z) => z.owner === 'A');
+    expect(far).toBeDefined();
+    if (far === undefined) return;
+    // A little nearer the enemy's flag than the middle one: with no penalty the neutral bonus wins.
+    const x = flag.x + (far.def.position.x - flag.x) * 0.6;
+    const z = flag.z + (far.def.position.z - flag.z) * 0.6;
+    const expected = alone.mode.assign(body(110, 'B', x, z))?.id;
+    expect(crowded.mode.assign(body(110, 'B', x, z))?.id).toBe(expected);
+  });
+
+  it('gives a killed bot’s place back to its own side', () => {
+    const { mode } = rig();
+    const flag = middle(mode);
+    for (let i = 0; i < 3; i++) mode.assign(body(110 + i, 'B', flag.x, flag.z));
+    const ev: KillEvent = {
+      killerId: 0,
+      victimId: 111,
+      weaponId: 'ar_carbine',
+      zone: 'torso',
+      killerTeam: 'A',
+      victimTeam: 'B',
+      headshot: false,
+      suicide: false,
+      friendly: false,
+    };
+    mode.onKill(ev);
+    expect(mode.assign(body(113, 'B', flag.x, flag.z))?.id).toBe(flag.id);
+  });
+
   it('sits on the nearest flag it holds once everything is theirs, at a low priority', () => {
     const { mode } = rig();
     for (const zone of mode.objectiveZones) zone.reset('B');

@@ -98,6 +98,7 @@ function stubAvatar(options: StubOptions = {}): ActorAvatar {
     setThrow: (): undefined => undefined,
     setVisible: (): undefined => undefined,
     setLife: (): undefined => undefined,
+    resetAnimation: (): undefined => undefined,
     getIndicatorAnchor(anchor: ActorIndicatorAnchor, target: THREE.Vector3): boolean {
       if (anchor !== 'head' || options.noHead === true) return false;
       target.set(x, 1.72, z);

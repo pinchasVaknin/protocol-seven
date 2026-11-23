@@ -713,6 +713,33 @@ Reproduced as a failing test first — a live `AIRBORNE` sample, then two dorman
 between them: `frozen: false`, `dormant: true`, animation told `AIRBORNE`. Four cases in
 `src/client/net/RemoteActor.test.ts` hold it now, beside the three the frozen fix left.
 
+### The second correction — stop being clever: a new life starts from nothing
+
+Reported still broken after the dormancy fix, with the reporter out of patience and right to be:
+*"כל פעם שבן אדם חי, או חוזר לחיים, יהיה לו איפוס על הדמות, שתעמיד אותו במקום."* That is the
+better rule, and three rounds of narrowing the diagnosis had walked past it.
+
+Every fix before this one asked *which stale fact should the client distrust?*, and each answer
+was right about one case and silent about the next. The rule that is not: **presentation state
+is thrown away on the two edges where it may be a guess** — a new life, and a body coming back
+into view. Nothing is lost by it, because the simulation is the authority for every fact the
+animator reads and restates all of them one frame later. What is thrown away is only this
+client's guess about a body it could not see.
+
+And there was a plain bug sitting underneath, which the diagnosis had never reached:
+`BotRenderer`'s respawn edge called `mesh.endDeath()`, and `CharacterAnimator.endDeath` opens
+with `if (!this.dead) return;`. A body that dies **out of view** is dormant, so this client is
+never told it fell — and its respawn therefore reset nothing at all, carrying the clamped
+`jumpLaunch` straight into the new life. At `dormantPct: 100` that is most deaths.
+
+`CharacterAnimator.resetToStand()` is now public and unconditional, `endDeath` is a thin caller
+of it, and `ActorAvatar.resetAnimation()` carries it to both edges (`BotMesh` ignores it; a box
+body latches nothing). Living bodies only on the view edge, so a corpse coming back into sight
+is not stood up for a frame. R6's 500 ms linger bounds the edge, so a body flickering at the
+limit of relevance cannot stutter the loop. Eight cases hold it, four in `CharacterAnimator`
+and four in `BotRenderer` — including the contrast that made the defect: `endDeath` on a body
+never seen to die still does nothing, and that is why the renderer now calls both.
+
 ### Three instruments, four wrong filters, and the lesson that cost the most
 
 Every instrument built for this hunt was first written with a filter that would have hidden the

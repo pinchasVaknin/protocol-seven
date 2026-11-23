@@ -110,6 +110,15 @@ export interface ActorAvatar {
    * `BotMesh` from the outer face of its arm box. The renderer still learns no bone names.
    */
   getIndicatorFrame(anchor: ActorIndicatorFrameAnchor, position: THREE.Vector3, quaternion: THREE.Quaternion): boolean;
+  /**
+   * Throw this body's animation state away and stand it up (#87).
+   *
+   * Called on the two edges where whatever pose the avatar is holding may be a guess made from
+   * events this client never saw: a **new life**, and a body **coming back into view** after
+   * being dormant. A skinned body clears every latch and clip; the procedural body has no
+   * animation state and ignores it. The next frame's `setLocomotion` restates the facts.
+   */
+  resetAnimation(): void;
   beginDeath(dx: number, dz: number, variant: number, animation: ActorAnimationInput): void;
   endDeath(): void;
   flinch(dx: number, dz: number): void;

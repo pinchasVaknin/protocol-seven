@@ -343,6 +343,26 @@ export class CharacterAnimator {
 
   endDeath(): void {
     if (!this.dead) return;
+    this.resetToStand();
+  }
+
+  /**
+   * Throw every pose away and start this body over, standing.
+   *
+   * **Why this is public and unconditional** (2026-11-23, after #87 was chased through four
+   * layers and came back): a body's animation state is only ever as good as the events this
+   * client happened to see, and a client misses events routinely. A body that dies out of view
+   * is dormant (protocol 28), so this client is never told it fell; its respawn used to reach
+   * `endDeath`, find `dead` false, and return without touching anything — carrying whatever
+   * clip was clamped on the body, the air pose included, straight into the new life.
+   *
+   * So the rule is now the blunt one, and it is the right one for presentation state: **a new
+   * life, or a body walking back into view, starts from nothing.** No latch, no held clip, no
+   * settle timer survives either edge. There is nothing to be clever about — the simulation is
+   * the authority for every fact here, and the next `setLocomotion` call, one frame later,
+   * restates all of them. What this throws away is only this client's guess.
+   */
+  resetToStand(): void {
     this.dead = false;
     this.throwLayer.reset();
     this.transition = null;
@@ -359,8 +379,8 @@ export class CharacterAnimator {
     this.candidateHeldFor = 0;
     this.active = null;
     this.mixer.stopAllAction();
-    // Flush property bindings so the respawn starts from its bind pose, not the final death
-    // frame. The next `setLocomotion` call starts the correct loop.
+    // Flush property bindings so the body starts from its bind pose rather than from the last
+    // frame of whatever was clamped on it. The next `setLocomotion` call starts the right loop.
     this.mixer.update(0);
   }
 

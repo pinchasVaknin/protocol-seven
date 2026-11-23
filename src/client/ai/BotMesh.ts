@@ -342,6 +342,13 @@ export class BotMesh implements ActorAvatar {
   /** A placeholder has one of everything; there is no variant to deal. */
   setLife(_entityId: number, _spawnSerial: number): void {}
 
+  /** A box body holds no clip and latches nothing, so there is nothing to throw away (#87). */
+  resetAnimation(): void {
+    // The one piece of per-life state it does keep: the position seed, for the same reason
+    // `endDeath` drops it — a new life is a cut, not a fifty-metre stride.
+    this.seeded = false;
+  }
+
   getIndicatorAnchor(anchor: ActorIndicatorAnchor, target: THREE.Vector3): boolean {
     switch (anchor) {
       case 'head':

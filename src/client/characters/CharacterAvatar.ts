@@ -123,6 +123,14 @@ export class CharacterAvatar implements ActorAvatar {
     this.animator.endDeath();
   }
 
+  resetAnimation(): void {
+    this.flinchTime = 0;
+    // A new life, or a body that has just walked back into view, is a cut and not a stride:
+    // the next position delta must start a fresh integration (see `endDeath`).
+    this.seeded = false;
+    this.animator.resetToStand();
+  }
+
   flinch(dx: number, dz: number): void {
     if (this.isDying) return;
     const length = Math.hypot(dx, dz);

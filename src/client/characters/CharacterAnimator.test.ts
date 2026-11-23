@@ -380,6 +380,80 @@ describe('CharacterAnimator: death', () => {
 
 // ===================================== the support hand =======================================
 
+// ================================== starting over, standing ===================================
+
+/**
+ * BACKLOG #87: the stuck mid-air leg pose, and the blunt rule that ended it.
+ *
+ * `jumpLaunch` clamps on its last frame and that frame **is** the air pose, so a body the
+ * animator believes is airborne keeps knees-up indefinitely — by design, and correctly, as long
+ * as the belief is current. The defect was that the belief could outlive everything that would
+ * have corrected it: a body that goes out of view is replicated from a frozen record, and a body
+ * that dies out of view is never seen to fall, so its respawn reached `endDeath`, found nothing
+ * dying, and returned without touching the clamped clip.
+ *
+ * So the animator can now be told to start over, and the renderer tells it on both edges.
+ */
+describe('CharacterAnimator: starting over', () => {
+  it('throws the clamped air pose away and stands up on the next frame', () => {
+    const a = animator();
+    run(a, {}, WALKING, 0.4);
+    // Long enough that the launch has finished and is being held on its last frame.
+    run(a, { stance: 'AIRBORNE' }, STILL, 2);
+    expect(playing(a)).toBe('jumpLaunch');
+
+    a.resetToStand();
+    expect(playing(a)).toBeNull();
+    expect(settled(a)).toBeNull();
+    expect(transition(a)).toBeNull();
+
+    // The simulation restates the facts one frame later, and the first loop of a life is taken
+    // with no settling — so the body is standing on the very next frame.
+    a.setLocomotion(input(), STILL, true, false, FRAME);
+    expect(playing(a)).toBe('idleWeaponReady');
+  });
+
+  it('forgets it was airborne, so the next ground frame is not a landing', () => {
+    const a = animator();
+    run(a, {}, WALKING, 0.4);
+    run(a, { stance: 'AIRBORNE' }, STILL, 2);
+
+    a.resetToStand();
+    a.setLocomotion(input(), WALKING, true, false, FRAME);
+
+    // A body that starts over has not just landed; it simply is where it is.
+    expect(playing(a)).toBe('walkWeaponReady');
+  });
+
+  it('ends a death too, so one call covers a respawn either way', () => {
+    const a = animator();
+    run(a, {}, STILL, 0.3);
+    a.beginDeath(input(), 0);
+    expect(a.isDying).toBe(true);
+
+    a.resetToStand();
+
+    expect(a.isDying).toBe(false);
+    expect(playing(a)).toBeNull();
+  });
+
+  /**
+   * The contrast that made the defect, pinned so it cannot be forgotten again: `endDeath` is
+   * about a death and nothing else. On a body this client never saw die it is a no-op — which
+   * is why the renderer's respawn edge calls both.
+   */
+  it('is not what `endDeath` does on a body that was never seen to die', () => {
+    const a = animator();
+    run(a, {}, WALKING, 0.4);
+    run(a, { stance: 'AIRBORNE' }, STILL, 2);
+    expect(playing(a)).toBe('jumpLaunch');
+
+    a.endDeath();
+
+    expect(playing(a)).toBe('jumpLaunch');
+  });
+});
+
 describe('CharacterAnimator: the support-hand grip', () => {
   it('asks the catalogue rather than keeping a list of its own', () => {
     const a = animator();

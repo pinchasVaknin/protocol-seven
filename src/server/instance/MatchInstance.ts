@@ -28,6 +28,7 @@ import { InstanceClock } from './InstanceClock';
 import { SeatChannels } from './SeatChannels';
 import { SeatRoster, type SeatSlot } from './SeatRoster';
 import { writeBot, writePlayer } from './SnapshotRecords';
+import { watchStuckStance } from '../debug/StanceProbe';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -342,6 +343,10 @@ export abstract class MatchInstance {
     this.clock.advance(absoluteTick);
 
     this.match.step(absoluteTick);
+
+    // BACKLOG #87: a live body left grounded in the `AIRBORNE` stance. Silent on a healthy
+    // server; one comparison per bot per tick. See `StanceProbe` for why it is not flag-gated.
+    watchStuckStance(this.match.bots.bots, absoluteTick);
 
     /**
      * Force a snapshot on any tick that ends the stepping (handover Tier 2 §A).

@@ -56,6 +56,7 @@
 
 // ========================================== IMPORTS =========================================== \\
 //#region Imports
+import { setStanceTrace } from '../../shared/net/StanceTrace';
 import type { StanceId } from '../../shared/core/Vocabulary';
 import type { CharacterAnimationId } from './CharacterCatalog';
 //#endregion
@@ -149,6 +150,9 @@ export function airPoseWatchWanted(search: string): boolean {
 /** Turn the watch on or off. Turning it off clears what it had, so a second run starts clean. */
 export function setAirPoseWatch(on: boolean): void {
   WATCH.on = on;
+  // The wire-level half of the same question (BACKLOG #87): this file says the pose is wrong,
+  // `StanceTrace` says whether the stance that drives it ever arrived. One flag, both ends.
+  setStanceTrace(on);
   if (!on) resetAirPoseWatch();
 }
 

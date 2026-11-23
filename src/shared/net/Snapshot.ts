@@ -191,6 +191,14 @@ export const EFlag = {
   Dormant: 1 << 11,
 } as const;
 
+/**
+ * The `Stance` bit of a delta's field mask, for a reader of `readEntity`'s answer.
+ *
+ * Exported alone rather than the whole table: #87 needs to know whether a stance change was on
+ * the wire at all, and a diagnostic has no business testing the other fourteen.
+ */
+export const ENTITY_STANCE_BIT = 1 << 4;
+
 /** Which fields a delta carries. One bit per line of the three `write*Fields` helpers. */
 const F = {
   Pos: 1 << 0,
@@ -410,14 +418,19 @@ export function writeEntity(w: ByteWriter, e: EntitySnapshot, base: EntitySnapsh
  * loudly if it is violated: an absent field means *unchanged*, so a caller that hands in a
  * zeroed record gets an entity at the origin. The client satisfies this by decoding into its
  * own retained copy.
+ *
+ * Answers the field mask it applied, which is the only way to tell *absent* from *present and
+ * the same* after the fact — the distinction BACKLOG #87 turns on. Callers that do not care
+ * ignore it.
  */
-export function readEntity(r: ByteReader, out: EntitySnapshot): void {
+export function readEntity(r: ByteReader, out: EntitySnapshot): number {
   out.entityId = r.u8v();
   const mask = r.u16();
 
   readMovementFields(r, out, mask);
   readStateFields(r, out, mask);
   readSerialFields(r, out, mask);
+  return mask;
 }
 
 /**

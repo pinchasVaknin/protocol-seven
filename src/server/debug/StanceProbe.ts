@@ -27,15 +27,9 @@
  *
  * ## What is deliberately not reported
  *
- * **A dead body.** `Bot.advance` returns early for a bot that is not alive, so its controller
- * never runs and `sim.stance` stays exactly as it was at the moment of death — a bot killed
- * mid-jump replicates `AIRBORNE` for its whole death. That is a real oddity and it is on record
- * in #87, but it is also harmless: the client draws a dead body with a death clip and never
- * reads the stance. Reporting it would bury the live case in noise, and the live case is the bug.
+ * Nothing. **Both `grounded` and `alive` are reported, not required** — see below.
  *
- * Nothing else. **Grounded is reported, not required** — see below.
- *
- * ## The filter this started with was wrong, and that is the finding
+ * ## Both filters this started with were wrong, and that is the finding
  *
  * The first version only reported a bot that was `grounded && AIRBORNE`, on the reasoning that
  * `AIRBORNE` off the ground is the stance doing its job. Deployed, it stayed **completely
@@ -53,8 +47,17 @@
  * trip: a real fall has `vy` strongly negative and `fell` growing, while a body stranded in the
  * air has both at about zero and `y` standing still.
  *
- * Twice now a filter built on what seemed obvious has hidden the thing it was written to find —
- * the client watch made the same mistake with `planarSpeed`. Measure the thing; filter later.
+ * **The second filter was `alive`**, and it was wrong for a worse reason: it was excluded on an
+ * argument rather than on a measurement. The note said a dead body holding `AIRBORNE` was
+ * harmless *"because the client draws a dead body with a death clip and never reads the
+ * stance"*. The drawing is indeed a death clip — but the stale stance stays in the client's
+ * record and rides into the next life, and a body that respawns is not dead any more. Dead
+ * bodies really do hold `AIRBORNE`: three of the four caught on the deployed server were dead.
+ * So they are reported too, with `alive` on the row to tell them apart.
+ *
+ * Three filters now, each built on what seemed obvious, each hiding the thing it was written to
+ * find — the client watch did it with `planarSpeed`, and this file did it with `grounded` and
+ * then with `alive`. Measure the thing; filter afterwards, and only against a measurement.
  */
 
 // ========================================== IMPORTS =========================================== \\
@@ -93,7 +96,7 @@ const reported = new Set<number>();
 export function watchStuckStance(bots: readonly Bot[], tick: number): void {
   for (const bot of bots) {
     const sim = bot.controller.sim;
-    if (!bot.participating || sim.stance !== 'AIRBORNE') {
+    if (sim.stance !== 'AIRBORNE') {
       held.delete(bot.entityId);
       reported.delete(bot.entityId);
       continue;
@@ -133,6 +136,7 @@ function report(
 ): void {
   metric('stance', 'stuck-airborne', {
     entityId: bot.entityId,
+    alive: bot.participating,
     ticks: episode.ticks,
     tick,
     // The three that separate a real fall from a body stranded in the air: a fall has `vy`

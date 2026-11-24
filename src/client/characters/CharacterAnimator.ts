@@ -18,7 +18,6 @@ import type { ActorAnimationInput } from '../../shared/ai/BotVisualState';
 import { DEFAULT_MOVEMENT_CONFIG } from '../../shared/player/MovementConfig';
 import { MELEE_SWING_SECONDS } from '../../shared/weapons/Melee';
 import { ThrowLayer } from './ThrowLayer';
-import { WATCH, watchAirPose } from './AirPoseWatch';
 //#endregion
 
 // =========================================== TYPES ============================================ \\
@@ -123,6 +122,27 @@ const GROUND_EDGE_GRACE = 0.08;
  * it was ever a gait change.
  */
 const LOOP_SETTLE_SECONDS = 0.1;
+
+/**
+ * How long a body may be drawn in the air pose before the animator stops believing it (#87).
+ *
+ * **This is a watchdog, not a rule, and it is deliberately dumber than everything around it.**
+ * The stuck mid-air leg pose was chased through the simulation, the animator, the interpolator,
+ * the replication path and the dormancy record. Three fixes came out of that, each correct about
+ * the case it was built for, and the body was still stuck. So this one does not reason about
+ * *why* the pose is being held: it watches the only fact that is true in every report — a body
+ * drawn knees-up, for seconds — and when the clock runs out it throws the animation away and
+ * lets `setLocomotion` restate it from the simulation on the same frame.
+ *
+ * **Why 1.5 seconds is safe.** An honest jump-while-moving holds the air pose for at most
+ * **567 ms**, measured over twelve episodes in a live match, with nothing over 600; the whole
+ * replicated chain at 36 % packet loss holds it for **317 ms** worst case. 1.5 s is over twice
+ * the longest honest episode. The cost when it is wrong is one body standing upright during the
+ * tail of a fall longer than a second and a half, which no drop on these maps produces short of
+ * the kill plane. The cost of not having it is a body stuck for a whole life, which is what was
+ * reported, four times.
+ */
+const AIR_POSE_WATCHDOG_SECONDS = 1.5;
 //#endregion
 
 // ================================== CLASS CharacterAnimator =================================== \\
@@ -187,6 +207,18 @@ export class CharacterAnimator {
   private gestureLatch: CharacterAnimationId | null = null;
   /** Seconds the raw ground state has disagreed with `wasAirborne`. See `GROUND_EDGE_GRACE`. */
   private airborneHeldFor = 0;
+  /** Seconds this body has been drawn in the air pose. See `AIR_POSE_WATCHDOG_SECONDS`. */
+  private airPoseHeldFor = 0;
+  /**
+   * Set when the watchdog trips: this body's claim to be airborne is no longer believed, until
+   * it says something else at least once.
+   *
+   * Without the latch the watchdog is a flicker rather than a fix. If whatever feeds the stance
+   * is stuck on `AIRBORNE` — which is what every report looks like — resetting the animation
+   * would start the launch again on the next frame, and the body would cycle through the air
+   * pose every second and a half for ever. One wrong claim, once, and then it is ignored.
+   */
+  private airPoseDistrusted = false;
   /** The loop the mixer has been told about, the one arguing for its place, and for how long. */
   private settledLoop: CharacterAnimationId | null = null;
   private candidateLoop: CharacterAnimationId | null = null;
@@ -270,6 +302,7 @@ export class CharacterAnimator {
     dt: number,
   ): void {
     if (this.dead) return;
+    this.watchAirPose(dt);
 
     const desired = this.settleLoop(
       // The loop already on the body decides which side of the run band it is on — see
@@ -280,9 +313,11 @@ export class CharacterAnimator {
     );
     const low = isLowStance(input);
     const sliding = input.stance === 'SLIDE';
-    const airborne = this.settleAirborne(isAirborne(input), dt);
-    // Off by default: one property read, and nothing built. See `AirPoseWatch` (BACKLOG #87).
-    if (WATCH.on) this.reportAirPose(input, airborne, planarSpeed, dt);
+    // One honest claim clears the distrust the watchdog set: a body that says anything other
+    // than `AIRBORNE`, even for one frame, is a body whose stance is moving again.
+    const rawAirborne = isAirborne(input);
+    if (!rawAirborne) this.airPoseDistrusted = false;
+    const airborne = this.settleAirborne(rawAirborne && !this.airPoseDistrusted, dt);
     const gesture = selectGesture(input, planarSpeed);
     if (gesture === null) this.gestureLatch = null;
 
@@ -346,7 +381,29 @@ export class CharacterAnimator {
 
   endDeath(): void {
     if (!this.dead) return;
+    this.resetToStand();
+  }
+
+  /**
+   * Throw every pose away and start this body over, standing.
+   *
+   * **Why this is public and unconditional** (2026-11-23, after #87 was chased through four
+   * layers and came back): a body's animation state is only ever as good as the events this
+   * client happened to see, and a client misses events routinely. A body that dies out of view
+   * is dormant (protocol 28), so this client is never told it fell; its respawn used to reach
+   * `endDeath`, find `dead` false, and return without touching anything — carrying whatever
+   * clip was clamped on the body, the air pose included, straight into the new life.
+   *
+   * So the rule is now the blunt one, and it is the right one for presentation state: **a new
+   * life, or a body walking back into view, starts from nothing.** No latch, no held clip, no
+   * settle timer survives either edge. There is nothing to be clever about — the simulation is
+   * the authority for every fact here, and the next `setLocomotion` call, one frame later,
+   * restates all of them. What this throws away is only this client's guess.
+   */
+  resetToStand(): void {
     this.dead = false;
+    this.airPoseHeldFor = 0;
+    this.airPoseDistrusted = false;
     this.throwLayer.reset();
     this.transition = null;
     this.gestureLatch = null;
@@ -362,8 +419,8 @@ export class CharacterAnimator {
     this.candidateHeldFor = 0;
     this.active = null;
     this.mixer.stopAllAction();
-    // Flush property bindings so the respawn starts from its bind pose, not the final death
-    // frame. The next `setLocomotion` call starts the correct loop.
+    // Flush property bindings so the body starts from its bind pose rather than from the last
+    // frame of whatever was clamped on it. The next `setLocomotion` call starts the right loop.
     this.mixer.update(0);
   }
 
@@ -518,6 +575,32 @@ export class CharacterAnimator {
   }
 
   /**
+   * The last word on the air pose: hold it too long and the animation is thrown away (#87).
+   *
+   * Keyed on the clip that is actually in front rather than on any belief about why it is
+   * there, because the belief is the thing that kept turning out to be wrong. `jumpLaunch` is
+   * the only clip that can hold a body knees-up — it clamps on its last frame on purpose, and
+   * that frame *is* the air pose — so if it is still the active clip after
+   * `AIR_POSE_WATCHDOG_SECONDS`, the body is stuck whatever the reason.
+   *
+   * Running at the top of `setLocomotion` is what makes the recovery invisible: the reset lands
+   * and the rest of the same call picks a loop from this frame's input, so nothing is ever
+   * drawn in the bind pose.
+   */
+  private watchAirPose(dt: number): void {
+    if (this.active?.id !== 'jumpLaunch') {
+      this.airPoseHeldFor = 0;
+      return;
+    }
+    this.airPoseHeldFor += Math.max(0, dt);
+    if (this.airPoseHeldFor < AIR_POSE_WATCHDOG_SECONDS) return;
+    this.resetToStand();
+    // After the reset, which clears it: this body does not get to claim the air again until it
+    // has claimed something else first. See `airPoseDistrusted`.
+    this.airPoseDistrusted = true;
+  }
+
+  /**
    * The ground state the jump pair is played from: the raw one, once it has held long enough to
    * be a jump rather than a stair. See `GROUND_EDGE_GRACE` for the measurement and for why
    * landing is not made to wait.
@@ -534,28 +617,6 @@ export class CharacterAnimator {
     }
     this.airborneHeldFor += Math.max(0, dt);
     return this.airborneHeldFor >= GROUND_EDGE_GRACE ? true : this.wasAirborne;
-  }
-
-  /**
-   * Hand this frame to BACKLOG #87's watch. Reached only when the watch is on, so the sample is
-   * never built on a normal run — the guard is at the call site for that reason.
-   */
-  private reportAirPose(
-    input: ActorAnimationInput,
-    airborne: boolean,
-    planarSpeed: number,
-    dt: number,
-  ): void {
-    watchAirPose({
-      entityId: this.entityId,
-      stance: input.stance,
-      rawAirborne: isAirborne(input),
-      airborne,
-      planarSpeed,
-      dt,
-      active: this.active?.id ?? null,
-      transition: this.transition?.id ?? null,
-    });
   }
 
   /** Start a one-shot that owns the body, with `resume` waiting behind it. */

@@ -697,3 +697,134 @@ describe('RemoteActor: a frozen body does not keep the air pose', () => {
     expect(jumping.animation.stance).toBe('AIRBORNE');
   });
 });
+
+// ========================== the air pose a dormant record used to keep =========================
+
+/**
+ * BACKLOG #87, the half the `frozen` fix could not reach: a body the server has stopped placing.
+ *
+ * Protocol 28 sends a body this viewer cannot see **dormant** — the record it had the last time
+ * it was relevant, frozen, with `EFlag.Dormant` set. `SeatView`'s own header names the stance
+ * among the fields that freeze. So a body that goes out of view mid-jump is replicated as
+ * `AIRBORNE` for as long as it stays out of view, which on a live server is most of the time:
+ * the instance this was reported from logged `dormantPct: 100`.
+ *
+ * Nothing starves, so none of it looks wrong from the buffer's side. Snapshots keep arriving at
+ * 20 Hz, `sample` brackets two of them and blends, and `frozen` is **false** — while
+ * `Interpolation.sample` takes the stance from the newest sample without blending it, which is
+ * right for a live record and is how the frozen one gets through. That is why the body the
+ * reporter caught read `stance: AIRBORNE / frozen: false / extrapolated: false`, and why the
+ * server-side probe over the same roster stayed silent: `sim.stance` had landed long before.
+ * Both measurements were true about different records.
+ */
+describe('RemoteActor: a dormant body does not keep the air pose', () => {
+  /** The frozen record the server repeats while a body is out of view: mid-jump, and still. */
+  function dormantJump(serverMs: number, interp: EntityInterpolator): void {
+    interp.push(
+      body(7, (e) => {
+        e.stance = 'AIRBORNE';
+        e.flags = EFlag.Alive | EFlag.Bot | EFlag.Dormant;
+      }),
+      serverMs,
+    );
+  }
+
+  it('stops reporting AIRBORNE to the animation while the record is dormant', () => {
+    const actor = new RemoteActor(7, STAND_MAX);
+    const interp = buffer(
+      body(7, (e) => {
+        e.stance = 'AIRBORNE';
+        e.flags = EFlag.Alive | EFlag.Bot;
+      }),
+      0,
+    );
+
+    // Seen once mid-jump, in view: that pose is real and has to be kept.
+    actor.update(interp, 0);
+    expect(actor.animation.stance).toBe('AIRBORNE');
+    expect(actor.dormant).toBe(false);
+
+    // It goes out of view. The frozen record arrives every snapshot, saying the same thing.
+    dormantJump(50, interp);
+    dormantJump(100, interp);
+    actor.update(interp, 75);
+
+    // Blended between two live samples, so the buffer is healthy — this is the case the
+    // `frozen` guard cannot see.
+    expect(actor.frozen).toBe(false);
+    expect(actor.extrapolated).toBe(false);
+    expect(actor.dormant).toBe(true);
+    expect(actor.animation.stance).toBe('STAND');
+  });
+
+  /** The same line the frozen twin holds: `rigLayoutFor` must still read what the wire said. */
+  it('still reports the stance the wire last carried', () => {
+    const actor = new RemoteActor(7, STAND_MAX);
+    const interp = buffer(
+      body(7, (e) => {
+        e.stance = 'AIRBORNE';
+        e.flags = EFlag.Alive | EFlag.Bot;
+      }),
+      0,
+    );
+    actor.update(interp, 0);
+    dormantJump(50, interp);
+    dormantJump(100, interp);
+    actor.update(interp, 75);
+
+    expect(actor.stance).toBe('AIRBORNE');
+  });
+
+  /**
+   * A dormant crouch is left alone, for the frozen case's reason: a body nobody can see is as
+   * likely to be crouching as not, and the pose it is drawn in when it comes back is a kneel
+   * either way. Only `AIRBORNE` is a moment rather than a state.
+   */
+  it('leaves a dormant crouch alone', () => {
+    const actor = new RemoteActor(7, STAND_MAX);
+    const interp = new EntityInterpolator();
+    const crouch = (serverMs: number): void => {
+      interp.push(
+        body(7, (e) => {
+          e.stance = 'CROUCH';
+          e.flags = EFlag.Alive | EFlag.Bot | EFlag.Dormant;
+        }),
+        serverMs,
+      );
+    };
+    crouch(0);
+    crouch(50);
+    actor.update(interp, 25);
+
+    expect(actor.dormant).toBe(true);
+    expect(actor.animation.stance).toBe('CROUCH');
+  });
+
+  /**
+   * And the moment it comes back into view the guard lifts, because the record is live again.
+   * A body that really is mid-jump when it reappears has to be drawn mid-jump — the wake is
+   * `NetClient`'s `interp.reset()`, so the live sample is the only one in the buffer.
+   */
+  it('keeps the air pose again the moment the body is live', () => {
+    const actor = new RemoteActor(7, STAND_MAX);
+    const interp = new EntityInterpolator();
+    dormantJump(0, interp);
+    dormantJump(50, interp);
+    actor.update(interp, 25);
+    expect(actor.animation.stance).toBe('STAND');
+
+    // Relevant again, and genuinely in the air. `NetClient` resets the buffer on the wake.
+    interp.reset();
+    interp.push(
+      body(7, (e) => {
+        e.stance = 'AIRBORNE';
+        e.flags = EFlag.Alive | EFlag.Bot;
+      }),
+      100,
+    );
+    actor.update(interp, 100);
+
+    expect(actor.dormant).toBe(false);
+    expect(actor.animation.stance).toBe('AIRBORNE');
+  });
+});

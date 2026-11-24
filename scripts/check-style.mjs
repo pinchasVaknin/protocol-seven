@@ -415,7 +415,6 @@ const FINISHED = {
     'src/client/characters/ActorAvatar.ts',
     'src/client/characters/AnimationSelector.ts',
     'src/client/characters/AnimationVariant.ts',
-    'src/client/characters/AirPoseWatch.ts',
     'src/client/characters/CharacterAnimator.ts',
     'src/client/characters/CharacterAssetImport.ts',
     'src/client/characters/CharacterAssetRepository.ts',

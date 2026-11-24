@@ -282,8 +282,26 @@ export class BotRenderer {
             indicator.group.visible = false;
             this.hiddenNext.add(actor.entityId);
         } else if (this.hidden.has(actor.entityId)) {
-            // Out of the camera's lap: the avatar comes back; the indicator decides for itself
-            // next frame.
+            // Out of the camera's lap, or back from dormant: the avatar comes back; the
+            // indicator decides for itself next frame.
+            //
+            // The pose it comes back with is thrown away (#87). While a body is dormant the
+            // server repeats the record it had when the body was last relevant — stance and
+            // all — so the animator has spent that whole time acting on a frozen fact, and
+            // what it is holding is a guess about a body nobody could see. The first frame
+            // back is the one frame where the real state is known and nothing is on screen
+            // yet to jump.
+            //
+            // A body at the edge of relevance cannot make this stutter: R6 holds a body
+            // relevant for `LINGER_MS` (500 ms) after it stops being seen, for exactly that
+            // reason, so the edge is bounded at roughly twice a second in the worst case and
+            // is nowhere near it in practice. A restarted loop at that rate on a body flashing
+            // in and out of view is a trade worth making against a pose stuck for a whole life.
+            //
+            // Living bodies only. `applyEvents` ran earlier this frame and has already laid a
+            // corpse down; standing it up here would make it pop upright for the one frame
+            // until the authoritative bit put it back.
+            if (actor.participating) mesh.resetAnimation();
             mesh.setVisible(true);
         }
     }
@@ -380,7 +398,12 @@ export class BotRenderer {
 
         if (v.spawnSerial !== seen.spawn) {
             seen.spawn = v.spawnSerial;
+            // Unconditional, and `endDeath` is not enough on its own (#87): a body that died
+            // out of view was never seen to fall, so `endDeath` would find it not dying and
+            // return, carrying the clip clamped on it into the new life. A new life starts
+            // from nothing.
             mesh.endDeath();
+            mesh.resetAnimation();
             mesh.setLife(bot.entityId, v.spawnSerial);
             mesh.setVisible(true);
         }

@@ -260,8 +260,20 @@ export class RemoteActor implements RenderableActor, RoundBlocker {
    * wire last said, which is what `rigLayoutFor` and anything else wanting the raw fact reads.
    */
   get animation(): ActorAnimationInput {
+    // `AIRBORNE` is a moment, not a state, and `jumpLaunch` clamps on the air pose by design —
+    // so a stale record asserting it holds a body knees-up for as long as the staleness lasts
+    // (BACKLOG #87). Two kinds of record are stale, and both have to be refused here:
+    //
+    // - `frozen`: the buffer starved past `MAX_EXTRAPOLATION_MS` and is holding its last sample.
+    // - `dormant`: the server has stopped placing this body (protocol 28) and is repeating the
+    //   record it had when the body was last relevant — `SeatView` names the stance among the
+    //   fields that freeze. Nothing starves, so `frozen` is false and snapshots keep arriving;
+    //   `Interpolation.sample` takes the stance from the newest sample unblended, which is right
+    //   for a live record and is how a frozen one gets through. This was the reported bug.
+    //
+    // Neither can see the landing, so neither gets to claim the body is still in the air.
     this.animation_.stance =
-      this.frozen && this.pose.stance === 'AIRBORNE' ? 'STAND' : this.pose.stance;
+      (this.frozen || this.dormant) && this.pose.stance === 'AIRBORNE' ? 'STAND' : this.pose.stance;
     this.animation_.aiming = this.ads;
     this.animation_.sprinting = this.sprinting;
     this.animation_.reloading = this.reloading;

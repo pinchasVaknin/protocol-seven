@@ -79,6 +79,7 @@ function installRuntime(): void {
 /** The boot lines a human reads: what this build is, and what is unsafe about this run. */
 function logBoot(log: ReturnType<typeof logger>, cfg: ServerConfig, hazards: readonly string[]): void {
   log.info(`PROTOCOL SEVEN dedicated server — node ${process.version}, protocol v${PROTOCOL_VERSION}.`);
+  log.info(`build ${buildCommit()}.`);
   if (!isIdle(cfg.conditions)) {
     log.warn(`NET_SIM active on every outbound link: ${describeConditions(cfg.conditions)}`);
   }
@@ -87,11 +88,27 @@ function logBoot(log: ReturnType<typeof logger>, cfg: ServerConfig, hazards: rea
   for (const hazard of hazards) log.warn(`UNSAFE FOR PRODUCTION: ${hazard}`);
 }
 
+/**
+ * Which build this is, as the host told us at deploy time.
+ *
+ * Render sets `RENDER_GIT_COMMIT`; other hosts set one of the others, and a local run has none
+ * and says so. It is on the boot line because *"is the fix actually deployed?"* has cost this
+ * project a full round of debugging more than once — a log you cannot date to a commit is a log
+ * you cannot trust, and the answer is one environment variable away.
+ */
+function buildCommit(): string {
+  const env = process.env;
+  const sha =
+    env['RENDER_GIT_COMMIT'] ?? env['GIT_COMMIT'] ?? env['SOURCE_VERSION'] ?? env['COMMIT_SHA'];
+  return sha === undefined || sha === '' ? 'unknown (no commit in the environment)' : sha.slice(0, 12);
+}
+
 /** The same boot, as one record a log search or an alert can count. */
 function emitBootMetric(cfg: ServerConfig, hazards: readonly string[]): void {
   metric('server', 'boot', {
     node: process.version,
     pid: process.pid,
+    commit: buildCommit(),
     protocol: PROTOCOL_VERSION,
     host: cfg.host,
     port: cfg.port,

@@ -578,6 +578,9 @@ describe('BotRenderer dormancy', () => {
 });
 
 describe('BotRenderer GLB avatars', () => {
+  /** How many times any `skin()` stub has been asked to throw its animation away (#87). */
+  let skinResets = 0;
+
   function skin(): ActorAvatar {
     const group = new THREE.Group();
     group.name = 'skin';
@@ -594,6 +597,9 @@ describe('BotRenderer GLB avatars', () => {
         return undefined;
       },
       setLife: (): undefined => undefined,
+      resetAnimation: (): undefined => {
+        skinResets++;
+      },
       getIndicatorAnchor: (): boolean => false,
       getIndicatorFrame: (): boolean => false,
       beginDeath: (): undefined => {
@@ -609,6 +615,85 @@ describe('BotRenderer GLB avatars', () => {
       dispose: (): undefined => undefined,
     };
   }
+
+  /**
+   * BACKLOG #87, the blunt rule that closed it.
+   *
+   * Every clever version of this fix was a guess about which stale fact to distrust, and each
+   * one missed a case. The rule that does not: **a body throws its animation away on the two
+   * edges where what it is holding may be a guess** — a new life, and a return into view. The
+   * simulation restates every fact one frame later, so nothing real is lost.
+   */
+  describe('throwing the animation away', () => {
+    it('resets a body that walks back into view after being dormant', () => {
+      const h = harness();
+      h.setReady(true);
+      h.setCreated(() => skin());
+      h.setRoster([actor(1, { dormant: true })]);
+      h.frame();
+      skinResets = 0;
+
+      h.setRoster([actor(1, { dormant: false })]);
+      h.frame();
+
+      // While it was dormant the server was repeating the record it had when the body was last
+      // relevant — the stance included — so whatever the animator settled on is a guess.
+      expect(skinResets).toBe(1);
+      h.renderer.dispose();
+    });
+
+    it('resets on a new life, whether or not this client saw the death', () => {
+      const h = harness();
+      h.setReady(true);
+      h.setCreated(() => skin());
+      // Alive throughout and never seen to fall, which is what a body that dies out of view
+      // looks like from here: the spawn serial is the only evidence of the new life.
+      h.setRoster([actor(1, { spawnSerial: 4 })]);
+      h.frame();
+      skinResets = 0;
+
+      h.setRoster([actor(1, { spawnSerial: 5 })]);
+      h.frame();
+
+      expect(skinResets).toBe(1);
+      h.renderer.dispose();
+    });
+
+    it('leaves a corpse lying down when it comes back into view', () => {
+      const h = harness();
+      h.setReady(true);
+      h.setCreated(() => skin());
+      h.setRoster([actor(1, { dormant: true, participating: false })]);
+      h.frame();
+      skinResets = 0;
+
+      h.setRoster([actor(1, { dormant: false, participating: false })]);
+      h.frame();
+
+      // Standing it up here would pop it upright for the one frame until the authoritative
+      // bit laid it back down.
+      expect(skinResets).toBe(0);
+      h.renderer.dispose();
+    });
+
+    it('resets once per edge, not every frame it stays in view', () => {
+      const h = harness();
+      h.setReady(true);
+      h.setCreated(() => skin());
+      h.setRoster([actor(1, { dormant: true })]);
+      h.frame();
+      h.setRoster([actor(1, { dormant: false })]);
+      h.frame();
+      skinResets = 0;
+
+      h.frame();
+      h.frame();
+      h.frame();
+
+      expect(skinResets).toBe(0);
+      h.renderer.dispose();
+    });
+  });
 
   it('falls back to a BotMesh while no GLB is usable', () => {
     const h = harness();

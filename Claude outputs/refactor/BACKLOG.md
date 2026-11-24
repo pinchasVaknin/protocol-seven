@@ -511,7 +511,7 @@ fourth entry under §5b because that section's three were all filed on 2026-10-1
 counts them. Same difference from §5, though: nothing pins this, so no test records it and no
 oracle will notice when it changes.
 
-### #87 — A body keeps the mid-air leg pose while walking normally along the ground · `closed` · *a frozen body held a transient stance; fixed in `RemoteActor`* *(opened 2026-11-23 by the user, from play; fixed the same day)*
+### #87 — A body keeps the mid-air leg pose while walking normally along the ground · `closed` · *a dormant record held a transient stance; fixed in `RemoteActor`* *(opened 2026-11-23 by the user, from play; closed twice the same day — see the correction at the end)*
 **Files** `src/client/characters/CharacterAnimator.ts` (`handleGroundOrSlideEdge`) and
 `src/client/characters/AnimationSelector.ts` (`isAirborne`, `selectGroundTransition`) at the
 reading end; `src/shared/player/PlayerController.ts` (the two `setStance('AIRBORNE')` calls and the
@@ -613,7 +613,7 @@ a one-shot that never finished.
 
 ---
 
-### Found and fixed 2026-11-23 — it was `frozen`, and the clue was "the external server"
+### Thought fixed 2026-11-23 — a real bug, and not this one *(superseded; see the correction below)*
 
 **The reporter's own observation closed it**: it happens on the external server and never on the
 local one. That is decisive on its own, because a local match has no interpolation at all — a
@@ -671,6 +671,127 @@ and reported nothing. It now trips on duration alone and keeps `planarSpeed` on 
 The measurements that set its threshold still stand and are still useful: an ordinary
 jump-while-moving holds the air pose for at most **567 ms** live, and the replicated chain at
 36 % packet loss for **317 ms**, against a threshold of 1,200.
+
+### The correction — it was **dormancy**, not starvation, and the reporter said so
+
+The fix above shipped and the reporter played the build and answered **"לא תוקן"**, with
+screenshots and `[air-pose]` rows. It was a real bug and it stays fixed; it was not the reported
+one. Writing that down matters more than the fix, because the reasoning that produced it looked
+airtight and was not: *"only a networked body can starve"* is true, and the body in the report was
+never starving.
+
+**What the instruments measured, and why the two sides looked impossible.** The client caught
+bodies holding `stance: AIRBORNE` past 1,200 ms with **`frozen: false` and `extrapolated: false`**
+— snapshots were arriving, so the buffer was healthy and the stance on the wire was simply wrong.
+A server-side probe over the stepped roster, with no filter on `grounded` and none on `alive`,
+stayed **completely silent** across a deployed session and eight headless matches: no bot held
+`AIRBORNE` for 60 consecutive ticks. Both measurements were sound and could not both be about the
+same record. That was the whole puzzle, and the answer is that they were not.
+
+**The mechanism.** Protocol 28 sends a body this viewer cannot see **dormant**: the record it had
+the last time it was relevant, frozen, with `EFlag.Dormant` set. `SeatView`'s own header names
+what freezes — *"position, view, velocity, **stance**, height, weapon, health…"*. So a body that
+leaves this viewer's relevance set mid-jump is replicated as `AIRBORNE` for as long as it stays
+out of view. The instance the report came from logged **`dormantPct: 100`**: every enemy, dormant,
+all the time.
+
+Nothing starves, which is why the first fix could not see it. Snapshots keep arriving at 20 Hz,
+`sample` brackets two of them and blends, `frozen` stays false — and `Interpolation.sample` takes
+the stance from the newest sample **unblended**, which is right for a live record and is exactly
+how a frozen one gets through. Meanwhile `sim.stance` landed within a tick of the ground, so the
+server probe was right to say nothing. Two records, two true answers.
+
+**The fix**, in the same line as the first and for the same reason, which is the argument that the
+line is the right place: `RemoteActor.animation` refuses `AIRBORNE` when the record is `frozen`
+**or `dormant`**. Both are stale records asserting a transient whose end they cannot see; the
+difference is that the server states dormancy outright in a flag instead of leaving the client to
+infer it from silence. Nothing else changes: `get stance()` still reports what the wire carried,
+a dormant *crouch* is left alone, and the moment the record is live again the guard lifts, so a
+body that really is mid-jump when it comes back into view is drawn mid-jump.
+
+Reproduced as a failing test first — a live `AIRBORNE` sample, then two dormant records, sampled
+between them: `frozen: false`, `dormant: true`, animation told `AIRBORNE`. Four cases in
+`src/client/net/RemoteActor.test.ts` hold it now, beside the three the frozen fix left.
+
+### The second correction — stop being clever: a new life starts from nothing
+
+Reported still broken after the dormancy fix, with the reporter out of patience and right to be:
+*"כל פעם שבן אדם חי, או חוזר לחיים, יהיה לו איפוס על הדמות, שתעמיד אותו במקום."* That is the
+better rule, and three rounds of narrowing the diagnosis had walked past it.
+
+Every fix before this one asked *which stale fact should the client distrust?*, and each answer
+was right about one case and silent about the next. The rule that is not: **presentation state
+is thrown away on the two edges where it may be a guess** — a new life, and a body coming back
+into view. Nothing is lost by it, because the simulation is the authority for every fact the
+animator reads and restates all of them one frame later. What is thrown away is only this
+client's guess about a body it could not see.
+
+And there was a plain bug sitting underneath, which the diagnosis had never reached:
+`BotRenderer`'s respawn edge called `mesh.endDeath()`, and `CharacterAnimator.endDeath` opens
+with `if (!this.dead) return;`. A body that dies **out of view** is dormant, so this client is
+never told it fell — and its respawn therefore reset nothing at all, carrying the clamped
+`jumpLaunch` straight into the new life. At `dormantPct: 100` that is most deaths.
+
+`CharacterAnimator.resetToStand()` is now public and unconditional, `endDeath` is a thin caller
+of it, and `ActorAvatar.resetAnimation()` carries it to both edges (`BotMesh` ignores it; a box
+body latches nothing). Living bodies only on the view edge, so a corpse coming back into sight
+is not stood up for a frame. R6's 500 ms linger bounds the edge, so a body flickering at the
+limit of relevance cannot stutter the loop. Eight cases hold it, four in `CharacterAnimator`
+and four in `BotRenderer` — including the contrast that made the defect: `endDeath` on a body
+never seen to die still does nothing, and that is why the renderer now calls both.
+
+### The watchdog — the fourth fix, and the one that does not ask why
+
+Reported broken a fourth time, with nothing left to say about it. Three fixes had each been
+correct about the case they were built for, and the body was still stuck, so the last one stops
+diagnosing: **`jumpLaunch` active for more than 1.5 s means the body is stuck, whatever is
+feeding it, and the animation is thrown away.** It is keyed on the clip in front rather than on
+the stance, because the stance is the fact that kept being wrong, and it runs at the top of
+`setLocomotion` so the same call picks the right loop and nothing is drawn in the bind pose.
+
+The latch beside it is the part that was nearly missed. A watchdog alone would be a flicker: if
+the stance never comes off `AIRBORNE`, the reset starts the launch again on the next frame and
+the body cycles through the air pose every second and a half for ever. So a trip also distrusts
+this body's claim to be airborne **until it claims something else once**. One honest ground
+frame clears it, so a real jump afterwards is still a real jump.
+
+1.5 s is over twice the longest honest episode ever measured here (567 ms live, 317 ms through
+the replicated chain at 36 % loss). The cost of a false trip is a body standing upright through
+the tail of a fall longer than that, which no drop on these maps produces short of the kill
+plane. Five cases hold it, including ten seconds of a stance stuck on `AIRBORNE` — the reported
+bug, written as a test.
+
+**What this says about the three fixes above it.** They stay, and they are not wasted: each
+removed a real way for the pose to get stuck, and the watchdog is a net under all of them rather
+than a replacement. But the honest reading is that the diagnosis was never finished — four
+rounds of it, each ending in a measurement that was true and a conclusion that was not complete.
+Where a defect is cosmetic, bounded and reported again and again, the net belongs in the first
+commit and the diagnosis can continue underneath it.
+
+### Three instruments, four wrong filters, and the lesson that cost the most
+
+Every instrument built for this hunt was first written with a filter that would have hidden the
+thing it was built to find, and each filter came from an argument rather than a measurement:
+
+1. `?airpose` tripped only on a body that was airborne **and moving** — and the frozen case stands
+   at a dead stop, so it would have watched the bug happen and said nothing.
+2. The server probe required `sim.grounded` — and its silence on the deployed server was the
+   evidence, not an absence of one.
+3. The same probe excluded dead bodies, on the argument that a corpse is drawn with a death clip.
+   Three of the four bodies it later caught were dead.
+4. And the one that mattered: **no instrument recorded `dormant`.** The field that separated the
+   two true measurements was on the wire the whole time, in a flag the client already reads, and
+   nothing asked for it. The contradiction stood for hours because of an omission, not a mystery.
+
+Measure the thing; filter afterwards, and only against a measurement — and when two sound
+measurements contradict each other, the next question is which record each one is about.
+
+**The instruments are gone from the tree**, as the reporter asked: `AirPoseWatch`, `StanceProbe`,
+`StanceTrace`, the `?airpose` key, the four `__p7` handles and `readEntity`'s field-mask return
+are all removed, and nothing from them is in the fix's commit. The numbers they produced are
+above and are the only part worth keeping: an honest jump-while-moving holds the air pose for at
+most **567 ms** live and **317 ms** through the replicated chain at 36 % packet loss; the
+simulation cleared the stance on **6,006 of 6,006** landings.
 
 ## 6. Documentation and housekeeping
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DT } from '../core/Loop';
-import { BotBlackboard } from './BotBlackboard';
+import { BotBlackboard, FORGET_BELOW } from './BotBlackboard';
 
 /**
  * What one bot believes, pinned.
@@ -119,6 +119,18 @@ describe('a sighting', () => {
 });
 
 describe('losing sight', () => {
+  it('forgets at the plan’s fixed five-percent confidence threshold', () => {
+    expect(FORGET_BELOW).toBe(0.05);
+  });
+
+  it('uses the shared threshold to decide when a remembered target is gone', () => {
+    const bb = seen();
+    bb.confidence = FORGET_BELOW;
+    expect(bb.hasKnownTarget).toBe(false);
+    bb.confidence = FORGET_BELOW + Number.EPSILON;
+    expect(bb.hasKnownTarget).toBe(true);
+  });
+
   it('keeps the memory and drops the flag', () => {
     const bb = seen(3, -8);
     bb.noteNoSighting();
@@ -246,6 +258,16 @@ describe('being shot at', () => {
 });
 
 describe('a reset', () => {
+  it('clears a fresh contact, both on reset and when the target is forgotten', () => {
+    const bb = seen();
+    bb.freshContact = true;
+    bb.forgetTarget();
+    expect(bb.freshContact).toBe(false);
+    bb.freshContact = true;
+    bb.reset();
+    expect(bb.freshContact).toBe(false);
+  });
+
   it('returns the whole belief to what a fresh bot has', () => {
     const bb = seen(3, -8);
     bb.noteDamage(0, -10, 0, 0, 40);

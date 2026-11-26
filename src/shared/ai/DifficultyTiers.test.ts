@@ -168,6 +168,12 @@ describe('the slider metadata', () => {
 });
 
 describe('perception, which is a property of the world and not of skill', () => {
+  it('does not own confidence decay, because a tier owns that memory length', () => {
+    expect(PERCEPTION_CONFIG_KEYS as readonly string[]).not.toContain('confidenceDecay');
+    expect(Object.keys(DEFAULT_PERCEPTION)).not.toContain('confidenceDecay');
+    expect(Object.keys(PERCEPTION_TUNABLES)).not.toContain('confidenceDecay');
+  });
+
   it('fixes the cone and both hearing radii at S6.3’s figures', () => {
     expect(DEFAULT_PERCEPTION.visionConeDeg).toBe(110);
     expect(DEFAULT_PERCEPTION.gunfireHearing).toBe(40);

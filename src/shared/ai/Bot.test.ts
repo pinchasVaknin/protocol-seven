@@ -19,7 +19,7 @@ import { navBakeOptionsFor } from './BotDirector';
 import type { BrainDeps } from './BotBrain';
 import { TacticalTally } from './TacticalTally';
 import { CoverIndex } from './Cover';
-import { DEFAULT_PERCEPTION, DEFAULT_TIERS } from './DifficultyTiers';
+import { BOT_TIERS, DEFAULT_PERCEPTION, DEFAULT_TIERS } from './DifficultyTiers';
 import { Pathfinder } from './Pathing';
 import { Perception } from './Perception';
 
@@ -304,12 +304,16 @@ describe('a bot that was hurt but lived', () => {
     expect(bot.visual.flinchDirZ).toBe(0);
   });
 
-  it('looks where the shot came from when it was not already looking there', () => {
+  it('looks near where the shot came from when it was not already looking there', () => {
     const { bot } = spawned();
-    bot.onHurt(SPAWN.x + 5, SPAWN.z + 3, 1, 0, 20);
+    const fromX = SPAWN.x + 20;
+    const fromZ = SPAWN.z;
+    bot.onHurt(fromX, fromZ, 1, 0, 20);
     expect(bot.blackboard.investigateValid).toBe(true);
-    expect(bot.blackboard.investigateX).toBe(SPAWN.x + 5);
-    expect(bot.blackboard.investigateZ).toBe(SPAWN.z + 3);
+    expect(Math.abs(bot.blackboard.investigateX - fromX)).toBeLessThanOrEqual(2.4);
+    expect(Math.abs(bot.blackboard.investigateZ - fromZ)).toBeLessThanOrEqual(2.4);
+    expect(bot.blackboard.investigateX).not.toBe(fromX);
+    expect(bot.blackboard.investigateZ).not.toBe(fromZ);
     // Eye level of the shooter, not the floor: a bot investigating looks at a head height.
     expect(bot.blackboard.investigateY).toBeCloseTo(bot.py + 1.2, 10);
   });
@@ -320,6 +324,35 @@ describe('a bot that was hurt but lived', () => {
     bot.onHurt(SPAWN.x + 5, SPAWN.z + 3, 1, 0, 20);
     expect(bot.blackboard.investigateValid).toBe(false);
     expect(bot.visual.flinchSerial).toBe(1);
+  });
+
+  it('blurs by 12% of the distance, never under 0.5 m nor over 4 m on either axis', () => {
+    // Twenty hits each at 2 m (0.24 m, raised to the floor) and 100 m (12 m, cut to the ceiling).
+    for (const [range, floor, ceiling] of [
+      [2, 0.24, 0.5],
+      [100, 2, 4],
+    ] as const) {
+      const { bot } = spawned();
+      let widest = 0;
+      for (let i = 0; i < 20; i++) {
+        bot.onHurt(SPAWN.x + range, SPAWN.z, 1, 0, 1);
+        const off = Math.max(
+          Math.abs(bot.blackboard.investigateX - (SPAWN.x + range)),
+          Math.abs(bot.blackboard.investigateZ - SPAWN.z),
+        );
+        expect(off, `${range} m`).toBeLessThanOrEqual(ceiling);
+        widest = Math.max(widest, off);
+      }
+      expect(widest, `${range} m`).toBeGreaterThan(floor);
+    }
+  });
+
+  it('does not draw a random value when it can already see the attacker', () => {
+    const seen = spawned().bot;
+    const untouched = spawned().bot;
+    seen.blackboard.hasLos = true;
+    seen.onHurt(SPAWN.x + 20, SPAWN.z, 1, 0, 20);
+    expect(seen.rng.int(0, 1_000_000)).toBe(untouched.rng.int(0, 1_000_000));
   });
 });
 
@@ -332,6 +365,28 @@ describe('the tick', () => {
     const atEnd = bot.renderX(1);
     expect(atStart).toBe(SPAWN.x);
     expect(atEnd).toBe(bot.px);
+  });
+
+  it('keeps each tier’s lost target through its own memory, then forgets it', () => {
+    for (const tier of BOT_TIERS) {
+      const { bot } = spawned({ tier });
+      bot.blackboard.noteSighting(2, SPAWN.x + 10, 1.6, SPAWN.z, 0, 10, 0);
+      bot.blackboard.noteNoSighting();
+
+      let elapsed = 0;
+      const knownUntil = bot.tier.memorySeconds - 0.1;
+      while (elapsed + DT <= knownUntil) {
+        bot.beginTick();
+        elapsed += DT;
+      }
+      expect(bot.blackboard.hasKnownTarget, tier).toBe(true);
+
+      while (elapsed < bot.tier.memorySeconds + 0.1) {
+        bot.beginTick();
+        elapsed += DT;
+      }
+      expect(bot.blackboard.hasKnownTarget, tier).toBe(false);
+    }
   });
 
   it('writes a command with a rising sequence and the tick it belongs to', () => {

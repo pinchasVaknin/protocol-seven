@@ -388,6 +388,8 @@ export class BotBrain {
       return;
     }
 
+    this.armFreshContact(bot);
+
     this.updateStuck(bot);
 
     // ---- where to look ---------------------------------------------------
@@ -456,6 +458,15 @@ export class BotBrain {
 
   // ===================================== PRIVATE METHODS ====================================== \\
   //#region Private Methods
+  /** Give every fresh contact one deliberately inaccurate opening burst (S2). */
+  private armFreshContact(bot: Bot): void {
+    const bb = bot.blackboard;
+    if (!bb.freshContact) return;
+    if (!isFiringState(this.state) && this.state !== 'SEEK_COVER') return;
+    bot.combat.onContact(bot.tier, bot.rng);
+    bb.freshContact = false;
+  }
+
   /**
    * The ammo decision, which outranks everything except dying.
    *
@@ -817,9 +828,6 @@ export class BotBrain {
       this.deps.cover.release(bot.entityId);
       this.coverSlot = -1;
       this.peeking = false;
-    }
-    if (next === 'ENGAGE' && !isFiringState(this.state)) {
-      bot.combat.onContact(bot.tier, bot.rng);
     }
     bot.noteStateChange(this.state, next);
     this.state = next;

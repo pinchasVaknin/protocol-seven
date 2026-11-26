@@ -148,8 +148,6 @@ export interface PerceptionConfig {
   footstepHearing: number;
   /** Seconds a heard noise stays in the blackboard as an investigate target. */
   noiseMemory: number;
-  /** Confidence decay per second once line of sight is lost, 0..1 per second. */
-  confidenceDecay: number;
 }
 //#endregion
 
@@ -378,7 +376,6 @@ export const DEFAULT_PERCEPTION: PerceptionConfig = {
   gunfireHearing: 40,
   footstepHearing: 12,
   noiseMemory: 6,
-  confidenceDecay: 0.55,
 };
 
 export const PERCEPTION_TUNABLES: Readonly<Record<keyof PerceptionConfig, TunableMeta>> = {
@@ -388,7 +385,6 @@ export const PERCEPTION_TUNABLES: Readonly<Record<keyof PerceptionConfig, Tunabl
   gunfireHearing: { label: 'Gunfire', group: 'Hearing', min: 0, max: 90, step: 1, unit: 'm' },
   footstepHearing: { label: 'Footsteps', group: 'Hearing', min: 0, max: 40, step: 0.5, unit: 'm' },
   noiseMemory: { label: 'Noise memory', group: 'Hearing', min: 0.5, max: 20, step: 0.5, unit: 's' },
-  confidenceDecay: { label: 'Confidence decay', group: 'Hearing', min: 0.05, max: 3, step: 0.05, unit: '/s' },
 };
 
 export const PERCEPTION_CONFIG_KEYS = Object.keys(DEFAULT_PERCEPTION) as Array<keyof PerceptionConfig>;

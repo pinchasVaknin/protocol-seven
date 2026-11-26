@@ -6,7 +6,7 @@ import { HitboxRig, HUMANOID_RIG, rigLayoutFor } from '../combat/HitboxRig';
 import type { DamageSystem } from '../combat/DamageSystem';
 import { EV, type GameBus } from '../core/Events';
 import { Btn, isDown, type MutableInputCommand, type InputCommand } from '../core/InputCommand';
-import { angleDelta } from '../core/MathUtil';
+import { angleDelta, clamp } from '../core/MathUtil';
 import { DT } from '../core/Loop';
 import { Rng } from '../core/Rng';
 import type { ThrowPhase } from '../equipment/ThrowController';
@@ -17,7 +17,7 @@ import type { CollisionWorld } from '../world/CollisionWorld';
 import type { ViewmodelConfig } from '../weapons/ViewmodelConfig';
 import { heldMoveScale, type WeaponDef } from '../weapons/WeaponDefs';
 import { WeaponSystem } from '../weapons/WeaponSystem';
-import { BotBlackboard } from './BotBlackboard';
+import { BotBlackboard, FORGET_BELOW } from './BotBlackboard';
 import { BotBrain, type BrainDeps } from './BotBrain';
 import {
   DEATH_VARIANTS,
@@ -436,7 +436,13 @@ export class Bot implements Combatant, PathClient {
     this.blackboard.noteDamage(fromX, fromZ, this.px, this.pz, amount);
     // Being shot from somewhere you were not looking is a reason to look there.
     if (!this.blackboard.hasLos) {
-      this.blackboard.noteInvestigate(fromX, this.py + 1.2, fromZ);
+      const distance = Math.hypot(fromX - this.px, fromZ - this.pz);
+      const radius = clamp(0.12 * distance, 0.5, 4);
+      this.blackboard.noteInvestigate(
+        fromX + this.rng.spread() * radius,
+        this.py + 1.2,
+        fromZ + this.rng.spread() * radius,
+      );
     }
     const v = this.visual;
     v.flinchSerial++;
@@ -469,7 +475,7 @@ export class Bot implements Combatant, PathClient {
       if (this.respawnTimer > 0) this.respawnTimer = Math.max(0, this.respawnTimer - DT);
       return;
     }
-    this.blackboard.age(this.deps.perceptionConfig.confidenceDecay, this.deps.perceptionConfig.noiseMemory);
+    this.blackboard.age((1 - FORGET_BELOW) / this.tier.memorySeconds, this.deps.perceptionConfig.noiseMemory);
   }
 
   /**

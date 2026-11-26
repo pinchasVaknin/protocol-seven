@@ -4,6 +4,12 @@ import { DT } from '../core/Loop';
 import { clamp01 } from '../core/MathUtil';
 //#endregion
 
+// ========================================= CONSTANTS ========================================== \\
+//#region Constants
+/** A remembered target no longer exists to the brain at or below this confidence. */
+export const FORGET_BELOW = 0.05;
+//#endregion
+
 // ==================================== CLASS BotBlackboard ===================================== \\
 //#region Class BotBlackboard
 /**
@@ -57,6 +63,8 @@ export class BotBlackboard {
   reactionTimer = 0;
   /** True once the reaction delay for the current contact has been paid. */
   reactionPaid = false;
+  /** A contact that has not yet received its deliberately inaccurate first burst. */
+  freshContact = false;
 
   /** Direction the last damage came from, normalised in XZ. Drives a flinch turn. */
   threatDirX = 0;
@@ -94,6 +102,7 @@ export class BotBlackboard {
     this.investigateAge = 0;
     this.reactionTimer = 0;
     this.reactionPaid = false;
+    this.freshContact = false;
     this.threatDirX = 0;
     this.threatDirZ = 0;
     this.sinceDamage = 999;
@@ -113,6 +122,7 @@ export class BotBlackboard {
     this.hasLos = false;
     this.confidence = 0;
     this.losHeld = 0;
+    this.freshContact = false;
     this.sightings = 0;
   }
 
@@ -215,7 +225,7 @@ export class BotBlackboard {
 
   /** True when the bot has a position worth shooting at, seen or remembered. */
   get hasKnownTarget(): boolean {
-    return this.targetId >= 0 && this.confidence > 0.05;
+    return this.targetId >= 0 && this.confidence > FORGET_BELOW;
   }
   //#endregion
 }

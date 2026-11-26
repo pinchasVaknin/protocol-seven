@@ -286,6 +286,7 @@ export class Perception {
     const fresh = bb.targetId !== this.bestId || bb.sinceLos > 1.2;
     if (fresh) {
       bb.armReaction(rng.range(tier.reactionMin, tier.reactionMax));
+      bb.freshContact = true;
       this.stats.freshContacts++;
     }
     this.stats.sightings++;

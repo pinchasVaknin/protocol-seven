@@ -319,6 +319,14 @@ describe('deciding, in order of urgency', () => {
     expect(bot.brain.goal).toBe('NONE');
   });
 
+  it('does not arm a first burst merely by entering ENGAGE without fresh perception', () => {
+    const { bot } = rig();
+    sees(bot, 10);
+    bot.brain.decide(bot);
+    expect(bot.brain.state).toBe('ENGAGE');
+    expect(bot.combat.firstBursts).toBe(0);
+  });
+
   it('shoots at the spot for a beat when an investigating bot has just lost the target (S1)', () => {
     const { bot } = rig();
     bot.brain.state = 'INVESTIGATE';
@@ -880,6 +888,40 @@ describe('steering toward a path', () => {
 });
 
 describe('steering in a firefight', () => {
+  it('arms the first burst once in every firing state, not when merely patrolling', () => {
+    const { bot } = rig();
+    sees(bot, 12);
+    bot.blackboard.freshContact = true;
+    bot.brain.state = 'OBJECTIVE';
+    steerOnce(bot);
+    expect(bot.combat.firstBursts).toBe(1);
+    expect(bot.blackboard.freshContact).toBe(false);
+    steerOnce(bot);
+    expect(bot.combat.firstBursts).toBe(1);
+
+    const patrol = rig().bot;
+    sees(patrol, 12);
+    patrol.blackboard.freshContact = true;
+    patrol.brain.state = 'PATROL';
+    steerOnce(patrol);
+    expect(patrol.combat.firstBursts).toBe(0);
+    expect(patrol.blackboard.freshContact).toBe(true);
+    patrol.brain.state = 'ENGAGE';
+    steerOnce(patrol);
+    expect(patrol.combat.firstBursts).toBe(1);
+    expect(patrol.blackboard.freshContact).toBe(false);
+  });
+
+  it('arms the first burst for a bot running to cover too, which still shoots on the way', () => {
+    const { bot } = rig();
+    sees(bot, 12);
+    bot.blackboard.freshContact = true;
+    bot.brain.state = 'SEEK_COVER';
+    steerOnce(bot);
+    expect(bot.combat.firstBursts).toBe(1);
+    expect(bot.blackboard.freshContact).toBe(false);
+  });
+
   it('aims at the target it can see', () => {
     const { bot } = rig();
     sees(bot, 12);
@@ -905,9 +947,9 @@ describe('steering in a firefight', () => {
     }
     // Three seconds of fire with the bursts and pauses the tier draws: SUPPRESS is the one
     // state that shoots without a line, which is what makes a lost contact cost the player.
-    // S1: the first contact out of IDLE no longer rolls the push and flank dice, so the bot's
-    // random stream is further on than it was, and the bursts fall a round differently.
-    expect(fired).toBe(163);
+    // S2 moves the first-burst draw out of a state transition and onto Perception's fresh-contact
+    // flag. This rig writes its remembered target directly, so it spends neither of those draws.
+    expect(fired).toBe(139);
   });
 
   it('holds its trigger with no target at all', () => {

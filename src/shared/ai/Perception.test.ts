@@ -137,6 +137,16 @@ describe('an enemy in the open', () => {
     expect(a.bb.reactionPaid).toBe(false);
     expect(a.bb.reactionTimer).toBeGreaterThanOrEqual(TIER.reactionMin);
     expect(a.bb.reactionTimer).toBeLessThanOrEqual(TIER.reactionMax);
+    expect(a.bb.freshContact).toBe(true);
+  });
+
+  it('marks a target switch as a fresh contact too', () => {
+    const a = arena();
+    sense(a, [a.self, combatant(2, 'B', 0, -10)]);
+    a.bb.freshContact = false;
+    sense(a, [a.self, combatant(3, 'B', 0, -10)]);
+    expect(a.bb.targetId).toBe(3);
+    expect(a.bb.freshContact).toBe(true);
   });
 
   it('does not pay it again while the same contact is held', () => {
